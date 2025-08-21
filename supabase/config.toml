@@ -1,0 +1,34 @@
+project_id = "csopyblkfyofwkeqqegd"
+
+[auth]
+enabled = true
+
+[edge-runtime]
+policy = "per_worker"
+
+[functions.sync-airbnb-reservations]
+verify_jwt = true
+
+[functions.get-airbnb-reservation]
+verify_jwt = false
+
+[functions.generate-documents]
+verify_jwt = true
+
+[functions.send-owner-notification]
+verify_jwt = false
+
+[functions.submit-guest-info]
+verify_jwt = false
+
+[functions.storage-sign-url]
+verify_jwt = false
+
+[functions.issue-guest-link]
+verify_jwt = true
+
+[functions.resolve-guest-link]
+verify_jwt = false
+
+[functions.list-guest-docs]
+verify_jwt = false

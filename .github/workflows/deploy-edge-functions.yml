@@ -1,0 +1,55 @@
+name: Deploy Supabase Edge Functions
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+    paths:
+      - "supabase/functions/**"
+      - ".github/workflows/deploy-edge-functions.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Verify secrets
+        run: |
+          if [ -z "${{ secrets.SUPABASE_ACCESS_TOKEN }}" ] || [ -z "${{ secrets.SUPABASE_PROJECT_REF }}" ]; then
+            echo "Missing SUPABASE_ACCESS_TOKEN or SUPABASE_PROJECT_REF"
+            exit 1
+          fi
+
+      # Remove any config that could confuse the CLI
+      - name: Remove local supabase config if present
+        run: |
+          if [ -f supabase/config.toml ]; then
+            echo "Removing supabase/config.toml to avoid parse errors"
+            rm -f supabase/config.toml
+          fi
+
+      - name: Supabase login
+        run: supabase login --token "${{ secrets.SUPABASE_ACCESS_TOKEN }}"
+
+      - name: Deploy functions (no link)
+        run: |
+          set -e
+          PROJECT="${{ secrets.SUPABASE_PROJECT_REF }}"
+          for fn in save-contract-signature generate-documents resolve-guest-link storage-sign-url extract-document-data sync-airbnb-calendar sync-airbnb-reservations get-airbnb-reservation send-owner-notification list-guest-docs; do
+            if [ -d "supabase/functions/$fn" ]; then
+              echo "Deploying $fn"
+              supabase functions deploy "$fn" --project-ref "$PROJECT"
+            else
+              echo "Skipping $fn (folder not found)"
+            fi
+          done
