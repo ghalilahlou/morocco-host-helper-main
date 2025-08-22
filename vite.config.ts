@@ -19,4 +19,26 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    // Optimisations pour Vercel
+    target: 'esnext',
+    minify: 'terser',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-select'],
+          utils: ['date-fns', 'clsx', 'tailwind-merge'],
+        },
+      },
+    },
+    // Optimisation des assets
+    assetsInlineLimit: 4096,
+    chunkSizeWarningLimit: 1000,
+  },
+  // Optimisations pour le développement
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom'],
+  },
 }));

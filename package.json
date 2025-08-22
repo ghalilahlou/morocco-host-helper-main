@@ -15,7 +15,9 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "cleanup-logs": "node scripts/cleanup-logs.js",
     "pre-commit": "npm run lint && npm run type-check && npm run format:check",
-    "postinstall": "npm run type-check"
+    "postinstall": "npm run type-check",
+    "deploy:vercel": "node scripts/deploy-vercel.js",
+    "vercel-build": "npm run build"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
