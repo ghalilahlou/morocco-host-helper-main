@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getServerClient } from "../_shared/serverClient.ts";
 
 type Payload = {
   bookingId: string;
@@ -8,10 +8,6 @@ type Payload = {
   signerPhone?: string | null;
   signatureDataUrl: string; // data:image/png;base64,....
 };
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const server = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,37 +34,61 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  console.log('📝 Save contract signature function called');
+
   try {
     if (req.method !== "POST") return badRequest("POST required");
     
     const body = (await req.json()) as Payload;
+    console.log('📝 Request body:', { 
+      bookingId: body?.bookingId, 
+      signerName: body?.signerName,
+      hasSignatureData: !!body?.signatureDataUrl 
+    });
 
     if (!body?.bookingId || !body?.signerName || !body?.signatureDataUrl) {
+      console.log('❌ Missing required fields:', { 
+        hasBookingId: !!body?.bookingId, 
+        hasSignerName: !!body?.signerName, 
+        hasSignatureData: !!body?.signatureDataUrl 
+      });
       return badRequest("bookingId, signerName, signatureDataUrl required");
     }
 
     // Optional: validate data URL
     if (!body.signatureDataUrl.startsWith("data:image/png;base64,")) {
+      console.log('❌ Invalid signature data URL format');
       return badRequest("signatureDataUrl must be a base64 PNG data URL");
     }
+
+    const server = await getServerClient();
 
     // (1) Sanity-check booking exists (service role bypasses RLS)
     // Skip validation for temporary booking IDs (generated for contracts without real bookings)
     if (!body.bookingId.startsWith("contract-")) {
+      console.log('🔍 Checking if booking exists:', body.bookingId);
       const { data: booking, error: bookingErr } = await server
         .from("bookings")
         .select("id")
         .eq("id", body.bookingId)
         .maybeSingle();
 
-      if (bookingErr) throw bookingErr;
-      if (!booking) return badRequest("Unknown booking");
+      if (bookingErr) {
+        console.error('❌ Error checking booking:', bookingErr);
+        throw bookingErr;
+      }
+      if (!booking) {
+        console.log('❌ Booking not found:', body.bookingId);
+        return badRequest("Unknown booking");
+      }
+      console.log('✅ Booking found:', body.bookingId);
     }
 
     // (2) Write signature to contract_signatures
     // Generate a proper UUID for temporary booking IDs
     let finalBookingId = body.bookingId;
     if (body.bookingId.startsWith("contract-")) {
+      console.log('🔧 Generating UUID for temporary booking ID:', body.bookingId);
       // Generate a deterministic UUID based on the temporary ID
       const crypto = globalThis.crypto || (await import("node:crypto")).webcrypto;
       const encoder = new TextEncoder();
@@ -86,8 +106,10 @@ serve(async (req) => {
       ].join('-');
       
       finalBookingId = uuid;
+      console.log('✅ Generated UUID:', finalBookingId);
     }
 
+    console.log('💾 Inserting signature into database...');
     const { data: inserted, error: insertErr } = await server
       .from("contract_signatures")
       .insert({
@@ -102,14 +124,17 @@ serve(async (req) => {
       .select("id")
       .single();
 
-    if (insertErr) throw insertErr;
+    if (insertErr) {
+      console.error('❌ Error inserting signature:', insertErr);
+      throw insertErr;
+    }
 
-    console.log(`✅ Contract signature saved for booking ${body.bookingId}`);
+    console.log(`✅ Contract signature saved for booking ${body.bookingId}, signature ID: ${inserted.id}`);
     
     return ok({ id: inserted.id });
   } catch (e) {
-    console.error("save-contract-signature error:", e);
-    return new Response(JSON.stringify({ error: "internal" }), { 
+    console.error("❌ save-contract-signature error:", e);
+    return new Response(JSON.stringify({ error: "internal", details: e.message }), { 
       status: 500, 
       headers: { "content-type": "application/json", ...corsHeaders } 
     });

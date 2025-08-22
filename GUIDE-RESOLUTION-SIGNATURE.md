@@ -1,116 +1,124 @@
-# 🔧 Guide de Résolution - Problème de Signature Électronique
+# 🔧 Guide de Résolution : Erreur Signature Électronique
 
-## 🚨 Problème Identifié
+## 🚨 Problème identifié
+- **Erreur** : `500 (Internal Server Error)` lors de la sauvegarde de signature
+- **Edge Function** : `save-contract-signature`
+- **Message** : `"Edge Function returned a non-2xx status code"`
 
-L'erreur `500 (Internal Server Error)` lors de la signature électronique indique que l'Edge Function `save-contract-signature` n'est pas correctement déployée ou configurée.
+## 🔍 Diagnostic
 
-## 📋 Solutions à Appliquer
-
-### 1. 🔄 Redéployer les Edge Functions
-
-**Étapes manuelles :**
-
-1. **Allez sur** : https://supabase.com/dashboard/project/csopyblkfyofwkeqqegd/functions
-
-2. **Pour chaque fonction, cliquez sur "Deploy updates" :**
-   - ✅ `save-contract-signature` (CRITIQUE - pour la signature)
-   - ✅ `submit-guest-info` (pour la soumission des infos client)
-   - ✅ `resolve-guest-link` (pour la vérification des liens)
-   - ✅ `list-guest-docs` (pour lister les documents)
-   - ✅ `send-owner-notification` (pour les notifications)
-   - ✅ `storage-sign-url` (pour le stockage)
-
-### 2. 🌐 Configurer les Allowed Origins
-
-**Étapes :**
-
-1. **Supabase Dashboard** → **Settings** → **Authentication** → **URL Configuration**
-2. **Ajoutez** : `http://localhost:3001`
-3. **Sauvegardez** les changements
-
-### 3. 🔑 Vérifier les Secrets
-
-**Dans Supabase Dashboard** → **Settings** → **Edge Function Secrets :**
-
-- `OPENAI_API_KEY` (si vous utilisez l'OCR)
-- `RESEND_API_KEY` (pour les emails)
-
-### 4. 🗄️ Vérifier la Table `contract_signatures`
-
-**Assurez-vous que la table existe dans votre base de données :**
-
+### 1. Vérifier la structure de la table contract_signatures
+Exécutez dans **Supabase SQL Editor** :
 ```sql
--- Vérifiez que la table existe
-SELECT * FROM information_schema.tables 
+-- Vérifier si la table contract_signatures existe
+SELECT 
+    table_name,
+    column_name,
+    data_type,
+    is_nullable,
+    column_default
+FROM information_schema.columns 
+WHERE table_name = 'contract_signatures'
+ORDER BY ordinal_position;
+
+-- Vérifier les contraintes de la table
+SELECT 
+    constraint_name,
+    constraint_type,
+    table_name
+FROM information_schema.table_constraints 
 WHERE table_name = 'contract_signatures';
 
--- Si elle n'existe pas, créez-la :
-CREATE TABLE IF NOT EXISTS contract_signatures (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  booking_id UUID NOT NULL,
-  signer_name TEXT NOT NULL,
-  signer_email TEXT,
-  signer_phone TEXT,
-  signature_data TEXT NOT NULL,
-  contract_content TEXT NOT NULL,
-  signed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- Vérifier les politiques RLS
+SELECT 
+    policyname,
+    cmd,
+    qual,
+    with_check
+FROM pg_policies 
+WHERE table_name = 'contract_signatures';
+```
+
+### 2. Tester une insertion manuelle
+```sql
+-- Tester une insertion simple
+INSERT INTO contract_signatures (
+  booking_id,
+  signer_name,
+  signer_email,
+  signer_phone,
+  signature_data,
+  contract_content,
+  signed_at
+) VALUES (
+  'test-booking-' || gen_random_uuid(),
+  'Test Signer',
+  'test@example.com',
+  '+1234567890',
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'Test contract content',
+  now()
+) RETURNING id, booking_id, signer_name;
+```
+
+## 🔧 Solution
+
+### Étape 1 : Vérifier les logs de l'Edge Function
+1. **Allez sur** : https://supabase.com/dashboard/project/csopyblkfyofwkeqqegd/functions
+2. **Cliquez sur** `save-contract-signature`
+3. **Allez dans l'onglet "Logs"**
+4. **Vérifiez les erreurs récentes**
+
+### Étape 2 : Redéployer l'Edge Function
+1. **Allez sur** : https://supabase.com/dashboard/project/csopyblkfyofwkeqqegd/functions
+2. **Cliquez sur** `save-contract-signature`
+3. **Cliquez sur "Deploy updates"**
+
+### Étape 3 : Tester la signature
+1. **Allez sur** : https://morocco-host-helper-main.vercel.app
+2. **Connectez-vous** avec `ghlilahlou26@gmail.com`
+3. **Générez un lien client** et testez la signature
+4. **Vérifiez les logs** dans la console du navigateur
+
+## ✅ Vérification
+
+### 1. Vérifier que la table existe et a la bonne structure
+```sql
+-- Vérifier que la table existe
+SELECT EXISTS (
+  SELECT FROM information_schema.tables 
+  WHERE table_schema = 'public' 
+  AND table_name = 'contract_signatures'
 );
+
+-- Vérifier les colonnes requises
+SELECT column_name, data_type, is_nullable
+FROM information_schema.columns 
+WHERE table_name = 'contract_signatures'
+AND column_name IN ('booking_id', 'signer_name', 'signature_data', 'contract_content');
 ```
 
-## 🧪 Test de la Solution
+### 2. Vérifier les politiques RLS
+```sql
+-- Vérifier que RLS est activé
+SELECT schemaname, tablename, rowsecurity 
+FROM pg_tables 
+WHERE tablename = 'contract_signatures';
 
-### 1. **Redémarrez l'application :**
-```bash
-npm run dev
+-- Vérifier les politiques
+SELECT policyname, cmd, qual
+FROM pg_policies 
+WHERE tablename = 'contract_signatures';
 ```
 
-### 2. **Testez la signature :**
-- Allez sur `http://localhost:3001/`
-- Suivez le processus de signature
-- Vérifiez que la signature est sauvegardée
+## 🎯 Résultat attendu
+- ✅ Plus d'erreur `500 (Internal Server Error)`
+- ✅ Signature sauvegardée avec succès
+- ✅ Message de succès dans l'interface
+- ✅ Signature visible dans la base de données
 
-### 3. **Vérifiez les logs :**
-- Ouvrez la console du navigateur
-- Vérifiez qu'il n'y a plus d'erreurs 500
-
-## 🔍 Diagnostic Avancé
-
-### Si le problème persiste :
-
-1. **Vérifiez les logs Supabase :**
-   - Dashboard → Edge Functions → `save-contract-signature` → Logs
-
-2. **Testez la fonction directement :**
-   ```bash
-   curl -X POST https://csopyblkfyofwkeqqegd.supabase.co/functions/v1/save-contract-signature \
-     -H "Authorization: Bearer YOUR_ANON_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"bookingId":"test","signerName":"Test","signatureDataUrl":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="}'
-   ```
-
-3. **Vérifiez la connectivité :**
-   - Assurez-vous que votre réseau n'a pas de restrictions
-   - Désactivez temporairement l'antivirus/firewall
-
-## ✅ Vérification Finale
-
-Après avoir appliqué toutes les solutions :
-
-1. ✅ **Edge Functions redéployées**
-2. ✅ **Allowed Origins configurées**
-3. ✅ **Secrets configurés**
-4. ✅ **Table `contract_signatures` existe**
-5. ✅ **Signature fonctionne sans erreur 500**
-
-## 🆘 Support
-
-Si le problème persiste après avoir suivi ce guide :
-
-1. **Vérifiez** les logs Supabase Edge Functions
-2. **Testez** avec un autre navigateur
-3. **Vérifiez** votre connexion internet
-4. **Contactez** le support si nécessaire
-
----
-
-**🎯 Objectif :** Résoudre l'erreur 500 lors de la signature électronique pour permettre aux clients de signer leurs contrats de location.
+## 📝 Notes importantes
+- L'Edge Function utilise `getServerClient()` pour accéder à la base de données
+- Les signatures sont stockées en base64 PNG
+- La table `contract_signatures` doit avoir les bonnes colonnes et contraintes
+- Les politiques RLS doivent permettre l'insertion par l'Edge Function
