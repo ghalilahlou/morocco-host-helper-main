@@ -27,11 +27,11 @@ export const useProperties = () => {
 
       const transformedProperties: Property[] = (data || []).map(property => ({
         ...property,
-        house_rules: Array.isArray(property.house_rules)
+        house_rules: Array.isArray(property.house_rules) 
           ? property.house_rules.filter(rule => typeof rule === 'string') as string[]
           : [],
-        contract_template: typeof property.contract_template === 'object' && property.contract_template !== null
-          ? property.contract_template
+        contract_template: typeof property.contract_template === 'object' && property.contract_template !== null 
+          ? property.contract_template 
           : {},
       }));
 
@@ -66,20 +66,20 @@ export const useProperties = () => {
 
       const newProperty: Property = {
         ...data,
-        house_rules: Array.isArray(data.house_rules)
+        house_rules: Array.isArray(data.house_rules) 
           ? data.house_rules.filter(rule => typeof rule === 'string') as string[]
           : [],
-        contract_template: typeof data.contract_template === 'object' && data.contract_template !== null
-          ? data.contract_template
+        contract_template: typeof data.contract_template === 'object' && data.contract_template !== null 
+          ? data.contract_template 
           : {},
       };
 
       // Update local state immediately
       setProperties(prev => [newProperty, ...prev]);
-
+      
       // Also refresh from database to ensure consistency
       await loadProperties();
-
+      
       toast.success('Property added successfully');
       return newProperty;
     } catch (error) {
@@ -100,7 +100,7 @@ export const useProperties = () => {
 
       // Reload properties from database to get fresh data
       await loadProperties();
-
+      
       toast.success('Property updated successfully');
     } catch (error) {
       console.error('Error updating property:', error);

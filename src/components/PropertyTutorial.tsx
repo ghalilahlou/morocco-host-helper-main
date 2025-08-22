@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { X, ChevronRight, ChevronLeft, Lightbulb } from 'lucide-react';
+import { X, ArrowRight, ChevronRight, ChevronLeft, Lightbulb } from 'lucide-react';
+import { CSSProperties } from 'react';
 
 interface TutorialStep {
   id: string;
@@ -179,18 +180,16 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
         top = rect.bottom + margin;
         left = rect.left + (rect.width / 2);
         transform = 'translateX(-50%)';
-
-        {
-          // Ensure tooltip doesn't go off-screen horizontally
-          const leftBoundary = tooltipWidth / 2 + margin;
-          const rightBoundary = viewportWidth - tooltipWidth / 2 - margin;
-          if (left < leftBoundary) {
-            left = leftBoundary;
-            transform = 'translateX(-50%)';
-          } else if (left > rightBoundary) {
-            left = rightBoundary;
-            transform = 'translateX(-50%)';
-          }
+        
+        // Ensure tooltip doesn't go off-screen horizontally
+        const leftBoundary = tooltipWidth / 2 + margin;
+        const rightBoundary = viewportWidth - tooltipWidth / 2 - margin;
+        if (left < leftBoundary) {
+          left = leftBoundary;
+          transform = 'translateX(-50%)';
+        } else if (left > rightBoundary) {
+          left = rightBoundary;
+          transform = 'translateX(-50%)';
         }
         break;
 
@@ -198,18 +197,16 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
         top = rect.top - tooltipHeight - margin;
         left = rect.left + (rect.width / 2);
         transform = 'translateX(-50%)';
-
-        {
-          // Ensure tooltip doesn't go off-screen horizontally
-          const leftBoundaryTop = tooltipWidth / 2 + margin;
-          const rightBoundaryTop = viewportWidth - tooltipWidth / 2 - margin;
-          if (left < leftBoundaryTop) {
-            left = leftBoundaryTop;
-            transform = 'translateX(-50%)';
-          } else if (left > rightBoundaryTop) {
-            left = rightBoundaryTop;
-            transform = 'translateX(-50%)';
-          }
+        
+        // Ensure tooltip doesn't go off-screen horizontally
+        const leftBoundaryTop = tooltipWidth / 2 + margin;
+        const rightBoundaryTop = viewportWidth - tooltipWidth / 2 - margin;
+        if (left < leftBoundaryTop) {
+          left = leftBoundaryTop;
+          transform = 'translateX(-50%)';
+        } else if (left > rightBoundaryTop) {
+          left = rightBoundaryTop;
+          transform = 'translateX(-50%)';
         }
         break;
 
@@ -217,18 +214,16 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
         top = rect.top + (rect.height / 2);
         left = rect.right + margin;
         transform = 'translateY(-50%)';
-
-        {
-          // Ensure tooltip doesn't go off-screen vertically
-          const topBoundary = tooltipHeight / 2 + margin;
-          const bottomBoundary = viewportHeight - tooltipHeight / 2 - margin;
-          if (top < topBoundary) {
-            top = topBoundary;
-            transform = 'translateY(-50%)';
-          } else if (top > bottomBoundary) {
-            top = bottomBoundary;
-            transform = 'translateY(-50%)';
-          }
+        
+        // Ensure tooltip doesn't go off-screen vertically
+        const topBoundary = tooltipHeight / 2 + margin;
+        const bottomBoundary = viewportHeight - tooltipHeight / 2 - margin;
+        if (top < topBoundary) {
+          top = topBoundary;
+          transform = 'translateY(-50%)';
+        } else if (top > bottomBoundary) {
+          top = bottomBoundary;
+          transform = 'translateY(-50%)';
         }
         break;
 
@@ -236,18 +231,16 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
         top = rect.top + (rect.height / 2);
         left = rect.left - tooltipWidth - margin;
         transform = 'translateY(-50%)';
-
-        {
-          // Ensure tooltip doesn't go off-screen vertically
-          const topBoundaryLeft = tooltipHeight / 2 + margin;
-          const bottomBoundaryLeft = viewportHeight - tooltipHeight / 2 - margin;
-          if (top < topBoundaryLeft) {
-            top = topBoundaryLeft;
-            transform = 'translateY(-50%)';
-          } else if (top > bottomBoundaryLeft) {
-            top = bottomBoundaryLeft;
-            transform = 'translateY(-50%)';
-          }
+        
+        // Ensure tooltip doesn't go off-screen vertically
+        const topBoundaryLeft = tooltipHeight / 2 + margin;
+        const bottomBoundaryLeft = viewportHeight - tooltipHeight / 2 - margin;
+        if (top < topBoundaryLeft) {
+          top = topBoundaryLeft;
+          transform = 'translateY(-50%)';
+        } else if (top > bottomBoundaryLeft) {
+          top = bottomBoundaryLeft;
+          transform = 'translateY(-50%)';
         }
         break;
     }
@@ -273,12 +266,12 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
       const element = document.querySelector(currentStepData.target);
       if (element) {
         // Scroll to element first
-        element.scrollIntoView({
-          behavior: 'smooth',
+        element.scrollIntoView({ 
+          behavior: 'smooth', 
           block: 'center',
           inline: 'center'
         });
-
+        
         // Add highlight after a small delay to ensure scroll is complete
         setTimeout(() => {
           (element as HTMLElement).style.position = 'relative';
@@ -300,15 +293,15 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
         }
       }
     };
-  }, [currentStep]);
+  }, [currentStep, currentStepData.target]);
 
   return (
     <>
       {/* Overlay with blur */}
       <div className="fixed inset-0 w-full h-full backdrop-blur-sm bg-black/30 z-[1000]" />
-
+      
       {/* Tutorial Card - Responsive size */}
-      <Card
+      <Card 
         className="fixed z-[1002] w-[90vw] max-w-80 mx-4 sm:w-80 shadow-2xl border-2 border-primary/20"
         style={getTooltipPosition()}
       >
@@ -320,9 +313,9 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
                 {currentStep + 1}/{tutorialSteps.length}
               </Badge>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
+            <Button 
+              variant="ghost" 
+              size="sm" 
               onClick={handleSkip}
               className="h-6 w-6 p-0"
             >
@@ -335,11 +328,11 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
           <CardDescription className="text-sm mb-4 leading-relaxed">
             {currentStepData.description}
           </CardDescription>
-
+          
           <div className="flex items-center justify-between">
-            <Button
-              variant="secondary"
-              size="sm"
+            <Button 
+              variant="secondary" 
+              size="sm" 
               onClick={handlePrevious}
               disabled={currentStep === 0}
               className="gap-2 bg-muted/50 hover:bg-muted text-muted-foreground"
@@ -347,7 +340,7 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
               <ChevronLeft className="h-4 w-4" />
               Précédent
             </Button>
-            <Button
+            <Button 
               onClick={handleNext}
               size="sm"
               className="gap-2"

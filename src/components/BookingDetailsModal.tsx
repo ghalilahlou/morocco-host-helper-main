@@ -45,7 +45,7 @@ export const BookingDetailsModal = ({
   const [fallbackGuestName, setFallbackGuestName] = useState<string | null>(null);
   useEffect(() => {
     if (!isOpen) return;
-
+    
     console.log('📋 BookingDetailsModal opened for booking:', {
       id: booking.id,
       hasGuests: booking.guests?.length > 0,
@@ -53,18 +53,18 @@ export const BookingDetailsModal = ({
       submissionId: booking.submission_id,
       bookingReference: booking.bookingReference
     });
-
+    
     if (booking.guests && booking.guests.length > 0) {
       console.log('✅ Booking has guests:', booking.guests);
       setFallbackGuestName(null);
       return;
     }
-
+    
     // Try to get guest name from multiple sources
     (async () => {
       try {
         console.log('🔍 Trying to fetch guest data from fallback sources...');
-
+        
         // 1. First try to get from guest submissions using submission_id
         if (booking.submission_id) {
           console.log('📝 Trying guest submissions with submission_id:', booking.submission_id);
@@ -73,12 +73,12 @@ export const BookingDetailsModal = ({
             .select('guest_data')
             .eq('id', booking.submission_id)
             .maybeSingle();
-
+          
           if (submissionData?.guest_data) {
-            const guestData = Array.isArray(submissionData.guest_data)
-              ? submissionData.guest_data[0]
+            const guestData = Array.isArray(submissionData.guest_data) 
+              ? submissionData.guest_data[0] 
               : submissionData.guest_data;
-
+            
             if (typeof guestData === 'object' && guestData !== null) {
               const gd = guestData as any;
               if (gd.fullName || gd.full_name) {
@@ -88,7 +88,7 @@ export const BookingDetailsModal = ({
             }
           }
         }
-
+        
         // 2. Try to get from contract signatures
         const { data } = await supabase
           .from('contract_signatures')
@@ -97,14 +97,14 @@ export const BookingDetailsModal = ({
           .order('signed_at', { ascending: false })
           .limit(1)
           .maybeSingle();
-
+        
         if (data) {
           // Use signer_name if available
           if (data.signer_name) {
             setFallbackGuestName(data.signer_name);
             return;
           }
-
+          
           // Fallback to extracting from contract content
           const content = data.contract_content as string;
           if (content) {
@@ -115,7 +115,7 @@ export const BookingDetailsModal = ({
             }
           }
         }
-
+        
         // 3. If no other source, use booking reference as fallback
         if (booking.bookingReference) {
           setFallbackGuestName(booking.bookingReference);
@@ -377,7 +377,7 @@ export const BookingDetailsModal = ({
       });
       return;
     }
-
+    
     // Pass the booking ID to the verification URL generation
     const url = await generatePropertyVerificationUrl(booking.property_id, booking.id);
     if (url) {
@@ -426,7 +426,7 @@ export const BookingDetailsModal = ({
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-2">
-              {booking.realGuestNames.length > 0
+              {booking.realGuestNames.length > 0 
                 ? booking.realGuestNames.join(', ')
                 : booking.guests?.[0]?.fullName || fallbackGuestName || booking.bookingReference || `Réservation #${booking.id.slice(-6)}`}
               {getStatusBadge()}
@@ -461,7 +461,7 @@ export const BookingDetailsModal = ({
             <div className="flex items-center space-x-3">
               <Users className="w-5 h-5 text-muted-foreground" />
               <span className="font-medium">
-                {booking.hasRealSubmissions
+                {booking.hasRealSubmissions 
                   ? `${booking.realGuestCount} client(s) enregistré(s) / ${booking.numberOfGuests} total`
                   : `${booking.numberOfGuests} client(s)`}
               </span>
@@ -547,7 +547,7 @@ export const BookingDetailsModal = ({
                 </AlertDialogContent>
               </AlertDialog>
             </div>
-
+            
             {(booking.guests.length > 0 || booking.hasRealSubmissions) && <div className="grid grid-cols-3 gap-2">
                 <Button variant="outline" size="sm" onClick={async () => {
                 await handleGeneratePolice();
@@ -568,8 +568,8 @@ export const BookingDetailsModal = ({
                   ID Docs
                 </Button>
               </div>}
-
-
+            
+            
           </div>
         </div>
 

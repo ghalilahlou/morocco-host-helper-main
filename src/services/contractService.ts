@@ -31,7 +31,7 @@ export class ContractService {
   static async generateAndDownloadContract(booking: Booking): Promise<{ success: boolean; message: string; variant?: 'default' | 'destructive' }> {
     const bookingId = booking.id;
     const bookingShortId = bookingId.slice(-6);
-
+    
     try {
       console.log(`🔍 ContractService - Starting contract generation for booking: ${bookingId} (#${bookingShortId})`);
       console.log(`🔍 ContractService - Booking data:`, {
@@ -42,7 +42,7 @@ export class ContractService {
         source: booking.source,
         reference: booking.bookingReference
       });
-
+      
       // Check if there's a signed contract
       const signedContract = await this.getSignedContract(bookingId);
       console.log(`🔍 ContractService - Signed contract found for #${bookingShortId}:`, !!signedContract);
@@ -54,7 +54,7 @@ export class ContractService {
           signedAt: signedContract.signed_at,
           hasSignature: !!signedContract.signature_data
         });
-
+        
         const { data, error } = await supabase.functions.invoke('generate-documents', {
           body: {
             booking: {
@@ -79,16 +79,16 @@ export class ContractService {
           const contractDataUrl = data.documentUrls[0];
           console.log(`🔍 ContractService - SIGNED PDF generated for #${bookingShortId}, downloading...`);
           console.log(`🔍 ContractService - SIGNED PDF URL length for #${bookingShortId}:`, contractDataUrl.length);
-
+          
           try {
             // Download PDF directly
             const link = document.createElement('a');
             link.href = contractDataUrl;
-            link.download = `contrat-signé-${booking.bookingReference ?? booking.id.slice(-6)}.pdf`;
+            link.download = `contrat-signé-${booking.bookingReference || booking.id.slice(-6)}.pdf`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
+            
             console.log(`✅ ContractService - SIGNED PDF downloaded successfully for #${bookingShortId}`);
           } catch (downloadError) {
             console.error(`ContractService - Error downloading SIGNED PDF for #${bookingShortId}:`, downloadError);
@@ -110,7 +110,7 @@ export class ContractService {
           bookingId: booking.id,
           documentType: 'contract'
         });
-
+        
         const { data, error } = await supabase.functions.invoke('generate-documents', {
           body: {
             booking: {
@@ -133,16 +133,16 @@ export class ContractService {
           const contractDataUrl = data.documentUrls[0];
           console.log(`🔍 ContractService - PDF generated for #${bookingShortId}, downloading...`);
           console.log(`🔍 ContractService - PDF URL length for #${bookingShortId}:`, contractDataUrl.length);
-
+          
           try {
             // Download PDF directly
             const link = document.createElement('a');
             link.href = contractDataUrl;
-            link.download = `contrat-${booking.bookingReference ?? booking.id.slice(-6)}.pdf`;
+            link.download = `contrat-${booking.bookingReference || booking.id.slice(-6)}.pdf`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
+            
             console.log(`✅ ContractService - PDF downloaded successfully for #${bookingShortId}`);
           } catch (downloadError) {
             console.error(`ContractService - Error downloading PDF for #${bookingShortId}:`, downloadError);
@@ -175,12 +175,12 @@ export class ContractService {
       const { data, error } = await (supabase as any).rpc('get_signed_contracts_for_user', {
         p_user_id: userId
       });
-
+      
       if (error) {
         console.error('Error fetching signed contracts:', error);
         return [];
       }
-
+      
       return data || [];
     } catch (error) {
       console.error('Error checking for signed contracts:', error);
@@ -194,8 +194,8 @@ export class ContractService {
   static async downloadSignedContractPdf(signedContract: any, booking: any): Promise<{ success: boolean; message: string; variant?: 'default' | 'destructive' }> {
     try {
       console.log('🔍 ContractService - Downloading signed contract PDF...');
-
-      const { error } = await supabase.functions.invoke('generate-documents', {
+      
+      const { data, error } = await supabase.functions.invoke('generate-documents', {
         body: {
           booking,
           documentType: 'contract',
@@ -233,7 +233,7 @@ export async function getContractPdfUrl(params: {
 }): Promise<string> {
   const { supabase, bookingId, bookingLike, isPreview = false } = params;
 
-  const body: any = { documentType: 'contract', isPreview: !!isPreview };
+  let body: any = { documentType: 'contract', isPreview: !!isPreview };
 
   if (bookingId) {
     body.bookingId = bookingId;

@@ -30,7 +30,7 @@ export interface BookingFormData {
 export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWizardProps) => {
   const { addBooking, updateBooking } = useBookings();
   const { toast } = useToast();
-
+  
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<BookingFormData>({
     checkInDate: editingBooking?.checkInDate || '',
@@ -77,7 +77,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   const handleSubmit = async () => {
     try {
       const bookingId = editingBooking?.id || uuidv4();
-
+      
 
       if (!editingBooking) {
         // Create new booking with direct database calls to handle documents
@@ -110,6 +110,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           throw bookingError;
         }
 
+        
 
         // 2. Insert guests
         if (formData.guests.length > 0) {
@@ -130,12 +131,12 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           if (guestsError) {
             throw guestsError;
           }
-
+          
         }
 
         // 3. Save uploaded documents
         if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
-
+          
           // Upload documents using unified service
           for (const doc of formData.uploadedDocuments) {
             try {
@@ -205,7 +206,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
       toast({
         title: editingBooking ? "Réservation mise à jour" : "Réservation créée",
-        description: editingBooking
+        description: editingBooking 
           ? "La réservation a été mise à jour avec succès."
           : "La nouvelle réservation a été créée avec succès.",
       });
@@ -267,7 +268,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               <ArrowLeft className="w-4 h-4 mr-2" />
               Précédent
             </Button>
-
+            
             <Button
               onClick={handleNext}
               disabled={!isStepValid()}

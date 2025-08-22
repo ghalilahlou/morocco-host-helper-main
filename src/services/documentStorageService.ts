@@ -26,27 +26,27 @@ function extractGuestName(guest: any): string {
   // Try fullName first
   if (guest.fullName) return guest.fullName;
   if (guest.full_name) return guest.full_name;
-
+  
   // Try firstName + lastName combination
   if (guest.firstName && guest.lastName) {
     return `${guest.firstName} ${guest.lastName}`;
   }
-
+  
   // Try given_names + surname for submissions
   if (guest.given_names && guest.surname) {
     return `${guest.given_names} ${guest.surname}`;
   }
-
+  
   return '';
 }
 
 export class DocumentStorageService {
-
+  
   /**
    * Store a document file and create a unified record
    */
   static async storeDocument(
-    file: File,
+    file: File, 
     metadata: DocumentMetadata
   ): Promise<DocumentStorageResult> {
     try {
@@ -61,7 +61,7 @@ export class DocumentStorageService {
       const fileName = `${metadata.bookingId}/${timestamp}_${file.name}`;
 
       // Upload to storage
-      const { error: uploadError } = await supabase.storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from('guest-documents')
         .upload(fileName, file, {
           cacheControl: '3600',
@@ -78,11 +78,11 @@ export class DocumentStorageService {
       // Create unified document record in uploaded_documents - store only file path, no public URL
       const documentRecord = {
         booking_id: metadata.bookingId,
-        guest_id: metadata.guestId ?? null,
+        guest_id: metadata.guestId || null,
         file_name: file.name,
         file_path: fileName,
         document_url: null, // No longer store public URLs
-        extracted_data: metadata.extractedData ?? null,
+        extracted_data: metadata.extractedData || null,
         processing_status: 'completed'
       };
 
@@ -97,17 +97,17 @@ export class DocumentStorageService {
       }
 
       console.log('✅ Document record saved successfully:', dbData);
-
-      return {
-        success: true,
+      
+      return { 
+        success: true, 
         filePath: fileName // Return file path instead of public URL
       };
 
     } catch (error) {
       console.error('❌ Document storage error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error' 
       };
     }
   }
@@ -123,7 +123,7 @@ export class DocumentStorageService {
         checkInDate: booking.checkInDate,
         checkOutDate: booking.checkOutDate,
         propertyId: booking.property?.id,
-        guestCount: booking.guests?.length ?? 0,
+        guestCount: booking.guests?.length || 0,
         createdAt: booking.createdAt
       });
 
@@ -156,7 +156,7 @@ export class DocumentStorageService {
               const { data: signedUrlData } = await supabase.functions.invoke('storage-sign-url', {
                 body: { bucket: 'guest-documents', path: doc.file_path, expiresIn: 3600 }
               });
-
+              
               if (signedUrlData?.signedUrl) {
                 documentUrl = signedUrlData.signedUrl;
               }
@@ -168,11 +168,11 @@ export class DocumentStorageService {
           if (documentUrl) {
             // Try to get guest name from multiple sources
             let guestName = (doc as any).guests?.full_name;
-
+            
             // If no guest associated, try to get from extracted data
             if (!guestName && doc.extracted_data && typeof doc.extracted_data === 'object') {
               const extractedData = doc.extracted_data as any;
-              guestName = extractedData.fullName ||
+              guestName = extractedData.fullName || 
                          extractedData.full_name ||
                          extractedData.name;
             }
@@ -220,9 +220,9 @@ export class DocumentStorageService {
       // Extract and normalize guest names from booking before calling edge function
       const bookingGuests = (booking as any).guests || [];
       const fromBookingGuests: string[] = [];
-
+      
       console.log('📋 Raw booking guests data:', bookingGuests);
-
+      
       // Extract names from booking guests using multiple formats
       bookingGuests.forEach((guest: any, index: number) => {
         console.log(`📋 Processing guest ${index}:`, guest);
@@ -232,19 +232,19 @@ export class DocumentStorageService {
           console.log(`📋 Extracted booking guest name: "${extractedName}"`);
         }
       });
-
+      
       // Build normalized candidate names from booking guests
       const uniqueNames = Array.from(new Set(
         fromBookingGuests.map(normName).filter(Boolean)
       ));
-
+      
       console.log('📋 Final booking guest names for filtering:', uniqueNames);
 
       // Use the improved edge function to get guest documents scoped to this booking
       try {
         console.log('📋 Calling get-guest-docs with booking_id:', booking.id);
         const { data: guestDocs, error: edgeError } = await supabase.functions.invoke('get-guest-docs', {
-          body: {
+          body: { 
             bookingId: booking.id
           }
         });
@@ -253,19 +253,19 @@ export class DocumentStorageService {
           console.warn('⚠️ Edge function error:', edgeError);
         } else if (guestDocs && Array.isArray(guestDocs)) {
           console.log(`📋 Found ${guestDocs.length} guest submissions via edge function`);
-
+          
           // IMPORTANT: Ne pas filtrer par nom car booking.guests peut être vide
           // La fonction edge get-guest-docs filtre déjà par booking_id
           // Tous les documents retournés sont légitimes pour cette réservation
-          const _shouldFilter = false; // Désactiver le filtrage par nom
-
+          const shouldFilter = false; // Désactiver le filtrage par nom
+          
           let successfulFiles = 0;
           let failedFiles = 0;
-
+          
           // Transform edge function response to UnifiedDocument format
           for (const guestDoc of guestDocs) {
             console.log('📋 Processing guest document:', guestDoc.fullName);
-
+            
             if (guestDoc.files && Array.isArray(guestDoc.files)) {
               for (const file of guestDoc.files) {
                 if (file.url && file.url !== 'URL_GENERATION_FAILED') {
@@ -299,7 +299,7 @@ export class DocumentStorageService {
       return [];
     }
   }
-
+  
   /**
    * Delete all uploaded_documents records for a booking (keeps storage files for safety)
    */
@@ -323,7 +323,7 @@ export class DocumentStorageService {
   /**
    * Remove guest_submissions duplication (cleanup method)
    */
-  static async cleanupDuplicateSubmissions(_booking: Booking): Promise<void> {
+  static async cleanupDuplicateSubmissions(booking: Booking): Promise<void> {
     try {
       // Skip cleanup for now since we're using edge function for secure guest document access
       console.log('🧹 Cleanup skipped - using edge function for secure guest document access');

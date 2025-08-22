@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Building2, Edit, MapPin, Users, Link as LinkIcon, ChevronDown, CheckCircle, ExternalLink, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Building2, Edit, MapPin, Users, FileText, Calendar, Link as LinkIcon, ChevronDown, CheckCircle, ExternalLink, HelpCircle, MessageCircleQuestion } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Property, Booking } from '@/types/booking';
 import { useProperties } from '@/hooks/useProperties';
@@ -17,11 +17,12 @@ import { Dashboard } from './Dashboard';
 import { BookingWizard } from './BookingWizard';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
 import { TestDocumentUpload } from './TestDocumentUpload';
-import { AirbnbSyncManager as _AirbnbSyncManager } from './AirbnbSyncManager';
+import { AirbnbSyncManager } from './AirbnbSyncManager';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { PropertyTutorial } from './PropertyTutorial';
 import { copyToClipboard } from '@/lib/clipboardUtils';
+
 
 
 export const PropertyDetail = () => {
@@ -32,7 +33,7 @@ export const PropertyDetail = () => {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { generatePropertyVerificationUrl, isLoading: isGeneratingLink } = useGuestVerification();
   const { toast } = useToast();
-
+  
   // All state hooks
   const [property, setProperty] = useState<Property | null>(null);
   const [showWizard, setShowWizard] = useState(false);
@@ -47,7 +48,7 @@ export const PropertyDetail = () => {
   // All useCallback hooks MUST be before any early returns
   const loadAirbnbCount = useCallback(async () => {
     if (!property?.id) return;
-
+    
     try {
       const reservations = await AirbnbEdgeFunctionService.getReservations(property.id);
       setAirbnbReservationsCount(reservations.length);
@@ -77,7 +78,7 @@ export const PropertyDetail = () => {
 
   const handleGenerateGuestLink = useCallback(async () => {
     if (!property?.id) return;
-
+    
     const url = await generatePropertyVerificationUrl(property.id);
     if (url) {
       const success = await copyToClipboard(url);
@@ -111,7 +112,7 @@ export const PropertyDetail = () => {
       if (actionsCompleted) {
         setShowRemainingActions(false);
       }
-
+      
       // Synchronisation considérée comme terminée si on a une URL ICS OU des réservations Airbnb
       setAirbnbSyncCompleted(!!property.airbnb_ics_url || airbnbReservationsCount > 0);
     }
@@ -139,12 +140,12 @@ export const PropertyDetail = () => {
   // Load count when property changes and on page focus (after sync)
   useEffect(() => {
     loadAirbnbCount();
-
+    
     // Recharger quand la page reprend le focus (ex: retour depuis sync help)
     const handleFocus = () => {
       loadAirbnbCount();
     };
-
+    
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [loadAirbnbCount]);
@@ -251,13 +252,13 @@ export const PropertyDetail = () => {
             </DropdownMenu>
           </div>
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-
+            
             {/* Property Info Section */}
             <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 pr-12">
               {property.photo_url ? (
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden bg-muted flex-shrink-0">
-                  <img
-                    src={property.photo_url}
+                  <img 
+                    src={property.photo_url} 
                     alt={property.name}
                     className="w-full h-full object-cover"
                   />
@@ -286,7 +287,7 @@ export const PropertyDetail = () => {
                 </div>
               </div>
             </div>
-
+            
             {/* Stats and Actions Section */}
             <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6">
               {/* Compact Stats */}
@@ -304,20 +305,20 @@ export const PropertyDetail = () => {
                   <div className="text-xs text-muted-foreground whitespace-nowrap">Terminé</div>
                 </div>
               </div>
-
+              
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-2 sm:justify-center">
-                <Button
-                  variant="outline"
+                <Button 
+                  variant="outline" 
                   size="sm"
-                  onClick={() => setShowEditProperty(true)}
+                  onClick={() => setShowEditProperty(true)} 
                   className="gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white bg-white"
                   data-tutorial="edit-property"
                 >
                   <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="text-xs sm:text-sm">Modifier le bien</span>
                 </Button>
-                <Button
+                <Button 
                   size="sm"
                   onClick={handleGenerateGuestLink}
                   disabled={isGeneratingLink}
@@ -331,8 +332,8 @@ export const PropertyDetail = () => {
                 {/* Help dropdown inline - single trigger to keep position correct */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
+                    <Button 
+                      variant="ghost" 
                       className="hidden sm:flex gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white bg-white"
                       data-tutorial="tutorial-button"
                     >
@@ -380,13 +381,13 @@ export const PropertyDetail = () => {
               <CardContent className="space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
                   <div className="flex items-center space-x-3">
-                    <Checkbox
-                      id="airbnb-sync"
+                    <Checkbox 
+                      id="airbnb-sync" 
                       checked={airbnbSyncCompleted}
                       onCheckedChange={(checked) => setAirbnbSyncCompleted(!!checked)}
                     />
-                    <label
-                      htmlFor="airbnb-sync"
+                    <label 
+                      htmlFor="airbnb-sync" 
                       className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
                         airbnbSyncCompleted ? 'line-through text-muted-foreground' : ''
                       }`}
@@ -401,13 +402,13 @@ export const PropertyDetail = () => {
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
                   <div className="flex items-center space-x-3">
-                    <Checkbox
-                      id="client-link"
+                    <Checkbox 
+                      id="client-link" 
                       checked={clientLinkShared}
                       onCheckedChange={(checked) => setClientLinkShared(!!checked)}
                     />
-                    <label
-                      htmlFor="client-link"
+                    <label 
+                      htmlFor="client-link" 
                       className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
                         clientLinkShared ? 'line-through text-muted-foreground' : ''
                       }`}
@@ -459,8 +460,8 @@ export const PropertyDetail = () => {
         />
       )}
 
-      <CreatePropertyDialog
-        open={showEditProperty}
+      <CreatePropertyDialog 
+        open={showEditProperty} 
         onOpenChange={setShowEditProperty}
         property={property}
         onSuccess={() => {

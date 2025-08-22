@@ -7,7 +7,7 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
+    port: 3000,
   },
   plugins: [
     react(),
@@ -18,27 +18,5 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
-  },
-  build: {
-    // Optimisations pour Vercel
-    target: 'esnext',
-    minify: 'terser', // Utiliser esbuild par défaut (plus rapide et inclus)
-    sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-select'],
-          utils: ['date-fns', 'clsx', 'tailwind-merge'],
-        },
-      },
-    },
-    // Optimisation des assets
-    assetsInlineLimit: 4096,
-    chunkSizeWarningLimit: 1000,
-  },
-  // Optimisations pour le développement
-  optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom'],
   },
 }));

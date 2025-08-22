@@ -10,8 +10,8 @@ export interface PropertyVerificationToken {
 export interface GuestSubmission {
   id: string;
   token_id: string;
-  booking_data?: Record<string, unknown>;
-  guest_data?: Record<string, unknown>;
+  booking_data?: any;
+  guest_data?: any;
   document_urls: string[];
   signature_data?: string;
   submitted_at?: string;

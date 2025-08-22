@@ -15,7 +15,7 @@ export class OCRService {
       this.worker = await createWorker(['eng', 'fra', 'spa', 'deu', 'nld'], 1, {
         logger: m => console.log('OCR:', m.status, m.progress)
       });
-
+      
       await this.worker.setParameters({
         tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,/-:()[]{}àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ',
         tessedit_pageseg_mode: '6',
@@ -28,14 +28,14 @@ export class OCRService {
   static async extractTextFromImage(imageFile: File): Promise<string> {
     try {
       console.log(`Processing document: ${imageFile.name}`);
-
+      
       const preprocessedImage = await this.preprocessImage(imageFile);
       const worker = await this.initializeWorker();
       const { data: { text, confidence } } = await worker.recognize(preprocessedImage);
-
+      
       console.log(`OCR completed with ${confidence}% confidence`);
       console.log('Raw extracted text:', text);
-
+      
       return text;
     } catch (error) {
       console.error('OCR extraction failed:', error);
@@ -57,16 +57,16 @@ export class OCRService {
       img.onload = () => {
         const targetWidth = Math.min(img.width * 3, 3000);
         const targetHeight = (img.height * targetWidth) / img.width;
-
+        
         canvas.width = targetWidth;
         canvas.height = targetHeight;
-
+        
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-
+        
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const enhanced = this.enhanceImageData(imageData);
         ctx.putImageData(enhanced, 0, 0);
-
+        
         resolve(canvas);
       };
 
@@ -77,19 +77,19 @@ export class OCRService {
 
   private static enhanceImageData(imageData: ImageData): ImageData {
     const data = imageData.data;
-
+    
     for (let i = 0; i < data.length; i += 4) {
       const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
-
+      
       const contrast = 2.0;
       const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
       const enhancedGray = Math.min(255, Math.max(0, factor * (gray - 128) + 128));
-
+      
       data[i] = enhancedGray;
       data[i + 1] = enhancedGray;
       data[i + 2] = enhancedGray;
     }
-
+    
     return imageData;
   }
 
@@ -97,41 +97,41 @@ export class OCRService {
     console.log('Parsing guest information from text...');
     const text = extractedText.toUpperCase();
     const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-
+    
     console.log('Text lines:', lines);
-
+    
     const result: Partial<Guest> = {};
 
     // Enhanced patterns for different ID formats with more comprehensive matching
     const patterns = {
       // Names - Handle various formats including multiple lines and different structures
       surname: [
-        /(?:NOM|SURNAME|ACHTERNAAM|FAMILY\s*NAME|APELLIDO)[/\s:]*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-\s]+?)(?:\n|$|PRÉNOM|GIVEN|VOORNAAM)/i,
-        /(?:^|\n)([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ-]{3,25})(?:\s*$|\n)/gm, // Single capitalized word on its own line
+        /(?:NOM|SURNAME|ACHTERNAAM|FAMILY\s*NAME|APELLIDO)[\/\s:]*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-\s]+?)(?:\n|$|PRÉNOM|GIVEN|VOORNAAM)/i,
+        /(?:^|\n)([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-]{3,25})(?:\s*$|\n)/gm, // Single capitalized word on its own line
         /(?:^|\n)([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-\s]{3,30}?)(?:\s*$|\n)/gm // Multi-word surname
       ],
-
+      
       givenName: [
-        /(?:PRÉNOM|GIVEN\s*NAME|VOORNAAM|PRÉNOMS|FIRST\s*NAME|NOMBRE)[S]*[/\s:]*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-\s]+?)(?:\n|$|SEXE|SEX|M\/M|F\/F|NATIONALITÉ|DATE)/i,
-        /(?:PRÉNOM|GIVEN\s*NAME|VOORNAAM|PRÉNOMS)[S]*[/\s:]*([A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\-\s]+?)(?:\n|DATE|SEXE|SEX|BIRTH)/i,
+        /(?:PRÉNOM|GIVEN\s*NAME|VOORNAAM|PRÉNOMS|FIRST\s*NAME|NOMBRE)[S]*[\/\s:]*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-\s]+?)(?:\n|$|SEXE|SEX|M\/M|F\/F|NATIONALITÉ|DATE)/i,
+        /(?:PRÉNOM|GIVEN\s*NAME|VOORNAAM|PRÉNOMS)[S]*[\/\s:]*([A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\-\s]+?)(?:\n|DATE|SEXE|SEX|BIRTH)/i,
         // For documents where names appear on consecutive lines - more specific
         /(?:^|\n)([A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\-\s]{2,25})(?:\s*$|\n)/gm
       ],
 
       // Date of birth - Enhanced with more formats and separators
       dateOfBirth: [
-        /(?:DATE\s*DE\s*NAISS|DATE\s*OF\s*BIRTH|GEBOREN|BIRTH\s*DATE|GEB|FECHA\s*DE\s*NAC)[A-Z]*[/\s:]*(\d{1,2}[\s./-]\d{1,2}[\s./-]\d{4})/i,
-        /(?:DATE\s*DE\s*NAISS|DATE\s*OF\s*BIRTH|GEBOREN|BIRTH\s*DATE|GEB)[A-Z]*[/\s:]*(\d{1,2}\s*[A-Z]{3}[A-Z]*[\s./-]*\d{4})/i,
-        /(\d{1,2}\s*[A-Z]{3}[A-Z]*[\s./-]*\d{4})/gi, // 26 JUL 2005 format
-        /(\d{1,2}[\s./-]\d{1,2}[\s./-]\d{4})/g, // DD/MM/YYYY or MM/DD/YYYY
-        /(\d{4}[\s./-]\d{1,2}[\s./-]\d{1,2})/g, // YYYY-MM-DD format
-        /(\d{2}[\s./-]\d{2}[\s./-]\d{4})/g // DD-MM-YYYY or MM-DD-YYYY
+        /(?:DATE\s*DE\s*NAISS|DATE\s*OF\s*BIRTH|GEBOREN|BIRTH\s*DATE|GEB|FECHA\s*DE\s*NAC)[A-Z]*[\/\s:]*(\d{1,2}[\s\.\/-]\d{1,2}[\s\.\/-]\d{4})/i,
+        /(?:DATE\s*DE\s*NAISS|DATE\s*OF\s*BIRTH|GEBOREN|BIRTH\s*DATE|GEB)[A-Z]*[\/\s:]*(\d{1,2}\s*[A-Z]{3}[A-Z]*[\s\.\/-]*\d{4})/i,
+        /(\d{1,2}\s*[A-Z]{3}[A-Z]*[\s\.\/-]*\d{4})/gi, // 26 JUL 2005 format
+        /(\d{1,2}[\s\.\/-]\d{1,2}[\s\.\/-]\d{4})/g, // DD/MM/YYYY or MM/DD/YYYY
+        /(\d{4}[\s\.\/-]\d{1,2}[\s\.\/-]\d{1,2})/g, // YYYY-MM-DD format
+        /(\d{2}[\s\.\/-]\d{2}[\s\.\/-]\d{4})/g // DD-MM-YYYY or MM-DD-YYYY
       ],
 
       // Document number - More comprehensive patterns
       documentNumber: [
-        /(?:N°\s*DU\s*DOCUMENT|DOCUMENT\s*NO|DOCUMENTNR|DOC\s*NO|NUMERO)[/\s:]*([A-Z0-9]{6,15})/i,
-        /(?:ID\s*NO|IDENTITY\s*NO|AUSWEIS)[/\s:]*([A-Z0-9]{6,15})/i,
+        /(?:N°\s*DU\s*DOCUMENT|DOCUMENT\s*NO|DOCUMENTNR|DOC\s*NO|NUMERO)[\/\s:]*([A-Z0-9]{6,15})/i,
+        /(?:ID\s*NO|IDENTITY\s*NO|AUSWEIS)[\/\s:]*([A-Z0-9]{6,15})/i,
         /([A-Z]{2,4}[0-9]{2}[A-Z0-9]{3,8})/g, // Pattern like FMTB4LY80, IT7R75H33
         /([A-Z]{1,3}[0-9]{6,12}[A-Z]*)/g, // Pattern with letters + numbers
         /([0-9A-Z]{8,15})/g, // Generic alphanumeric patterns
@@ -140,7 +140,7 @@ export class OCRService {
 
       // Nationality - Much more comprehensive patterns
       nationality: [
-        /(?:NATIONALITÉ|NATIONALITY|NAT|STAATSANGEHÖRIGKEIT)[/\s:]*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ]{2,20})/i,
+        /(?:NATIONALITÉ|NATIONALITY|NAT|STAATSANGEHÖRIGKEIT)[\/\s:]*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ]{2,20})/i,
         /(?:FRANÇAIS|FRANÇAISE|FRENCH|FRA|FRANCE)/gi,
         /(?:NEDERLAND|NETHERLANDS|DUTCH|NLD|NÉERLANDAIS|NÉERLANDAISE)/gi,
         /(?:GERMAN|DEUTSCH|DEU|GERMANY|ALLEMAND|ALLEMANDE)/gi,
@@ -156,7 +156,7 @@ export class OCRService {
 
       // Place of birth
       placeOfBirth: [
-        /(?:LIEU\s*DE\s*NAISSANCE|PLACE\s*OF\s*BIRTH|GEBOORTEPLAATS|BIRTH\s*PLACE|LUGAR\s*DE\s*NAC)[A-Z]*[/\s:]*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-\s,]+?)(?:\n|$)/i
+        /(?:LIEU\s*DE\s*NAISSANCE|PLACE\s*OF\s*BIRTH|GEBOORTEPLAATS|BIRTH\s*PLACE|LUGAR\s*DE\s*NAC)[A-Z]*[\/\s:]*([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-\s,]+?)(?:\n|$)/i
       ]
     };
 
@@ -166,7 +166,7 @@ export class OCRService {
     // Extract surname
     for (const pattern of patterns.surname) {
       const match = text.match(pattern);
-      if (match?.[1]?.trim().length > 1) {
+      if (match && match[1] && match[1].trim().length > 1) {
         surname = match[1].trim();
         console.log('Found surname:', surname);
         break;
@@ -176,7 +176,7 @@ export class OCRService {
     // Extract given name
     for (const pattern of patterns.givenName) {
       const match = text.match(pattern);
-      if (match?.[1]?.trim().length > 1) {
+      if (match && match[1] && match[1].trim().length > 1) {
         givenName = match[1].trim();
         console.log('Found given name:', givenName);
         break;
@@ -186,31 +186,31 @@ export class OCRService {
     // Try to extract names from specific lines for various ID formats
     if (!surname || !givenName) {
       console.log('Attempting to extract names from consecutive lines...');
-
+      
       // Strategy 1: Look for surname followed by given name
       for (let i = 0; i < lines.length - 1; i++) {
         const line = lines[i].trim();
         const nextLine = lines[i + 1].trim();
-
+        
         // Check if current line looks like a surname (all caps, reasonable length)
-        if (line.match(/^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ-]{3,25}$/) &&
+        if (line.match(/^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-]{3,25}$/) && 
             !line.match(/^(CARTE|IDENTITY|RÉPUBLIQUE|FRANÇAISE|NEDERLANDS|PASSPORT|ID|CARD|DOCUMENT|NATIONAL|FRANCE|NEDERLAND)$/) &&
-            nextLine?.match(/^[A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ-\s]{2,30}$/)) {
+            nextLine && nextLine.match(/^[A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\-\s]{2,30}$/)) {
           surname = line;
           givenName = nextLine;
           console.log('Found names from consecutive lines - Surname:', surname, 'Given:', givenName);
           break;
         }
       }
-
+      
       // Strategy 2: Try reverse order (given name first, then surname)
       if (!surname || !givenName) {
         for (let i = 0; i < lines.length - 1; i++) {
           const line = lines[i].trim();
           const nextLine = lines[i + 1].trim();
-
-          if (line.match(/^[A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ-\s]{2,30}$/) &&
-              nextLine?.match(/^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ-]{3,25}$/) &&
+          
+          if (line.match(/^[A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\-\s]{2,30}$/) &&
+              nextLine.match(/^[A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-]{3,25}$/) &&
               !nextLine.match(/^(CARTE|IDENTITY|RÉPUBLIQUE|FRANÇAISE|NEDERLANDS|PASSPORT|ID|CARD|DOCUMENT|NATIONAL|FRANCE|NEDERLAND)$/)) {
             givenName = line;
             surname = nextLine;
@@ -219,21 +219,21 @@ export class OCRService {
           }
         }
       }
-
+      
       // Strategy 3: Look for names on the same line separated by space
       if (!surname || !givenName) {
         for (const line of lines) {
           // Pattern: SURNAME Given Names
-          const nameMatch1 = line.match(/^([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ-]+)\s+([A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ-\s]+)$/);
+          const nameMatch1 = line.match(/^([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-]+)\s+([A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\-\s]+)$/);
           if (nameMatch1 && !surname && !givenName) {
             surname = nameMatch1[1];
             givenName = nameMatch1[2];
             console.log('Found names on same line (SURNAME Given) - Surname:', surname, 'Given:', givenName);
             break;
           }
-
+          
           // Pattern: Given SURNAME (less common but possible)
-          const nameMatch2 = line.match(/^([A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ-]+)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ-]+)$/);
+          const nameMatch2 = line.match(/^([A-Za-zàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ\-]+)\s+([A-ZÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞŸ\-]+)$/);
           if (nameMatch2 && !surname && !givenName && nameMatch2[2].length > 2) {
             givenName = nameMatch2[1];
             surname = nameMatch2[2];
@@ -256,7 +256,7 @@ export class OCRService {
     // Extract date of birth
     for (const pattern of patterns.dateOfBirth) {
       const match = text.match(pattern);
-      if (match?.[1]) {
+      if (match && match[1]) {
         result.dateOfBirth = this.standardizeDate(match[1].trim());
         console.log('Found date of birth:', result.dateOfBirth);
         break;
@@ -267,9 +267,9 @@ export class OCRService {
     for (const patternGroup of patterns.documentNumber) {
       const matches = text.match(patternGroup);
       if (matches) {
-        const validNumbers = matches.filter(num =>
-          !num.match(/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/) &&
-          num.length >= 6 &&
+        const validNumbers = matches.filter(num => 
+          !num.match(/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/) && 
+          num.length >= 6 && 
           num.length <= 15
         );
         if (validNumbers.length > 0) {
@@ -285,13 +285,13 @@ export class OCRService {
       const matches = text.match(pattern);
       if (matches) {
         // For global patterns, filter for valid country codes/names
-        const validMatches = matches.filter(match =>
-          match.length >= 2 &&
+        const validMatches = matches.filter(match => 
+          match.length >= 2 && 
           match.length <= 15 &&
           !match.match(/^\d+$/) && // Not just numbers
           !match.match(/^(ID|CARD|DOCUMENT|PASS|SEX|DATE)$/) // Not common document words
         );
-
+        
         if (validMatches.length > 0) {
           result.nationality = this.standardizeNationality(validMatches[0].trim());
           console.log('Found nationality:', result.nationality);
@@ -299,7 +299,7 @@ export class OCRService {
         }
       }
     }
-
+    
     // If no nationality found, try to infer from document patterns or text
     if (!result.nationality) {
       if (text.includes('FRANÇAIS') || text.includes('FRANÇAISE') || text.includes('FRANCE')) {
@@ -311,7 +311,7 @@ export class OCRService {
       } else if (text.includes('ITALIAN') || text.includes('ITALIANO') || text.includes('ITA')) {
         result.nationality = 'ITALIEN';
       }
-
+      
       if (result.nationality) {
         console.log('Inferred nationality from document text:', result.nationality);
       }
@@ -320,7 +320,7 @@ export class OCRService {
     // Extract place of birth
     for (const pattern of patterns.placeOfBirth) {
       const match = text.match(pattern);
-      if (match?.[1]) {
+      if (match && match[1]) {
         result.placeOfBirth = match[1].trim();
         console.log('Found place of birth:', result.placeOfBirth);
         break;
@@ -342,7 +342,7 @@ export class OCRService {
 
   private static standardizeDate(dateString: string): string {
     const cleaned = dateString.replace(/\s+/g, ' ').trim();
-
+    
     // Handle "DD MMM YYYY" format (e.g., "26 JUL 2005")
     const monthNames: { [key: string]: string } = {
       'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
@@ -359,7 +359,7 @@ export class OCRService {
       const monthStr = monthMatch[2].toUpperCase();
       const year = monthMatch[3];
       const month = monthNames[monthStr] || monthNames[monthStr.substring(0, 3)];
-
+      
       if (month) {
         return `${year}-${month}-${day}`;
       }
@@ -367,15 +367,15 @@ export class OCRService {
 
     // Handle standard formats
     const formats = [
-      /(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/, // DD/MM/YYYY
-      /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/, // YYYY/MM/DD
+      /(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})/, // DD/MM/YYYY
+      /(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/, // YYYY/MM/DD
     ];
 
     for (const format of formats) {
       const match = cleaned.match(format);
       if (match) {
         const [, first, second, third] = match;
-
+        
         if (third.length === 4) {
           const day = first.padStart(2, '0');
           const month = second.padStart(2, '0');

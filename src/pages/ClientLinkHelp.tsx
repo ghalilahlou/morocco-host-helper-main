@@ -33,7 +33,7 @@ export const ClientLinkHelp = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <p>
-              Le lien de vérification permet à vos invités de remplir leurs informations personnelles
+              Le lien de vérification permet à vos invités de remplir leurs informations personnelles 
               et de télécharger leurs documents d'identité avant leur arrivée.
             </p>
             <p>
@@ -73,7 +73,7 @@ export const ClientLinkHelp = () => {
             <p><strong>Par SMS :</strong></p>
             <div className="bg-muted p-4 rounded-lg">
               <p className="text-sm">
-                "Bonjour, merci de remplir vos infos pour votre séjour : [LIEN]
+                "Bonjour, merci de remplir vos infos pour votre séjour : [LIEN] 
                 Merci !"
               </p>
             </div>

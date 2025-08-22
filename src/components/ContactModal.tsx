@@ -76,7 +76,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
             <div className="grid md:grid-cols-2 gap-4">
               <div className="flex items-center space-x-2">
                 <Mail className="w-4 h-4 text-primary" />
-                <span className="text-sm">benmouaz.pro@gmail.com</span>
+                <span className="text-sm">hello@checky.ma</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Phone className="w-4 h-4 text-primary" />
@@ -92,7 +92,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
                 <Label htmlFor="name">Nom complet *</Label>
                 <Input id="name" type="text" value={formData.name} onChange={e => handleInputChange('name', e.target.value)} required placeholder="Votre nom" />
               </div>
-
+              
               <div className="space-y-2">
                 <Label htmlFor="email">Email *</Label>
                 <Input id="email" type="email" value={formData.email} onChange={e => handleInputChange('email', e.target.value)} required placeholder="votre@email.com" />
@@ -125,7 +125,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
                 Annuler
               </Button>
-
+              
               <Button type="submit" disabled={isSubmitting || !formData.name || !formData.email || !formData.message} className="flex-1">
                 {isSubmitting ? "Envoi en cours..." : <span className="flex items-center space-x-2">
                     <Send className="w-4 h-4" />

@@ -99,7 +99,7 @@ export const CreatePropertyDialog = ({
     const country = watch('country');
     const property_type = watch('property_type');
     const max_occupancy = watch('max_occupancy');
-
+    
     return !!(name && address && postal_code && city && country && property_type && max_occupancy);
   };
 
@@ -109,15 +109,15 @@ export const CreatePropertyDialog = ({
     const landlord_address = watch('landlord_address');
     const landlord_phone = watch('landlord_phone');
     const landlord_email = watch('landlord_email');
-
+    
     let isValid = !!(landlord_status && landlord_name && landlord_address && landlord_phone && landlord_email);
-
+    
     // If status is "entreprise", company name is also required
     if (landlord_status === 'entreprise') {
       const landlord_company = watch('landlord_company');
       isValid = isValid && !!landlord_company;
     }
-
+    
     return isValid;
   };
 
@@ -166,11 +166,11 @@ export const CreatePropertyDialog = ({
     }
   }, [property]);
   const onSubmit = async (data: PropertyFormData) => {
-
+    
     setIsSubmitting(true);
     try {
       const fullAddress = [data.address, data.postal_code, data.city, data.country].filter(Boolean).join(', ');
-
+      
       const propertyData = {
         name: data.name,
         address: fullAddress,
@@ -220,7 +220,7 @@ export const CreatePropertyDialog = ({
     updated[index] = value;
     setHouseRules(updated);
   };
-
+  
   // Signature canvas logic
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -232,10 +232,10 @@ export const CreatePropertyDialog = ({
     // Setup canvas for better quality
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-
+    
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
-
+    
     ctx.scale(dpr, dpr);
     canvas.style.width = rect.width + 'px';
     canvas.style.height = rect.height + 'px';
@@ -253,7 +253,7 @@ export const CreatePropertyDialog = ({
       isDrawing = true;
       const rect = canvas.getBoundingClientRect();
       let x, y;
-
+      
       if (e instanceof MouseEvent) {
         x = e.clientX - rect.left;
         y = e.clientY - rect.top;
@@ -269,10 +269,10 @@ export const CreatePropertyDialog = ({
 
     const draw = (e: MouseEvent | TouchEvent) => {
       if (!isDrawing) return;
-
+      
       const rect = canvas.getBoundingClientRect();
       let x, y;
-
+      
       if (e instanceof MouseEvent) {
         x = e.clientX - rect.left;
         y = e.clientY - rect.top;
@@ -316,35 +316,35 @@ export const CreatePropertyDialog = ({
   const clearSignature = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
+    
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
+    
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setLandlordSignature(null);
   };
-
+  
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
+    
     // Check file type
     if (!file.type.startsWith('image/')) {
       alert('Veuillez sélectionner un fichier image');
       return;
     }
-
+    
     // Check file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       alert('Le fichier est trop volumineux. Taille maximum: 5MB');
       return;
     }
-
+    
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
       setLandlordSignature(result);
-
+      
     };
     reader.readAsDataURL(file);
   };
@@ -352,7 +352,7 @@ export const CreatePropertyDialog = ({
   const handlePropertyPhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
+    
     const photoUrl = await uploadPhoto(file);
     if (photoUrl) {
       setPropertyPhoto(photoUrl);
@@ -367,7 +367,7 @@ export const CreatePropertyDialog = ({
       }
     }
   };
-
+  
   const propertyTypes = [{
     value: 'apartment',
     label: 'Appartement'
@@ -388,7 +388,7 @@ export const CreatePropertyDialog = ({
               {property ? 'Modifier le bien' : 'Ajouter un bien'}
             </DialogTitle>
         </DialogHeader>
-
+        
         <form onSubmit={handleSubmit(onSubmit)}>
           <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
             <div className="w-full overflow-x-auto">
@@ -399,7 +399,7 @@ export const CreatePropertyDialog = ({
                 <TabsTrigger value="preview" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-4">4. Aperçu</TabsTrigger>
               </TabsList>
             </div>
-
+            
             <TabsContent value="basic" className="space-y-4 mt-6">
               <Card>
                 <CardHeader>
@@ -500,7 +500,7 @@ export const CreatePropertyDialog = ({
                             id="property-photo-upload"
                             disabled={uploading}
                           />
-                          <Button
+                          <Button 
                             type="button"
                             onClick={() => document.getElementById('property-photo-upload')?.click()}
                             variant="outline"
@@ -519,9 +519,9 @@ export const CreatePropertyDialog = ({
                       <div className="border rounded-lg p-4 bg-muted/5">
                         <p className="text-sm text-muted-foreground mb-3">Photo actuelle:</p>
                         <div className="relative">
-                          <img
-                            src={propertyPhoto}
-                            alt="Property"
+                          <img 
+                            src={propertyPhoto} 
+                            alt="Property" 
                             className="w-full h-48 object-cover rounded-lg border"
                           />
                           <Button
@@ -545,7 +545,7 @@ export const CreatePropertyDialog = ({
                               id="property-photo-change"
                               disabled={uploading}
                             />
-                            <Button
+                            <Button 
                               type="button"
                               onClick={() => document.getElementById('property-photo-change')?.click()}
                               variant="outline"
@@ -574,10 +574,10 @@ export const CreatePropertyDialog = ({
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="landlord_status">Statut *</Label>
-                    <Controller
-                      name="landlord_status"
-                      control={control}
-                      rules={{ required: 'Le statut est obligatoire' }}
+                    <Controller 
+                      name="landlord_status" 
+                      control={control} 
+                      rules={{ required: 'Le statut est obligatoire' }} 
                       render={({ field }) => (
                         <Select value={field.value} onValueChange={field.onChange}>
                           <SelectTrigger className="w-full">
@@ -654,7 +654,7 @@ export const CreatePropertyDialog = ({
                     <div className="text-sm text-muted-foreground">
                       Personnalisez les règles qui apparaîtront dans vos contrats de location.
                     </div>
-
+                    
                     <div className="space-y-3">
                       {houseRules.map((rule, index) => <div key={index} className="flex gap-2">
                           <Input value={rule} onChange={e => updateHouseRule(index, e.target.value)} placeholder="Saisissez une règle du logement…" className="flex-1" />
@@ -666,7 +666,7 @@ export const CreatePropertyDialog = ({
                   </div>
                 </CardContent>
               </Card>
-
+              
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -678,7 +678,7 @@ export const CreatePropertyDialog = ({
                 <CardContent className="space-y-4">
                   {!isSignatureModeActive && !landlordSignature && (
                     <div className="space-y-3">
-                      <Button
+                      <Button 
                         type="button"
                         onClick={() => setIsSignatureModeActive(true)}
                         variant="outline"
@@ -687,7 +687,7 @@ export const CreatePropertyDialog = ({
                         <Pen className="w-4 h-4 mr-2" />
                         Signer à la main
                       </Button>
-
+                      
                       <div className="relative">
                         <input
                           type="file"
@@ -696,7 +696,7 @@ export const CreatePropertyDialog = ({
                           className="hidden"
                           id="signature-upload"
                         />
-                        <Button
+                        <Button 
                           type="button"
                           onClick={() => document.getElementById('signature-upload')?.click()}
                           variant="outline"
@@ -706,13 +706,13 @@ export const CreatePropertyDialog = ({
                           Uploader signature/cachet
                         </Button>
                       </div>
-
+                      
                       <p className="text-xs text-muted-foreground text-center">
                         Vous pouvez signer directement ou uploader une image de votre signature avec cachet d'entreprise
                       </p>
                     </div>
                   )}
-
+                  
                   {isSignatureModeActive && (
                     <div className="space-y-4">
                       <div className="border-2 border-dashed border-muted-foreground/20 rounded-lg p-4 bg-muted/5">
@@ -726,9 +726,9 @@ export const CreatePropertyDialog = ({
                           className="w-full border rounded bg-background cursor-crosshair"
                         />
                       </div>
-
+                      
                       <div className="flex gap-2">
-                        <Button
+                        <Button 
                           type="button"
                           onClick={clearSignature}
                           variant="outline"
@@ -736,7 +736,7 @@ export const CreatePropertyDialog = ({
                         >
                           Effacer
                         </Button>
-                        <Button
+                        <Button 
                           type="button"
                           onClick={() => setIsSignatureModeActive(false)}
                           variant="outline"
@@ -745,7 +745,7 @@ export const CreatePropertyDialog = ({
                           Terminer
                         </Button>
                       </div>
-
+                      
                       {landlordSignature && (
                         <div className="text-center">
                           <p className="text-sm text-green-600 font-medium">✓ Signature ajoutée</p>
@@ -753,13 +753,13 @@ export const CreatePropertyDialog = ({
                       )}
                     </div>
                   )}
-
+                  
                   {landlordSignature && !isSignatureModeActive && (
                     <div className="border rounded-lg p-4 bg-muted/5">
                       <p className="text-sm text-muted-foreground mb-2">Signature actuelle:</p>
                       <img src={landlordSignature} alt="Signature" className="border rounded max-h-20 max-w-full object-contain" />
                       <div className="flex gap-2 mt-3">
-                        <Button
+                        <Button 
                           type="button"
                           onClick={() => setIsSignatureModeActive(true)}
                           variant="outline"
@@ -777,7 +777,7 @@ export const CreatePropertyDialog = ({
                             className="hidden"
                             id="signature-upload-modify"
                           />
-                          <Button
+                          <Button 
                             type="button"
                             onClick={() => document.getElementById('signature-upload-modify')?.click()}
                             variant="outline"
@@ -796,13 +796,13 @@ export const CreatePropertyDialog = ({
             </TabsContent>
 
             <TabsContent value="preview" className="space-y-4 mt-6">
-              <DocumentPreview
-                property={property || {} as Property}
+              <DocumentPreview 
+                property={property || {} as Property} 
                 formData={{
                   ...watch(),
                   house_rules: houseRules,
                   landlord_signature: landlordSignature || undefined,
-                }}
+                }} 
               />
             </TabsContent>
           </Tabs>
@@ -812,8 +812,8 @@ export const CreatePropertyDialog = ({
               Annuler
             </Button>
             {currentTab === 'basic' && (
-              <Button
-                type="button"
+              <Button 
+                type="button" 
                 onClick={() => {
                   if (validateBasicTab()) {
                     setCurrentTab('landlord');
@@ -828,15 +828,15 @@ export const CreatePropertyDialog = ({
             )}
             {currentTab === 'landlord' && (
               <>
-                <Button
-                  type="button"
+                <Button 
+                  type="button" 
                   onClick={() => setCurrentTab('basic')}
                   variant="outline"
                 >
                   Précédent
                 </Button>
-                <Button
-                  type="button"
+                <Button 
+                  type="button" 
                   onClick={() => {
                     if (validateLandlordTab()) {
                       setCurrentTab('contract');
@@ -852,15 +852,15 @@ export const CreatePropertyDialog = ({
             )}
             {currentTab === 'contract' && (
               <>
-                <Button
-                  type="button"
+                <Button 
+                  type="button" 
                   onClick={() => setCurrentTab('landlord')}
                   variant="outline"
                 >
                   Précédent
                 </Button>
-                <Button
-                  type="button"
+                <Button 
+                  type="button" 
                   onClick={() => {
                     if (validateContractTab()) {
                       setCurrentTab('preview');
@@ -876,15 +876,15 @@ export const CreatePropertyDialog = ({
             )}
             {currentTab === 'preview' && (
               <>
-                <Button
-                  type="button"
+                <Button 
+                  type="button" 
                   onClick={() => setCurrentTab('contract')}
                   variant="outline"
                 >
                   Précédent
                 </Button>
-                <Button
-                  type="submit"
+                <Button 
+                  type="submit" 
                   disabled={isSubmitting}
                   onClick={() => {
                     // Ensure form validation and submission

@@ -109,7 +109,7 @@ export const DocumentsViewer = ({
       }
 
       // Fetch all generated police forms for this booking (folder = booking.id)
-      const policeForms: {
+      let policeForms: {
         name: string;
         url: string;
       }[] = [];
@@ -224,7 +224,7 @@ export const DocumentsViewer = ({
             <Button variant="outline" onClick={onClose}>Fermer</Button>
           </div>
         </CardHeader>
-
+        
         <CardContent className="space-y-6">
           {/* Guest Documents (IDs) */}
           {(documentType === 'all' || documentType === 'id-documents') && <div>
@@ -241,7 +241,7 @@ export const DocumentsViewer = ({
                             <h4 className="font-semibold text-base">
                               {doc.guestName || `Guest ${index + 1}`}
                             </h4>
-
+                            
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -317,7 +317,7 @@ export const DocumentsViewer = ({
                           <Shield className="h-4 w-4 text-primary flex-shrink-0 mt-1" />
                           <div className="flex-1 min-w-0">
                             <h4 className="font-semibold text-sm leading-tight">
-                              {documents.guestDocuments[index]
+                              {documents.guestDocuments[index] 
                                 ? `Fiche de ${documents.guestDocuments[index].guestName?.split(' ')[0] || `Guest ${index + 1}`}`
                                 : `Fiche de police ${index + 1}`}
                             </h4>

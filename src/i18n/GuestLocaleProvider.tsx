@@ -20,17 +20,13 @@ export const GuestLocaleProvider: React.FC<React.PropsWithChildren> = ({ childre
   useEffect(() => {
     try {
       localStorage.setItem('guest_locale', locale);
-    } catch {
-      // Ignore localStorage errors (e.g., in private browsing)
-    }
+    } catch {}
     // Update ?lang in URL without reloading
     try {
       const url = new URL(window.location.href);
       url.searchParams.set('lang', locale);
       window.history.replaceState({}, '', url.toString());
-    } catch {
-      // Ignore URL manipulation errors
-    }
+    } catch {}
   }, [locale]);
 
   const value = useMemo<GuestLocaleContextValue>(() => ({

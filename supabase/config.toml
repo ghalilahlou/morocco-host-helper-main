@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.list-guest-docs]
 verify_jwt = false
+
+[functions.save-contract-signature]
+verify_jwt = false

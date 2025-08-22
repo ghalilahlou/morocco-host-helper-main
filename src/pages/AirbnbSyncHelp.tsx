@@ -1,5 +1,5 @@
 import { ArrowLeft, Link as LinkIcon, Pencil, Trash2 } from 'lucide-react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,7 +31,7 @@ export const AirbnbSyncHelp = () => {
         .eq('id', propertyId)
         .single();
       if (!error) {
-        const url = data?.airbnb_ics_url ?? null;
+        const url = data?.airbnb_ics_url || null;
         setCurrentIcsUrl(url);
         if (url) setAirbnbUrl(url);
       }
@@ -67,28 +67,28 @@ export const AirbnbSyncHelp = () => {
       setCurrentIcsUrl(airbnbUrl.trim());
       setIsEditing(false);
       toast.success("URL du calendrier sauvegardée");
-
+      
       // 2) Trigger synchronization using the edge function
       toast.info('Synchronisation des réservations en cours...');
       const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, airbnbUrl.trim());
-
+      
       if (!result.success) {
-        throw new Error(result.error ?? 'Erreur lors de la synchronisation');
+        throw new Error(result.error || 'Erreur lors de la synchronisation');
       }
-
+      
       // Silent success on mobile, only show on desktop
       if (window.innerWidth >= 768) {
-        toast.success(`Synchronisation réussie ! ${result.count ?? 0} réservations importées`);
+        toast.success(`Synchronisation réussie ! ${result.count || 0} réservations importées`);
       }
-
+      
       // 3) Redirect to property calendar
       setTimeout(() => {
         navigate(`/dashboard/property/${propertyId}`);
       }, 1000);
-
+      
     } catch (error: any) {
       console.error('Sync error:', error);
-              toast.error(error.message ?? 'Erreur lors de la synchronisation');
+      toast.error(error.message || 'Erreur lors de la synchronisation');
     } finally {
       setIsLoading(false);
     }
@@ -118,9 +118,9 @@ export const AirbnbSyncHelp = () => {
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-6 min-w-0 overflow-x-hidden">
       <div className="flex items-center gap-4 mb-6">
-        <Button
-          variant="ghost"
-          size="sm"
+        <Button 
+          variant="ghost" 
+          size="sm" 
           className="gap-2"
           onClick={() => {
             console.log('Retour button clicked, navigating to:', `/dashboard/property/${propertyId}`);
@@ -187,7 +187,7 @@ export const AirbnbSyncHelp = () => {
                 </div>
               )}
             </div>
-
+            
             <div className="space-y-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <span className="text-primary">ℹ️</span>

@@ -15,24 +15,24 @@ interface AirbnbSyncManagerProps {
   onUrlUpdated?: (newUrl: string) => void;
 }
 
-export const AirbnbSyncManager = ({
-  propertyId,
-  currentIcsUrl = '',
-  onUrlUpdated
+export const AirbnbSyncManager = ({ 
+  propertyId, 
+  currentIcsUrl = '', 
+  onUrlUpdated 
 }: AirbnbSyncManagerProps) => {
-
-
+  
+  
   const [icsUrl, setIcsUrl] = useState(currentIcsUrl);
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [canEdit, setCanEdit] = useState(!currentIcsUrl); // Allow editing if no URL set initially
   const { toast } = useToast();
-
-  const {
-    syncStatus,
-    isLoading,
-    isSyncing,
-    performSync
+  
+  const { 
+    syncStatus, 
+    isLoading, 
+    isSyncing, 
+    performSync 
   } = useAirbnbSync(propertyId);
 
   const handleSave = async () => {
@@ -49,7 +49,7 @@ export const AirbnbSyncManager = ({
     const airbnbPattern = /airbnb\.[a-z]{2,4}/i; // airbnb.com, airbnb.fr, airbnb.ca, etc.
     const isAirbnbUrl = airbnbPattern.test(icsUrl);
     const isIcalUrl = icsUrl.includes('ical') || icsUrl.includes('.ics');
-
+    
     if (!isAirbnbUrl || !isIcalUrl) {
       toast({
         title: "URL invalide",
@@ -73,7 +73,7 @@ export const AirbnbSyncManager = ({
       setIsSuccess(true);
       setCanEdit(false); // Hide edit mode after successful save
       onUrlUpdated?.(icsUrl.trim());
-
+      
       toast({
         title: "Configuration sauvegardée",
         description: "L'URL du calendrier Airbnb a été mise à jour avec succès."
@@ -101,10 +101,10 @@ export const AirbnbSyncManager = ({
       });
       return;
     }
-
+    
     try {
       const result = await performSync(currentIcsUrl);
-
+      
       if (result.success) {
         // Silent success on mobile, only show on desktop
         if (window.innerWidth >= 768) {
@@ -171,7 +171,7 @@ export const AirbnbSyncManager = ({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-
+                  
                   setCanEdit(true);
                 }}
                 className="h-auto p-1 text-blue-600 hover:text-blue-800"
@@ -180,7 +180,7 @@ export const AirbnbSyncManager = ({
               </Button>
             )}
           </div>
-
+          
           {/* Show current URL as read-only if not editing */}
           {currentIcsUrl && !canEdit ? (
             <div className="space-y-2">
@@ -211,7 +211,7 @@ export const AirbnbSyncManager = ({
                   disabled={isSaving}
                 />
               </div>
-              <Button
+              <Button 
                 onClick={handleSave}
                 disabled={isSaving || !icsUrl.trim()}
                 variant={isSuccess ? "default" : "outline"}
@@ -250,7 +250,7 @@ export const AirbnbSyncManager = ({
               )}
             </div>
           )}
-
+          
           {/* Status and Sync button */}
           {currentIcsUrl && (
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
@@ -263,7 +263,7 @@ export const AirbnbSyncManager = ({
                   </span>
                 )}
               </div>
-              <Button
+              <Button 
                 onClick={handleSync}
                 disabled={isSyncing || !currentIcsUrl}
                 size="sm"
@@ -284,7 +284,7 @@ export const AirbnbSyncManager = ({
               </Button>
             </div>
           )}
-
+          
           {syncStatus?.last_sync_at && (
             <div className="text-xs text-muted-foreground">
               Dernière synchronisation: {new Date(syncStatus.last_sync_at).toLocaleString('fr-FR')}

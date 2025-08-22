@@ -1,5 +1,6 @@
 import React from 'react';
 import { useGuestLocale } from '@/i18n/GuestLocaleProvider';
+import { Button } from '@/components/ui/button';
 
 export const LanguageSwitcher: React.FC = () => {
   const { locale, setLocale } = useGuestLocale();

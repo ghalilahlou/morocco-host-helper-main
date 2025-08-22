@@ -4,7 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import authImage from '@/assets/hero-laptop.jpg';
 export default function Auth() {
@@ -18,7 +20,11 @@ export default function Auth() {
   useEffect(() => {
     // Check if user is already logged in
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: {
+          session
+        }
+      } = await supabase.auth.getSession();
       if (session) {
         navigate('/dashboard/');
       }
@@ -38,7 +44,10 @@ export default function Auth() {
     setIsLoading(true);
     try {
       // Create account via Supabase Admin API to bypass email confirmation
-      const { data, error } = await supabase.auth.signUp({
+      const {
+        data,
+        error
+      } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -54,20 +63,20 @@ export default function Auth() {
 
       // If account was created but requires confirmation, try direct sign-in
       if (data.user && !data.session) {
-              const {
-        data: _signInData,
-        error: signInError
-      } = await supabase.auth.signInWithPassword({
+        const {
+          data: signInData,
+          error: signInError
+        } = await supabase.auth.signInWithPassword({
           email,
           password
         });
-        if (signInError?.message.includes('email_not_confirmed')) {
+        if (signInError && signInError.message.includes('email_not_confirmed')) {
           toast({
             title: "Compte créé avec succès",
             description: "Confirmez la création de votre compte en cliquant sur le lien de l'email que vous venez de recevoir",
             variant: "success"
           });
-        } else if (signInError?.message.includes('Email not confirmed')) {
+        } else if (signInError && signInError.message.includes('Email not confirmed')) {
           toast({
             title: "Compte créé avec succès",
             description: "Confirmez la création de votre compte en cliquant sur le lien de l'email que vous venez de recevoir",
@@ -82,7 +91,7 @@ export default function Auth() {
           });
           navigate('/dashboard/');
         }
-              } else if (data?.session) {
+      } else if (data.session) {
         toast({
           title: "Success!",
           description: "Account created and signed in successfully!"

@@ -1,51 +1,33 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Booking } from '@/types/booking';
 import { useAuth } from '@/hooks/useAuth';
 import { enrichBookingsWithGuestSubmissions, EnrichedBooking } from '@/services/guestSubmissionService';
-import { debug, info, warn, error } from '@/lib/logger';
-import { handleError, DatabaseError, NetworkError } from '@/lib/errorHandler';
-import type { RealtimeChannel } from '@supabase/supabase-js';
-
-interface UseBookingsState {
-  bookings: EnrichedBooking[];
-  isLoading: boolean;
-  error: string | null;
-  lastUpdated: Date | null;
-}
 
 export const useBookings = () => {
-  const [state, setState] = useState<UseBookingsState>({
-    bookings: [],
-    isLoading: true,
-    error: null,
-    lastUpdated: null,
-  });
-
+  const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
-  const realtimeChannels = useRef<RealtimeChannel[]>([]);
-  const abortController = useRef<AbortController | null>(null);
 
-  // Cleanup function for realtime subscriptions
-  const cleanupRealtimeSubscriptions = useCallback(() => {
-    if (realtimeChannels.current.length > 0) {
-      debug('Cleaning up realtime subscriptions', { count: realtimeChannels.current.length });
-      realtimeChannels.current.forEach(channel => {
-        supabase.removeChannel(channel);
-      });
-      realtimeChannels.current = [];
-    }
+  useEffect(() => {
+    loadBookings();
   }, []);
 
-  // Setup realtime subscriptions
-  const setupRealtimeSubscriptions = useCallback(() => {
+  // Reload bookings when user changes
+  useEffect(() => {
+    if (user) {
+      loadBookings();
+    }
+  }, [user]);
+
+  // Set up real-time subscriptions for automatic updates
+  useEffect(() => {
     if (!user) return;
 
-    debug('Setting up realtime subscriptions for bookings and guests');
+    console.log('🔄 Setting up real-time subscriptions for bookings and guests');
 
-    const _tables = ['bookings', 'guests', 'guest_submissions'] as const;
-
-    const channel = supabase
+    // Subscribe to changes in bookings table
+    const bookingsChannel = supabase
       .channel('schema-db-changes')
       .on(
         'postgres_changes',
@@ -55,8 +37,8 @@ export const useBookings = () => {
           table: 'bookings'
         },
         (payload) => {
-          debug('Real-time booking update received', { event: payload.eventType, id: payload.new?.id });
-          void loadBookings();
+          console.log('📊 Real-time booking update:', payload);
+          loadBookings();
         }
       )
       .on(
@@ -67,8 +49,8 @@ export const useBookings = () => {
           table: 'guests'
         },
         (payload) => {
-          debug('Real-time guest update received', { event: payload.eventType, id: payload.new?.id });
-          void loadBookings();
+          console.log('👤 Real-time guest update:', payload);
+          loadBookings();
         }
       )
       .on(
@@ -79,48 +61,32 @@ export const useBookings = () => {
           table: 'guest_submissions'
         },
         (payload) => {
-          debug('Real-time guest submission update received', { event: payload.eventType, id: payload.new?.id });
-          void loadBookings();
+          console.log('📝 Real-time guest submission update:', payload);
+          loadBookings();
         }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          info('Realtime subscriptions established successfully');
-          realtimeChannels.current.push(channel);
-        } else if (status === 'CHANNEL_ERROR') {
-          warn('Realtime subscription error', { status });
-        }
-      });
+      .subscribe();
 
-    return channel;
+    return () => {
+      console.log('🛑 Cleaning up real-time subscriptions');
+      supabase.removeChannel(bookingsChannel);
+    };
   }, [user]);
 
-  const loadBookings = useCallback(async () => {
+  const loadBookings = async () => {
     try {
-      // Cancel previous request if still pending
-      if (abortController.current) {
-        abortController.current.abort();
-      }
-
-      abortController.current = new AbortController();
-
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
-
+      setIsLoading(true);
+      
       // Check if user is authenticated
       if (!user) {
-        debug('No authenticated user, skipping booking load');
-        setState(prev => ({
-          ...prev,
-          bookings: [],
-          isLoading: false,
-          lastUpdated: new Date()
-        }));
+        console.log('👤 No authenticated user, skipping booking load');
+        setBookings([]);
         return;
       }
-
-      info('Loading bookings for user', { userId: user.id });
-
-      const { data: bookingsData, error: supabaseError } = await supabase
+      
+      console.log('👤 Loading bookings for user:', user.id);
+      
+      const { data: bookingsData, error } = await supabase
         .from('bookings')
         .select(`
           *,
@@ -129,34 +95,30 @@ export const useBookings = () => {
         `)
         .order('created_at', { ascending: false });
 
-      if (supabaseError) {
-        throw new DatabaseError(`Failed to load bookings: ${supabaseError.message}`, {
-          userId: user.id,
-          error: supabaseError
-        });
+      if (error) {
+        console.error('❌ Error loading bookings:', error);
+        return;
       }
 
-      debug('Raw bookings data from Supabase', {
-        count: bookingsData?.length || 0,
-        userId: user.id
-      });
+      console.log('📊 Raw bookings data from Supabase:', bookingsData);
+      console.log('📊 Number of bookings returned:', bookingsData?.length || 0);
 
       // Transform Supabase data to match our Booking interface
-      const transformedBookings: Booking[] = (bookingsData ?? []).map(booking => ({
+      const transformedBookings: Booking[] = bookingsData?.map(booking => ({
         id: booking.id,
         checkInDate: booking.check_in_date,
         checkOutDate: booking.check_out_date,
         numberOfGuests: booking.number_of_guests,
-        bookingReference: booking.booking_reference ?? undefined,
+        bookingReference: booking.booking_reference || undefined,
         property_id: booking.property_id,
-        submission_id: booking.submission_id ?? undefined,
+        submission_id: booking.submission_id || undefined,
         property: booking.property ? {
           ...booking.property,
-          house_rules: Array.isArray(booking.property.house_rules)
+          house_rules: Array.isArray(booking.property.house_rules) 
             ? booking.property.house_rules.filter(rule => typeof rule === 'string') as string[]
             : [],
-          contract_template: typeof booking.property.contract_template === 'object' && booking.property.contract_template !== null
-            ? booking.property.contract_template
+          contract_template: typeof booking.property.contract_template === 'object' && booking.property.contract_template !== null 
+            ? booking.property.contract_template 
             : {},
         } : undefined,
         guests: booking.guests?.map(guest => ({
@@ -165,62 +127,35 @@ export const useBookings = () => {
           dateOfBirth: guest.date_of_birth,
           documentNumber: guest.document_number,
           nationality: guest.nationality,
-          placeOfBirth: guest.place_of_birth ?? undefined,
+          placeOfBirth: guest.place_of_birth || undefined,
           documentType: guest.document_type as 'passport' | 'national_id'
-        })) ?? [],
+        })) || [],
         status: booking.status as 'pending' | 'completed' | 'archived',
         createdAt: booking.created_at,
         documentsGenerated: typeof booking.documents_generated === 'object' && booking.documents_generated !== null
           ? booking.documents_generated as { policeForm: boolean; contract: boolean; }
           : { policeForm: false, contract: false }
-      }));
+      })) || [];
 
       // Enrich bookings with guest submission data
       const enrichedBookings = await enrichBookingsWithGuestSubmissions(transformedBookings);
-
-      setState(prev => ({
-        ...prev,
-        bookings: enrichedBookings,
-        isLoading: false,
-        lastUpdated: new Date()
-      }));
-
-      info('Bookings loaded successfully', {
-        count: enrichedBookings.length,
-        userId: user.id
-      });
-
-    } catch (err) {
-      handleError(err, { userId: user?.id, operation: 'loadBookings' });
-
-      if (err instanceof DatabaseError || err instanceof NetworkError) {
-        setState(prev => ({
-          ...prev,
-          error: err.message,
-          isLoading: false
-        }));
-      } else {
-        setState(prev => ({
-          ...prev,
-          error: 'Une erreur inattendue s\'est produite lors du chargement des réservations.',
-          isLoading: false
-        }));
-      }
+      setBookings(enrichedBookings);
+    } catch (error) {
+      console.error('Error loading bookings:', error);
+    } finally {
+      setIsLoading(false);
     }
-  }, [user]);
+  };
 
-  const addBooking = useCallback(async (booking: Booking) => {
+  const addBooking = async (booking: Booking) => {
     try {
+      console.log('Adding new booking:', booking);
+      
       if (!user) {
-        throw new Error('No authenticated user');
+        console.error('No authenticated user');
+        return;
       }
-
-      info('Adding new booking', {
-        bookingId: booking.id,
-        propertyId: booking.property_id,
-        userId: user.id
-      });
-
+      
       // Insert booking
       const { data: bookingData, error: bookingError } = await supabase
         .from('bookings')
@@ -238,32 +173,30 @@ export const useBookings = () => {
         .single();
 
       if (bookingError) {
-        throw new DatabaseError(`Failed to add booking: ${bookingError.message}`, {
-          booking,
-          error: bookingError
-        });
+        console.error('Error adding booking:', bookingError);
+        return;
       }
 
       // Insert guests
       if (booking.guests.length > 0) {
-        debug('Inserting guests', { count: booking.guests.length });
-
+        console.log('📋 Inserting guests:', booking.guests);
+        
         const guestsData = booking.guests.map(guest => {
           // Validate and clean the date format
           let cleanDateOfBirth = guest.dateOfBirth;
           if (cleanDateOfBirth && !cleanDateOfBirth.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            warn('Invalid date format detected', { date: cleanDateOfBirth });
+            console.warn('⚠️ Invalid date format detected:', cleanDateOfBirth);
             // Try to parse and reformat the date
             const date = new Date(cleanDateOfBirth);
             if (!isNaN(date.getTime())) {
               cleanDateOfBirth = date.toISOString().split('T')[0];
-              debug('Date reformatted', { original: guest.dateOfBirth, formatted: cleanDateOfBirth });
+              console.log('✅ Date reformatted to:', cleanDateOfBirth);
             } else {
-              error('Could not parse date, setting to null', { date: cleanDateOfBirth });
+              console.error('❌ Could not parse date, setting to null');
               cleanDateOfBirth = null;
             }
           }
-
+          
           return {
             booking_id: bookingData.id,
             full_name: guest.fullName,
@@ -275,153 +208,95 @@ export const useBookings = () => {
           };
         });
 
+        console.log('📋 Final guests data for insert:', guestsData);
+
         const { error: guestsError } = await supabase
           .from('guests')
           .insert(guestsData);
 
         if (guestsError) {
-          throw new DatabaseError(`Failed to add guests: ${guestsError.message}`, {
-            guests: guestsData,
-            error: guestsError
-          });
+          console.error('❌ Error adding guests:', guestsError);
+          return;
+        } else {
+          console.log('✅ Guests added successfully');
         }
       }
 
-      // Reload bookings to get the updated data
+      // Refresh bookings to get the complete data with relationships
       await loadBookings();
-
-      info('Booking added successfully', {
-        bookingId: bookingData.id,
-        userId: user.id
-      });
-
-    } catch (err) {
-      handleError(err, {
-        userId: user?.id,
-        operation: 'addBooking',
-        booking
-      });
-      throw err;
+    } catch (error) {
+      console.error('Error adding booking:', error);
     }
-  }, [user, loadBookings]);
+  };
 
-  const updateBooking = useCallback(async (bookingId: string, updates: Partial<Booking>) => {
+  const updateBooking = async (id: string, updates: Partial<Booking>) => {
     try {
-      if (!user) {
-        throw new Error('No authenticated user');
+      console.log('Updating booking:', id, updates);
+      
+      const updateData: any = {};
+      if (updates.checkInDate) updateData.check_in_date = updates.checkInDate;
+      if (updates.checkOutDate) updateData.check_out_date = updates.checkOutDate;
+      if (updates.numberOfGuests) updateData.number_of_guests = updates.numberOfGuests;
+      if (updates.bookingReference !== undefined) updateData.booking_reference = updates.bookingReference;
+      if (updates.status) updateData.status = updates.status;
+      if (updates.documentsGenerated) {
+        updateData.documents_generated = updates.documentsGenerated;
+        
+        // Auto-set status to completed if both documents are generated
+        const currentBooking = bookings.find(b => b.id === id);
+        if (currentBooking) {
+          const newDocGen = { ...currentBooking.documentsGenerated, ...updates.documentsGenerated };
+          if (newDocGen.contract && newDocGen.policeForm && currentBooking.status !== 'completed') {
+            updateData.status = 'completed';
+          }
+        }
       }
 
-      info('Updating booking', { bookingId, userId: user.id });
-
-      const updateData: Record<string, unknown> = {};
-
-      // Map Booking interface fields to database fields
-      if (updates.checkInDate !== undefined) updateData.check_in_date = updates.checkInDate;
-      if (updates.checkOutDate !== undefined) updateData.check_out_date = updates.checkOutDate;
-      if (updates.numberOfGuests !== undefined) updateData.number_of_guests = updates.numberOfGuests;
-      if (updates.bookingReference !== undefined) updateData.booking_reference = updates.bookingReference;
-      if (updates.status !== undefined) updateData.status = updates.status;
-      if (updates.documentsGenerated !== undefined) updateData.documents_generated = updates.documentsGenerated;
-
-      const { error: updateError } = await supabase
+      const { error } = await supabase
         .from('bookings')
         .update(updateData)
-        .eq('id', bookingId)
-        .eq('user_id', user.id);
+        .eq('id', id);
 
-      if (updateError) {
-        throw new DatabaseError(`Failed to update booking: ${updateError.message}`, {
-          bookingId,
-          updates,
-          error: updateError
-        });
+      if (error) {
+        console.error('Error updating booking:', error);
+        return;
       }
 
-      // Reload bookings to get the updated data
       await loadBookings();
-
-      info('Booking updated successfully', { bookingId, userId: user.id });
-
-    } catch (err) {
-      handleError(err, {
-        userId: user?.id,
-        operation: 'updateBooking',
-        bookingId,
-        updates
-      });
-      throw err;
+    } catch (error) {
+      console.error('Error updating booking:', error);
     }
-  }, [user, loadBookings]);
+  };
 
-  const deleteBooking = useCallback(async (bookingId: string) => {
+  const deleteBooking = async (id: string) => {
     try {
-      if (!user) {
-        throw new Error('No authenticated user');
-      }
-
-      info('Deleting booking', { bookingId, userId: user.id });
-
-      const { error: deleteError } = await supabase
+      const { error } = await supabase
         .from('bookings')
         .delete()
-        .eq('id', bookingId)
-        .eq('user_id', user.id);
+        .eq('id', id);
 
-      if (deleteError) {
-        throw new DatabaseError(`Failed to delete booking: ${deleteError.message}`, {
-          bookingId,
-          error: deleteError
-        });
+      if (error) {
+        console.error('Error deleting booking:', error);
+        return;
       }
 
-      // Reload bookings to get the updated data
       await loadBookings();
-
-      info('Booking deleted successfully', { bookingId, userId: user.id });
-
-    } catch (err) {
-      handleError(err, {
-        userId: user?.id,
-        operation: 'deleteBooking',
-        bookingId
-      });
-      throw err;
+    } catch (error) {
+      console.error('Error deleting booking:', error);
     }
-  }, [user, loadBookings]);
+  };
 
-  // Load bookings when user changes
-  useEffect(() => {
-    if (user) {
-      void loadBookings();
-    }
-  }, [user, loadBookings]);
-
-  // Set up real-time subscriptions
-  useEffect(() => {
-    if (user) {
-      setupRealtimeSubscriptions();
-    }
-
-    return () => {
-      cleanupRealtimeSubscriptions();
-    };
-  }, [user, setupRealtimeSubscriptions, cleanupRealtimeSubscriptions]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      cleanupRealtimeSubscriptions();
-      if (abortController.current) {
-        abortController.current.abort();
-      }
-    };
-  }, [cleanupRealtimeSubscriptions]);
+  const getBookingById = (id: string) => {
+    return bookings.find(booking => booking.id === id);
+  };
 
   return {
-    ...state,
+    bookings,
+    isLoading,
     addBooking,
     updateBooking,
     deleteBooking,
-    refresh: loadBookings,
+    getBookingById,
+    refreshBookings: loadBookings
   };
 };

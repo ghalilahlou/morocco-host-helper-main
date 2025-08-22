@@ -32,17 +32,17 @@ export interface SyncResult {
 
 // This service is now deprecated - use AirbnbEdgeFunctionService instead
 export class AirbnbSyncService {
-  static async fetchAndParseICS(_icsUrl: string): Promise<AirbnbReservation[]> {
+  static async fetchAndParseICS(icsUrl: string): Promise<AirbnbReservation[]> {
     console.warn('⚠️ AirbnbSyncService.fetchAndParseICS is deprecated. Use AirbnbEdgeFunctionService instead.');
     return [];
   }
 
-  static parseICSContent(_icsContent: string): AirbnbReservation[] {
+  static parseICSContent(icsContent: string): AirbnbReservation[] {
     console.warn('⚠️ AirbnbSyncService.parseICSContent is deprecated. Use AirbnbEdgeFunctionService instead.');
     return [];
   }
 
-  static async syncWithExistingBookings(airbnbReservations: AirbnbReservation[], _existingBookings: any[]): Promise<SyncResult> {
+  static async syncWithExistingBookings(airbnbReservations: AirbnbReservation[], existingBookings: any[]): Promise<SyncResult> {
     console.warn('⚠️ AirbnbSyncService.syncWithExistingBookings is deprecated. Use AirbnbEdgeFunctionService instead.');
     return {
       reservations: airbnbReservations,
@@ -52,7 +52,7 @@ export class AirbnbSyncService {
   }
 
   static getBookingStatusColor(booking: any, matchedBookings: string[], conflicts: string[]): string {
-    // NOUVEAU SYSTÈME:
+    // NOUVEAU SYSTÈME: 
     // - Rouge pour conflits
     // - Vert pour réservations complétées (avec match Airbnb)
     // - Gris par défaut

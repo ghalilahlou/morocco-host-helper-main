@@ -112,8 +112,8 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
                 mode="single"
                 selected={checkOutDate}
                 onSelect={handleCheckOutChange}
-                disabled={(date) =>
-                  date < new Date() ||
+                disabled={(date) => 
+                  date < new Date() || 
                   (checkInDate && date <= checkInDate)
                 }
                 initialFocus

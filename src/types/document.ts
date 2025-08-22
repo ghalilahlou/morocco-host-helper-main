@@ -17,6 +17,6 @@ export interface DocumentStorageResult {
 export interface DocumentMetadata {
   bookingId: string;
   fileName: string;
-  extractedData?: Record<string, unknown>;
+  extractedData?: any;
   guestId?: string;
 }

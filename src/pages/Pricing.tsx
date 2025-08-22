@@ -10,7 +10,7 @@ export const Pricing = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
 
-  const handleGetStarted = (_plan: string) => {
+  const handleGetStarted = (plan: string) => {
     if (isAuthenticated) {
       navigate('/dashboard');
     } else {
@@ -80,15 +80,15 @@ export const Pricing = () => {
           <div className="flex items-center justify-between h-20">
             {/* Logo */}
             <div className="flex items-center space-x-3">
-              <button
-                onClick={() => navigate('/')}
+              <button 
+                onClick={() => navigate('/')} 
                 className="focus:outline-none transition-transform hover:scale-105"
                 aria-label="Retour à l'accueil"
               >
-                <img
-                  src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png"
-                  alt="Checky Logo"
-                  className="w-48 h-48 object-contain cursor-pointer"
+                <img 
+                  src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png" 
+                  alt="Checky Logo" 
+                  className="w-48 h-48 object-contain cursor-pointer" 
                 />
               </button>
             </div>
@@ -139,7 +139,7 @@ export const Pricing = () => {
             <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
               Des tarifs transparents adaptés à vos besoins. Commencez avec 3 vérifications gratuites.
             </p>
-
+            
             {/* Free Trial Banner */}
             <div className="inline-flex items-center rounded-full px-4 py-2 mb-8 border bg-white border-[hsl(var(--cta-pay)/0.5)]">
               <Check className="w-4 h-4 mr-2 text-[hsl(var(--cta-pay))]" />
@@ -182,7 +182,7 @@ export const Pricing = () => {
                         <Badge className="bg-primary text-white px-4 py-1">Plus Populaire</Badge>
                       </div>
                     )}
-
+                    
                     <CardHeader className="text-center pb-4 min-h-56">
                       <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform ${iconBg}`}>
                         <div className={iconColor}>
@@ -199,7 +199,7 @@ export const Pricing = () => {
                         {plan.description}
                       </CardDescription>
                     </CardHeader>
-
+                    
                     <CardContent className="space-y-4 flex-1 flex flex-col">
                       <ul className="space-y-3">
                         {plan.features.map((feature, featureIndex) => (
@@ -209,9 +209,9 @@ export const Pricing = () => {
                           </li>
                         ))}
                       </ul>
-
+                      
                       <div className="pt-6 mt-auto">
-                        <Button
+                        <Button 
                           onClick={() => handleGetStarted(plan.name)}
                           className={`w-full ${btnClass} hover:opacity-90 text-gray-900`}
                         >
@@ -233,7 +233,7 @@ export const Pricing = () => {
               <h2 className="text-3xl font-bold text-gray-900 mb-4">Questions Fréquentes</h2>
               <p className="text-xl text-gray-600">Tout ce que vous devez savoir sur nos tarifs</p>
             </div>
-
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
                 <div>
@@ -245,7 +245,7 @@ export const Pricing = () => {
                   <p className="text-gray-600">Oui, vous pouvez upgrader ou downgrader votre plan à tout moment depuis votre dashboard.</p>
                 </div>
               </div>
-
+              
               <div className="space-y-6">
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-2">Les documents sont-ils conformes ?</h3>
@@ -265,8 +265,8 @@ export const Pricing = () => {
       <footer className="bg-gray-900 text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between">
-            <button
-              onClick={() => navigate('/')}
+            <button 
+              onClick={() => navigate('/')} 
               className="flex items-center space-x-3 mb-4 md:mb-0 focus:outline-none transition-transform hover:scale-105"
               aria-label="Retour à l'accueil"
             >

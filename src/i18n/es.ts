@@ -81,7 +81,7 @@ export default {
   'validation.checkoutAfterCheckin.desc': 'La fecha de salida debe ser posterior a la de llegada',
   'validation.exactDocs.desc': 'Sube exactamente {{count}} documento{{s}} de identidad (uno por huésped)',
   'validation.completeGuests.desc': 'Completa toda la información de los huéspedes',
-
+  
   // Steps
   'guest.steps.step1.title': '1. Sube tu documento de identidad',
   'guest.steps.step1.desc': 'Cédula de identidad o pasaporte del viajero principal (foto legible)',
@@ -89,24 +89,24 @@ export default {
   'guest.steps.step2.desc': 'Rellenamos previamente cuando es posible, confirmas en 1 minuto',
   'guest.steps.step3.title': '3. Firma el contrato',
   'guest.steps.step3.desc': 'Firma electrónica del contrato de alquiler a corto plazo',
-
+  
   // Verification
   'guest.verification.title': 'Verificación de Huéspedes',
   'guest.verification.subtitle': 'Por favor proporcione su información para la propiedad: {{propertyName}}',
-
+  
   // Booking
   'guest.booking.title': 'Información de Reserva',
   'guest.booking.checkIn': 'Fecha de Entrada',
   'guest.booking.checkOut': 'Fecha de Salida',
   'guest.booking.numberOfGuests': 'Número de Huéspedes',
   'guest.booking.selectDate': 'Seleccionar',
-
+  
   // Documents
   'guest.documents.title': 'Documentos de Identidad',
   'guest.documents.dropzone': 'Arrastra y suelta tus documentos de identidad aquí o haz clic para seleccionar',
   'guest.documents.autoExtract': 'La información se extraerá automáticamente',
   'guest.documents.selectFiles': 'Seleccionar Documentos',
-
+  
   // Clients
   'guest.clients.title': 'Información de Huéspedes',
   'guest.clients.clientNumber': 'Huésped {{number}}',
@@ -120,17 +120,17 @@ export default {
   'guest.clients.nationalId': 'Cédula de Identidad',
   'guest.clients.documentNumber': 'Número de Documento',
   'guest.clients.documentNumberPlaceholder': 'Número de pasaporte/cédula',
-
+  
   // Navigation
   'guest.navigation.previous': 'Anterior',
   'guest.navigation.next': 'Siguiente',
-
+  
   // CTA
   'guest.cta.sendInfo': 'Enviar Información',
-
+  
   // Documents uploaded
   'guest.documents.uploaded': 'Documentos Subidos:',
-
+  
   // Documents viewer
   'documents.reservationTitle': 'Documentos de la reserva',
   'documents.close': 'Cerrar',

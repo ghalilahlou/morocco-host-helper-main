@@ -1,5 +1,6 @@
 import { Calendar, Users, MapPin, FileText, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { BookingFormData } from '../BookingWizard';
 import { format } from 'date-fns';
@@ -20,13 +21,13 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'Date non renseignée';
-
+    
     const date = new Date(dateString);
     // Check if the date is valid
     if (isNaN(date.getTime())) {
       return 'Date invalide';
     }
-
+    
     try {
       return format(date, "dd MMMM yyyy", { locale: fr });
     } catch (error) {
@@ -73,7 +74,7 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
               <p className="font-medium">{formData.numberOfGuests}</p>
             </div>
           </div>
-
+          
           {formData.bookingReference && (
             <div>
               <p className="text-sm text-muted-foreground">Référence</p>
@@ -124,7 +125,7 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
                           {guest.documentType === 'passport' ? 'Passeport' : 'Carte d\'identité'}
                         </Badge>
                       </div>
-
+                      
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                         <div>
                           <p className="text-muted-foreground">Nom complet</p>
@@ -182,7 +183,7 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
                 PDF
               </Badge>
             </div>
-
+            
             <div className="flex items-center justify-between p-3 border border-border rounded-lg">
               <div>
                 <p className="font-medium">Contrat de location</p>
@@ -196,7 +197,7 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
               </Badge>
             </div>
           </div>
-
+          
           <div className="mt-4 p-4 bg-muted/50 rounded-lg">
             <h4 className="font-medium mb-2">Informations importantes</h4>
             <ul className="text-sm text-muted-foreground space-y-1">

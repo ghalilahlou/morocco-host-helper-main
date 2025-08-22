@@ -21,18 +21,18 @@ export const useAirbnbSync = (propertyId: string) => {
   // Load sync status from database
   const loadSyncStatus = useCallback(async () => {
     if (!propertyId) {
-
+      
       setIsLoading(false);
       return;
     }
 
     try {
-
+      
       setIsLoading(true);
-
+      
       const status = await AirbnbEdgeFunctionService.getSyncStatus(propertyId);
-
-
+      
+      
       setSyncStatus(status);
     } catch (error) {
       console.error('❌ useAirbnbSync: Exception loading sync status:', error);
@@ -45,30 +45,30 @@ export const useAirbnbSync = (propertyId: string) => {
   // Perform sync operation using Edge Function
   const performSync = useCallback(async (icsUrl: string) => {
     if (!propertyId || !icsUrl || isSyncing) {
-
+      
       return { success: false, error: 'Invalid parameters or sync in progress' };
     }
 
-
+    
     setIsSyncing(true);
-
+    
     try {
       const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, icsUrl);
-
-
+      
+      
       // Reload status after sync to get updated data
       await loadSyncStatus();
-
+      
       return result;
     } catch (error) {
       console.error('❌ performSync: Caught error:', error);
-
+      
       // Reload status to get error details
       await loadSyncStatus();
-
+      
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        success: false,
+      return { 
+        success: false, 
         error: errorMessage
       };
     } finally {
@@ -84,7 +84,7 @@ export const useAirbnbSync = (propertyId: string) => {
   // Set up real-time subscription for sync status changes
   useEffect(() => {
     if (!propertyId) return;
-
+    
     const channel = supabase
       .channel(`sync-status-${propertyId}`)
       .on(

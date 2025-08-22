@@ -8,14 +8,14 @@ interface BookingVerificationSummary {
 }
 
 export class BookingVerificationService {
-
+  
   /**
    * Get verification summary for multiple bookings
    */
   static async getVerificationSummaries(bookingIds: string[]): Promise<Record<string, BookingVerificationSummary>> {
     try {
       console.log('📊 Getting verification summaries for bookings:', bookingIds);
-
+      
       const { data: summaries, error } = await supabase.functions.invoke('get-booking-verification-summary', {
         body: { bookingIds }
       });
@@ -32,7 +32,7 @@ export class BookingVerificationService {
 
       // Convert array to record keyed by booking_id
       const summaryMap: Record<string, BookingVerificationSummary> = {};
-
+      
       for (const summary of summaries) {
         summaryMap[summary.booking_id] = {
           bookingId: summary.booking_id,
@@ -44,7 +44,7 @@ export class BookingVerificationService {
 
       console.log('✅ Retrieved verification summaries for', Object.keys(summaryMap).length, 'bookings');
       return summaryMap;
-
+      
     } catch (error) {
       console.error('❌ Exception getting verification summaries:', error);
       return {};
@@ -65,7 +65,7 @@ export class BookingVerificationService {
   static async getPropertyVerificationSummaries(propertyId: string): Promise<Record<string, BookingVerificationSummary>> {
     try {
       console.log('📊 Getting verification summaries for property:', propertyId);
-
+      
       const { data: summaries, error } = await supabase.functions.invoke('get-booking-verification-summary', {
         body: { propertyId }
       });
@@ -82,7 +82,7 @@ export class BookingVerificationService {
 
       // Convert array to record keyed by booking_id
       const summaryMap: Record<string, BookingVerificationSummary> = {};
-
+      
       for (const summary of summaries) {
         summaryMap[summary.booking_id] = {
           bookingId: summary.booking_id,
@@ -94,7 +94,7 @@ export class BookingVerificationService {
 
       console.log('✅ Retrieved verification summaries for property:', Object.keys(summaryMap).length, 'bookings');
       return summaryMap;
-
+      
     } catch (error) {
       console.error('❌ Exception getting property verification summaries:', error);
       return {};

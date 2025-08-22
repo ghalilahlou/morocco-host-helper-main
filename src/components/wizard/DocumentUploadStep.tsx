@@ -1,7 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
-import { logger } from '@/lib/logger';
-import { Upload, FileText, Loader2, Check, X, Eye, Edit, Trash2 } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { Upload, FileText, Loader2, Check, X, Eye, Edit, Trash2, Camera, User } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -25,7 +24,7 @@ interface DocumentUploadStepProps {
 
 export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadStepProps) => {
   const { toast } = useToast();
-  const [uploadedDocs, setUploadedDocs] = useState<ExtendedUploadedDocument[]>(formData.uploadedDocuments ?? []);
+  const [uploadedDocs, setUploadedDocs] = useState<ExtendedUploadedDocument[]>(formData.uploadedDocuments || []);
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
   const [showPreview, setShowPreview] = useState<string | null>(null);
 
@@ -44,14 +43,14 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     if (resultingGuests > formData.numberOfGuests) {
       updateFormData({ numberOfGuests: resultingGuests });
     }
-
+    
     const newDocs: ExtendedUploadedDocument[] = [];
     // We'll accumulate guests extracted from documents and update once at the end
     const pendingGuests: Guest[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-
+      
       if (!file.type.match(/^image\/(jpeg|jpg|png|gif)$/)) {
         toast({
           title: "Format non supporté",
@@ -77,26 +76,26 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     // Process OCR for each document
     for (const doc of newDocs) {
       try {
-
+        
         let extractedData;
-
+        
         // Try OpenAI Vision API first (most accurate)
         try {
-
+          
           const { OpenAIDocumentService } = await import('@/services/openaiDocumentService');
           extractedData = await OpenAIDocumentService.extractDocumentData(doc.file);
-
+          
         } catch (openAiError) {
-          logger.warn('❌ OpenAI Vision failed, using AI OCR fallback:', openAiError);
-
+          console.warn('❌ OpenAI Vision failed, using AI OCR fallback:', openAiError);
+          
           // Fallback to AI OCR
           const { AILocrService } = await import('@/services/aiOcrService');
           const extractedText = await AILocrService.extractTextFromImage(doc.file);
-          logger.info('📝 Raw text extracted by AI OCR:', extractedText);
+          console.log('📝 Raw text extracted by AI OCR:', extractedText);
           extractedData = await AILocrService.parseGuestInfo(extractedText);
-          logger.info('✅ AI OCR parsing complete:', extractedData);
+          console.log('✅ AI OCR parsing complete:', extractedData);
         }
-
+        
         // Mark as processing completed but don't duplicate the state update
 
         // Auto-create guest if data was extracted successfully
@@ -104,19 +103,19 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           const newGuestId = uuidv4();
           const newGuest: Guest = {
             id: newGuestId,
-            fullName: extractedData.fullName ?? '',
-            dateOfBirth: extractedData.dateOfBirth ?? '',
-            documentNumber: extractedData.documentNumber ?? '',
-            nationality: extractedData.nationality ?? '',
-            placeOfBirth: extractedData.placeOfBirth ?? '',
-            documentType: extractedData.documentType ?? 'passport'
+            fullName: extractedData.fullName || '',
+            dateOfBirth: extractedData.dateOfBirth || '',
+            documentNumber: extractedData.documentNumber || '',
+            nationality: extractedData.nationality || '',
+            placeOfBirth: extractedData.placeOfBirth || '',
+            documentType: extractedData.documentType || 'passport'
           };
 
-          logger.info('🔗 Creating guest from document:', doc.id, '->', newGuestId);
-
+          console.log('🔗 Creating guest from document:', doc.id, '->', newGuestId);
+          
           // Update document with guest reference
-          setUploadedDocs(prev => prev.map(d =>
-            d.id === doc.id
+          setUploadedDocs(prev => prev.map(d => 
+            d.id === doc.id 
               ? { ...d, extractedData, processingStatus: 'completed', createdGuestId: newGuestId }
               : d
           ));
@@ -124,12 +123,12 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           // Queue guest to be added (batch update later)
           pendingGuests.push(newGuest);
         } else {
-          logger.warn('No valid guest data extracted from document:', extractedData);
-
+          console.warn('No valid guest data extracted from document:', extractedData);
+          
           // Still mark as completed even if no guest data
           setUploadedDocs(prev => {
-            const updatedDocs = prev.map(d =>
-              d.id === doc.id
+            const updatedDocs = prev.map(d => 
+              d.id === doc.id 
                 ? { ...d, extractedData, processingStatus: 'completed' as const }
                 : d
             );
@@ -138,19 +137,19 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
         }
 
       } catch (error) {
-        logger.error(`❌ Critical error processing ${doc.file.name}:`, error);
-        logger.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace available');
-
+        console.error(`❌ Critical error processing ${doc.file.name}:`, error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace available');
+        
         setUploadedDocs(prev => {
-          const updatedDocs = prev.map(d =>
-            d.id === doc.id
+          const updatedDocs = prev.map(d => 
+            d.id === doc.id 
               ? { ...d, processingStatus: 'error' as const }
               : d
           );
-
+          
           return updatedDocs;
         });
-
+        
         toast({
           title: "Erreur d'extraction",
           description: `Impossible d'extraire les données de ${doc.file.name}: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
@@ -209,15 +208,15 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
   };
 
   const deleteGuest = (guestId: string) => {
-    logger.info('🗑️ Deleting guest:', guestId);
-
+    console.log('🗑️ Deleting guest:', guestId);
+    
     // Remove the guest from uploaded docs if it was created from a document
-    setUploadedDocs(prev => prev.map(doc =>
-      doc.createdGuestId === guestId
+    setUploadedDocs(prev => prev.map(doc => 
+      doc.createdGuestId === guestId 
         ? { ...doc, createdGuestId: undefined }
         : doc
     ));
-
+    
     // Remove guest from form data
     updateFormData({
       guests: formData.guests.filter(g => g.id !== guestId)
@@ -225,31 +224,31 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
   };
 
   const removeDocument = (docId: string) => {
-    logger.info('🗑️ REMOVING DOCUMENT:', docId);
-
+    console.log('🗑️ REMOVING DOCUMENT:', docId);
+    
     // Find the document
     const docToRemove = uploadedDocs.find(d => d.id === docId);
     if (!docToRemove) return;
-
-    logger.info('📄 Document found:', docToRemove.file.name, 'Guest ID:', docToRemove.createdGuestId);
-
+    
+    console.log('📄 Document found:', docToRemove.file.name, 'Guest ID:', docToRemove.createdGuestId);
+    
     // Clean up preview URL
     URL.revokeObjectURL(docToRemove.preview);
-
+    
     // Remove document from list
     setUploadedDocs(prev => {
       const filtered = prev.filter(d => d.id !== docId);
-      logger.info('📋 Documents after removal:', filtered.length);
+      console.log('📋 Documents after removal:', filtered.length);
       return filtered;
     });
-
+    
     // Remove associated guest if exists
     if (docToRemove.createdGuestId) {
-      logger.info('✂️ REMOVING GUEST:', docToRemove.createdGuestId);
+      console.log('✂️ REMOVING GUEST:', docToRemove.createdGuestId);
       updateFormData({
         guests: formData.guests.filter(g => {
           const keep = g.id !== docToRemove.createdGuestId;
-          logger.info(`Guest ${g.fullName} (${g.id}): ${keep ? 'KEEP' : 'REMOVE'}`);
+          console.log(`Guest ${g.fullName} (${g.id}): ${keep ? 'KEEP' : 'REMOVE'}`);
           return keep;
         })
       });
@@ -279,7 +278,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
             <div className="space-y-2">
               <h4 className="font-medium text-destructive">Trop de documents uploadés</h4>
               <p className="text-sm text-destructive/80">
-                Vous avez {formData.guests.length} client(s) enregistré(s) mais votre réservation ne compte que {formData.numberOfGuests} client(s).
+                Vous avez {formData.guests.length} client(s) enregistré(s) mais votre réservation ne compte que {formData.numberOfGuests} client(s). 
                 Veuillez retourner à l'étape précédente pour modifier le nombre de clients ou supprimer les documents excédentaires.
               </p>
             </div>
@@ -514,7 +513,7 @@ const GuestEditDialog = ({ guest, onSave, onClose }: GuestEditDialogProps) => {
               <Label>Type de document</Label>
               <Select
                 value={formData.documentType}
-                onValueChange={(value: 'passport' | 'national_id') =>
+                onValueChange={(value: 'passport' | 'national_id') => 
                   setFormData({ ...formData, documentType: value })
                 }
               >
@@ -539,7 +538,7 @@ const GuestEditDialog = ({ guest, onSave, onClose }: GuestEditDialogProps) => {
           <div className="space-y-2">
             <Label>Lieu de naissance</Label>
             <Input
-              value={formData.placeOfBirth ?? ''}
+              value={formData.placeOfBirth || ''}
               onChange={(e) => setFormData({ ...formData, placeOfBirth: e.target.value })}
               placeholder="Lieu de naissance (optionnel)"
             />

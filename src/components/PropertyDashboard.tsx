@@ -28,7 +28,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
     setIsRefreshing(true);
     try {
       await refreshBookings();
-      const currentFilteredBookings = selectedProperty
+      const currentFilteredBookings = selectedProperty 
         ? bookings.filter(booking => booking.property_id === selectedProperty.id)
         : [];
       console.log('🔄 Manual refresh completed. Total bookings:', bookings.length);
@@ -49,7 +49,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
   useEffect(() => {
     const loadAirbnbCount = async () => {
       if (!selectedProperty?.id) return;
-
+      
       try {
         const reservations = await AirbnbEdgeFunctionService.getReservations(selectedProperty.id);
         setAirbnbReservationsCount(reservations.length);
@@ -58,11 +58,11 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
         setAirbnbReservationsCount(0);
       }
     };
-
+    
     loadAirbnbCount();
   }, [selectedProperty?.id]);
 
-  const filteredBookings = selectedProperty
+  const filteredBookings = selectedProperty 
     ? bookings.filter(booking => booking.property_id === selectedProperty.id)
 : [];
 
@@ -74,6 +74,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
     window.addEventListener('booking-deleted', handler as EventListener);
     return () => window.removeEventListener('booking-deleted', handler as EventListener);
   }, [refreshBookings]);
+
 
 
   const stats = {
@@ -140,7 +141,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
             </div>
           )}
         </div>
-
+        
         <PropertySelector
           properties={properties}
           selectedProperty={selectedProperty}

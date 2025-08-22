@@ -1,6 +1,5 @@
 
 import { useState, useEffect } from 'react';
-import { logger } from '@/lib/logger';
 import { supabase } from '@/integrations/supabase/client';
 import { PropertyVerificationToken, GuestSubmission } from '@/types/guestVerification';
 import { useAuth } from './useAuth';
@@ -18,13 +17,13 @@ export const useGuestVerification = () => {
 
     try {
       setIsLoading(true);
-
-      logger.info('🔗 Generating verification URL via direct database access:', { propertyId, airbnbBookingId });
-
+      
+      console.log('🔗 Generating verification URL via direct database access:', { propertyId, airbnbBookingId });
+      
       // Temporary workaround: Create token directly in database
       // Generate a new token
       const token = crypto.randomUUID() + '-' + crypto.randomUUID();
-
+      
       const tokenData: any = {
         property_id: propertyId,
         token: token,
@@ -36,14 +35,14 @@ export const useGuestVerification = () => {
         tokenData.booking_id = airbnbBookingId;
       }
 
-      const { data: _newToken, error: createError } = await supabase
+      const { data: newToken, error: createError } = await supabase
         .from('property_verification_tokens')
         .insert(tokenData)
         .select()
         .single();
 
       if (createError) {
-        logger.error('❌ Error creating token directly:', createError);
+        console.error('❌ Error creating token directly:', createError);
         toast({
           title: "Erreur",
           description: "Impossible de créer le lien de vérification",
@@ -54,11 +53,11 @@ export const useGuestVerification = () => {
 
       // Generate the full URL
       const origin = window.location.origin;
-      const link = airbnbBookingId
+      const link = airbnbBookingId 
         ? `${origin}/welcome/${propertyId}/${token}/${airbnbBookingId}`
         : `${origin}/welcome/${propertyId}/${token}`;
 
-      logger.info('✅ Generated verification URL directly:', link);
+      console.log('✅ Generated verification URL directly:', link);
       toast({
         title: "Lien généré",
         description: "Lien de vérification créé avec succès"
@@ -66,7 +65,7 @@ export const useGuestVerification = () => {
 
       return link;
     } catch (error) {
-      logger.error('❌ Error generating verification URL:', error);
+      console.error('❌ Error generating verification URL:', error);
       toast({
         title: "Erreur",
         description: "Erreur lors de la génération du lien",
@@ -84,7 +83,7 @@ export const useGuestVerification = () => {
 
     try {
       setIsLoading(true);
-
+      
       const { data, error } = await supabase
         .from('property_verification_tokens')
         .select(`
@@ -98,13 +97,13 @@ export const useGuestVerification = () => {
         .order('created_at', { ascending: false });
 
       if (error) {
-        logger.error('Error loading verification tokens:', error);
+        console.error('Error loading verification tokens:', error);
         return;
       }
 
       setTokens(data || []);
     } catch (error) {
-      logger.error('Error loading verification tokens:', error);
+      console.error('Error loading verification tokens:', error);
     } finally {
       setIsLoading(false);
     }
@@ -129,7 +128,7 @@ export const useGuestVerification = () => {
 
       // Use the new edge function to get guest submissions for all user properties
       const allSubmissions: GuestSubmission[] = [];
-
+      
       for (const property of userProperties) {
         try {
           const { data, error } = await supabase.functions.invoke('list-guest-docs', {
@@ -168,7 +167,7 @@ export const useGuestVerification = () => {
           console.error('Error calling list-guest-docs for property:', property.id, edgeError);
         }
       }
-
+      
       setSubmissions(allSubmissions);
     } catch (error) {
       console.error('Error loading guest submissions:', error);
@@ -208,13 +207,13 @@ export const useGuestVerification = () => {
 
   // Update submission status
   const updateSubmissionStatus = async (
-    submissionId: string,
+    submissionId: string, 
     status: 'pending' | 'completed' | 'reviewed' | 'rejected'
   ): Promise<boolean> => {
     try {
       const { error } = await supabase
         .from('guest_submissions')
-        .update({
+        .update({ 
           status,
           reviewed_by: user?.id,
           reviewed_at: new Date().toISOString()

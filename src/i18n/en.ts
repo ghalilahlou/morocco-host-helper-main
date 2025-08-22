@@ -81,7 +81,7 @@ export default {
   'validation.checkoutAfterCheckin.desc': 'Check-out date must be after check-in date',
   'validation.exactDocs.desc': 'Please upload exactly {{count}} document{{s}} of identity (one per guest)',
   'validation.completeGuests.desc': 'Please complete all guest information',
-
+  
   // Steps
   'guest.steps.step1.title': '1. Upload your ID document',
   'guest.steps.step1.desc': 'ID card or passport of the main traveler (readable photo)',
@@ -89,24 +89,24 @@ export default {
   'guest.steps.step2.desc': 'We pre-fill when possible, you confirm in 1 minute',
   'guest.steps.step3.title': '3. Sign the contract',
   'guest.steps.step3.desc': 'Electronic signature of the short-term rental contract',
-
+  
   // Verification
   'guest.verification.title': 'Guest Verification',
   'guest.verification.subtitle': 'Please provide your information for the property: {{propertyName}}',
-
+  
   // Booking
   'guest.booking.title': 'Booking Information',
   'guest.booking.checkIn': 'Check-in Date',
   'guest.booking.checkOut': 'Check-out Date',
   'guest.booking.numberOfGuests': 'Number of Guests',
   'guest.booking.selectDate': 'Select',
-
+  
   // Documents
   'guest.documents.title': 'Identity Documents',
   'guest.documents.dropzone': 'Drag and drop your ID documents here or click to select',
   'guest.documents.autoExtract': 'Information will be extracted automatically',
   'guest.documents.selectFiles': 'Select Documents',
-
+  
   // Clients
   'guest.clients.title': 'Guest Information',
   'guest.clients.clientNumber': 'Guest {{number}}',
@@ -120,17 +120,17 @@ export default {
   'guest.clients.nationalId': 'ID Card',
   'guest.clients.documentNumber': 'Document Number',
   'guest.clients.documentNumberPlaceholder': 'Passport/ID number',
-
+  
   // Navigation
   'guest.navigation.previous': 'Previous',
   'guest.navigation.next': 'Next',
-
+  
   // CTA
   'guest.cta.sendInfo': 'Send Information',
-
+  
   // Documents uploaded
   'guest.documents.uploaded': 'Uploaded Documents:',
-
+  
   // Documents viewer
   'documents.reservationTitle': 'Booking Documents',
   'documents.close': 'Close',

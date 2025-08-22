@@ -10,7 +10,7 @@ export class AirbnbPersistenceService {
   static async getReservationByBookingId(propertyId: string, bookingId: string) {
     console.warn('⚠️ AirbnbPersistenceService.getReservationByBookingId is deprecated. Use AirbnbEdgeFunctionService.getReservations instead.');
     const reservations = await AirbnbEdgeFunctionService.getReservations(propertyId);
-    return reservations.find(r => r.airbnb_booking_id === bookingId) ?? null;
+    return reservations.find(r => r.airbnb_booking_id === bookingId) || null;
   }
 
   static async getAllReservations(propertyId: string) {

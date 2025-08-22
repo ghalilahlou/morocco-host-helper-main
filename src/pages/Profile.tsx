@@ -23,7 +23,7 @@ export const Profile: React.FC = () => {
   useEffect(() => {
     const loadProfile = async () => {
       if (!user) return;
-
+      
       setProfileLoading(true);
       try {
         const { data, error } = await supabase
@@ -39,16 +39,16 @@ export const Profile: React.FC = () => {
 
         if (data) {
           setFormData({
-            fullName: data.full_name ?? '',
-            phone: data.phone ?? '',
-            avatarUrl: data.avatar_url ?? '',
+            fullName: data.full_name || '',
+            phone: data.phone || '',
+            avatarUrl: data.avatar_url || '',
           });
         } else {
           // Fallback to user metadata if no profile exists
           setFormData({
-            fullName: user.user_metadata?.full_name ?? '',
-            phone: user.user_metadata?.phone ?? '',
-            avatarUrl: user.user_metadata?.avatar_url ?? '',
+            fullName: user.user_metadata?.full_name || '',
+            phone: user.user_metadata?.phone || '',
+            avatarUrl: user.user_metadata?.avatar_url || '',
           });
         }
       } finally {
@@ -63,14 +63,14 @@ export const Profile: React.FC = () => {
     ? user.email.substring(0, 2).toUpperCase()
     : 'U';
 
-  const userName = formData.fullName ?? user?.email?.split('@')[0] ?? 'Utilisateur';
+  const userName = formData.fullName || user?.email?.split('@')[0] || 'Utilisateur';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-
+    
     setIsLoading(true);
-
+    
     try {
       const profileData = {
         id: user.id,
@@ -138,7 +138,7 @@ export const Profile: React.FC = () => {
                 <Input
                   id="email"
                   type="email"
-                  value={user?.email ?? ''}
+                  value={user?.email || ''}
                   disabled
                   className="bg-muted"
                 />

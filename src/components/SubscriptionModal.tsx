@@ -3,8 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { CheckCircle, Crown, Star } from 'lucide-react';
-import { logger } from '@/lib/logger';
+import { CheckCircle, Crown, Zap, Star } from 'lucide-react';
 
 interface SubscriptionModalProps {
   open: boolean;
@@ -17,7 +16,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 }) => {
   // Mock current plan - will be replaced with real data later
   const currentPlan: string = "Pay per Check";
-  const _currentFeatures = ["15 DHS par vérification", "Support par email"];
+  const currentFeatures = ["15 DHS par vérification", "Support par email"];
 
   const plans = [
     {
@@ -69,12 +68,12 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   const handleUpgrade = (planName: string) => {
     // Will be implemented with Stripe later
-    logger.info(`Upgrade to ${planName}`);
+    console.log(`Upgrade to ${planName}`);
   };
 
   const handleManageSubscription = () => {
     // Will be implemented with Stripe Customer Portal later
-    logger.info("Manage subscription");
+    console.log("Manage subscription");
   };
 
   return (
@@ -102,8 +101,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                 </div>
               </div>
               {currentPlan !== "Pay per Check" && (
-                <Button
-                  variant="outline"
+                <Button 
+                  variant="outline" 
                   onClick={handleManageSubscription}
                   className="border-primary text-primary hover:bg-primary hover:text-white"
                 >
@@ -116,13 +115,13 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
           {/* Plans Grid */}
           <div className="grid md:grid-cols-3 gap-6">
             {plans.map((plan) => (
-              <Card
+              <Card 
                 key={plan.name}
                 className={`relative ${
-                  plan.popular
-                    ? 'border-2 border-primary shadow-lg'
-                    : plan.current
-                      ? 'border-2 border-green-500 bg-green-50/50'
+                  plan.popular 
+                    ? 'border-2 border-primary shadow-lg' 
+                    : plan.current 
+                      ? 'border-2 border-green-500 bg-green-50/50' 
                       : 'border border-gray-200'
                 }`}
               >
@@ -134,7 +133,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                     </Badge>
                   </div>
                 )}
-
+                
                 {plan.current && (
                   <div className="absolute -top-3 right-4">
                     <Badge variant="secondary" className="bg-green-500 text-white">
@@ -169,12 +168,12 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                     ))}
                   </ul>
 
-                  <Button
+                  <Button 
                     className={`w-full ${
-                      plan.current
-                        ? 'bg-green-500 hover:bg-green-600'
-                        : plan.popular
-                          ? 'bg-primary hover:bg-primary/90'
+                      plan.current 
+                        ? 'bg-green-500 hover:bg-green-600' 
+                        : plan.popular 
+                          ? 'bg-primary hover:bg-primary/90' 
                           : ''
                     }`}
                     variant={plan.current ? "default" : plan.popular ? "default" : "outline"}

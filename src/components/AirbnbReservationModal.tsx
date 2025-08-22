@@ -43,7 +43,7 @@ export const AirbnbReservationModal = ({
 
     // Extract the actual booking code from raw event if needed
     const rawEvent = reservation.rawEvent || '';
-    const patterns = [/details\/([A-Z0-9]{8,12})/i, /tails\/([A-Z0-9]{8,12})/i, /\/([A-Z0-9]{8,12})\//i, /\b([A-Z0-9]{8,12})\b/g];
+    const patterns = [/details\/([A-Z0-9]{8,12})/i, /tails\/([A-Z0-9]{8,12})/i, /\/([A-Z0-9]{8,12})\\/i, /\b([A-Z0-9]{8,12})\b/g];
     let bookingCode = reservation.airbnbBookingId;
 
     // Try to find a better booking code from raw event
@@ -125,7 +125,7 @@ export const AirbnbReservationModal = ({
               {(() => {
               // Extract booking code from raw event data for title
               const rawEvent = reservation?.rawEvent || '';
-              const patterns = [/details\/([A-Z0-9]{8,12})/i, /tails\/([A-Z0-9]{8,12})/i, /\/([A-Z0-9]{8,12})\//i, /\b([A-Z0-9]{8,12})\b/g];
+              const patterns = [/details\/([A-Z0-9]{8,12})/i, /tails\/([A-Z0-9]{8,12})/i, /\/([A-Z0-9]{8,12})\\/i, /\b([A-Z0-9]{8,12})\b/g];
               for (const pattern of patterns) {
                 const matches = rawEvent.match(pattern);
                 if (matches) {
@@ -210,7 +210,7 @@ export const AirbnbReservationModal = ({
                   <Copy className="w-4 h-4 mr-2" />
                   {isGeneratingLink ? 'Génération...' : 'Générer lien'}
                 </Button>
-
+                
 
                 <p className="text-xs text-muted-foreground mt-2">
                   Génère un lien de vérification client avec les dates de cette réservation Airbnb pré-remplies

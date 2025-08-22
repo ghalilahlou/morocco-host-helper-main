@@ -32,8 +32,8 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
     // Get all booking IDs and validate they are UUIDs
     const bookingIds = bookings
       .map(b => b.id)
-      .filter(id => id?.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i));
-
+      .filter(id => id && id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i));
+    
     if (bookingIds.length === 0) {
       console.warn('❌ No valid booking IDs found');
       return bookings.map(booking => ({
@@ -48,7 +48,7 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
         }
       }));
     }
-
+    
     // Fetch guest submissions ONLY for valid UUID booking IDs
     const { data: submissions, error } = await supabase
       .from('v_guest_submissions')
@@ -77,7 +77,7 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
     const submissionsByBooking = (submissions || []).reduce((acc, submission) => {
       const bookingId = submission.booking_id;
       if (!bookingId) return acc;
-
+      
       if (!acc[bookingId]) {
         acc[bookingId] = [];
       }
@@ -88,34 +88,34 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
     // Enrich each booking with submission data
     const enrichedBookings: EnrichedBooking[] = bookings.map(booking => {
       const bookingSubmissions = submissionsByBooking[booking.id] || [];
-
+      
       // Extract real guest names from submissions
       const realGuestNames: string[] = [];
       let totalDocuments = 0;
       let hasSignature = false;
 
       bookingSubmissions.forEach(submission => {
-            if (submission.guest_data) {
-      // Handle different possible structures in guest_data
-      if (Array.isArray(submission.guest_data)) {
-        submission.guest_data.forEach((guest: any) => {
-          if (guest?.fullName || guest?.full_name) {
-            realGuestNames.push(guest?.fullName || guest?.full_name);
-          }
-        });
-      } else if (typeof submission.guest_data === 'object') {
-        // Handle single guest or guests array in object
-        if (submission.guest_data?.guests && Array.isArray(submission.guest_data.guests)) {
-          submission.guest_data.guests.forEach((guest: any) => {
-            if (guest?.fullName || guest?.full_name) {
-              realGuestNames.push(guest?.fullName || guest?.full_name);
+        if (submission.guest_data) {
+          // Handle different possible structures in guest_data
+          if (Array.isArray(submission.guest_data)) {
+            submission.guest_data.forEach((guest: any) => {
+              if (guest.fullName || guest.full_name) {
+                realGuestNames.push(guest.fullName || guest.full_name);
+              }
+            });
+          } else if (typeof submission.guest_data === 'object') {
+            // Handle single guest or guests array in object
+            if (submission.guest_data.guests && Array.isArray(submission.guest_data.guests)) {
+              submission.guest_data.guests.forEach((guest: any) => {
+                if (guest.fullName || guest.full_name) {
+                  realGuestNames.push(guest.fullName || guest.full_name);
+                }
+              });
+            } else if (submission.guest_data.fullName || submission.guest_data.full_name) {
+              realGuestNames.push(submission.guest_data.fullName || submission.guest_data.full_name);
             }
-          });
-        } else if (submission.guest_data?.fullName || submission.guest_data?.full_name) {
-          realGuestNames.push(submission.guest_data?.fullName || submission.guest_data?.full_name);
+          }
         }
-      }
-    }
 
         // Count documents
         if (submission.document_urls) {
@@ -127,7 +127,7 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
               if (Array.isArray(parsed)) {
                 totalDocuments += parsed.length;
               }
-            } catch (_e) {
+            } catch (e) {
               // If it's a string but not JSON, count as 1 document
               totalDocuments += 1;
             }

@@ -9,10 +9,10 @@ import { CalendarHeader } from './calendar/CalendarHeader';
 import { CalendarGrid } from './calendar/CalendarGrid';
 
 import { AirbnbReservationModal } from './AirbnbReservationModal';
-import {
-  generateCalendarDays,
-  calculateBookingLayout,
-  detectBookingConflicts
+import { 
+  generateCalendarDays, 
+  calculateBookingLayout, 
+  detectBookingConflicts 
 } from './calendar/CalendarUtils';
 import { AirbnbSyncService, AirbnbReservation } from '@/services/airbnbSyncService';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
@@ -44,21 +44,21 @@ const [icsUrl, setIcsUrl] = useState<string | null>(null);
 const [hasIcs, setHasIcs] = useState(false);
   const { toast } = useToast();
 
-
+  
   // Optimized load function with caching
   const loadAirbnbReservations = useCallback(async () => {
     if (!propertyId) return;
-
+    
     // Check cache first
     const cached = airbnbCache.get(propertyId);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       setAirbnbReservations(cached.data);
       return;
     }
-
+    
     try {
       const dbReservations = await AirbnbEdgeFunctionService.getReservations(propertyId);
-
+      
       // Convert database reservations to AirbnbReservation format
       const formattedReservations: AirbnbReservation[] = dbReservations.map(r => ({
         id: r.id,
@@ -72,12 +72,12 @@ const [hasIcs, setHasIcs] = useState(false);
         rawEvent: (r.raw_event_data as any)?.rawEvent || '',
         source: 'airbnb' as any
       }));
-
+      
       // Cache the data
       airbnbCache.set(propertyId, { data: formattedReservations, timestamp: Date.now() });
-
+      
       setAirbnbReservations(formattedReservations);
-
+      
       // Toujours récupérer le statut de sync en base
       const status = await AirbnbEdgeFunctionService.getSyncStatus(propertyId);
       if (status) {
@@ -162,7 +162,7 @@ useEffect(() => {
       setSelectedAirbnbReservation(airbnbRes);
       return;
     }
-
+    
     // Regular booking
     setSelectedBooking(booking as EnrichedBooking);
   }, []);
@@ -170,10 +170,10 @@ useEffect(() => {
   // Handle sync from calendar button - VERSION CORRIGÉE
   const handleSyncFromCalendar = useCallback(async () => {
     if (!propertyId) return;
-
+    
     try {
       setIsSyncing(true);
-
+      
       // Get property data to find ICS URL
       const { data: property, error } = await supabase
         .from('properties')
@@ -194,7 +194,7 @@ useEffect(() => {
 
       // Call the sync service
       const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, property.airbnb_ics_url);
-
+      
       if (result.success) {
         // Silent success on mobile, only show on desktop
         if (window.innerWidth >= 768) {
@@ -203,7 +203,7 @@ useEffect(() => {
             description: `${result.count || 0} réservations synchronisées.`
           });
         }
-
+        
         // Reload reservations
         const updatedReservations = await AirbnbEdgeFunctionService.getReservations(propertyId);
         const formattedReservations = updatedReservations.map(r => ({
@@ -254,37 +254,37 @@ const handleOpenConfig = useCallback(() => {
 
   const getColorOverrides = useMemo(() => {
     const overrides: { [key: string]: string } = {};
-
+    
     // ÉTAPE 1: Détecter les matchs entre réservations manuelles et Airbnb
     const updatedMatchedBookings: string[] = [];
     const updatedSyncConflicts: string[] = [];
-
+    
     // Parcourir chaque réservation manuelle
     bookings.forEach(booking => {
       const manualStart = new Date(booking.checkInDate);
       const manualEnd = new Date(booking.checkOutDate);
-
+      
       // Chercher si elle matche avec une réservation Airbnb
       const matchingAirbnb = airbnbReservations.find(airbnb => {
         const airbnbStart = airbnb.startDate;
         const airbnbEnd = airbnb.endDate;
-
+        
         // Dates exactement identiques OU référence qui matche
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() &&
+        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
                           manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = booking.bookingReference && airbnb.airbnbBookingId &&
-                         (booking.bookingReference.includes(airbnb.airbnbBookingId) ||
+        const refsMatch = booking.bookingReference && airbnb.airbnbBookingId && 
+                         (booking.bookingReference.includes(airbnb.airbnbBookingId) || 
                           airbnb.airbnbBookingId.includes(booking.bookingReference));
-
+        
         return datesMatch || refsMatch;
       });
-
+      
       if (matchingAirbnb) {
         updatedMatchedBookings.push(booking.id);
         console.log(`✅ Match trouvé: Booking ${booking.id} <-> Airbnb ${matchingAirbnb.id}`);
       }
     });
-
+    
     // ÉTAPE 2: Appliquer les couleurs selon la nouvelle logique
     bookings.forEach(booking => {
       overrides[booking.id] = AirbnbSyncService.getBookingStatusColor(
@@ -302,16 +302,16 @@ const handleOpenConfig = useCallback(() => {
         const manualEnd = new Date(booking.checkOutDate);
         const airbnbStart = reservation.startDate;
         const airbnbEnd = reservation.endDate;
-
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() &&
+        
+        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
                           manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = booking.bookingReference && reservation.airbnbBookingId &&
-                         (booking.bookingReference.includes(reservation.airbnbBookingId) ||
+        const refsMatch = booking.bookingReference && reservation.airbnbBookingId && 
+                         (booking.bookingReference.includes(reservation.airbnbBookingId) || 
                           reservation.airbnbBookingId.includes(booking.bookingReference));
-
+        
         return datesMatch || refsMatch;
       });
-
+      
       // Si pas de match manuel, afficher la réservation Airbnb en gris
       if (!hasManualMatch) {
         overrides[reservation.id] = AirbnbSyncService.getAirbnbReservationColor(
@@ -330,16 +330,16 @@ const handleOpenConfig = useCallback(() => {
   }, [bookings, airbnbReservations]);
 
   const getStats = useMemo(() => {
-    const completed = bookings.filter(b =>
+    const completed = bookings.filter(b => 
       matchedBookings.includes(b.id) && b.status === 'completed'
     ).length;
-
-    const pending = bookings.filter(b =>
+    
+    const pending = bookings.filter(b => 
       b.status !== 'completed'
-    ).length + airbnbReservations.filter(r =>
+    ).length + airbnbReservations.filter(r => 
       !matchedBookings.includes(r.id)
     ).length;
-
+    
     const conflicts = syncConflicts.length;
 
     return { completed, pending, conflicts };
@@ -354,19 +354,19 @@ const handleOpenConfig = useCallback(() => {
         const manualEnd = new Date(booking.checkOutDate);
         const airbnbStart = reservation.startDate;
         const airbnbEnd = reservation.endDate;
-
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() &&
+        
+        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
                           manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = booking.bookingReference && reservation.airbnbBookingId &&
-                         (booking.bookingReference.includes(reservation.airbnbBookingId) ||
+        const refsMatch = booking.bookingReference && reservation.airbnbBookingId && 
+                         (booking.bookingReference.includes(reservation.airbnbBookingId) || 
                           reservation.airbnbBookingId.includes(booking.bookingReference));
-
+        
         return datesMatch || refsMatch;
       });
-
+      
       return !hasManualMatch; // Garder seulement les Airbnb SANS match
     });
-
+    
     return [...bookings, ...filteredAirbnb];
   }, [bookings, airbnbReservations]);
   const colorOverrides = getColorOverrides;
@@ -404,7 +404,7 @@ const handleOpenConfig = useCallback(() => {
       )}
 
       {/* Calendar Header */}
-      <CalendarHeader
+      <CalendarHeader 
         currentDate={currentDate}
         onDateChange={setCurrentDate}
         bookingCount={allReservations.length}
@@ -419,7 +419,7 @@ const handleOpenConfig = useCallback(() => {
 
       {/* Calendar Grid - Fully responsive */}
       <div className="w-full">
-        <CalendarGrid
+        <CalendarGrid 
           calendarDays={calendarDays}
           bookingLayout={bookingLayout}
           conflicts={conflicts}

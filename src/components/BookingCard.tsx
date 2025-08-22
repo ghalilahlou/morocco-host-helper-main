@@ -25,7 +25,7 @@ interface BookingCardProps {
 export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: BookingCardProps) => {
   const { updateBooking } = useBookings();
   const { toast } = useToast();
-
+  
   const { user } = useAuth();
   const [showDocuments, setShowDocuments] = useState<'id-documents' | 'contract' | 'police-form' | null>(null);
   const [signedContract, setSignedContract] = useState<any>(null);
@@ -80,14 +80,14 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
         console.error('❌ Error loading verification counts:', error);
       }
     };
-
+    
     loadVerificationCounts();
   }, [booking.id]);
 
   const handleDownloadPolice = async () => {
     try {
       await UnifiedDocumentService.downloadPoliceFormsForAllGuests(booking);
-
+      
       // Mark police forms as generated
       updateBooking(booking.id, {
         documentsGenerated: {
@@ -113,17 +113,17 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
   useEffect(() => {
     const checkForSignedContract = async () => {
       if (!user?.id) return;
-
+      
       try {
         const { data, error } = await (supabase as any).rpc('get_signed_contracts_for_user', {
           p_user_id: user.id
         });
-
+        
         if (error) {
           console.error('Error fetching signed contracts:', error);
           return;
         }
-
+        
         // Find signed contract for this booking
         const contract = data ? (data as any[]).find((c: any) => c.booking_id === booking.id) : null;
         setSignedContract(contract);
@@ -131,14 +131,14 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
         console.error('Error checking for signed contract:', error);
       }
     };
-
+    
     checkForSignedContract();
   }, [booking.id, user?.id]);
 
   const handleDownloadContract = async () => {
-
+    
     const result = await ContractService.generateAndDownloadContract(booking);
-
+    
     if (result.success) {
       // Mark contract as generated if it's a new contract
       const signedContract = await ContractService.getSignedContract(booking.id);
@@ -336,7 +336,7 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
               )}
             </Button>
           </div>
-
+          
           {/* Show add guests button only if no guests */}
           {!canGenerateDocuments && (
             <Button
@@ -348,10 +348,10 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
               Ajouter les clients
             </Button>
           )}
-
+          
           {/* Guest self-service link generation */}
         </div>
-
+        
         {showDocuments && (
           <DocumentsViewer
             booking={booking}

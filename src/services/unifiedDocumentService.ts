@@ -1,20 +1,20 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { Booking } from '@/types/booking';
+import { Booking, Guest } from '@/types/booking';
 
 export class UnifiedDocumentService {
-
+  
   /**
    * Generate police forms for all guests with standardized format
    */
   static async generatePoliceFormsForAllGuests(booking: Booking): Promise<string[]> {
     try {
       console.log('🚨 Generating police forms for booking:', booking.id);
-
+      
       const { data, error } = await supabase.functions.invoke('generate-documents', {
         body: {
           booking: {
             ...booking,
-            source: booking.source ?? 'host' // Default to host if not specified
+            source: booking.source || 'host' // Default to host if not specified
           },
           documentType: 'police'
         }
@@ -26,7 +26,7 @@ export class UnifiedDocumentService {
       }
 
       console.log('✅ Police forms generated successfully');
-      return data.documentUrls ?? [];
+      return data.documentUrls || [];
     } catch (error) {
       console.error('Error in generatePoliceFormsForAllGuests:', error);
       throw error;
@@ -37,16 +37,16 @@ export class UnifiedDocumentService {
    * @deprecated Use ContractService.generateAndDownloadContract() instead
    * This method is kept for backward compatibility only
    */
-  static async generateContract(booking: Booking, _isSignedContract: boolean = false, _signatureData?: string, _signedAt?: string): Promise<string> {
+  static async generateContract(booking: Booking, isSignedContract: boolean = false, signatureData?: string, signedAt?: string): Promise<string> {
     console.warn('⚠️ UnifiedDocumentService.generateContract is deprecated. Use ContractService.generateAndDownloadContract() instead.');
-
+    
     const { ContractService } = await import('./contractService');
     const result = await ContractService.generateAndDownloadContract(booking);
-
+    
     if (!result.success) {
       throw new Error(result.message);
     }
-
+    
     return '';
   }
 
@@ -55,8 +55,8 @@ export class UnifiedDocumentService {
    * This method is kept for backward compatibility only
    */
   static async generateSignedContract(
-    booking: Booking,
-    signatureData: string,
+    booking: Booking, 
+    signatureData: string, 
     signedAt: string
   ): Promise<string> {
     console.warn('⚠️ UnifiedDocumentService.generateSignedContract: generating server-side without auto-download.');
@@ -73,7 +73,7 @@ export class UnifiedDocumentService {
       console.error('Error generating signed contract without download:', e);
       throw new Error(e?.message || 'Failed to generate signed contract');
     }
-
+    
     return '';
   }
 
@@ -83,10 +83,10 @@ export class UnifiedDocumentService {
    */
   static async downloadContract(booking: Booking): Promise<void> {
     console.warn('⚠️ UnifiedDocumentService.downloadContract is deprecated. Use ContractService.generateAndDownloadContract() instead.');
-
+    
     const { ContractService } = await import('./contractService');
     const result = await ContractService.generateAndDownloadContract(booking);
-
+    
     if (!result.success) {
       throw new Error(result.message);
     }
@@ -95,9 +95,9 @@ export class UnifiedDocumentService {
   static async downloadPoliceFormsForAllGuests(booking: Booking): Promise<void> {
     try {
       console.log('📥 Downloading police forms for booking:', booking.id);
-
+      
       const urls = await this.generatePoliceFormsForAllGuests(booking);
-
+      
       // Download each police form as a proper PDF file (staggered + Blob URLs to avoid browser blocking)
       urls.forEach((dataUrl, index) => {
         const guest = booking.guests[index];

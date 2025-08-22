@@ -20,7 +20,7 @@ const NATIONALITIES = [
   // Séparateur visuel après Morocco
   '---',
   'France', 'Spain', 'Italy', 'Germany', 'United Kingdom', 'Belgium', 'Netherlands', 'Portugal',
-  'Algeria', 'Tunisia', 'Turkey', 'United States', 'Canada', 'Brazil', 'Argentina', 'Russia', 'China',
+  'Algeria', 'Tunisia', 'Turkey', 'United States', 'Canada', 'Brazil', 'Argentina', 'Russia', 'China', 
   'Japan', 'South Korea', 'India', 'Australia', 'New Zealand', 'South Africa', 'Egypt', 'Nigeria',
   'Saudi Arabia', 'United Arab Emirates', 'Qatar', 'Kuwait', 'Lebanon', 'Jordan', 'Syria', 'Iraq', 'Iran',
   'Pakistan', 'Bangladesh', 'Afghanistan', 'Thailand', 'Vietnam', 'Malaysia', 'Singapore',
@@ -51,16 +51,16 @@ interface UploadedDocument {
 }
 
 export const GuestVerification = () => {
-  const { propertyId, token, airbnbBookingId } = useParams<{
-    propertyId: string;
-    token: string;
-    airbnbBookingId?: string;
+  const { propertyId, token, airbnbBookingId } = useParams<{ 
+    propertyId: string; 
+    token: string; 
+    airbnbBookingId?: string; 
   }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const t = useT();
   const [isLoading, setIsLoading] = useState(false);
-  const [submissionComplete, _setSubmissionComplete] = useState(false);
+  const [submissionComplete, setSubmissionComplete] = useState(false);
   const [isValidToken, setIsValidToken] = useState(false);
   const [checkingToken, setCheckingToken] = useState(true);
   const [propertyName, setPropertyName] = useState('');
@@ -85,17 +85,17 @@ export const GuestVerification = () => {
       }
 
       console.log('🔍 GuestVerification params:', { propertyId, token, airbnbBookingId });
-      console.log('🔍 About to call resolve-guest-link with:', {
-        propertyId,
-        token,
-        airbnbCode: airbnbBookingId
+      console.log('🔍 About to call resolve-guest-link with:', { 
+        propertyId, 
+        token, 
+        airbnbCode: airbnbBookingId 
       });
 
       try {
         const { data: tokenData, error } = await supabase.functions.invoke('resolve-guest-link', {
-          body: {
-            propertyId,
-            token,
+          body: { 
+            propertyId, 
+            token, 
             airbnbCode: airbnbBookingId // Use the router param
           }
         });
@@ -128,7 +128,7 @@ export const GuestVerification = () => {
       if (!isValidToken || !propertyId || !airbnbBookingId) {
         return;
       }
-
+      
         try {
           const { data: searchResult, error: searchError } = await supabase.functions.invoke('get-airbnb-reservation', {
             body: { propertyId, bookingId: airbnbBookingId }
@@ -139,31 +139,29 @@ export const GuestVerification = () => {
             // Toast removed - silent error handling
             return;
           }
-
+          
           if (searchResult?.reservation) {
-            {
-              const matchedReservation = searchResult.reservation;
-
-              // Found a matching reservation - auto-fill dates
-              const foundCheckInDate = new Date(matchedReservation.start_date);
-              const foundCheckOutDate = new Date(matchedReservation.end_date);
-
-              setCheckInDate(foundCheckInDate);
-              setCheckOutDate(foundCheckOutDate);
+            const matchedReservation = searchResult.reservation;
+            
+            // Found a matching reservation - auto-fill dates
+            const foundCheckInDate = new Date(matchedReservation.start_date);
+            const foundCheckOutDate = new Date(matchedReservation.end_date);
+            
+            setCheckInDate(foundCheckInDate);
+            setCheckOutDate(foundCheckOutDate);
+            
+            if (matchedReservation.number_of_guests) {
+              setNumberOfGuests(matchedReservation.number_of_guests);
             }
-
-            if (searchResult.reservation.number_of_guests) {
-              setNumberOfGuests(searchResult.reservation.number_of_guests);
-            }
-
-            if (searchResult.reservation.guest_name) {
+            
+            if (matchedReservation.guest_name) {
               setGuests(prevGuests => {
                 const updatedGuests = [...prevGuests];
-                updatedGuests[0] = { ...updatedGuests[0], fullName: searchResult.reservation.guest_name };
+                updatedGuests[0] = { ...updatedGuests[0], fullName: matchedReservation.guest_name };
                 return updatedGuests;
               });
             }
-
+            
             // Silent success - dates auto-filled without notification
           } else {
             // No exact match found - silent handling
@@ -175,9 +173,9 @@ export const GuestVerification = () => {
     };
 
     matchAirbnbBooking();
-  }, [airbnbBookingId, isValidToken, propertyId]);
+  }, [airbnbBookingId, isValidToken, propertyId, toast, t]);
 
-  const _addGuest = () => {
+  const addGuest = () => {
     setGuests([...guests, {
       fullName: '',
       dateOfBirth: undefined,
@@ -205,7 +203,7 @@ export const GuestVerification = () => {
     // Process each file
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-
+      
       // Validate file type
       if (!file.type.startsWith('image/')) {
         toast({
@@ -216,26 +214,24 @@ export const GuestVerification = () => {
         continue;
       }
 
-      {
-        const url = URL.createObjectURL(file);
-        const newDoc: UploadedDocument = {
-          file,
-          url,
-          processing: true,
-          extractedData: null
-        };
+      const url = URL.createObjectURL(file);
+      const newDoc: UploadedDocument = {
+        file,
+        url,
+        processing: true,
+        extractedData: null
+      };
 
-        setUploadedDocuments(prev => [...prev, newDoc]);
-      }
+      setUploadedDocuments(prev => [...prev, newDoc]);
 
     try {
       // Process with OpenAI document extraction
       const extractedData = await OpenAIDocumentService.extractDocumentData(file);
 
       // Update document with extracted data
-      setUploadedDocuments(prev =>
-        prev.map(doc =>
-          doc.url === url
+      setUploadedDocuments(prev => 
+        prev.map(doc => 
+          doc.url === url 
             ? { ...doc, processing: false, extractedData }
             : doc
         )
@@ -243,68 +239,60 @@ export const GuestVerification = () => {
 
       // Check if document is a valid ID document
       if (extractedData && Object.keys(extractedData).length > 0) {
-        {
-          // Validate that essential ID fields are present
-          const hasRequiredIdFields = extractedData.fullName &&
-                                    extractedData.documentNumber &&
-                                    extractedData.nationality &&
-                                    extractedData.documentType;
+        // Validate that essential ID fields are present
+        const hasRequiredIdFields = extractedData.fullName && 
+                                  extractedData.documentNumber && 
+                                  extractedData.nationality && 
+                                  extractedData.documentType;
 
-          if (!hasRequiredIdFields) {
-            // Document is not a valid ID - alert user
-            toast({
-              title: t('upload.docInvalid.title'),
-              description: t('upload.docInvalid.desc'),
-              variant: "destructive",
-            });
-
-            // Mark document as invalid but keep it for manual review
-            setUploadedDocuments(prev =>
-              prev.map(doc =>
-                doc.url === url
-                  ? { ...doc, processing: false, extractedData: null, isInvalid: true }
-                  : doc
-              )
-            );
-            return;
-          }
+        if (!hasRequiredIdFields) {
+          // Document is not a valid ID - alert user
+          toast({
+            title: t('upload.docInvalid.title'),
+            description: t('upload.docInvalid.desc'),
+            variant: "destructive",
+          });
+          
+          // Mark document as invalid but keep it for manual review
+          setUploadedDocuments(prev => 
+            prev.map(doc => 
+              doc.url === url 
+                ? { ...doc, processing: false, extractedData: null, isInvalid: true }
+                : doc
+            )
+          );
+          return;
         }
 
         // Document is valid - proceed with auto-fill
-        {
-          const updatedGuests = [...guests];
-          const emptyGuestIndex = updatedGuests.findIndex(guest =>
-            !guest.fullName && !guest.documentNumber
-          );
-
-          if (emptyGuestIndex !== -1) {
-            {
-              const targetIndex = emptyGuestIndex;
-              if (extractedData.fullName) updatedGuests[targetIndex].fullName = extractedData.fullName;
-              if (extractedData.nationality) updatedGuests[targetIndex].nationality = extractedData.nationality;
-              if (extractedData.documentNumber) updatedGuests[targetIndex].documentNumber = extractedData.documentNumber;
-              if (extractedData.documentType) updatedGuests[targetIndex].documentType = extractedData.documentType as 'passport' | 'national_id';
-              if (extractedData.dateOfBirth) {
-                const parsedDate = new Date(extractedData.dateOfBirth);
-                if (!isNaN(parsedDate.getTime())) {
-                  updatedGuests[targetIndex].dateOfBirth = parsedDate;
-                }
-              }
-              setGuests(updatedGuests);
-            }
-          } else {
-            // Add new guest if all existing guests are filled
-            {
-              const newGuest: Guest = {
-                fullName: extractedData.fullName ?? '',
-                dateOfBirth: extractedData.dateOfBirth ? new Date(extractedData.dateOfBirth) : undefined,
-                nationality: extractedData.nationality ?? '',
-                documentNumber: extractedData.documentNumber ?? '',
-                documentType: (extractedData.documentType as 'passport' | 'national_id') ?? 'passport'
-              };
-              setGuests([...updatedGuests, newGuest]);
+        const updatedGuests = [...guests];
+        const emptyGuestIndex = updatedGuests.findIndex(guest => 
+          !guest.fullName && !guest.documentNumber
+        );
+        
+        if (emptyGuestIndex !== -1) {
+          const targetIndex = emptyGuestIndex;
+          if (extractedData.fullName) updatedGuests[targetIndex].fullName = extractedData.fullName;
+          if (extractedData.nationality) updatedGuests[targetIndex].nationality = extractedData.nationality;
+          if (extractedData.documentNumber) updatedGuests[targetIndex].documentNumber = extractedData.documentNumber;
+          if (extractedData.documentType) updatedGuests[targetIndex].documentType = extractedData.documentType as 'passport' | 'national_id';
+          if (extractedData.dateOfBirth) {
+            const parsedDate = new Date(extractedData.dateOfBirth);
+            if (!isNaN(parsedDate.getTime())) {
+              updatedGuests[targetIndex].dateOfBirth = parsedDate;
             }
           }
+          setGuests(updatedGuests);
+        } else {
+          // Add new guest if all existing guests are filled
+          const newGuest: Guest = {
+            fullName: extractedData.fullName || '',
+            dateOfBirth: extractedData.dateOfBirth ? new Date(extractedData.dateOfBirth) : undefined,
+            nationality: extractedData.nationality || '',
+            documentNumber: extractedData.documentNumber || '',
+            documentType: (extractedData.documentType as 'passport' | 'national_id') || 'passport'
+          };
+          setGuests([...updatedGuests, newGuest]);
         }
 
         toast({
@@ -321,14 +309,14 @@ export const GuestVerification = () => {
       }
     } catch (error) {
       console.error('Document processing failed:', error);
-      setUploadedDocuments(prev =>
-        prev.map(doc =>
-          doc.url === url
+      setUploadedDocuments(prev => 
+        prev.map(doc => 
+          doc.url === url 
             ? { ...doc, processing: false }
             : doc
         )
       );
-
+      
       toast({
         title: t('upload.warning.title'),
         description: t('upload.warning.desc'),
@@ -341,7 +329,7 @@ export const GuestVerification = () => {
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-
+    
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
       handleFileUpload(files);
@@ -355,22 +343,22 @@ export const GuestVerification = () => {
 
   const removeDocument = (url: string) => {
     console.log('🗑️ Removing document:', url);
-
+    
     // Find the document being removed
     const docToRemove = uploadedDocuments.find(doc => doc.url === url);
-
-    if (docToRemove?.extractedData) {
+    
+    if (docToRemove && docToRemove.extractedData) {
       console.log('📄 Document had extracted data, finding associated guest...');
-
+      
       // Find and clear the guest that was auto-filled from this document
-      const guestToResetIndex = guests.findIndex(guest =>
+      const guestToResetIndex = guests.findIndex(guest => 
         guest.fullName === docToRemove.extractedData?.fullName ||
         guest.documentNumber === docToRemove.extractedData?.documentNumber
       );
-
+      
       if (guestToResetIndex !== -1) {
         console.log('✂️ Clearing guest data at index:', guestToResetIndex);
-
+        
         const updatedGuests = [...guests];
         updatedGuests[guestToResetIndex] = {
           fullName: '',
@@ -380,14 +368,14 @@ export const GuestVerification = () => {
           documentType: 'passport'
         };
         setGuests(updatedGuests);
-
+        
         toast({
           title: t('removeDoc.deleted.title'),
           description: t('removeDoc.deleted.desc'),
         });
       }
     }
-
+    
     // Remove the document
     setUploadedDocuments(prev => prev.filter(doc => doc.url !== url));
     URL.revokeObjectURL(url);
@@ -414,7 +402,7 @@ export const GuestVerification = () => {
     today.setHours(0, 0, 0, 0); // Set to start of day for comparison
     const checkInDateStartOfDay = new Date(checkInDate);
     checkInDateStartOfDay.setHours(0, 0, 0, 0);
-
+    
     if (checkInDateStartOfDay < today) {
       toast({
         title: t('validation.error.title'),
@@ -450,7 +438,7 @@ export const GuestVerification = () => {
 
     console.log('✅ Document validation passed');
 
-    const incompleteGuests = guests.filter(guest =>
+    const incompleteGuests = guests.filter(guest => 
       !guest.fullName || !guest.dateOfBirth || !guest.nationality || !guest.documentNumber
     );
 
@@ -486,8 +474,8 @@ export const GuestVerification = () => {
       for (const doc of uploadedDocuments) {
         try {
           const fileName = `${Date.now()}_${doc.file.name}`;
-
-          const { error: uploadError } = await supabase.storage
+          
+          const { data: uploadData, error: uploadError } = await supabase.storage
             .from('guest-documents')
             .upload(fileName, doc.file);
 
@@ -498,7 +486,7 @@ export const GuestVerification = () => {
             const { data: signedData } = await supabase.functions.invoke('storage-sign-url', {
               body: { bucket: 'guest-documents', path: fileName, expiresIn: 3600 }
             });
-
+            
             if (signedData?.signedUrl) {
               finalDocumentUrls.push(signedData.signedUrl);
             }
@@ -605,7 +593,7 @@ export const GuestVerification = () => {
     today.setHours(0, 0, 0, 0); // Set to start of day for comparison
     const checkInDateStartOfDay = new Date(checkInDate);
     checkInDateStartOfDay.setHours(0, 0, 0, 0);
-
+    
     if (checkInDateStartOfDay < today) {
       toast({
         title: t('validation.error.title'),
@@ -643,7 +631,7 @@ export const GuestVerification = () => {
             <p className="text-muted-foreground">
               Vos informations ont été soumises avec succès. Vous pouvez maintenant procéder à la signature du contrat.
             </p>
-            <Button
+            <Button 
               onClick={() => {
                 const baseUrl = `/contract-signing/${propertyId}/${token}`;
                 const url = airbnbBookingId ? `${baseUrl}/${airbnbBookingId}` : baseUrl;
@@ -762,23 +750,23 @@ export const GuestVerification = () => {
                          value={numberOfGuests === 0 ? '' : numberOfGuests.toString()}
                          onChange={(e) => {
                            const value = e.target.value;
-
+                           
                            // Allow empty input or digits only
                            if (value === '' || /^\d+$/.test(value)) {
                              const newCount = value === '' ? 0 : parseInt(value);
-
+                             
                              // Allow temporary 0 state for empty input
                              if (newCount === 0) {
                                setNumberOfGuests(0);
                                return;
                              }
-
+                             
                              if (newCount >= 1 && newCount <= 20) {
                                setNumberOfGuests(newCount);
-
+                               
                                // Adjust guests array to match the number
                                const currentGuests = [...guests];
-
+                               
                                if (newCount > currentGuests.length) {
                                  // Add more guests
                                  for (let i = currentGuests.length; i < newCount; i++) {
@@ -794,7 +782,7 @@ export const GuestVerification = () => {
                                  // Remove excess guests
                                  currentGuests.splice(newCount);
                                }
-
+                               
                                setGuests(currentGuests);
                              }
                            }
@@ -826,7 +814,7 @@ export const GuestVerification = () => {
                              const newCount = numberOfGuests + 1;
                              setNumberOfGuests(newCount);
                              const currentGuests = [...guests];
-
+                             
                              // Add new guest
                              currentGuests.push({
                                fullName: '',
@@ -835,7 +823,7 @@ export const GuestVerification = () => {
                                documentNumber: '',
                                documentType: 'passport'
                              });
-
+                             
                              setGuests(currentGuests);
                            }
                          }}
@@ -861,7 +849,7 @@ export const GuestVerification = () => {
               {/* Document Upload */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">{t('guest.documents.title')}</h3>
-                <div
+                <div 
                   className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6"
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
@@ -884,8 +872,8 @@ export const GuestVerification = () => {
                       id="document-upload"
                       onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
                     />
-                    <Button
-                      variant="outline"
+                    <Button 
+                      variant="outline" 
                       className="mt-4"
                       onClick={() => document.getElementById('document-upload')?.click()}
                     >
@@ -906,7 +894,7 @@ export const GuestVerification = () => {
                           <div>
                             <p className="text-sm font-medium">{doc.file.name}</p>
                             <p className="text-xs text-muted-foreground">
-                              {doc.processing ? 'Traitement en cours...' :
+                              {doc.processing ? 'Traitement en cours...' : 
                                doc.extractedData ? 'Traité avec succès' : 'Prêt'}
                             </p>
                           </div>
@@ -935,9 +923,9 @@ export const GuestVerification = () => {
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="font-medium">{t('guest.clients.clientNumber', { number: index + 1 })}</h4>
                       {guests.length > 1 && (
-                        <Button
-                          onClick={() => removeGuest(index)}
-                          variant="destructive"
+                        <Button 
+                          onClick={() => removeGuest(index)} 
+                          variant="destructive" 
                           size="sm"
                         >
                           Supprimer
@@ -976,8 +964,8 @@ export const GuestVerification = () => {
                         <Label>{t('guest.clients.nationality')} *</Label>
                         {/* Only show nationality dropdown if document uploaded and nationality not detected */}
                         {uploadedDocuments.length > 0 && !guest.nationality ? (
-                          <Select
-                            value={guest.nationality || ''}
+                          <Select 
+                            value={guest.nationality || ''} 
                             onValueChange={(value) => updateGuest(index, 'nationality', value)}
                           >
                             <SelectTrigger>
@@ -1006,8 +994,8 @@ export const GuestVerification = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>{t('guest.clients.documentType')} *</Label>
-                        <Select
-                          value={guest.documentType}
+                        <Select 
+                          value={guest.documentType} 
                           onValueChange={(value) => updateGuest(index, 'documentType', value)}
                         >
                           <SelectTrigger>
@@ -1036,8 +1024,8 @@ export const GuestVerification = () => {
                 <Button variant="outline" onClick={handlePrevStep}>
                   {t('guest.navigation.previous')}
                 </Button>
-                <Button
-                  onClick={handleSubmit}
+                <Button 
+                  onClick={handleSubmit} 
                   disabled={isLoading}
                 >
                   {isLoading ? 'Envoi en cours...' : t('guest.cta.sendInfo')}

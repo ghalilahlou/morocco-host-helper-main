@@ -11,10 +11,10 @@ export class AirbnbEdgeFunctionService {
   static async syncReservations(propertyId: string, icsUrl: string): Promise<SyncResult> {
     try {
       console.log('🚀 AirbnbEdgeFunctionService: Starting sync', { propertyId, icsUrl });
-
+      
       // Get current session
       const { data: { session } } = await supabase.auth.getSession();
-
+      
       if (!session) {
         console.error('❌ No active session');
         return { success: false, error: 'No active session' };
@@ -22,7 +22,7 @@ export class AirbnbEdgeFunctionService {
 
       console.log('👤 Session found, user ID:', session.user.id);
       console.log('📡 Calling Edge Function...');
-
+      
       const { data, error } = await supabase.functions.invoke('sync-airbnb-reservations', {
         body: {
           propertyId,
@@ -37,16 +37,16 @@ export class AirbnbEdgeFunctionService {
 
       if (error) {
         console.error('❌ Edge Function error:', error);
-        return {
-          success: false,
-          error: `Edge Function error: ${error.message}`
+        return { 
+          success: false, 
+          error: `Edge Function error: ${error.message}` 
         };
       }
 
       if (!data.success) {
-        return {
-          success: false,
-          error: data.error || 'Unknown error from Edge Function'
+        return { 
+          success: false, 
+          error: data.error || 'Unknown error from Edge Function' 
         };
       }
 
@@ -68,7 +68,7 @@ export class AirbnbEdgeFunctionService {
 
   static async getReservations(propertyId: string) {
     console.log('📋 Getting reservations for property:', propertyId);
-
+    
     const { data, error } = await supabase
       .from('airbnb_reservations')
       .select('*')
@@ -86,7 +86,7 @@ export class AirbnbEdgeFunctionService {
 
   static async getSyncStatus(propertyId: string) {
     console.log('📊 Getting sync status for property:', propertyId);
-
+    
     const { data, error } = await supabase
       .from('airbnb_sync_status')
       .select('*')

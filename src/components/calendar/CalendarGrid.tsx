@@ -13,11 +13,11 @@ interface CalendarGridProps {
 
 const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
-export const CalendarGrid = ({
-  calendarDays,
-  bookingLayout,
-  conflicts,
-  onBookingClick
+export const CalendarGrid = ({ 
+  calendarDays, 
+  bookingLayout, 
+  conflicts, 
+  onBookingClick 
 }: CalendarGridProps) => {
   const isMobile = useIsMobile();
   // Calculate weeks for layout
@@ -46,7 +46,7 @@ export const CalendarGrid = ({
             <div className="grid grid-cols-7">
               {week.map((day, dayIndex) => {
                 const isToday = day.date.toDateString() === new Date().toDateString();
-
+                
                 return (
                   <div
                     key={dayIndex}
@@ -65,14 +65,14 @@ export const CalendarGrid = ({
                 );
               })}
             </div>
-
+            
             {/* Booking Bars (grid-column spanning for pixel-perfect ends at day boundaries) */}
             {bookingLayout[weekIndex] && (
               <div className="absolute inset-0 top-6 sm:top-8 pointer-events-none z-20">
                 <div className="grid grid-cols-7 h-full">
                   {bookingLayout[weekIndex].map((bookingData, arrayIndex) => {
                     const barHeight = isMobile ? 16 : 24;
-                    const layer = bookingData.layer ?? 0;
+                    const layer = bookingData.layer || 0;
                     const topOffset = isMobile ? 12 + (layer * 18) : 20 + (layer * 26);
                     const endDayIndex = bookingData.startDayIndex + bookingData.span - 1;
                     const overhangRight = endDayIndex < 6 ? (isMobile ? 4 : 12) : 0;

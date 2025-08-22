@@ -18,44 +18,44 @@ interface DashboardProps {
   propertyId?: string; // Added for Airbnb calendar integration
 }
 
-export const Dashboard = ({
-  onNewBooking,
-  onEditBooking,
+export const Dashboard = ({ 
+  onNewBooking, 
+  onEditBooking, 
   bookings: propBookings,
   onDeleteBooking,
   onRefreshBookings,
   propertyId
 }: DashboardProps) => {
   const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings();
-
+  
   // Use prop bookings if provided, otherwise use all bookings
   const bookings = propBookings || allBookings;
-
+  
   const handleDeleteBooking = onDeleteBooking || deleteBooking;
   const handleRefreshBookings = onRefreshBookings || refreshBookings;
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('calendar');
-
+  
   // Refresh bookings when component mounts and periodically
   useEffect(() => {
     handleRefreshBookings();
-
+    
   }, []);
-
+  
   // Log bookings changes for debugging
   useEffect(() => {
-
+    
   }, [bookings]);
 
   const filteredBookings = bookings.filter(booking => {
     // If no search term, show all bookings
-    const matchesSearch = !searchTerm ||
+    const matchesSearch = !searchTerm || 
                          booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          booking.guests.some(guest => guest.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
-
+    
     const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
-
+    
     return matchesSearch && matchesStatus;
   });
 
@@ -155,7 +155,7 @@ export const Dashboard = ({
               {bookings.length === 0 ? 'Aucune réservation' : 'Aucun résultat'}
             </h3>
             <p className="text-muted-foreground mb-4">
-              {bookings.length === 0
+              {bookings.length === 0 
                 ? 'Créez votre première réservation pour commencer à générer les documents obligatoires.'
                 : 'Aucune réservation ne correspond à vos critères de recherche.'
               }

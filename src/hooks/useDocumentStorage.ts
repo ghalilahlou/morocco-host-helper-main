@@ -14,22 +14,22 @@ export const useDocumentStorage = () => {
     setIsUploading(true);
     try {
       const result = await DocumentStorageService.storeDocument(file, metadata);
-
+      
       if (result.success) {
         toast({
           title: "Document téléchargé",
           description: `${file.name} a été téléchargé avec succès`
         });
-        return result.filePath ?? result.documentUrl;
+        return result.filePath || result.documentUrl;
       } else {
         toast({
           title: "Erreur",
-          description: result.error ?? "Erreur lors du téléchargement",
+          description: result.error || "Erreur lors du téléchargement",
           variant: "destructive"
         });
         return null;
       }
-    } catch (_error) {
+    } catch (error) {
       toast({
         title: "Erreur",
         description: "Erreur lors du téléchargement du document",
@@ -47,8 +47,8 @@ export const useDocumentStorage = () => {
       const docs = await DocumentStorageService.getDocumentsForBooking(booking);
       setDocuments(docs);
       return docs;
-    } catch (_error) {
-      console.error('Error loading documents:', _error);
+    } catch (error) {
+      console.error('Error loading documents:', error);
       toast({
         title: "Erreur",
         description: "Erreur lors du chargement des documents",

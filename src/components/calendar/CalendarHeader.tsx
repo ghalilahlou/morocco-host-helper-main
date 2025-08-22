@@ -27,10 +27,10 @@ const monthNames = [
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
 ];
 
-export const CalendarHeader = ({
-  currentDate,
-  onDateChange,
-  bookingCount,
+export const CalendarHeader = ({ 
+  currentDate, 
+  onDateChange, 
+  bookingCount, 
   onAirbnbSync,
   isSyncing,
   lastSyncDate,
@@ -62,8 +62,8 @@ export const CalendarHeader = ({
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-
-          <Select
+          
+          <Select 
             value={`${currentDate.getFullYear()}-${currentDate.getMonth()}`}
             onValueChange={(value) => {
               const [year, month] = value.split('-').map(Number);
@@ -89,17 +89,17 @@ export const CalendarHeader = ({
             </SelectContent>
           </Select>
         </div>
-
+        
         <div className="flex items-center">
           {/* Sync Airbnb Button */}
-          <Button
-            variant="outline"
+          <Button 
+            variant="outline" 
             size="sm"
             onClick={() => hasIcs ? onAirbnbSync() : setShowNotConfigured(true)}
             disabled={isSyncing}
             className={`flex items-center space-x-1 min-w-0 justify-center sm:space-x-2 sm:size-lg sm:min-w-[180px] lg:min-w-[220px] ${
-              hasIcs && isConnected
-                ? 'bg-[hsl(var(--teal-hover))] text-white hover:bg-[hsl(var(--teal-hover))]/90 border-[hsl(var(--teal-hover))]'
+              hasIcs && isConnected 
+                ? 'bg-[hsl(var(--teal-hover))] text-white hover:bg-[hsl(var(--teal-hover))]/90 border-[hsl(var(--teal-hover))]' 
                 : 'hover:bg-[hsl(var(--teal-hover))] hover:text-white'
             }`}
             data-tutorial="sync-airbnb"
@@ -152,7 +152,7 @@ export const CalendarHeader = ({
               <Settings className="h-4 w-4" />
             </Button>
           </div>
-
+          
           {/* Sync Status - below on mobile */}
           {lastSyncDate && (
             <div className="text-xs text-muted-foreground text-right sm:text-left">

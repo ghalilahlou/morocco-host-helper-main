@@ -14,13 +14,14 @@ interface CalendarBookingBarProps {
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
 }
 
-export const CalendarBookingBar = memo(({
-  bookingData,
-  conflicts,
-  onBookingClick
+export const CalendarBookingBar = memo(({ 
+  bookingData, 
+  bookingIndex, 
+  conflicts, 
+  onBookingClick 
 }: CalendarBookingBarProps) => {
   const isConflict = conflicts.includes(bookingData.booking.id);
-
+  
   // Determine the color based on the booking color
   const getBackgroundColor = () => {
     const c = bookingData.color;
@@ -33,7 +34,7 @@ export const CalendarBookingBar = memo(({
     }
     return BOOKING_COLORS.pending.hex;
   };
-
+  
   return (
     <div
       className={`
@@ -48,7 +49,7 @@ export const CalendarBookingBar = memo(({
         zIndex: 1000
       }}
       onClick={() => onBookingClick(bookingData.booking)}
-      title={bookingData.isAirbnb ?
+      title={bookingData.isAirbnb ? 
         `${(bookingData.booking as any).guestName || 'Airbnb'} - Réservation Airbnb` :
         (() => {
           const enriched = bookingData.booking as EnrichedBooking;

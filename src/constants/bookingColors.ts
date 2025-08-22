@@ -11,7 +11,7 @@ export const BOOKING_COLORS = {
     text: 'text-gray-400'
   },
   completed: {
-    hex: '#00BD9D',
+    hex: '#00BD9D', 
     tailwind: 'bg-[hsl(var(--teal-hover))]',
     text: 'text-[hsl(var(--teal-hover))]'
   },

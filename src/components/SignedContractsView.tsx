@@ -44,8 +44,8 @@ export const SignedContractsView: React.FC = () => {
 
   const loadSignedContracts = async () => {
     try {
-
-
+      
+      
       // Use RPC function since types aren't updated yet
       const { data, error } = await (supabase as any).rpc('get_signed_contracts_for_user', {
         p_user_id: user?.id
@@ -57,7 +57,7 @@ export const SignedContractsView: React.FC = () => {
         throw error;
       }
 
-
+      
       setContracts(data || []);
     } catch (error) {
       console.error('Error loading signed contracts:', error);
@@ -75,7 +75,7 @@ export const SignedContractsView: React.FC = () => {
     try {
       // Extract guest data
       const guests = contract.guest_submission?.guest_data?.guests || [];
-
+      
       // Create booking data object compatible with Booking interface
       const bookingData = {
         id: contract.booking_id,
@@ -181,7 +181,7 @@ export const SignedContractsView: React.FC = () => {
                         Signé
                       </Badge>
                     </div>
-
+                    
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4" />
@@ -219,7 +219,7 @@ export const SignedContractsView: React.FC = () => {
                     </Button>
                   </div>
                 </div>
-
+                
                 {index < contracts.length - 1 && <Separator className="my-2" />}
               </div>
             ))}

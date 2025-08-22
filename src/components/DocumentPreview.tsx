@@ -119,7 +119,7 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
             landlord_signature: (property as any)?.contract_template?.landlord_signature,
           } : undefined)
         } as any;
-
+        
         console.log('🔍 Merged contract template (contract):', mergedContractTemplate);
         // Create bookingLike object matching ContractSignature structure
         const bookingLike = {
@@ -153,7 +153,7 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
 
         // Use the same getContractPdfUrl function as ContractSignature
         const url = await getContractPdfUrl({ supabase, bookingLike, isPreview: true });
-
+        
         let finalUrl: string = url as string;
         try {
           if (typeof url === 'string' && url.startsWith('data:application/pdf')) {
@@ -249,7 +249,7 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
             landlord_signature: formData.landlord_signature ?? (property as any)?.contract_template?.landlord_signature,
           } : undefined)
         } as any;
-
+        
         console.log('🔍 Merged contract template (police):', mergedContractTemplate);
         const fullAddress = [formData?.address, formData?.postal_code, formData?.city, formData?.country]
           .filter(Boolean)
@@ -333,7 +333,7 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
     const landlordText = landlordStatus === 'particulier'
       ? `${landlordName}, Gestionnaire et/ou propriétaire du bien, ci-après dénommée "Le Bailleur"`
       : `${(companyName || 'Société').toUpperCase()}, société enregistrée sous le numéro ${companyRegistration}, ayant son siège social situé ${companyAddress}, représentée par ${landlordName}, ci-après dénommée "Le Bailleur"`;
-
+    
     // Booking information
     const formatDateSafe = (v: any, placeholder = '......................') => {
       if (!v) return placeholder;
@@ -343,7 +343,7 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
     const checkInDate = formatDateSafe(formData?.checkInDate);
     const checkOutDate = formatDateSafe(formData?.checkOutDate);
     const currentDate = new Date().toLocaleDateString('fr-FR');
-
+    
     const guestCount = formData?.numberOfGuests || formData?.guests?.length || 1;
     const guestName = firstGuest?.fullName || '_________________';
     const guestBirthDate = formatDateSafe(firstGuest?.dateOfBirth, '__/__/____');
@@ -397,10 +397,10 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
           Le logement sera occupé par <strong>${guestCount}</strong> personne(s) maximum. Liste des occupants autorisés :
         </p>
         <ul style="margin-left: 40px; margin-top: 10px;">
-          ${formData?.guests?.slice(0, 6).map((guest, index) =>
+          ${formData?.guests?.slice(0, 6).map((guest, index) => 
             `<li><strong>${guest.fullName || '_______________'}</strong> - Né(e) le <strong>${guest.dateOfBirth ? new Date(guest.dateOfBirth).toLocaleDateString('fr-FR') : '__/__/____'}</strong> - Document n° <strong>${guest.documentNumber || '_______________'}</strong></li>`
-          ).join('') ||
-          Array.from({length: Math.max(2, guestCount)}, (_, i) =>
+          ).join('') || 
+          Array.from({length: Math.max(2, guestCount)}, (_, i) => 
             `<li><strong>_______________</strong> - Né(e) le <strong>__/__/____</strong> - Document n° <strong>_______________</strong></li>`
           ).join('')}
         </ul>
@@ -413,7 +413,7 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
         <h4 style="font-size: 14px; font-weight: bold; border-left: 4px solid #333; padding-left: 10px;">ARTICLE 4 - REGLEMENT INTERIEUR ET OBLIGATIONS</h4>
         <p style="text-align: justify; margin-bottom: 10px;">Le locataire s'engage à respecter les règles suivantes :</p>
         <ul style="margin-left: 40px;">
-          ${(Array.isArray(formData?.house_rules) && formData.house_rules.length > 0 ?
+          ${(Array.isArray(formData?.house_rules) && formData.house_rules.length > 0 ? 
             formData.house_rules : (property.house_rules && property.house_rules.length > 0 ? property.house_rules : [
               "Respect absolu du voisinage et des parties communes de l'immeuble",
               "Interdiction formelle d'organiser des fêtes, événements ou de faire du bruit excessif",
@@ -462,7 +462,7 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
             <h4 style="font-weight: bold;">LE BAILLEUR</h4>
             <p style="margin-bottom: 20px;">${companyName}</p>
             <div style="border: 1px solid #333; height: 60px; width: 200px; margin: 0 auto; display: flex; align-items: center; justify-content: center;">
-              ${contractTemplate?.landlord_signature ?
+              ${contractTemplate?.landlord_signature ? 
                 `<img src="${contractTemplate.landlord_signature}" alt="Signature du bailleur" style="max-height:55px; max-width:190px; object-fit: contain;" />` :
                 `<div style=\"font-family: cursive; font-size: 20px; color: #333;\">${property?.contact_info?.ownerName || landlordName}</div>`
               }
@@ -499,7 +499,7 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
             {selectedDocument === 'police' ? "Fiche de Police - Déclaration d'Arrivée" : 'Contrat de Location Courte Durée'}
           </h3>
         </div>
-
+        
         <Card>
           <CardContent className="p-0">
             {selectedDocument === 'police' ? (
@@ -568,9 +568,9 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
             )}
           </CardContent>
         </Card>
-
+        
         <p className="text-xs text-muted-foreground">
-          {selectedDocument === 'police'
+          {selectedDocument === 'police' 
             ? 'Aperçu généré par le serveur. Vous pouvez ouvrir chaque PDF dans un onglet pour le vérifier.'
             : 'Le contrat sera personnalisé avec les informations spécifiques de chaque réservation'
           }

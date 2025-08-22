@@ -1,181 +1,73 @@
-# Morocco Host Helper
+# Welcome to your Lovable project
 
-Application de gestion pour propriétaires Airbnb au Maroc - Simplifiez la gestion de vos propriétés et améliorez l'expérience de vos invités.
+## Project info
 
-## 🚀 Déploiement Vercel
+**URL**: https://lovable.dev/projects/1f998fb3-b22b-4218-9b35-a319af13f031
 
-### Déploiement automatique
+## How can I edit this code?
 
-1. **Connectez votre repository GitHub à Vercel :**
-   - Allez sur [vercel.com](https://vercel.com)
-   - Connectez-vous avec votre compte GitHub
-   - Cliquez sur "New Project"
-   - Importez le repository `boumnadehicham-blip/morocco-host-helper`
+There are several ways of editing your application.
 
-2. **Configuration automatique :**
-   - Vercel détectera automatiquement que c'est un projet Vite
-   - Framework: Vite
-   - Build Command: `npm run build`
-   - Output Directory: `dist`
+**Use Lovable**
 
-3. **Variables d'environnement :**
-   Configurez ces variables dans les paramètres Vercel :
-   ```
-   VITE_SUPABASE_URL=https://csopyblkfyofwkeqqegd.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNzb3B5YmxrZnlvZndrZXFxZWdkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNTQsImV4cCI6MjA2OTU3NTA1NH0.QcIqFLgD6Cg5hYu5Q4iQjvuckTVJyKo6wDd9AMEeakM
-   VITE_OPENAI_API_KEY=your_openai_api_key_here
-   VITE_RESEND_API_KEY=your_resend_api_key_here
-   VITE_RESEND_FROM_EMAIL=notifications@yourdomain.com
-   VITE_APP_NAME=Morocco Host Helper
-   VITE_APP_VERSION=1.0.0
-   VITE_APP_ENV=production
-   VITE_ENABLE_AI_OCR=true
-   VITE_ENABLE_AIRBNB_SYNC=true
-   VITE_ENABLE_EMAIL_NOTIFICATIONS=true
-   ```
+Simply visit the [Lovable Project](https://lovable.dev/projects/1f998fb3-b22b-4218-9b35-a319af13f031) and start prompting.
 
-4. **Déployez :**
-   - Cliquez sur "Deploy"
-   - Vercel construira et déploiera automatiquement votre application
+Changes made via Lovable will be committed automatically to this repo.
 
-### Déploiement manuel avec Vercel CLI
+**Use your preferred IDE**
 
-1. **Installez Vercel CLI :**
-   ```bash
-   npm i -g vercel
-   ```
+If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
 
-2. **Connectez-vous :**
-   ```bash
-   vercel login
-   ```
+The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
 
-3. **Déployez :**
-   ```bash
-   vercel --prod
-   ```
+Follow these steps:
 
-## 🛠️ Développement local
+```sh
+# Step 1: Clone the repository using the project's Git URL.
+git clone <YOUR_GIT_URL>
 
-### Prérequis
-- Node.js 18+ 
-- npm ou yarn
+# Step 2: Navigate to the project directory.
+cd <YOUR_PROJECT_NAME>
 
-### Installation
-```bash
-# Cloner le repository
-git clone https://github.com/boumnadehicham-blip/morocco-host-helper.git
-cd morocco-host-helper
+# Step 3: Install the necessary dependencies.
+npm i
 
-# Installer les dépendances
-npm install
-
-# Créer le fichier .env
-cp env.example .env
-# Éditer .env avec vos clés API
-
-# Lancer le serveur de développement
+# Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
 ```
 
-### Scripts disponibles
-```bash
-npm run dev          # Serveur de développement
-npm run build        # Build de production
-npm run preview      # Prévisualiser le build
-npm run lint         # Vérifier le code
-npm run lint:fix     # Corriger automatiquement
-npm run type-check   # Vérifier les types TypeScript
-```
+**Edit a file directly in GitHub**
 
-## 🏗️ Architecture
+- Navigate to the desired file(s).
+- Click the "Edit" button (pencil icon) at the top right of the file view.
+- Make your changes and commit the changes.
 
-### Technologies utilisées
-- **Frontend :** React 18 + TypeScript + Vite
-- **UI :** Tailwind CSS + Shadcn/ui
-- **Backend :** Supabase (Database + Auth + Edge Functions)
-- **État :** React Query + Zustand
-- **Routing :** React Router DOM
-- **Formulaires :** React Hook Form + Zod
+**Use GitHub Codespaces**
 
-### Structure du projet
-```
-src/
-├── components/     # Composants réutilisables
-├── pages/         # Pages de l'application
-├── hooks/         # Hooks personnalisés
-├── services/      # Services API
-├── types/         # Types TypeScript
-├── lib/           # Utilitaires
-├── i18n/          # Internationalisation
-└── assets/        # Ressources statiques
-```
+- Navigate to the main page of your repository.
+- Click on the "Code" button (green button) near the top right.
+- Select the "Codespaces" tab.
+- Click on "New codespace" to launch a new Codespace environment.
+- Edit files directly within the Codespace and commit and push your changes once you're done.
 
-## 🔧 Configuration
+## What technologies are used for this project?
 
-### Variables d'environnement
-- `VITE_SUPABASE_URL` : URL de votre projet Supabase
-- `VITE_SUPABASE_ANON_KEY` : Clé anonyme Supabase
-- `VITE_OPENAI_API_KEY` : Clé API OpenAI (pour OCR)
-- `VITE_RESEND_API_KEY` : Clé API Resend (emails)
-- `VITE_RESEND_FROM_EMAIL` : Email d'envoi
+This project is built with:
 
-### Supabase
-Le projet utilise Supabase pour :
-- Authentification des utilisateurs
-- Base de données PostgreSQL
-- Edge Functions
-- Stockage de fichiers
-- Real-time subscriptions
+- Vite
+- TypeScript
+- React
+- shadcn-ui
+- Tailwind CSS
 
-## 📱 Fonctionnalités
+## How can I deploy this project?
 
-### Pour les propriétaires
-- ✅ Gestion des propriétés
-- ✅ Synchronisation Airbnb
-- ✅ Gestion des réservations
-- ✅ Génération de contrats
-- ✅ Vérification des invités
-- ✅ Notifications automatiques
+Simply open [Lovable](https://lovable.dev/projects/1f998fb3-b22b-4218-9b35-a319af13f031) and click on Share -> Publish.
 
-### Pour les invités
-- ✅ Interface de vérification
-- ✅ Upload de documents
-- ✅ Signature de contrats
-- ✅ Support multilingue
+## Can I connect a custom domain to my Lovable project?
 
-## 🚀 Performance
+Yes, you can!
 
-### Optimisations
-- ✅ Code splitting automatique
-- ✅ Lazy loading des composants
-- ✅ Compression gzip
-- ✅ Cache des assets statiques
-- ✅ Optimisation des images
+To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
-### Métriques
-- Taille du bundle : ~1.2MB (gzippé)
-- Temps de chargement : < 2s
-- Lighthouse Score : 90+
-
-## 🔒 Sécurité
-
-- ✅ Authentification JWT
-- ✅ Row Level Security (RLS)
-- ✅ Validation des données
-- ✅ Protection CSRF
-- ✅ Headers de sécurité
-
-## 📞 Support
-
-Pour toute question ou problème :
-- 📧 Email : support@moroccohosthelper.com
-- 🐛 Issues : [GitHub Issues](https://github.com/boumnadehicham-blip/morocco-host-helper/issues)
-
-## 📄 Licence
-
-Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
-
----
-
-**Développé avec ❤️ pour les propriétaires Airbnb au Maroc**
+Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)

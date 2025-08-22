@@ -194,10 +194,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     // Setup canvas for better quality
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-
+    
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
-
+    
     ctx.scale(dpr, dpr);
     canvas.style.width = rect.width + 'px';
     canvas.style.height = rect.height + 'px';
@@ -215,7 +215,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       isDrawing = true;
       const rect = canvas.getBoundingClientRect();
       let x, y;
-
+      
       if (e instanceof MouseEvent) {
         x = e.clientX - rect.left;
         y = e.clientY - rect.top;
@@ -230,10 +230,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
     const draw = (e: MouseEvent | TouchEvent) => {
       if (!isDrawing) return;
-
+      
       const rect = canvas.getBoundingClientRect();
       let x, y;
-
+      
       if (e instanceof MouseEvent) {
         x = e.clientX - rect.left;
         y = e.clientY - rect.top;
@@ -272,10 +272,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   const clearSignature = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
+    
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
+    
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setSignature(null);
   };
@@ -287,7 +287,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     try {
       // Get or use existing booking ID - avoid direct DB operations from browser
       let bookingId = bookingData?.id as string | undefined;
-
+      
       // If no bookingId, generate a temporary one based on property and dates
       if (!bookingId) {
         const timestamp = Date.now();
@@ -300,7 +300,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       const signerName = allGuests?.[0]?.fullName || 'Guest';
       const signerEmail = guestData?.email || null;
       const signerPhone = guestData?.phone || null;
-
+      
       const { data: signatureResult, error: signErr } = await supabase.functions.invoke('save-contract-signature', {
         body: {
           bookingId: bookingId,
@@ -310,7 +310,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           signatureDataUrl: signature
         }
       });
-
+      
       if (signErr) {
         console.error('❌ Contract signature error:', signErr);
         throw signErr;
@@ -364,7 +364,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 p-4">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex justify-start">
-          <Button
+          <Button 
             variant="outline"
             onClick={() => (onBack ? onBack() : window.history.back())}
           >
@@ -421,13 +421,13 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="flex items-center space-x-2">
-              <Checkbox
-                id="agree"
+              <Checkbox 
+                id="agree" 
                 checked={isAgreed}
                 onCheckedChange={(checked) => setIsAgreed(checked as boolean)}
               />
-              <label
-                htmlFor="agree"
+              <label 
+                htmlFor="agree" 
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
               >
                 {t('contractSignature.agreeLabel')}
@@ -438,14 +438,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               <div className="space-y-4">
                 {!isSignatureModeActive ? (
                   <div className="flex gap-2">
-                    <Button
+                    <Button 
                       variant="outline"
                       className="flex-1"
                       onClick={() => (onBack ? onBack() : window.history.back())}
                     >
                       {t('common.previous')}
                     </Button>
-                    <Button
+                    <Button 
                       onClick={() => setIsSignatureModeActive(true)}
                       className="flex-1"
                       size="lg"
@@ -467,23 +467,23 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         className="w-full border rounded bg-background cursor-crosshair"
                       />
                     </div>
-
+                    
                     <div className="flex gap-2">
-                      <Button
+                      <Button 
                         onClick={() => (onBack ? onBack() : window.history.back())}
                         variant="outline"
                         className="flex-1"
                       >
                         {t('common.previous')}
                       </Button>
-                      <Button
+                      <Button 
                         onClick={clearSignature}
                         variant="outline"
                         className="flex-1"
                       >
                         {t('common.clear')}
                       </Button>
-                      <Button
+                      <Button 
                         onClick={handleSubmitSignature}
                         disabled={!signature || isSubmitting}
                         className="flex-1"

@@ -23,16 +23,16 @@ export class AILocrService {
   static async extractTextFromImage(imageFile: File): Promise<string> {
     try {
       console.log(`Processing document with AI: ${imageFile.name}`);
-
+      
       // First extract raw text using tesseract (keep this part)
       const { createWorker } = await import('tesseract.js');
       const worker = await createWorker(['eng', 'fra', 'spa', 'deu', 'nld'], 1);
-
+      
       const preprocessedImage = await this.preprocessImage(imageFile);
       const { data: { text } } = await worker.recognize(preprocessedImage);
-
+      
       await worker.terminate();
-
+      
       console.log('Raw extracted text:', text);
       return text;
     } catch (error) {
@@ -55,16 +55,16 @@ export class AILocrService {
       img.onload = () => {
         const targetWidth = Math.min(img.width * 3, 3000);
         const targetHeight = (img.height * targetWidth) / img.width;
-
+        
         canvas.width = targetWidth;
         canvas.height = targetHeight;
-
+        
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-
+        
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const enhanced = this.enhanceImageData(imageData);
         ctx.putImageData(enhanced, 0, 0);
-
+        
         resolve(canvas);
       };
 
@@ -75,28 +75,28 @@ export class AILocrService {
 
   private static enhanceImageData(imageData: ImageData): ImageData {
     const data = imageData.data;
-
+    
     for (let i = 0; i < data.length; i += 4) {
       const gray = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
-
+      
       const contrast = 2.0;
       const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
       const enhancedGray = Math.min(255, Math.max(0, factor * (gray - 128) + 128));
-
+      
       data[i] = enhancedGray;
       data[i + 1] = enhancedGray;
       data[i + 2] = enhancedGray;
     }
-
+    
     return imageData;
   }
 
   static async parseGuestInfo(extractedText: string): Promise<Partial<Guest>> {
     try {
       console.log('Parsing guest information with AI...');
-
+      
       const extractor = await this.initializeExtractor();
-
+      
       // Use AI to extract specific information
       const questions = [
         { field: 'surname', question: 'What is the surname or family name on this document?' },
@@ -112,9 +112,9 @@ export class AILocrService {
       for (const { field, question } of questions) {
         try {
           const answer = await extractor(question, extractedText);
-          if (answer?.answer && answer.score > 0.1) {
+          if (answer && answer.answer && answer.score > 0.1) {
             console.log(`${field}: ${answer.answer} (confidence: ${answer.score})`);
-
+            
             switch (field) {
               case 'surname':
                 result.fullName = answer.answer.trim();
@@ -149,7 +149,7 @@ export class AILocrService {
       if (!result.fullName || !result.nationality) {
         console.log('AI extraction incomplete, falling back to pattern matching...');
         const fallback = this.fallbackPatternMatching(extractedText);
-
+        
         if (!result.fullName && fallback.fullName) {
           result.fullName = fallback.fullName;
         }
@@ -189,15 +189,15 @@ export class AILocrService {
     console.log('🔍 Using enhanced fallback pattern matching based on real document examples...');
     const upperText = text.toUpperCase();
     const lines = upperText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-
+    
     console.log('📝 Processing lines:', lines);
-
+    
     const result: Partial<Guest> = {};
 
     // 🔤 ENHANCED NAME EXTRACTION based on real document examples
     let surname = '';
     let givenName = '';
-
+    
     // Pattern 1: MRZ format from passports (P<GBRDAVIES<<STEVENSALAN)
     const passportMrzMatch = text.match(/P<[A-Z]{3}([A-Z]+)<<([A-Z<]+)/);
     if (passportMrzMatch) {
@@ -205,19 +205,19 @@ export class AILocrService {
       givenName = passportMrzMatch[2].replace(/</g, ' ').trim();
       console.log('✅ Found passport MRZ names - Surname:', surname, 'Given:', givenName);
     }
-
+    
     // Pattern 2: British passport format (ISAKJEE then FEROZA)
     if (!surname || !givenName) {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-
+        
         // Look for surname patterns like "ISAKJEE", "DAVIES", "SISSOKO"
-        if (line.match(/^[A-Z]{3,25}$/) &&
+        if (line.match(/^[A-Z]{3,25}$/) && 
             !line.match(/^(GBR|FRA|DEU|ITA|ESP|NLD|USA|BRITISH|CITIZEN|PASSPORT|IDENTITY|CARD|DOCUMENT|NATIONAL|RÉPUBLIQUE|FRANÇAISE|NEDERLANDE)$/)) {
           const nextLine = i + 1 < lines.length ? lines[i + 1] : '';
-
+          
           // Check if next line contains given names like "FEROZA", "STEVEN ALAN"
-          if (nextLine?.match(/^[A-Z\s-]{2,40}$/) &&
+          if (nextLine && nextLine.match(/^[A-Z\s\-]{2,40}$/) && 
               !nextLine.match(/^(CITIZEN|PASSPORT|IDENTITY|CARD|DOCUMENT|NATIONAL|RÉPUBLIQUE|FRANÇAISE)$/)) {
             surname = line;
             givenName = nextLine;
@@ -225,22 +225,22 @@ export class AILocrService {
             break;
           }
         }
-
+        
         // Pattern 3: French ID format (SISSOKO then Dama)
-        if (line.match(/^[A-Z]{4,25}$/) &&
+        if (line.match(/^[A-Z]{4,25}$/) && 
             !line.match(/^(RÉPUBLIQUE|FRANÇAISE|CARTE|NATIONALE|IDENTITÉ|IDENTITY|CARD)$/)) {
           const nextLine = i + 1 < lines.length ? lines[i + 1] : '';
-
-          if (nextLine?.match(/^[A-Za-z\s-]{2,30}$/)) {
+          
+          if (nextLine && nextLine.match(/^[A-Za-z\s\-]{2,30}$/)) {
             surname = line;
             givenName = nextLine;
             console.log('✅ Found French ID style - Surname:', surname, 'Given:', givenName);
             break;
           }
         }
-
+        
         // Pattern 4: Dutch ID format (Bolosi Abraham-Masasu as one line)
-        if (line.match(/^[A-Z][a-z]+\s+[A-Z][a-z-]+$/)) {
+        if (line.match(/^[A-Z][a-z]+\s+[A-Z][a-z\-]+$/)) {
           const nameParts = line.split(/\s+/);
           if (nameParts.length >= 2) {
             givenName = nameParts[0];
@@ -283,14 +283,14 @@ export class AILocrService {
       // French ID: "09 11 2005"
       /(\d{2})\s+(\d{2})\s+(19|20)(\d{2})/g,
       // Standard formats
-              /(\d{1,2})[\s./-](\d{1,2})[\s./-](19|20)(\d{2})/g
+      /(\d{1,2})[\s\.\/-](\d{1,2})[\s\.\/-](19|20)(\d{2})/g
     ];
 
     for (const pattern of datePatterns) {
       const matches = Array.from(text.matchAll(pattern));
       for (const match of matches) {
         let day, month, year;
-
+        
         if (match[0].includes('APR')) {
           day = match[1].padStart(2, '0');
           month = '04';
@@ -315,7 +315,7 @@ export class AILocrService {
           month = match[2].padStart(2, '0');
           year = `${match[3]}${match[4]}`;
         }
-
+        
         if (day && month && year) {
           // Validate the year is reasonable (between 1900 and current year)
           const currentYear = new Date().getFullYear();
@@ -336,7 +336,7 @@ export class AILocrService {
     const docPatterns = [
       // British passports: 152113217, 562948928
       /([0-9]{9})/g,
-      // Dutch ID: IT7R75H33
+      // Dutch ID: IT7R75H33  
       /([A-Z0-9]{9})/g,
       // French ID: FMTB4LY80
       /([A-Z]{4}[0-9][A-Z][0-9]{2})/g,
@@ -350,7 +350,7 @@ export class AILocrService {
       const matches = Array.from(text.matchAll(pattern));
       for (const match of matches) {
         const docNum = match[1];
-        if (docNum && docNum.length >= 6 &&
+        if (docNum && docNum.length >= 6 && 
             !docNum.match(/^(19|20)\d{2,6}$/) && // Not dates
             !docNum.match(/^\d{1,2}$/) && // Not small numbers
             !docNum.match(/^(GBR|FRA|NLD|DEU|ITA|ESP)$/)) { // Not country codes
@@ -367,7 +367,7 @@ export class AILocrService {
       'BIRMINGHAM', 'CLICHY', 'PARIS', 'LONDON', 'AMSTERDAM', 'BERLIN', 'ROME',
       'MANCHESTER', 'LIVERPOOL', 'GLASGOW', 'EDINBURGH', 'CARDIFF', 'BELFAST'
     ];
-
+    
     for (const line of lines) {
       for (const place of placePatterns) {
         if (line.includes(place)) {
@@ -385,7 +385,7 @@ export class AILocrService {
 
   private static standardizeDate(dateString: string): string {
     const cleaned = dateString.replace(/\s+/g, ' ').trim();
-
+    
     // Handle "DD MMM YYYY" format
     const monthNames: { [key: string]: string } = {
       'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
@@ -402,7 +402,7 @@ export class AILocrService {
       const monthStr = monthMatch[2].toUpperCase();
       const year = monthMatch[3];
       const month = monthNames[monthStr] || monthNames[monthStr.substring(0, 3)];
-
+      
       if (month) {
         return `${year}-${month}-${day}`;
       }
@@ -410,15 +410,15 @@ export class AILocrService {
 
     // Handle standard formats
     const formats = [
-      /(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/, // DD/MM/YYYY
-              /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/, // YYYY/MM/DD
+      /(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})/, // DD/MM/YYYY
+      /(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/, // YYYY/MM/DD
     ];
 
     for (const format of formats) {
       const match = cleaned.match(format);
       if (match) {
         const [, first, second, third] = match;
-
+        
         if (third.length === 4) {
           const day = first.padStart(2, '0');
           const month = second.padStart(2, '0');

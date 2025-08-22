@@ -15,9 +15,9 @@ export interface Property {
   property_type: string;
   max_occupancy: number;
   description?: string;
-  contact_info?: Record<string, unknown>;
+  contact_info?: any;
   house_rules: string[];
-  contract_template?: Record<string, unknown>;
+  contract_template: any;
   user_id: string;
   created_at: string;
   updated_at: string;

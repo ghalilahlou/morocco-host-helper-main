@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Building2 } from 'lucide-react';
+import { Plus, Building2, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -42,8 +42,8 @@ export const PropertySelector = ({
           <Plus className="h-4 w-4" />
           Add Your First Property
         </Button>
-        <CreatePropertyDialog
-          open={showCreateDialog}
+        <CreatePropertyDialog 
+          open={showCreateDialog} 
           onOpenChange={setShowCreateDialog}
         />
       </div>
@@ -52,8 +52,8 @@ export const PropertySelector = ({
 
   return (
     <div className="flex items-center gap-3">
-      <Select
-        value={selectedProperty?.id ?? ''}
+      <Select 
+        value={selectedProperty?.id || ''} 
         onValueChange={(value) => {
           const property = properties.find(p => p.id === value);
           if (property) onPropertySelect(property);
@@ -89,8 +89,8 @@ export const PropertySelector = ({
         Ajouter un bien
       </Button>
 
-      <CreatePropertyDialog
-        open={showCreateDialog}
+      <CreatePropertyDialog 
+        open={showCreateDialog} 
         onOpenChange={setShowCreateDialog}
       />
     </div>

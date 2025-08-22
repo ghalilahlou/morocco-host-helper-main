@@ -31,7 +31,7 @@ export const AccountSettings: React.FC = () => {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000));
       toast.success('Paramètres sauvegardés avec succès');
-    } catch (_error) {
+    } catch (error) {
       toast.error('Erreur lors de la sauvegarde');
     } finally {
       setIsLoading(false);
@@ -73,7 +73,7 @@ export const AccountSettings: React.FC = () => {
                 onCheckedChange={(value) => handleSettingChange('emailNotifications', value)}
               />
             </div>
-
+            
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Notifications push</Label>

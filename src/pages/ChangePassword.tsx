@@ -27,41 +27,41 @@ export const ChangePassword: React.FC = () => {
       toast.error('Veuillez saisir votre mot de passe actuel');
       return false;
     }
-
+    
     if (!formData.newPassword) {
       toast.error('Veuillez saisir un nouveau mot de passe');
       return false;
     }
-
+    
     if (formData.newPassword.length < 6) {
       toast.error('Le nouveau mot de passe doit contenir au moins 6 caractères');
       return false;
     }
-
+    
     if (formData.newPassword !== formData.confirmPassword) {
       toast.error('Les mots de passe ne correspondent pas');
       return false;
     }
-
+    
     return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+    
     if (!validateForm()) return;
-
+    
     setIsLoading(true);
-
+    
     try {
       const { error } = await supabase.auth.updateUser({
         password: formData.newPassword
       });
-
+      
       if (error) {
         throw error;
       }
-
+      
       toast.success('Mot de passe mis à jour avec succès');
       setFormData({
         currentPassword: '',

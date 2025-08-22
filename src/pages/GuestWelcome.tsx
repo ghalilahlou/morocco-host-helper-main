@@ -1,27 +1,27 @@
 import { useParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { CheckCircle, Clock, ArrowRight, IdCard, FileText } from 'lucide-react';
+import { Shield, CheckCircle, Lock, Clock, ArrowRight, IdCard, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { _AirbnbSyncService } from '@/services/airbnbSyncService';
+import { AirbnbSyncService } from '@/services/airbnbSyncService';
 import checkyLogo from '/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png';
 import { useT } from '@/i18n/GuestLocaleProvider';
 
 export const GuestWelcome = () => {
   console.log('🎯 GuestWelcome component loaded');
-  const { propertyId, token, airbnbBookingId } = useParams<{
-    propertyId: string;
-    token: string;
-    airbnbBookingId?: string;
+  const { propertyId, token, airbnbBookingId } = useParams<{ 
+    propertyId: string; 
+    token: string; 
+    airbnbBookingId?: string; 
   }>();
   console.log('🎯 URL params in GuestWelcome:', { propertyId, token, airbnbBookingId });
-  const { toast: _toast } = useToast();
+  const { toast } = useToast();
   const t = useT();
   const [isValidToken, setIsValidToken] = useState(false);
   const [checkingToken, setCheckingToken] = useState(true);
   const [propertyName, setPropertyName] = useState('');
-  const [_matchedBooking, _setMatchedBooking] = useState<any>(null);
+  const [matchedBooking, setMatchedBooking] = useState<any>(null);
 
   useEffect(() => {
     const verifyTokenAndMatchBooking = async () => {
@@ -31,9 +31,9 @@ export const GuestWelcome = () => {
       }
 
       try {
-        console.log('🔍 About to call resolve-guest-link with params:', {
-          propertyId,
-          token,
+        console.log('🔍 About to call resolve-guest-link with params:', { 
+          propertyId, 
+          token, 
           airbnbCode: airbnbBookingId,
           'propertyId type': typeof propertyId,
           'token type': typeof token,
@@ -56,7 +56,7 @@ export const GuestWelcome = () => {
           // If airbnbBookingId is provided, try to match from a hardcoded ICS URL for now
           if (airbnbBookingId) {
             // For demo purposes, using a placeholder ICS URL - this should come from property settings
-            const _icsUrl = "https://www.airbnb.com/calendar/ical/..."; // This will be configurable per property
+            const icsUrl = "https://www.airbnb.com/calendar/ical/..."; // This will be configurable per property
             try {
               // We'll find the booking by matching the booking ID in the description
               // Since we don't have the actual ICS URL yet, we'll store the booking ID for later matching
@@ -112,7 +112,7 @@ export const GuestWelcome = () => {
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Decorative background elements */}
-
+      
       {/* Header */}
       <header className="relative z-20 bg-card/90 backdrop-blur-xl border-b border-border/30 shadow-medium">
         <div className="max-w-6xl mx-auto px-6 py-12">
@@ -163,7 +163,7 @@ export const GuestWelcome = () => {
             <div className="space-y-6">
               <div className="relative inline-block">
                 <div className="absolute inset-0 rounded-xl blur-xl opacity-30 bg-primary/30"></div>
-                <Button
+                <Button 
                   onClick={handleStartCheckin}
                   className="relative inline-flex items-center justify-center px-6 sm:px-16 py-4 sm:py-6 text-lg sm:text-xl font-bold rounded-xl shadow-medium hover:shadow-strong transition-all duration-300 hover:scale-105 group min-w-0 sm:min-w-[300px] lg:min-w-[400px] bg-[hsl(var(--teal-hover))] text-white"
                 >
@@ -183,7 +183,7 @@ export const GuestWelcome = () => {
           </div>
 
           <div className="grid md:grid-cols-3 gap-6">
-            {[
+            {[ 
               {
                 icon: IdCard,
                 title: t('guest.steps.step1.title'),
@@ -200,7 +200,7 @@ export const GuestWelcome = () => {
                 description: t('guest.steps.step3.desc')
               }
             ].map((step, index) => (
-              <article
+              <article 
                 key={index}
                 className="p-8 rounded-2xl bg-card/60 backdrop-blur-sm border border-border/50 shadow-soft hover:shadow-medium transition-all duration-500 hover:-translate-y-1 animate-scale-in"
               >
@@ -228,8 +228,8 @@ export const GuestWelcome = () => {
           <div className="text-center space-y-6">
               <div>
                 <span className="text-lg">{t('guest.footer.needHelp')} </span>
-                <a
-                  href="mailto:support@checky.fr"
+                <a 
+                  href="mailto:support@checky.fr" 
                   className="font-semibold underline decoration-2 underline-offset-4 text-white/90 hover:text-white transition-colors"
                 >
                   {t('guest.footer.contactSupport')}

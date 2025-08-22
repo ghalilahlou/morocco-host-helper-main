@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Home, Plus, Edit, MapPin, Users, MoreVertical, Calendar, Trash2 } from 'lucide-react';
+import { Home, Plus, Edit, MapPin, Users, MoreVertical, Calendar, FileText, Trash2, Grid3X3, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -11,7 +11,6 @@ import { useProperties } from '@/hooks/useProperties';
 import { useBookings } from '@/hooks/useBookings';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
 import { useToast } from '@/hooks/use-toast';
-import { logger } from '@/lib/logger';
 interface PropertyListProps {
   onPropertySelect: (property: Property) => void;
 }
@@ -32,7 +31,7 @@ export const PropertyList = ({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null);
   const {
-    toast: _toast
+    toast
   } = useToast();
   const getPropertyStats = (propertyId: string, property: Property) => {
     const propertyBookings = bookings.filter(booking => booking.property_id === propertyId);
@@ -45,7 +44,7 @@ export const PropertyList = ({
   };
   const handleDeleteProperty = async () => {
     if (!propertyToDelete) return;
-    logger.info('Attempting to delete property:', propertyToDelete.id);
+    console.log('Attempting to delete property:', propertyToDelete.id);
     await deleteProperty(propertyToDelete.id);
     setDeleteConfirmOpen(false);
     setPropertyToDelete(null);
@@ -91,7 +90,7 @@ export const PropertyList = ({
             <span className="sm:hidden">Ajouter</span>
           </Button>
         </div>
-
+        
         <CreatePropertyDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} onSuccess={refreshProperties} />
       </>;
   }
@@ -124,7 +123,7 @@ export const PropertyList = ({
             <TableBody>
               {properties.map(property => {
               const stats = getPropertyStats(property.id, property);
-              const _isActive = stats.total > 0 || stats.hasAirbnbSync;
+              const isActive = stats.total > 0 || stats.hasAirbnbSync;
               return <TableRow key={property.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer relative" onClick={() => onPropertySelect(property)}>
                     <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6">
                       <div className="flex items-center gap-1 sm:gap-2 md:gap-4">
@@ -137,29 +136,29 @@ export const PropertyList = ({
                            <div className="font-semibold text-gray-900 text-xs sm:text-sm md:text-base truncate">{property.name}</div>
                            <div className="sm:hidden flex items-center gap-1 text-xs text-gray-600 mt-1">
                              <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                             <span className="truncate">{property.address?.split(',')[0]?.trim() ?? 'Non spécifié'}</span>
+                             <span className="truncate">{property.address?.split(',')[0]?.trim() || 'Non spécifié'}</span>
                            </div>
                          </div>
                        </div>
                      </TableCell>
-
+                     
                      <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6 hidden sm:table-cell">
                      </TableCell>
-
+                     
                      <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6 hidden sm:table-cell">
                        <div className="flex items-center gap-1 md:gap-2">
                          <MapPin className="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5 text-gray-400 flex-shrink-0" />
-                         <span className="text-gray-600 text-xs sm:text-sm md:text-base truncate">{property.address?.split(',')[0]?.trim() ?? 'Non spécifié'}</span>
+                         <span className="text-gray-600 text-xs sm:text-sm md:text-base truncate">{property.address?.split(',')[0]?.trim() || 'Non spécifié'}</span>
                        </div>
                      </TableCell>
-
+                     
                      <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6 hidden md:table-cell">
                        <div className="flex items-center gap-1 md:gap-2">
                          <Users className="w-3 h-3 md:w-4 md:h-4 text-gray-400 flex-shrink-0" />
                          <span className="text-gray-600 font-medium text-xs sm:text-sm md:text-base">{property.max_occupancy}</span>
                        </div>
                      </TableCell>
-
+                     
                      <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6 relative">
                        <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
                          <DropdownMenu>
@@ -210,10 +209,10 @@ export const PropertyList = ({
         </div>
       </div>
 
-      <CreatePropertyDialog open={showCreateDialog ?? !!editingProperty} onOpenChange={open => {
+      <CreatePropertyDialog open={showCreateDialog || !!editingProperty} onOpenChange={open => {
       setShowCreateDialog(open);
       if (!open) setEditingProperty(null);
-    }} property={editingProperty ?? undefined} onSuccess={refreshProperties} />
+    }} property={editingProperty || undefined} onSuccess={refreshProperties} />
 
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>

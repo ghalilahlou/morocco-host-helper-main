@@ -89,8 +89,8 @@ const DefaultErrorFallback: React.FC<{
                 Détails de l'erreur (développement)
               </summary>
               <pre className="mt-2 whitespace-pre-wrap text-xs text-gray-600">
-                {error.message}
-                {error.stack && `\n\n${error.stack}`}
+                {typeof error.message === 'string' ? error.message : JSON.stringify(error.message)}
+                {error.stack && typeof error.stack === 'string' && `\n\n${error.stack}`}
               </pre>
             </details>
           )}

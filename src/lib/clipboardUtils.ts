@@ -19,7 +19,7 @@ export const copyToClipboard = async (text: string): Promise<boolean> => {
       // Create a textarea element with improved mobile compatibility
       const textArea = document.createElement('textarea');
       textArea.value = text;
-
+      
       // Style the textarea to be visible but minimal for mobile compatibility
       textArea.style.position = 'fixed';
       textArea.style.top = '0';
@@ -32,21 +32,21 @@ export const copyToClipboard = async (text: string): Promise<boolean> => {
       textArea.style.boxShadow = 'none';
       textArea.style.background = 'transparent';
       textArea.style.fontSize = '16px'; // Prevents zoom on iOS
-
+      
       // Make it accessible for mobile
       textArea.setAttribute('readonly', '');
       textArea.readOnly = false;
 
       document.body.appendChild(textArea);
-
+      
       // For mobile devices, we need to trigger user interaction
       const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
+      
       if (isMobile) {
         // Focus first
         textArea.focus();
         textArea.setSelectionRange(0, text.length);
-
+        
         // Small delay to ensure mobile keyboard doesn't interfere
         setTimeout(() => {
           try {
@@ -64,7 +64,7 @@ export const copyToClipboard = async (text: string): Promise<boolean> => {
         // Desktop fallback
         textArea.focus();
         textArea.select();
-
+        
         try {
           const successful = document.execCommand('copy');
           document.body.removeChild(textArea);

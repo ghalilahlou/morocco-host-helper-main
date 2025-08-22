@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { v4 as uuidv4 } from 'uuid';
@@ -9,11 +10,11 @@ interface TestDocumentUploadProps {
 export const TestDocumentUpload = ({
   bookingId
 }: TestDocumentUploadProps) => {
-  const [_isUploading, setIsUploading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const {
     toast
   } = useToast();
-  const _handleTestUpload = async () => {
+  const handleTestUpload = async () => {
     setIsUploading(true);
     try {
       // Create a simple test file
@@ -26,13 +27,14 @@ export const TestDocumentUpload = ({
 
       // 1. Test storage upload
       const {
+        data: uploadData,
         error: uploadError
       } = await supabase.storage.from('guest-documents').upload(fileName, testFile);
       if (uploadError) {
         console.error('❌ Storage upload failed:', uploadError);
         throw uploadError;
       }
-
+      
 
       // 2. Test database insert
       const documentRecord = {
@@ -44,15 +46,16 @@ export const TestDocumentUpload = ({
         },
         processing_status: 'completed'
       };
-
+      
       const {
+        data: dbData,
         error: dbError
       } = await supabase.from('uploaded_documents').insert(documentRecord).select();
       if (dbError) {
         console.error('❌ Database insert failed:', dbError);
         throw dbError;
       }
-
+      
       toast({
         title: "Test successful!",
         description: "Document uploaded and saved successfully"
@@ -69,7 +72,7 @@ export const TestDocumentUpload = ({
     }
   };
   return <Card className="mt-4">
-
-
+      
+      
     </Card>;
 };

@@ -4,12 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { CheckCircle, FileText, Shield, Mail, User, MessageSquare, Send } from 'lucide-react';
+import { Building2, CheckCircle, FileText, Shield, Mail, User, MessageSquare, Send } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import checkyLogo from '/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png';
 import heroLaptop from '@/assets/hero-laptop.jpg';
-
 export const Landing = () => {
   const navigate = useNavigate();
   const {
@@ -103,7 +102,7 @@ export const Landing = () => {
             <img src={heroLaptop} alt="Hero Background" className="w-full h-full object-cover opacity-20" />
             <div className="absolute inset-0 bg-gradient-to-r from-white/80 to-white/60"></div>
           </div>
-
+          
           <div className="max-w-4xl mx-auto text-center relative z-10">
             <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
               Votre Assistant
@@ -119,7 +118,7 @@ export const Landing = () => {
         {/* Services Section */}
         <section id="services" className="py-20 relative overflow-hidden">
           {/* Background decoration */}
-
+          
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
@@ -141,7 +140,7 @@ export const Landing = () => {
                 </CardHeader>
                 <CardContent>
                   <CardDescription className="text-gray-600 text-center leading-relaxed">
-                    Automatisez le processus d'arrivée de vos invités avec des liens personnalisés
+                    Automatisez le processus d'arrivée de vos invités avec des liens personnalisés 
                     et une interface moderne.
                   </CardDescription>
                 </CardContent>
@@ -159,7 +158,7 @@ export const Landing = () => {
                 </CardHeader>
                 <CardContent>
                   <CardDescription className="text-gray-600 text-center leading-relaxed">
-                    Vos invités téléchargent leurs pièces d'identité en toute sécurité
+                    Vos invités téléchargent leurs pièces d'identité en toute sécurité 
                     depuis leur mobile.
                   </CardDescription>
                 </CardContent>
@@ -203,7 +202,7 @@ export const Landing = () => {
                     Checky automatise le processus de check-in de vos invités Airbnb. Vos invités reçoivent un lien personnalisé pour télécharger leurs documents d'identité et signer le contrat de location.
                   </p>
                 </div>
-
+                
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Les documents sont-ils conformes à la loi marocaine ?</h3>
                   <p className="text-gray-600 leading-relaxed">
@@ -218,7 +217,7 @@ export const Landing = () => {
                   </p>
                 </div>
               </div>
-
+              
               <div className="space-y-8">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Mes données sont-elles sécurisées ?</h3>
@@ -226,7 +225,7 @@ export const Landing = () => {
                     La sécurité est notre priorité. Toutes les données sont chiffrées et stockées sur des serveurs sécurisés. Nous respectons le RGPD et la confidentialité de vos invités.
                   </p>
                 </div>
-
+                
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Combien de temps prend le processus ?</h3>
                   <p className="text-gray-600 leading-relaxed">
@@ -282,7 +281,7 @@ export const Landing = () => {
                     })} required className="border-gray-300 focus:border-primary bg-white" />
                     </div>
                   </div>
-
+                  
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700 flex items-center">
                       <MessageSquare className="w-4 h-4 mr-2" />
@@ -293,7 +292,7 @@ export const Landing = () => {
                     subject: e.target.value
                   })} required className="border-gray-300 focus:border-primary bg-white" />
                   </div>
-
+                  
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700">
                       Message
@@ -303,7 +302,7 @@ export const Landing = () => {
                     message: e.target.value
                   })} required rows={5} className="border-gray-300 focus:border-primary resize-none bg-white" />
                   </div>
-
+                  
                   <Button type="submit" className="w-full md:w-auto bg-primary hover:bg-primary/90" disabled={isSubmitting}>
                     {isSubmitting ? "Envoi en cours..." : <>
                         <Send className="w-4 h-4 mr-2" />

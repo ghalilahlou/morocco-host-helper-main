@@ -14,9 +14,9 @@ export const ContractSigning: React.FC = () => {
   const location = useLocation();
   const { toast } = useToast();
   const t = useT();
-
+  
   const [isLoading, setIsLoading] = useState(true);
-      const [_tokenData, setTokenData] = useState<any>(null);
+  const [tokenData, setTokenData] = useState<any>(null);
   const [propertyData, setPropertyData] = useState<any>(null);
   const [submissionData, setSubmissionData] = useState<any>(null);
   const [isContractSigned, setIsContractSigned] = useState(false);
@@ -33,10 +33,10 @@ export const ContractSigning: React.FC = () => {
       try {
         // Verify token and get submission data using edge function
         const { data: tokenVerification, error: tokenError } = await supabase.functions.invoke('resolve-guest-link', {
-          body: {
-            propertyId,
+          body: { 
+            propertyId, 
             token,
-            airbnbCode: airbnbBookingId
+            airbnbCode: airbnbBookingId 
           }
         });
 
@@ -82,7 +82,7 @@ export const ContractSigning: React.FC = () => {
         console.log('🔍 TOKEN VERIFICATION ID:', tokenData.id);
 
         // Find the most recent submission for this property
-        const latestSubmission = guestDocs && Array.isArray(guestDocs) && guestDocs.length > 0
+        const latestSubmission = guestDocs && Array.isArray(guestDocs) && guestDocs.length > 0 
           ? guestDocs[0] // Already sorted by created_at desc in edge function
           : null;
 
@@ -112,9 +112,9 @@ export const ContractSigning: React.FC = () => {
             document_urls: latestSubmission.files?.map((f: any) => f.url) || [],
             status: 'completed'
           };
-
+          
           setSubmissionData(transformedSubmission);
-
+          
           // Check if contract is already signed using RPC
           const { data: signature, error: signatureError } = await (supabase as any).rpc('check_contract_signature', {
             p_submission_id: latestSubmission.id
@@ -128,7 +128,7 @@ export const ContractSigning: React.FC = () => {
         } else {
           // No submission found - create minimal booking data structure from token verification
           console.log('📍 No submission found, using token verification data for contract signing');
-
+          
           // Create minimal structure needed for contract signing
           const mockSubmissionData = {
             id: 'temp-contract-signing',
@@ -153,7 +153,7 @@ export const ContractSigning: React.FC = () => {
             },
             status: 'completed'
           };
-
+          
           console.log('📍 Using minimal mock submission data for contract signing:', mockSubmissionData);
           setSubmissionData(mockSubmissionData);
         }
@@ -169,7 +169,7 @@ export const ContractSigning: React.FC = () => {
     loadContractData();
   }, [propertyId, token]);
 
-  const handleSignatureComplete = async (_signatureData: string) => {
+  const handleSignatureComplete = async (signatureData: string) => {
     try {
       // The signature is already linked during creation
 
@@ -234,7 +234,7 @@ export const ContractSigning: React.FC = () => {
     );
   }
 
-  if (!submissionData?.booking_data) {
+  if (!submissionData || !submissionData.booking_data) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 flex items-center justify-center">
         <Card className="p-8 max-w-md">
@@ -243,7 +243,7 @@ export const ContractSigning: React.FC = () => {
             <p className="text-muted-foreground">
               {t('guest.contract.missingData.desc')}
             </p>
-            <Button
+            <Button 
               onClick={() => navigate(`/guest-verification/${propertyId}/${token}`)}
               className="w-full"
             >

@@ -81,7 +81,7 @@ export default {
   'validation.checkoutAfterCheckin.desc': "La date de départ doit être postérieure à la date d'arrivée",
   'validation.exactDocs.desc': "Veuillez télécharger exactement {{count}} document{{s}} d'identité (un par client)",
   'validation.completeGuests.desc': 'Veuillez compléter toutes les informations des clients',
-
+  
   // Steps
   'guest.steps.step1.title': '1. Téléversez votre pièce d\'identité',
   'guest.steps.step1.desc': 'Carte d\'identité ou passeport du voyageur principal (photo lisible)',
@@ -89,24 +89,24 @@ export default {
   'guest.steps.step2.desc': 'Nous pré-remplissons quand c\'est possible, vous confirmez en 1 minute',
   'guest.steps.step3.title': '3. Signez le contrat',
   'guest.steps.step3.desc': 'Signature électronique du contrat de location courte durée',
-
+  
   // Verification
   'guest.verification.title': 'Vérification des clients',
   'guest.verification.subtitle': 'Veuillez fournir vos informations pour la propriété: {{propertyName}}',
-
+  
   // Booking
   'guest.booking.title': 'Informations de réservation',
   'guest.booking.checkIn': 'Date d\'arrivée',
   'guest.booking.checkOut': 'Date de départ',
   'guest.booking.numberOfGuests': 'Nombre de clients',
   'guest.booking.selectDate': 'Sélectionner',
-
+  
   // Documents
   'guest.documents.title': 'Documents d\'identité',
   'guest.documents.dropzone': 'Glissez-déposez vos documents d\'identité ici ou cliquez pour sélectionner',
   'guest.documents.autoExtract': 'Les informations seront extraites automatiquement',
   'guest.documents.selectFiles': 'Sélectionner des documents',
-
+  
   // Clients
   'guest.clients.title': 'Informations des clients',
   'guest.clients.clientNumber': 'Client {{number}}',
@@ -120,17 +120,17 @@ export default {
   'guest.clients.nationalId': 'Carte d\'identité',
   'guest.clients.documentNumber': 'Numéro de document',
   'guest.clients.documentNumberPlaceholder': 'Numéro de passeport/CIN',
-
+  
   // Navigation
   'guest.navigation.previous': 'Précédent',
   'guest.navigation.next': 'Suivant',
-
+  
   // CTA
   'guest.cta.sendInfo': 'Envoyer les informations',
-
+  
   // Documents uploaded
   'guest.documents.uploaded': 'Documents téléchargés:',
-
+  
   // Documents viewer
   'documents.reservationTitle': 'Documents de la réservation',
   'documents.close': 'Fermer',

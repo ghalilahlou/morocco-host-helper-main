@@ -16,12 +16,12 @@ interface AirbnbSyncModalProps {
   syncStatus: 'idle' | 'syncing' | 'success' | 'error';
 }
 
-export const AirbnbSyncModal = ({
-  isOpen,
-  onClose,
-  onSync,
+export const AirbnbSyncModal = ({ 
+  isOpen, 
+  onClose, 
+  onSync, 
   lastSyncDate,
-  syncStatus
+  syncStatus 
 }: AirbnbSyncModalProps) => {
   const [icsUrl, setIcsUrl] = useState('https://www.airbnb.com/calendar/ical/1443787715795572441.ics?s=bb6ae14e907a21abef5295b2f51e2af8');
   const { toast } = useToast();
@@ -45,7 +45,7 @@ export const AirbnbSyncModal = ({
           description: "Les réservations Airbnb ont été importées avec succès"
         });
       }
-    } catch (_error) {
+    } catch (error) {
       toast({
         title: "Erreur de synchronisation",
         description: "Impossible d'importer les réservations Airbnb",
@@ -169,8 +169,8 @@ export const AirbnbSyncModal = ({
             <Button variant="outline" onClick={onClose} className="flex-1">
               Annuler
             </Button>
-            <Button
-              onClick={handleSync}
+            <Button 
+              onClick={handleSync} 
               disabled={syncStatus === 'syncing'}
               className="flex-1"
             >
