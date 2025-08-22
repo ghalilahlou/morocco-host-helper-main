@@ -21,10 +21,10 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     rollupOptions: {
-      external: ['@rollup/rollup-linux-x64-gnu'],
+      external: [],
     },
   },
   optimizeDeps: {
-    exclude: ['@rollup/rollup-linux-x64-gnu'],
+    exclude: [],
   },
 }));
