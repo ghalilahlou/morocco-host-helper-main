@@ -22,7 +22,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     // Optimisations pour Vercel
     target: 'esnext',
-    minify: 'terser',
+    minify: 'terser', // Utiliser esbuild par défaut (plus rapide et inclus)
     sourcemap: false,
     rollupOptions: {
       output: {

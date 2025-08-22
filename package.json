@@ -17,7 +17,7 @@
     "pre-commit": "npm run lint && npm run type-check && npm run format:check",
     "postinstall": "npm run type-check",
     "deploy:vercel": "node scripts/deploy-vercel.js",
-    "vercel-build": "npm run build"
+    "vercel-build": "node scripts/vercel-build.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
