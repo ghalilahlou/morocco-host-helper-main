@@ -18,31 +18,18 @@ export const useGuestVerification = () => {
     try {
       setIsLoading(true);
       
-      console.log('🔗 Generating verification URL via direct database access:', { propertyId, airbnbBookingId });
+      console.log('🔗 Generating verification URL via Edge Function:', { propertyId, airbnbBookingId });
       
-      // Temporary workaround: Create token directly in database
-      // Generate a new token
-      const token = crypto.randomUUID() + '-' + crypto.randomUUID();
-      
-      const tokenData: any = {
-        property_id: propertyId,
-        token: token,
-        is_active: true
-      };
+      // Use the Edge Function instead of direct database access
+      const { data, error } = await supabase.functions.invoke('issue-guest-link', {
+        body: { 
+          propertyId, 
+          bookingId: airbnbBookingId 
+        }
+      });
 
-      // Add booking_id if provided
-      if (airbnbBookingId) {
-        tokenData.booking_id = airbnbBookingId;
-      }
-
-      const { data: newToken, error: createError } = await supabase
-        .from('property_verification_tokens')
-        .insert(tokenData)
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('❌ Error creating token directly:', createError);
+      if (error) {
+        console.error('❌ Error calling issue-guest-link function:', error);
         toast({
           title: "Erreur",
           description: "Impossible de créer le lien de vérification",
@@ -51,19 +38,23 @@ export const useGuestVerification = () => {
         return null;
       }
 
-      // Generate the full URL
-      const origin = window.location.origin;
-      const link = airbnbBookingId 
-        ? `${origin}/welcome/${propertyId}/${token}/${airbnbBookingId}`
-        : `${origin}/welcome/${propertyId}/${token}`;
+      if (!data || !data.link) {
+        console.error('❌ No link returned from Edge Function:', data);
+        toast({
+          title: "Erreur",
+          description: "Réponse invalide du serveur",
+          variant: "destructive"
+        });
+        return null;
+      }
 
-      console.log('✅ Generated verification URL directly:', link);
+      console.log('✅ Generated verification URL via Edge Function:', data.link);
       toast({
         title: "Lien généré",
         description: "Lien de vérification créé avec succès"
       });
 
-      return link;
+      return data.link;
     } catch (error) {
       console.error('❌ Error generating verification URL:', error);
       toast({
@@ -84,6 +75,7 @@ export const useGuestVerification = () => {
     try {
       setIsLoading(true);
       
+      // Use direct database access since no Edge Function exists for this
       const { data, error } = await supabase
         .from('property_verification_tokens')
         .select(`
@@ -177,6 +169,7 @@ export const useGuestVerification = () => {
   // Deactivate a verification token
   const deactivateToken = async (tokenId: string): Promise<boolean> => {
     try {
+      // Use direct database access since no Edge Function exists for this
       const { error } = await supabase
         .from('property_verification_tokens')
         .update({ is_active: false })
@@ -211,6 +204,7 @@ export const useGuestVerification = () => {
     status: 'pending' | 'completed' | 'reviewed' | 'rejected'
   ): Promise<boolean> => {
     try {
+      // Use direct database access since no Edge Function exists for this
       const { error } = await supabase
         .from('guest_submissions')
         .update({ 
