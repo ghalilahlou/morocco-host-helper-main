@@ -18,6 +18,7 @@ import { Layout } from "@/components/Layout";
 import { Profile } from "@/pages/Profile";
 import { AccountSettings } from "@/pages/AccountSettings";
 import { ChangePassword } from "@/pages/ChangePassword";
+import { AuthCallback } from "@/pages/AuthCallback";
 import { GuestLocaleProvider } from '@/i18n/GuestLocaleProvider';
 import GuestLayout from '@/components/guest/GuestLayout';
 const queryClient = new QueryClient();
@@ -94,6 +95,7 @@ const App = () => (
           <Route path="/" element={<Landing />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>

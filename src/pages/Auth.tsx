@@ -51,7 +51,7 @@ export default function Auth() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/`,
+          emailRedirectTo: `https://morocco-host-helper-main.vercel.app/auth/callback`,
           data: {
             email_confirm: false
           }
