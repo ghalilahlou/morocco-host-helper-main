@@ -1,0 +1,46 @@
+🔒 COMMANDES DE PURGE GIT - À EXÉCUTER MANUELLEMENT
+
+=== ÉTAPE 1: SAUVEGARDE ===
+# Créer une sauvegarde
+Copy-Item -Path "." -Destination "../backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')" -Recurse -Force
+
+=== ÉTAPE 2: SUPPRESSION DES FICHIERS .ENV LOCAUX ===
+# Supprimer tous les fichiers .env du répertoire de travail
+Remove-Item "*.env*" -Force -ErrorAction SilentlyContinue
+Remove-Item ".env" -Force -ErrorAction SilentlyContinue
+Remove-Item ".env.local" -Force -ErrorAction SilentlyContinue
+
+=== ÉTAPE 3: SUPPRESSION DE L'INDEX GIT ===
+# Supprimer les fichiers .env de l'index Git
+git rm --cached --ignore-unmatch "*.env*"
+git rm --cached --ignore-unmatch ".env"
+git rm --cached --ignore-unmatch ".env.local"
+git rm --cached --ignore-unmatch ".env.development"
+git rm --cached --ignore-unmatch ".env.production"
+
+=== ÉTAPE 4: NETTOYAGE DE L'HISTORIQUE ===
+# Supprimer les fichiers .env de tout l'historique
+git filter-branch --force --index-filter "git rm --cached --ignore-unmatch *.env* .env .env.local .env.development .env.production" --prune-empty --tag-name-filter cat -- --all
+
+=== ÉTAPE 5: NETTOYAGE DES RÉFÉRENCES ===
+# Supprimer les références originales
+git for-each-ref --format="%(refname)" refs/original | ForEach-Object { git update-ref -d $_ }
+
+=== ÉTAPE 6: GARBAGE COLLECTOR ===
+# Nettoyer le garbage collector
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
+
+=== ÉTAPE 7: COMMIT ET PUSH ===
+# Commiter les changements
+git add .
+git commit -m "🔒 SECURITY: Purge complete des secrets de l'historique Git"
+
+# Pousser avec force (ATTENTION!)
+git push --force origin main
+
+=== VÉRIFICATION ===
+# Vérifier qu'aucun fichier .env n'est dans l'historique
+git log --oneline --name-only | findstr "\.env"
+
+# Si aucun résultat, la purge a réussi!
