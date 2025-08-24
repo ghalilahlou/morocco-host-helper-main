@@ -1,8 +1,97 @@
-# Welcome to your Lovable project
+# Morocco Host Helper
 
-## Project info
+Application de gestion de propriétés et réservations pour hôtes au Maroc.
 
-**URL**: https://lovable.dev/projects/1f998fb3-b22b-4218-9b35-a319af13f031
+## 🚀 Technologies
+
+- **Frontend**: React 18 + TypeScript + Vite
+- **UI**: Tailwind CSS + shadcn/ui
+- **Backend**: Supabase (Auth, Database, Edge Functions)
+- **Deployment**: Vercel
+- **Package Manager**: npm
+
+## 🔒 Security & Deploy Playbook
+
+### **Secrets Management**
+- **NEVER** commit secrets to the repository (`.env` files are ignored)
+- Use Vercel Environment Variables for all secrets
+- Rotate Supabase keys immediately if exposed
+
+### **Database Security**
+- RLS (Row Level Security) enabled on all tables
+- Owner-based policies for data isolation
+- Public read access only where explicitly needed
+- Indexes on frequently queried columns
+
+### **Build & Deploy**
+- Single package manager: npm (no bun.lockb)
+- CI/CD with GitHub Actions (lint, typecheck, build)
+- Security audit on every build
+- Source maps enabled for debugging
+
+### **Environment Variables (Vercel)**
+Required variables to set in Vercel:
+```
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+### **CORS & Storage**
+- Supabase CORS: Restrict to Vercel domains only
+- Storage buckets: Private by default
+- Public read access only where necessary
+
+## 🛠️ Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Run linting
+npm run lint
+
+# Run type checking
+npm run typecheck
+
+# Build for production
+npm run build
+
+# Preview build
+npm run preview
+```
+
+## 🚀 Deployment
+
+1. **Push to GitHub** - Automatic deployment to Vercel
+2. **Set Environment Variables** in Vercel dashboard
+3. **Configure Supabase** - RLS policies and CORS
+4. **Test thoroughly** - Authentication, CRUD operations
+
+## 🔧 Database Setup
+
+Run the RLS security script in Supabase SQL Editor:
+```sql
+-- Execute: scripts/supabase-rls-safe-defaults.sql
+```
+
+## 📋 Checklist
+
+### Pre-deployment
+- [ ] Environment variables set in Vercel
+- [ ] RLS policies applied in Supabase
+- [ ] CORS configured for Vercel domains
+- [ ] No secrets in code or history
+- [ ] CI/CD pipeline passing
+
+### Post-deployment
+- [ ] Authentication working
+- [ ] CRUD operations functional
+- [ ] Edge Functions responding
+- [ ] Storage uploads working
+- [ ] Error handling proper
 
 ## How can I edit this code?
 

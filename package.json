@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:dev": "vite build --mode development",
-    "vercel-build": "npm install @rollup/rollup-linux-x64-gnu && npm install @vitejs/plugin-react && vite build --mode production",
-    "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview --port 4173",
+    "lint": "eslint . --ext .ts,.tsx --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "vercel-build": "vite build --mode production"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
