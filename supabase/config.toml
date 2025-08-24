@@ -3,9 +3,6 @@ project_id = "csopyblkfyofwkeqqegd"
 [auth]
 enabled = true
 
-[edge-runtime]
-policy = "per_worker"
-
 [functions.sync-airbnb-reservations]
 verify_jwt = true
 
