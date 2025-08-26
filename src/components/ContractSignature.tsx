@@ -288,11 +288,35 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       // Get or use existing booking ID - avoid direct DB operations from browser
       let bookingId = bookingData?.id as string | undefined;
       
-      // If no bookingId, generate a temporary one based on property and dates
+      // If no bookingId, create a real booking first
       if (!bookingId) {
-        const timestamp = Date.now();
-        bookingId = `contract-${propertyData?.id?.slice(0, 8)}-${timestamp}`;
-        console.log('📝 Using temporary booking ID for contract signature:', bookingId);
+        console.log('📝 No booking ID found, creating booking before signature...');
+        
+        // Create booking using Edge Function
+        const allGuests = (bookingData?.guests && Array.isArray(bookingData.guests) ? bookingData.guests : (guestData?.guests || []));
+        const guestName = allGuests?.[0]?.fullName || 'Guest';
+        
+        const { data: bookingResult, error: bookingError } = await supabase.functions.invoke('create-booking-for-signature', {
+          body: {
+            propertyId: propertyData?.id,
+            checkInDate: bookingData?.checkInDate,
+            checkOutDate: bookingData?.checkOutDate,
+            numberOfGuests: bookingData?.numberOfGuests || allGuests?.length || 1,
+            guestName: guestName,
+            guestEmail: guestData?.email,
+            guestPhone: guestData?.phone,
+            documentNumber: allGuests?.[0]?.documentNumber,
+            documentType: allGuests?.[0]?.documentType
+          }
+        });
+        
+        if (bookingError) {
+          console.error('❌ Error creating booking:', bookingError);
+          throw new Error('Failed to create booking for signature');
+        }
+        
+        bookingId = bookingResult.bookingId;
+        console.log('✅ Booking created successfully:', bookingId);
       }
 
       // Save contract signature via edge function (avoids RLS issues)
