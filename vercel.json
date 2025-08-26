@@ -2,7 +2,7 @@
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "installCommand": "npm install --legacy-peer-deps --omit=optional",
+  "installCommand": "node scripts/install-rollup-natives.cjs && npm install --legacy-peer-deps --include=optional",
   "env": {
     "NODE_ENV": "production",
     "DISABLE_ESLINT_PLUGIN": "true",
