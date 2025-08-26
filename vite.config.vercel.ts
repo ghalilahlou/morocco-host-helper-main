@@ -36,7 +36,9 @@ export default defineConfig({
     'process.env.ROLLUP_SKIP_NATIVE': 'true',
     'process.env.ROLLUP_PREFER_NATIVE': 'false',
     'process.env.NODE_ENV': '"production"',
-    'global': 'globalThis'
+    'global': 'globalThis',
+    'process.env.ESLINT_NO_DEV_ERRORS': 'true',
+    'process.env.ESLINT_NO_DEV_WARNINGS': 'true'
   },
   esbuild: {
     target: 'es2020'

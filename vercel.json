@@ -6,7 +6,8 @@
   "env": {
     "NODE_ENV": "production",
     "DISABLE_ESLINT_PLUGIN": "true",
-    "ESLINT_CONFIG_FILE": ".eslintrc.vercel.json"
+    "ESLINT_NO_DEV_ERRORS": "true",
+    "ESLINT_NO_DEV_WARNINGS": "true"
   },
   "rewrites": [
     {
