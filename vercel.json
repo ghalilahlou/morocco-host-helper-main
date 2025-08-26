@@ -5,7 +5,8 @@
   "installCommand": "npm install --legacy-peer-deps --omit=optional",
   "env": {
     "NODE_ENV": "production",
-    "DISABLE_ESLINT_PLUGIN": "true"
+    "DISABLE_ESLINT_PLUGIN": "true",
+    "ESLINT_CONFIG_FILE": ".eslintrc.vercel.json"
   },
   "rewrites": [
     {

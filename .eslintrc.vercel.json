@@ -1,0 +1,16 @@
+{
+  "extends": [],
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/ban-ts-comment": "off",
+    "no-empty": "off",
+    "prefer-const": "off",
+    "no-case-declarations": "off",
+    "react-hooks/rules-of-hooks": "off",
+    "react-hooks/exhaustive-deps": "off",
+    "react-refresh/only-export-components": "off",
+    "@typescript-eslint/no-empty-object-type": "off",
+    "no-useless-escape": "off",
+    "@typescript-eslint/no-require-imports": "off"
+  }
+}
