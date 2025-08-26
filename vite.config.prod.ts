@@ -33,6 +33,10 @@ export default defineConfig({
     ]
   },
   define: {
-    'process.env.ROLLUP_SKIP_NATIVE': 'true'
+    'process.env.ROLLUP_SKIP_NATIVE': 'true',
+    'process.env.ROLLUP_PREFER_NATIVE': 'false'
+  },
+  esbuild: {
+    target: 'es2020'
   }
 })

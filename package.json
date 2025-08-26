@@ -102,5 +102,15 @@
         "@rollup/rollup-darwin-arm64": false
       }
     }
+  },
+  "resolutions": {
+    "rollup": {
+      "optionalDependencies": {
+        "@rollup/rollup-linux-x64-gnu": false,
+        "@rollup/rollup-win32-x64-msvc": false,
+        "@rollup/rollup-darwin-x64": false,
+        "@rollup/rollup-darwin-arm64": false
+      }
+    }
   }
 }
