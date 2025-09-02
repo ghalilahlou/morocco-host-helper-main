@@ -118,16 +118,14 @@ supabase-cli.tar.gz
 scripts/
 !scripts/install-rollup-natives.cjs
 
-# Test components
+# Test components (exclude only test files, keep essential components)
 src/components/*Test.tsx
 src/components/mobile/
 
-# Debug and development files
+# Debug and development files (exclude only non-essential debug files)
 src/hooks/useDebugTests.ts
 src/hooks/useIsMobile.ts
 src/scripts/
-src/types/admin.ts
-src/utils/
 
 # Edge functions (keep only active ones)
 supabase/functions/add-admin-user/
@@ -137,3 +135,18 @@ supabase/functions/get-all-users/
 
 # Vercel
 .vercel
+
+# ========================================
+# FICHIERS ESSENTIELS À INCLURE (NE PAS EXCLURE)
+# ========================================
+# ✅ src/styles/ - Styles et animations
+# ✅ src/components/admin/ - Composants administrateur
+# ✅ src/components/dev/ - Composants de développement
+# ✅ src/contexts/ - Contextes React
+# ✅ src/utils/ - Utilitaires et helpers
+# ✅ src/types/ - Types TypeScript
+# ✅ src/services/ - Services métier
+# ✅ src/hooks/ - Hooks React personnalisés
+# ✅ src/pages/ - Pages de l'application
+# ✅ src/i18n/ - Internationalisation
+# ✅ src/integrations/ - Intégrations externes
