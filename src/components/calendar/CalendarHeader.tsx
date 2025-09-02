@@ -80,8 +80,10 @@ export const CalendarHeader = ({
                 const date = new Date();
                 date.setMonth(date.getMonth() - 12 + i);
                 const value = `${date.getFullYear()}-${date.getMonth()}`;
+                // Créer une clé unique pour éviter les doublons
+                const uniqueKey = `${date.getFullYear()}-${date.getMonth()}-${i}`;
                 return (
-                  <SelectItem key={value} value={value}>
+                  <SelectItem key={uniqueKey} value={value}>
                     {monthNames[date.getMonth()]} {date.getFullYear()}
                   </SelectItem>
                 );

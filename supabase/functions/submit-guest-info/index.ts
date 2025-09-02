@@ -5,7 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
 
 serve(async (req) => {
@@ -26,24 +26,38 @@ serve(async (req) => {
     }
 
     // Create service role client to bypass RLS
-    const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false }
+    });
 
     // Only allow POST
     if (req.method !== 'POST') {
-      return new Response(JSON.stringify({ success: false, message: 'Method Not Allowed' }), {
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'Method Not Allowed'
+      }), {
         status: 405,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     const { propertyId, token, bookingData, guestData } = await req.json();
-    console.log('📥 Request data:', { propertyId, hasBookingData: !!bookingData, hasGuestData: !!guestData, hasToken: !!token });
+    
+    console.log('📥 Request data:', {
+      propertyId,
+      hasBookingData: !!bookingData,
+      hasGuestData: !!guestData,
+      hasToken: !!token
+    });
 
     // Basic validation
     if (!propertyId || !bookingData) {
-      return new Response(JSON.stringify({ success: false, message: 'Champs manquants: propertyId ou bookingData' }), {
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'Champs manquants: propertyId ou bookingData'
+      }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -56,9 +70,12 @@ serve(async (req) => {
 
     if (propertyError || !propertyData) {
       console.error('❌ Property query failed:', propertyError);
-      return new Response(JSON.stringify({ success: false, message: 'Propriété introuvable' }), {
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'Propriété introuvable'
+      }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -82,19 +99,26 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle();
     }
-    const { data: tokenData, error: tokenError } = tokenDataRes;
 
+    const { data: tokenData, error: tokenError } = tokenDataRes;
     if (tokenError || !tokenData) {
       console.error('❌ Token query failed:', tokenError);
-      return new Response(JSON.stringify({ success: false, message: 'Token invalide ou inactif' }), {
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'Token invalide ou inactif'
+      }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
     // Step 1: Ensure a guest submission row (manual find-or-create)
     console.log('📝 Resolving guest submission...');
-    let submissionId: string | null = null;
+    let submissionId = null;
+    
+    // Extract document URLs from guest data
+    const documentUrls = guestData?.documentUrls || [];
+    console.log('📎 Document URLs to save:', documentUrls);
 
     // Try to find the most recent submission for this token_id
     const { data: existingSubmission } = await supabase
@@ -114,15 +138,18 @@ serve(async (req) => {
           guest_data: guestData,
           document_urls: Array.isArray(guestData?.documentUrls) ? guestData.documentUrls : [],
           submitted_at: new Date().toISOString(),
-          status: 'completed',
+          status: 'completed'
         })
         .eq('id', submissionId);
 
       if (updateSubErr) {
         console.error('❌ Failed to update submission:', updateSubErr);
-        return new Response(JSON.stringify({ success: false, message: 'Échec de la mise à jour de la soumission' }), {
+        return new Response(JSON.stringify({
+          success: false,
+          message: 'Échec de la mise à jour de la soumission'
+        }), {
           status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
       console.log('✅ Updated existing submission:', submissionId);
@@ -135,81 +162,195 @@ serve(async (req) => {
           guest_data: guestData,
           document_urls: Array.isArray(guestData?.documentUrls) ? guestData.documentUrls : [],
           submitted_at: new Date().toISOString(),
-          status: 'completed',
+          status: 'completed'
         })
         .select('id')
         .single();
 
       if (subErr || !newSub) {
         console.error('❌ Guest submission failed:', subErr);
-        return new Response(JSON.stringify({ success: false, message: 'Échec de la création de la soumission' }), {
+        return new Response(JSON.stringify({
+          success: false,
+          message: 'Échec de la création de la soumission'
+        }), {
           status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
       submissionId = newSub.id;
       console.log('✅ Created new submission:', submissionId);
     }
 
-    // Step 2: Find-or-create booking by submission_id (NO UPSERT)
-    console.log('📅 Creating/finding booking...');
-    let bookingId: string | null = null;
+    // Step 2: ✅ CORRECTION - TOUJOURS créer une nouvelle réservation (pas de réutilisation dangereuse)
+    console.log('📅 Creating new booking...');
+    let bookingId = null;
 
-    const { data: existingBooking } = await supabase
+    const toIsoOrNull = (d) => d ? new Date(d).toISOString() : null;
+    const checkInDate = toIsoOrNull(bookingData?.checkInDate);
+    const checkOutDate = toIsoOrNull(bookingData?.checkOutDate);
+
+    // ✅ CORRECTION: Toujours créer une nouvelle réservation pour chaque soumission
+    const payload = {
+      property_id: propertyId,
+      user_id: propertyData.user_id,
+      check_in_date: checkInDate,
+      check_out_date: checkOutDate,
+      number_of_guests: bookingData?.numberOfGuests ?? guestData?.guests?.length ?? 1,
+      status: 'pending',
+      submission_id: submissionId
+    };
+
+    const { data: newBooking, error: newErr } = await supabase
       .from('bookings')
+      .insert(payload)
       .select('id')
-      .eq('submission_id', submissionId)
-      .maybeSingle();
+      .single();
 
-    if (existingBooking?.id) {
-      bookingId = existingBooking.id;
-      console.log('✅ Found existing booking:', bookingId);
+    if (newErr || !newBooking) {
+      console.error('❌ Booking creation failed:', newErr);
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'Échec de la création de la réservation'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    bookingId = newBooking.id;
+    console.log('✅ New booking created:', bookingId);
+
+    // ✅ CORRECTION: Lier le token à la réservation
+    console.log('🔗 Linking token to booking...');
+    const { error: tokenUpdateError } = await supabase
+      .from('property_verification_tokens')
+      .update({ booking_id: bookingId })
+      .eq('id', tokenData.id);
+
+    if (tokenUpdateError) {
+      console.error('❌ Failed to link token to booking:', tokenUpdateError);
     } else {
-      const toIsoOrNull = (d?: string) => (d ? new Date(d).toISOString() : null);
-      const payload: any = {
-        property_id: propertyId,
-        user_id: propertyData.user_id,
-        check_in_date: toIsoOrNull(bookingData?.checkInDate),
-        check_out_date: toIsoOrNull(bookingData?.checkOutDate),
-        number_of_guests: bookingData?.numberOfGuests ?? (guestData?.guests?.length ?? 1),
-        status: 'pending', // valid enum value
-        submission_id: submissionId,
-      };
-
-      const { data: newBooking, error: newErr } = await supabase
-        .from('bookings')
-        .insert(payload)
-        .select('id')
-        .single();
-
-      if (newErr || !newBooking) {
-        console.error('❌ Booking creation failed:', newErr);
-        return new Response(JSON.stringify({ success: false, message: 'Échec de la création de la réservation' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      bookingId = newBooking.id;
-      console.log('✅ New booking created:', bookingId);
+      console.log('✅ Token linked to booking:', { tokenId: tokenData.id, bookingId });
     }
 
-    return new Response(JSON.stringify({ 
+    // Step 3: Create guests records in the guests table
+    console.log('👥 Creating guests records...');
+    let insertedGuests = [];
+    
+    if (guestData?.guests && Array.isArray(guestData.guests) && bookingId) {
+      // Insert new guests
+      const guestsData = guestData.guests.map((guest) => ({
+        booking_id: bookingId,
+        full_name: guest.fullName,
+        date_of_birth: guest.dateOfBirth,
+        document_number: guest.documentNumber,
+        nationality: guest.nationality,
+        place_of_birth: guest.placeOfBirth || '',
+        document_type: guest.documentType
+      }));
+
+      const { error: insertError, data: guestInsertData } = await supabase
+        .from('guests')
+        .insert(guestsData)
+        .select('id, full_name');
+
+      if (insertError) {
+        console.error('❌ Failed to insert guests:', insertError);
+        return new Response(JSON.stringify({
+          success: false,
+          message: 'Échec de la création des invités'
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      insertedGuests = guestInsertData || [];
+      console.log(`✅ Inserted ${guestsData.length} guests for booking ${bookingId}`);
+
+      // Step 4: ✅ CORRECTION - Save documents to uploaded_documents table
+      console.log('📄 Processing uploaded documents...');
+      if (documentUrls && documentUrls.length > 0 && insertedGuests.length > 0) {
+        for (let i = 0; i < documentUrls.length && i < insertedGuests.length; i++) {
+          const documentUrl = documentUrls[i];
+          const guest = insertedGuests[i];
+          
+          if (documentUrl && guest) {
+            try {
+              // Extract file path from signed URL
+              let filePath = '';
+              
+              if (documentUrl.includes('/guest-documents/')) {
+                const pathMatch = documentUrl.match(/\/guest-documents\/([^?]+)/);
+                if (pathMatch) {
+                  filePath = pathMatch[1];
+                  console.log('✅ Extracted file path:', filePath);
+                } else {
+                  console.error('❌ Could not extract file path from URL:', documentUrl);
+                  filePath = `unknown_${Date.now()}_${guest.full_name}`;
+                }
+              } else {
+                console.error('❌ Invalid document URL format:', documentUrl);
+                filePath = `unknown_${Date.now()}_${guest.full_name}`;
+              }
+              
+              // Create record in uploaded_documents
+              const documentRecord = {
+                booking_id: bookingId,
+                guest_id: guest.id,
+                file_name: `ID_${guest.full_name}`,
+                file_path: filePath,
+                document_url: documentUrl,
+                processing_status: 'completed',
+                extracted_data: guestData.guests[i] ? {
+                  fullName: guestData.guests[i].fullName,
+                  documentType: guestData.guests[i].documentType,
+                  documentNumber: guestData.guests[i].documentNumber,
+                  nationality: guestData.guests[i].nationality,
+                  dateOfBirth: guestData.guests[i].dateOfBirth,
+                  placeOfBirth: guestData.guests[i].placeOfBirth
+                } : null
+              };
+
+              const { error: docError } = await supabase
+                .from('uploaded_documents')
+                .insert(documentRecord);
+
+              if (docError) {
+                console.error('❌ Failed to save document record:', docError);
+              } else {
+                console.log('✅ Document record saved:', {
+                  guestName: guest.full_name,
+                  filePath: filePath,
+                  bookingId: bookingId
+                });
+              }
+            } catch (error) {
+              console.error('❌ Error processing document URL:', error);
+            }
+          }
+        }
+      }
+    }
+
+    return new Response(JSON.stringify({
       success: true,
       bookingId,
       submissionId,
+      tokenId: tokenData.id
     }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
     console.error('❌ Error in submit-guest-info:', error);
-    const message = (error as Error)?.message || 'Unknown error occurred';
-    return new Response(JSON.stringify({ 
+    const message = error?.message || 'Unknown error occurred';
+    return new Response(JSON.stringify({
       success: false,
       message
     }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });

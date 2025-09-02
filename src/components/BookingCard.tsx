@@ -8,12 +8,12 @@ import { ContractService } from '@/services/contractService';
 import { BookingVerificationService } from '@/services/bookingVerificationService';
 import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 import { DocumentsViewer } from './DocumentsViewer';
 import { TestDocumentUpload } from './TestDocumentUpload';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
 
 interface BookingCardProps {
   booking: Booking;
@@ -26,6 +26,9 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
   const { updateBooking } = useBookings();
   const { toast } = useToast();
   
+  // Documents status check
+  const hasPoliceForm = booking.documentsGenerated?.policeForm === true;
+  const hasContract = booking.documentsGenerated?.contract === true;
   const { user } = useAuth();
   const [showDocuments, setShowDocuments] = useState<'id-documents' | 'contract' | 'police-form' | null>(null);
   const [signedContract, setSignedContract] = useState<any>(null);
@@ -115,9 +118,10 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
       if (!user?.id) return;
       
       try {
-        const { data, error } = await (supabase as any).rpc('get_signed_contracts_for_user', {
-          p_user_id: user.id
-        });
+        const { data, error } = await supabase
+          .from('contract_signatures')
+          .select('booking_id')
+          .eq('booking_id', booking.id);
         
         if (error) {
           console.error('Error fetching signed contracts:', error);
@@ -281,17 +285,64 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
               size="sm"
               onClick={async () => {
                 try {
-                  await supabase.functions.invoke('generate-documents', {
+                  console.log('🚨 Generating police forms for booking:', booking.id);
+                  
+                  // ✅ CORRECTION: Validation avant génération
+                  if (!booking.guests || booking.guests.length === 0) {
+                    toast({
+                      title: "Impossible de générer",
+                      description: "Aucun invité trouvé pour cette réservation",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+
+                  console.log('🔍 AVANT APPEL generate-documents:', {
+                    bookingId: booking.id,
+                    documentType: 'police',
+                    supabaseUrl: supabase.supabaseUrl,
+                    timestamp: new Date().toISOString()
+                  });
+
+                  const { data, error } = await supabase.functions.invoke('generate-documents', {
                     body: { bookingId: booking.id, documentType: 'police' }
                   });
-                  updateBooking(booking.id, {
+
+                  console.log('🔍 APRÈS APPEL generate-documents:', {
+                    data,
+                    error,
+                    hasData: !!data,
+                    hasError: !!error,
+                    errorDetails: error ? JSON.stringify(error) : null
+                  });
+
+                  if (error) {
+                    console.error('❌ Police generation error:', error);
+                    throw new Error(error.message || 'Erreur lors de la génération');
+                  }
+
+                  // ✅ CORRECTION: Mise à jour sécurisée du statut
+                  await updateBooking(booking.id, {
                     documentsGenerated: {
                       ...booking.documentsGenerated,
                       policeForm: true,
                     },
                   });
-                } catch {}
-                setShowDocuments('police-form');
+
+                  toast({
+                    title: "Fiches de police générées",
+                    description: `${booking.guests.length} fiche(s) de police générée(s) avec succès`,
+                  });
+
+                  setShowDocuments('police-form');
+                } catch (error: any) {
+                  console.error('❌ Error generating police forms:', error);
+                  toast({
+                    title: "Erreur de génération",
+                    description: error.message || "Impossible de générer les fiches de police",
+                    variant: "destructive"
+                  });
+                }
               }}
               disabled={!canGenerateDocuments}
               className="text-xs"
@@ -304,17 +355,39 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
               size="sm"
               onClick={async () => {
                 try {
-                  await supabase.functions.invoke('generate-documents', {
+                  console.log('📄 Generating contract for booking:', booking.id);
+                  
+                  const { data, error } = await supabase.functions.invoke('generate-documents', {
                     body: { bookingId: booking.id, documentType: 'contract' }
                   });
-                  updateBooking(booking.id, {
+
+                  if (error) {
+                    console.error('❌ Contract generation error:', error);
+                    throw new Error(error.message || 'Erreur lors de la génération du contrat');
+                  }
+
+                  // ✅ CORRECTION: Mise à jour sécurisée du statut
+                  await updateBooking(booking.id, {
                     documentsGenerated: {
                       ...booking.documentsGenerated,
                       contract: true,
                     },
                   });
-                } catch {}
-                setShowDocuments('contract');
+
+                  toast({
+                    title: "Contrat généré",
+                    description: "Le contrat a été généré avec succès",
+                  });
+
+                  setShowDocuments('contract');
+                } catch (error: any) {
+                  console.error('❌ Error generating contract:', error);
+                  toast({
+                    title: "Erreur de génération",
+                    description: error.message || "Impossible de générer le contrat",
+                    variant: "destructive"
+                  });
+                }
               }}
               className="text-xs"
             >

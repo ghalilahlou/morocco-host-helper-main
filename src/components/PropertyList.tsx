@@ -34,7 +34,7 @@ export const PropertyList = ({
     toast
   } = useToast();
   const getPropertyStats = (propertyId: string, property: Property) => {
-    const propertyBookings = bookings.filter(booking => booking.property_id === propertyId);
+    const propertyBookings = bookings.filter(booking => booking.propertyId === propertyId);
     return {
       total: propertyBookings.length,
       pending: propertyBookings.filter(b => b.status === 'pending').length,

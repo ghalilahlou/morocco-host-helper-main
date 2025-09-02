@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { Plus, Search, Filter, RefreshCcw, Grid, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,7 @@ import { useBookings } from '@/hooks/useBookings';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 
+
 interface DashboardProps {
   onNewBooking: () => void;
   onEditBooking: (booking: Booking) => void;
@@ -18,7 +19,7 @@ interface DashboardProps {
   propertyId?: string; // Added for Airbnb calendar integration
 }
 
-export const Dashboard = ({ 
+export const Dashboard = memo(({ 
   onNewBooking, 
   onEditBooking, 
   bookings: propBookings,
@@ -48,26 +49,32 @@ export const Dashboard = ({
     
   }, [bookings]);
 
-  const filteredBookings = bookings.filter(booking => {
-    // If no search term, show all bookings
-    const matchesSearch = !searchTerm || 
-                         booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         booking.guests.some(guest => guest.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
+  // 🚀 OPTIMISATION: Memoize filtered bookings pour éviter les re-calculs
+  const filteredBookings = useMemo(() => {
+    return bookings.filter(booking => {
+      // If no search term, show all bookings
+      const matchesSearch = !searchTerm || 
+                           booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           booking.guests.some(guest => guest.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+      const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [bookings, searchTerm, statusFilter]);
 
-  const stats = {
+  // 🚀 OPTIMISATION: Memoize stats pour éviter les re-calculs
+  const stats = useMemo(() => ({
     total: bookings.length,
     pending: bookings.filter(b => b.status === 'pending').length,
     completed: bookings.filter(b => b.status === 'completed').length,
     archived: bookings.filter(b => b.status === 'archived').length
-  };
+  }), [bookings]);
 
   return (
     <div className="space-y-6">
+
+
       {/* Header */}
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -191,4 +198,4 @@ export const Dashboard = ({
       )}
     </div>
   );
-};
+});

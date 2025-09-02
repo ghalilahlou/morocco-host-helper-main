@@ -240,55 +240,81 @@ export class DocumentStorageService {
       
       console.log('📋 Final booking guest names for filtering:', uniqueNames);
 
-      // Use the improved edge function to get guest documents scoped to this booking
+      // ✅ NOUVEAU : Utiliser directement la vue v_guest_submissions au lieu de l'Edge Function
       try {
-        console.log('📋 Calling get-guest-docs with booking_id:', booking.id);
-        const { data: guestDocs, error: edgeError } = await supabase.functions.invoke('get-guest-docs', {
-          body: { 
-            bookingId: booking.id
-          }
-        });
-
-        if (edgeError) {
-          console.warn('⚠️ Edge function error:', edgeError);
-        } else if (guestDocs && Array.isArray(guestDocs)) {
-          console.log(`📋 Found ${guestDocs.length} guest submissions via edge function`);
-          
-          // IMPORTANT: Ne pas filtrer par nom car booking.guests peut être vide
-          // La fonction edge get-guest-docs filtre déjà par booking_id
-          // Tous les documents retournés sont légitimes pour cette réservation
-          const shouldFilter = false; // Désactiver le filtrage par nom
+        console.log('📋 Récupération directe depuis v_guest_submissions pour booking_id:', booking.id);
+        
+        const { data: submissions, error: viewError } = await supabase
+          .from('v_guest_submissions')
+          .select('*')
+          .eq('resolved_booking_id', booking.id)
+          .not('guest_data', 'is', null);
+        
+        if (viewError) {
+          console.warn('⚠️ Erreur vue v_guest_submissions:', viewError);
+        } else if (submissions && Array.isArray(submissions)) {
+          console.log(`📋 Found ${submissions.length} guest submissions via vue directe`);
           
           let successfulFiles = 0;
           let failedFiles = 0;
           
-          // Transform edge function response to UnifiedDocument format
-          for (const guestDoc of guestDocs) {
-            console.log('📋 Processing guest document:', guestDoc.fullName);
+          // Traiter chaque soumission d'invité
+          for (const submission of submissions) {
+            console.log('📋 Processing submission:', submission.id);
             
-            if (guestDoc.files && Array.isArray(guestDoc.files)) {
-              for (const file of guestDoc.files) {
-                if (file.url && file.url !== 'URL_GENERATION_FAILED') {
-                  documents.push({
-                    id: `guest-${guestDoc.id}-${file.name}`,
-                    fileName: file.name,
-                    url: file.url, // Already signed URL from edge function
-                    guestName: guestDoc.fullName,
-                    bookingId: booking.id,
-                    createdAt: guestDoc.createdAt,
-                  });
-                  successfulFiles++;
-                } else {
-                  console.warn(`⚠️ Failed to get URL for file: ${file.name} (guest: ${guestDoc.fullName})`);
-                  failedFiles++;
+            if (submission.guest_data?.guests) {
+              for (const guest of submission.guest_data.guests) {
+                console.log('📋 Processing guest:', guest.fullName || guest.full_name);
+                
+                // Créer un document d'identité pour chaque invité
+                const guestName = guest.fullName || guest.full_name || 'Nom non spécifié';
+                const documentType = guest.documentType || guest.document_type || 'Document d\'identité';
+                const documentNumber = guest.documentNumber || guest.document_number || 'Non spécifié';
+                
+                // Ajouter le document d'identité (informations textuelles)
+                documents.push({
+                  id: `id-${submission.id}-${guestName}`,
+                  fileName: `ID_${guestName}`,
+                  url: '#', // Pas de fichier physique, juste les informations
+                  guestName: guestName,
+                  bookingId: booking.id,
+                  createdAt: submission.created_at,
+                  // ✅ Ajouter les métadonnées du document d'identité
+                  metadata: {
+                    documentType,
+                    documentNumber,
+                    nationality: guest.nationality || 'Non spécifiée',
+                    dateOfBirth: guest.dateOfBirth || guest.date_of_birth || 'Non spécifiée',
+                    placeOfBirth: guest.placeOfBirth || guest.place_of_birth || 'Non spécifié'
+                  }
+                });
+                successfulFiles++;
+                
+                // Ajouter les fichiers physiques s'ils existent
+                if (submission.document_urls && Array.isArray(submission.document_urls)) {
+                  for (const fileUrl of submission.document_urls) {
+                    if (fileUrl && fileUrl !== 'URL_GENERATION_FAILED') {
+                      documents.push({
+                        id: `file-${submission.id}-${guestName}-${fileUrl.split('/').pop()}`,
+                        fileName: `Document_${guestName}_${fileUrl.split('/').pop()}`,
+                        url: fileUrl,
+                        guestName: guestName,
+                        bookingId: booking.id,
+                        createdAt: submission.created_at
+                      });
+                      successfulFiles++;
+                    } else {
+                      failedFiles++;
+                    }
+                  }
                 }
               }
             }
           }
           console.log(`✅ Processed ${successfulFiles} successful and ${failedFiles} failed guest documents for this booking`);
         }
-      } catch (edgeErr) {
-        console.warn('⚠️ Error calling list-guest-docs edge function:', edgeErr);
+      } catch (viewErr) {
+        console.warn('⚠️ Error calling v_guest_submissions view:', viewErr);
       }
 
       console.log(`✅ Found ${documents.length} documents for booking`);

@@ -205,7 +205,7 @@ export const PropertyDetail = () => {
   }
 
   // Filter bookings by this property
-  const propertyBookings = bookings.filter(booking => booking.property_id === property.id);
+  const propertyBookings = bookings.filter(booking => booking.propertyId === property.id);
 
   const stats = {
     total: propertyBookings.length + airbnbReservationsCount,

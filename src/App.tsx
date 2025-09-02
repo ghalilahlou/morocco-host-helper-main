@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -21,14 +22,28 @@ import { ChangePassword } from "@/pages/ChangePassword";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { GuestLocaleProvider } from '@/i18n/GuestLocaleProvider';
 import GuestLayout from '@/components/guest/GuestLayout';
+import { AdminRoute } from '@/components/admin/AdminRoute';
+import { ErrorMonitorPanel } from '@/components/dev/ErrorMonitorPanel';
+import { AdminProvider } from '@/contexts/AdminContext';
+
+// 🚀 LAZY LOADING: Composants admin lourds chargés à la demande
+const AdminDashboard = lazy(() => import('@/components/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+
+// Composant de loading pour Suspense
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center min-h-[400px]">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+  </div>
+);
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
+      <AdminProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
         <Routes>
           {/* Guest verification routes - no layout needed for external users */}
           <Route path="/welcome/:propertyId/:token" element={
@@ -91,13 +106,26 @@ const App = () => (
           <Route path="/account-settings" element={<Layout><AccountSettings /></Layout>} />
           <Route path="/change-password" element={<Layout><ChangePassword /></Layout>} />
           
+          {/* Admin routes */}
+          <Route path="/admin" element={
+            <AdminRoute>
+              <Suspense fallback={<LoadingSpinner />}>
+                <AdminDashboard />
+              </Suspense>
+            </AdminRoute>
+          } />
+          
           {/* Public routes */}
           <Route path="/" element={<Landing />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
         </Routes>
-      </BrowserRouter>
+        
+          {/* ✅ Panel de monitoring des erreurs (dev seulement) */}
+          {process.env.NODE_ENV === 'development' && <ErrorMonitorPanel />}
+        </BrowserRouter>
+      </AdminProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

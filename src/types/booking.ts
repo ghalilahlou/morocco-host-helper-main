@@ -27,18 +27,20 @@ export interface Property {
 
 export interface Booking {
   id: string;
-  checkInDate: string;
-  checkOutDate: string;
-  numberOfGuests: number;
-  bookingReference?: string;
+  checkInDate: string;        // ✅ DB: check_in_date
+  checkOutDate: string;       // ✅ DB: check_out_date
+  numberOfGuests: number;     // ✅ DB: number_of_guests
+  bookingReference?: string;  // ✅ DB: booking_reference
   guests: Guest[];
   status: 'pending' | 'completed' | 'archived';
-  createdAt: string;
-  property_id?: string;
+  createdAt: string;          // ✅ DB: created_at
+  
+  // ✅ CORRECTION : CamelCase cohérent partout
+  propertyId?: string;        // ✅ DB: property_id (au lieu de property_id)
   property?: Property;
   source?: 'host' | 'guest' | 'airbnb'; // To differentiate booking source for signature handling
-  submission_id?: string; // Link to guest submission data
-  documentsGenerated: {
+  submissionId?: string;      // ✅ DB: submission_id (au lieu de submission_id)
+  documentsGenerated: {       // ✅ DB: documents_generated
     policeForm: boolean;
     contract: boolean;
   };

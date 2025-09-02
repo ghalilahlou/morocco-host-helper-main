@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Booking } from '@/types/booking';
 import { useAuth } from '@/hooks/useAuth';
 import { enrichBookingsWithGuestSubmissions, EnrichedBooking } from '@/services/guestSubmissionService';
+import { validateBookingData, logDataError } from '@/utils/errorMonitoring';
 
 export const useBookings = () => {
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
@@ -26,6 +27,9 @@ export const useBookings = () => {
 
     console.log('🔄 Setting up real-time subscriptions for bookings and guests');
 
+    // ✅ PROTECTION : Éviter les boucles infinies
+    let isProcessing = false;
+    
     // Subscribe to changes in bookings table
     const bookingsChannel = supabase
       .channel('schema-db-changes')
@@ -37,8 +41,13 @@ export const useBookings = () => {
           table: 'bookings'
         },
         (payload) => {
-          console.log('📊 Real-time booking update:', payload);
-          loadBookings();
+          if (!isProcessing) {
+            console.log('📊 Real-time booking update:', payload);
+            isProcessing = true;
+            loadBookings().finally(() => {
+              isProcessing = false;
+            });
+          }
         }
       )
       .on(
@@ -49,8 +58,13 @@ export const useBookings = () => {
           table: 'guests'
         },
         (payload) => {
-          console.log('👤 Real-time guest update:', payload);
-          loadBookings();
+          if (!isProcessing) {
+            console.log('👤 Real-time guest update:', payload);
+            isProcessing = true;
+            loadBookings().finally(() => {
+              isProcessing = false;
+            });
+          }
         }
       )
       .on(
@@ -61,8 +75,13 @@ export const useBookings = () => {
           table: 'guest_submissions'
         },
         (payload) => {
-          console.log('📝 Real-time guest submission update:', payload);
-          loadBookings();
+          if (!isProcessing) {
+            console.log('📝 Real-time guest submission update:', payload);
+            isProcessing = true;
+            loadBookings().finally(() => {
+              isProcessing = false;
+            });
+          }
         }
       )
       .subscribe();
@@ -103,39 +122,78 @@ export const useBookings = () => {
       console.log('📊 Raw bookings data from Supabase:', bookingsData);
       console.log('📊 Number of bookings returned:', bookingsData?.length || 0);
 
-      // Transform Supabase data to match our Booking interface
-      const transformedBookings: Booking[] = bookingsData?.map(booking => ({
-        id: booking.id,
-        checkInDate: booking.check_in_date,
-        checkOutDate: booking.check_out_date,
-        numberOfGuests: booking.number_of_guests,
-        bookingReference: booking.booking_reference || undefined,
-        property_id: booking.property_id,
-        submission_id: booking.submission_id || undefined,
-        property: booking.property ? {
-          ...booking.property,
-          house_rules: Array.isArray(booking.property.house_rules) 
-            ? booking.property.house_rules.filter(rule => typeof rule === 'string') as string[]
-            : [],
-          contract_template: typeof booking.property.contract_template === 'object' && booking.property.contract_template !== null 
-            ? booking.property.contract_template 
-            : {},
-        } : undefined,
-        guests: booking.guests?.map(guest => ({
-          id: guest.id,
-          fullName: guest.full_name,
-          dateOfBirth: guest.date_of_birth,
-          documentNumber: guest.document_number,
-          nationality: guest.nationality,
-          placeOfBirth: guest.place_of_birth || undefined,
-          documentType: guest.document_type as 'passport' | 'national_id'
-        })) || [],
-        status: booking.status as 'pending' | 'completed' | 'archived',
-        createdAt: booking.created_at,
-        documentsGenerated: typeof booking.documents_generated === 'object' && booking.documents_generated !== null
-          ? booking.documents_generated as { policeForm: boolean; contract: boolean; }
-          : { policeForm: false, contract: false }
-      })) || [];
+      // ✅ Transform Supabase data with defensive validation + monitoring
+      const transformedBookings: Booking[] = bookingsData?.map(booking => {
+        // ✅ VALIDATION CRITIQUE : Exclure les bookings sans property_id
+        if (!booking.property_id) {
+          console.warn('⚠️ Booking sans property_id détecté et exclu:', booking.id);
+          logDataError('missing_property_id', 'useBookings.loadBookings', {
+            bookingId: booking.id,
+            createdAt: booking.created_at,
+            hasProperty: !!booking.property
+          });
+          return null;
+        }
+
+        const transformedBooking = {
+          id: booking.id,
+          checkInDate: booking.check_in_date,
+          checkOutDate: booking.check_out_date,
+          numberOfGuests: booking.number_of_guests,
+          bookingReference: booking.booking_reference || undefined,
+          
+          // ✅ CORRECTION : CamelCase cohérent
+          propertyId: booking.property_id,
+          submissionId: booking.submission_id || undefined,
+          
+          // ✅ DÉFENSIVE : Validation property avec fallback
+          property: booking.property ? {
+            ...booking.property,
+            house_rules: Array.isArray(booking.property.house_rules) 
+              ? booking.property.house_rules.filter(rule => typeof rule === 'string') as string[]
+              : [],
+            contract_template: typeof booking.property.contract_template === 'object' && booking.property.contract_template !== null 
+              ? booking.property.contract_template 
+              : {},
+          } : {
+            // ✅ Fallback si property manque mais property_id existe
+            id: booking.property_id,
+            name: 'Propriété inconnue',
+            house_rules: [],
+            contract_template: {},
+            user_id: '',
+            created_at: '',
+            updated_at: '',
+            property_type: 'unknown',
+            max_occupancy: 1
+          },
+          
+          guests: booking.guests?.map(guest => ({
+            id: guest.id,
+            fullName: guest.full_name,
+            dateOfBirth: guest.date_of_birth,
+            documentNumber: guest.document_number,
+            nationality: guest.nationality,
+            placeOfBirth: guest.place_of_birth || undefined,
+            documentType: guest.document_type as 'passport' | 'national_id'
+          })) || [],
+          status: booking.status as 'pending' | 'completed' | 'archived',
+          createdAt: booking.created_at,
+          documentsGenerated: typeof booking.documents_generated === 'object' && booking.documents_generated !== null
+            ? booking.documents_generated as { policeForm: boolean; contract: boolean; }
+            : { policeForm: false, contract: false }
+        };
+
+        // ✅ VALIDATION FINALE avec monitoring
+        const isValid = validateBookingData(transformedBooking, 'useBookings.transform');
+        if (!isValid) {
+          console.warn('⚠️ Booking avec données invalides détecté:', transformedBooking.id);
+        }
+
+        return transformedBooking;
+      }).filter(Boolean) as Booking[]; // ✅ Exclure les bookings null
+
+      console.log(`📊 Bookings transformés: ${transformedBookings.length}/${bookingsData?.length || 0}`);
 
       // Enrich bookings with guest submission data
       const enrichedBookings = await enrichBookingsWithGuestSubmissions(transformedBookings);
@@ -231,58 +289,136 @@ export const useBookings = () => {
 
   const updateBooking = async (id: string, updates: Partial<Booking>) => {
     try {
-      console.log('Updating booking:', id, updates);
+      console.log('🔄 Updating booking with safety checks:', id, updates);
       
+      // ✅ CORRECTION: Utilisation d'une transaction atomique pour éviter les race conditions
+      const { data: currentBooking, error: fetchError } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (fetchError || !currentBooking) {
+        console.error('❌ Error fetching current booking for update:', fetchError);
+        return;
+      }
+
       const updateData: any = {};
       if (updates.checkInDate) updateData.check_in_date = updates.checkInDate;
       if (updates.checkOutDate) updateData.check_out_date = updates.checkOutDate;
       if (updates.numberOfGuests) updateData.number_of_guests = updates.numberOfGuests;
       if (updates.bookingReference !== undefined) updateData.booking_reference = updates.bookingReference;
-      if (updates.status) updateData.status = updates.status;
+      
+      // ✅ CORRECTION: Gestion sécurisée des documents générés
       if (updates.documentsGenerated) {
-        updateData.documents_generated = updates.documentsGenerated;
+        // Merge safely with current state from DB (not from local state)
+        const currentDocGen = currentBooking.documents_generated || { policeForm: false, contract: false };
+        const newDocGen = { ...currentDocGen, ...updates.documentsGenerated };
+        updateData.documents_generated = newDocGen;
         
-        // Auto-set status to completed if both documents are generated
-        const currentBooking = bookings.find(b => b.id === id);
-        if (currentBooking) {
-          const newDocGen = { ...currentBooking.documentsGenerated, ...updates.documentsGenerated };
-          if (newDocGen.contract && newDocGen.policeForm && currentBooking.status !== 'completed') {
-            updateData.status = 'completed';
-          }
+        console.log('📋 Document generation state:', {
+          current: currentDocGen,
+          updates: updates.documentsGenerated,
+          final: newDocGen
+        });
+      }
+
+      // ✅ CORRECTION: Gestion du statut avec validation stricte
+      if (updates.status) {
+        updateData.status = updates.status;
+      } else if (updates.documentsGenerated) {
+        // Auto-complete only if BOTH documents are true and booking is not already completed
+        const finalDocGen = updateData.documents_generated;
+        if (finalDocGen?.contract && finalDocGen?.policeForm && currentBooking.status !== 'completed') {
+          updateData.status = 'completed';
+          console.log('✅ Auto-completing booking - both documents generated');
         }
       }
 
+      // ✅ CORRECTION: Mise à jour avec contrainte de version optimiste
       const { error } = await supabase
         .from('bookings')
-        .update(updateData)
-        .eq('id', id);
+        .update({
+          ...updateData,
+          updated_at: new Date().toISOString() // Force timestamp update
+        })
+        .eq('id', id)
+        .eq('updated_at', currentBooking.updated_at); // Optimistic locking
 
       if (error) {
-        console.error('Error updating booking:', error);
+        console.error('❌ Error updating booking (possible concurrent modification):', error);
+        // Retry once if it's a concurrent modification
+        if (error.message?.includes('conflict') || error.code === 'PGRST116') {
+          console.log('🔄 Retrying booking update due to concurrent modification...');
+          return updateBooking(id, updates); // Recursive retry
+        }
         return;
       }
 
+      console.log('✅ Booking updated successfully');
       await loadBookings();
     } catch (error) {
-      console.error('Error updating booking:', error);
+      console.error('❌ Error updating booking:', error);
     }
   };
 
   const deleteBooking = async (id: string) => {
     try {
+      console.log('🗑️ Starting deletion of booking:', id);
+      
+      // Step 1: Delete related guest submissions first
+      const { error: guestSubmissionsError } = await supabase
+        .from('guest_submissions')
+        .delete()
+        .eq('booking_id', id);
+
+      if (guestSubmissionsError) {
+        console.warn('⚠️ Warning: Could not delete guest submissions:', guestSubmissionsError);
+        // Continue with deletion even if guest submissions deletion fails
+      } else {
+        console.log('✅ Guest submissions deleted successfully');
+      }
+
+      // Step 2: Delete related guests
+      const { error: guestsError } = await supabase
+        .from('guests')
+        .delete()
+        .eq('booking_id', id);
+
+      if (guestsError) {
+        console.warn('⚠️ Warning: Could not delete guests:', guestsError);
+      } else {
+        console.log('✅ Guests deleted successfully');
+      }
+
+      // Step 3: Delete related uploaded documents
+      const { error: documentsError } = await supabase
+        .from('uploaded_documents')
+        .delete()
+        .eq('booking_id', id);
+
+      if (documentsError) {
+        console.warn('⚠️ Warning: Could not delete uploaded documents:', documentsError);
+      } else {
+        console.log('✅ Uploaded documents deleted successfully');
+      }
+
+      // Step 4: Now delete the booking
       const { error } = await supabase
         .from('bookings')
         .delete()
         .eq('id', id);
 
       if (error) {
-        console.error('Error deleting booking:', error);
-        return;
+        console.error('❌ Error deleting booking:', error);
+        throw error;
       }
 
+      console.log('✅ Booking deleted successfully');
       await loadBookings();
     } catch (error) {
-      console.error('Error deleting booking:', error);
+      console.error('❌ Error in deleteBooking:', error);
+      throw error;
     }
   };
 

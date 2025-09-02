@@ -72,6 +72,13 @@ const config: Config = {
           'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))'
+        },
+        // Palette de couleurs personnalisée Morocco Host Helper
+        brand: {
+          green: '#49C605',      // Vert vif
+          cyan: '#54DEFD',       // Bleu cyan clair
+          turquoise: '#8BD7D2',  // Turquoise doux
+          teal: '#00BD9D',       // Teal (couleur CTA principale)
         }
       },
       borderRadius: {

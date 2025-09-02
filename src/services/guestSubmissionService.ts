@@ -3,7 +3,7 @@ import { Booking } from '@/types/booking';
 
 interface GuestSubmissionData {
   id: string;
-  booking_id: string | null;
+  resolved_booking_id: string | null;  // ✅ CORRECTION : Utiliser resolved_booking_id
   guest_data: any;
   document_urls: any;
   signature_data: string | null;
@@ -49,12 +49,12 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       }));
     }
     
-    // Fetch guest submissions ONLY for valid UUID booking IDs
+    // ✅ CORRECTION : Utiliser resolved_booking_id au lieu de booking_id
     const { data: submissions, error } = await supabase
       .from('v_guest_submissions')
       .select('*')
-      .in('booking_id', bookingIds)
-      .not('booking_id', 'is', null);
+      .in('resolved_booking_id', bookingIds)  // ✅ Utiliser resolved_booking_id
+      .not('resolved_booking_id', 'is', null); // ✅ Utiliser resolved_booking_id
 
     if (error) {
       console.error('❌ Error fetching guest submissions:', error);
@@ -73,9 +73,9 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
 
     console.log('✅ Fetched guest submissions:', submissions);
 
-    // Group submissions by booking_id
+    // ✅ CORRECTION : Utiliser resolved_booking_id
     const submissionsByBooking = (submissions || []).reduce((acc, submission) => {
-      const bookingId = submission.booking_id;
+      const bookingId = submission.resolved_booking_id;  // ✅ Utiliser resolved_booking_id
       if (!bookingId) return acc;
       
       if (!acc[bookingId]) {

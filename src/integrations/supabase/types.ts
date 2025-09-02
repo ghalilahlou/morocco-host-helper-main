@@ -204,6 +204,7 @@ export type Database = {
       guest_submissions: {
         Row: {
           booking_data: Json | null
+          booking_id: string | null
           created_at: string
           document_urls: Json | null
           guest_data: Json | null
@@ -218,6 +219,7 @@ export type Database = {
         }
         Insert: {
           booking_data?: Json | null
+          booking_id?: string | null
           created_at?: string
           document_urls?: Json | null
           guest_data?: Json | null
@@ -232,6 +234,7 @@ export type Database = {
         }
         Update: {
           booking_data?: Json | null
+          booking_id?: string | null
           created_at?: string
           document_urls?: Json | null
           guest_data?: Json | null
@@ -250,6 +253,13 @@ export type Database = {
             columns: ["token_id"]
             isOneToOne: false
             referencedRelation: "property_verification_tokens"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fkey_on_booking_id"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
             referencedColumns: ["id"]
           },
         ]

@@ -50,7 +50,7 @@ export const BookingDetailsModal = ({
       id: booking.id,
       hasGuests: booking.guests?.length > 0,
       guestsCount: booking.guests?.length || 0,
-      submissionId: booking.submission_id,
+      submissionId: booking.submissionId,
       bookingReference: booking.bookingReference
     });
     
@@ -66,12 +66,12 @@ export const BookingDetailsModal = ({
         console.log('🔍 Trying to fetch guest data from fallback sources...');
         
         // 1. First try to get from guest submissions using submission_id
-        if (booking.submission_id) {
-          console.log('📝 Trying guest submissions with submission_id:', booking.submission_id);
+        if (booking.submissionId) {
+          console.log('📝 Trying guest submissions with submissionId:', booking.submissionId);
           const { data: submissionData } = await supabase
             .from('guest_submissions')
             .select('guest_data')
-            .eq('id', booking.submission_id)
+            .eq('id', booking.submissionId)
             .maybeSingle();
           
           if (submissionData?.guest_data) {
@@ -128,7 +128,7 @@ export const BookingDetailsModal = ({
         }
       }
     })();
-  }, [isOpen, booking.id, booking.guests?.length, booking.bookingReference, booking.submission_id]);
+  }, [isOpen, booking.id, booking.guests?.length, booking.bookingReference, booking.submissionId]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR', {
@@ -369,7 +369,7 @@ export const BookingDetailsModal = ({
   };
 
   const handleGenerateGuestLink = async () => {
-    if (!booking.property_id) {
+    if (!booking.propertyId) {
       toast({
         title: "Erreur",
         description: "Aucune propriété associée à cette réservation",
@@ -379,7 +379,7 @@ export const BookingDetailsModal = ({
     }
     
     // Pass the booking ID to the verification URL generation
-    const url = await generatePropertyVerificationUrl(booking.property_id, booking.id);
+    const url = await generatePropertyVerificationUrl(booking.propertyId, booking.id);
     if (url) {
       const success = await copyToClipboard(url);
       if (success) {

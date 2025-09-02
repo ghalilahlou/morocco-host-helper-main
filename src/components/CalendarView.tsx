@@ -25,9 +25,62 @@ interface CalendarViewProps {
   propertyId?: string; // Added to fetch Airbnb reservations
 }
 
-// Simple cache for Airbnb data
-const airbnbCache = new Map<string, { data: AirbnbReservation[], timestamp: number }>();
-const CACHE_DURATION = 30000; // 30 seconds
+// 🚀 OPTIMISATION: Cache intelligent avec TTL et limite de taille
+class AirbnbCache {
+  private cache = new Map<string, { data: AirbnbReservation[], timestamp: number }>();
+  private readonly CACHE_DURATION = 30000; // 30 seconds
+  private readonly MAX_ENTRIES = 50; // Limite pour éviter les fuites mémoire
+
+  get(key: string) {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    
+    // Vérifier l'expiration
+    if (Date.now() - entry.timestamp > this.CACHE_DURATION) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry;
+  }
+
+  set(key: string, data: AirbnbReservation[]) {
+    // Nettoyer les entrées expirées si on atteint la limite
+    if (this.cache.size >= this.MAX_ENTRIES) {
+      this.cleanup();
+    }
+    
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
+  delete(key: string) {
+    this.cache.delete(key);
+  }
+
+  private cleanup() {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > this.CACHE_DURATION) {
+        this.cache.delete(key);
+      }
+    }
+    
+    // Si toujours trop d'entrées, supprimer les plus anciennes
+    if (this.cache.size >= this.MAX_ENTRIES) {
+      const entries = Array.from(this.cache.entries())
+        .sort((a, b) => a[1].timestamp - b[1].timestamp);
+      
+      const toDelete = entries.slice(0, this.cache.size - this.MAX_ENTRIES + 10);
+      toDelete.forEach(([key]) => this.cache.delete(key));
+    }
+  }
+
+  clear() {
+    this.cache.clear();
+  }
+}
+
+const airbnbCache = new AirbnbCache();
 
 export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: CalendarViewProps) => {
   const navigate = useNavigate();
@@ -51,7 +104,7 @@ const [hasIcs, setHasIcs] = useState(false);
     
     // Check cache first
     const cached = airbnbCache.get(propertyId);
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    if (cached) {
       setAirbnbReservations(cached.data);
       return;
     }
@@ -74,7 +127,7 @@ const [hasIcs, setHasIcs] = useState(false);
       }));
       
       // Cache the data
-      airbnbCache.set(propertyId, { data: formattedReservations, timestamp: Date.now() });
+      airbnbCache.set(propertyId, formattedReservations);
       
       setAirbnbReservations(formattedReservations);
       

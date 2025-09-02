@@ -350,7 +350,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       } catch (generateError) {
         console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
       }
-
+  
       // Notify property owner (non-blocking)
       try {
         const ownerEmail = propertyData?.contact_info?.email;

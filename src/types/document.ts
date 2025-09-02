@@ -5,6 +5,13 @@ export interface UnifiedDocument {
   guestName?: string;
   bookingId: string;
   createdAt: string;
+  metadata?: {
+    documentType?: string;
+    documentNumber?: string;
+    nationality?: string;
+    dateOfBirth?: string;
+    placeOfBirth?: string;
+  };
 }
 
 export interface DocumentStorageResult {

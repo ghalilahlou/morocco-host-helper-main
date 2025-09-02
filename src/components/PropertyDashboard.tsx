@@ -10,6 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Building2, Calendar, Users, FileCheck, Grid, CalendarDays } from 'lucide-react';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
+import { SimpleUploadTest } from './SimpleUploadTest';
+import { DocumentAccessTest } from './DocumentAccessTest';
+import { SecureUploadTest } from './SecureUploadTest';
 
 interface PropertyDashboardProps {
   onNewBooking: () => void;
@@ -29,7 +32,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
     try {
       await refreshBookings();
       const currentFilteredBookings = selectedProperty 
-        ? bookings.filter(booking => booking.property_id === selectedProperty.id)
+        ? bookings.filter(booking => booking.propertyId === selectedProperty.id)
         : [];
       console.log('🔄 Manual refresh completed. Total bookings:', bookings.length);
       console.log('🔄 Bookings for selected property:', currentFilteredBookings.length);
@@ -63,7 +66,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
   }, [selectedProperty?.id]);
 
   const filteredBookings = selectedProperty 
-    ? bookings.filter(booking => booking.property_id === selectedProperty.id)
+    ? bookings.filter(booking => booking.propertyId === selectedProperty.id)
 : [];
 
   // Refresh bookings immediately when a deletion event is emitted
@@ -203,6 +206,57 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
                 </div>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Test Upload Documents */}
+      {selectedProperty && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              🧪 Test Upload Documents
+            </CardTitle>
+            <CardDescription>
+              Testez l'upload des pièces d'identité pour identifier le problème
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SimpleUploadTest />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Test Accès Documents */}
+      {selectedProperty && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              📄 Test Accès Documents d'Identité
+            </CardTitle>
+            <CardDescription>
+              Testez l'accès et l'affichage des pièces d'identité (PDF et images)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DocumentAccessTest />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Test Upload Sécurisé */}
+      {selectedProperty && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              🔒 Test Upload Sécurisé
+            </CardTitle>
+            <CardDescription>
+              Testez l'upload avec des noms de fichiers sécurisés (sans caractères spéciaux)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SecureUploadTest />
           </CardContent>
         </Card>
       )}

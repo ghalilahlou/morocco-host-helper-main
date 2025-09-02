@@ -107,28 +107,60 @@ serve(async (req) => {
         if (submissions && submissions.length > 0) {
           console.log('✅ Found guest submissions, enriching booking data...');
           
-          // Extract real guest data from submissions
+          // ✅ CORRECTION: Extraction et validation sécurisée des données d'invités
           const realGuests = [];
           for (const submission of submissions) {
             if (submission.guest_data && submission.guest_data.guests) {
-              // Handle array of guests
+              // Handle array of guests with validation
               for (const guest of submission.guest_data.guests) {
+                // Validation des données requises
+                const guestName = guest.fullName || guest.full_name || '';
+                const documentNumber = guest.documentNumber || guest.document_number || '';
+                
+                if (!guestName.trim() || !documentNumber.trim()) {
+                  console.warn('⚠️ Skipping incomplete guest data:', { guestName, documentNumber });
+                  continue;
+                }
+
                 realGuests.push({
-                  full_name: guest.fullName || guest.full_name || '',
+                  full_name: guestName.trim(),
                   date_of_birth: guest.dateOfBirth || guest.date_of_birth || '',
-                  document_number: guest.documentNumber || guest.document_number || '',
-                  nationality: guest.nationality || '',
-                  document_type: guest.documentType || guest.document_type || '',
+                  document_number: documentNumber.trim(),
+                  nationality: guest.nationality || 'Non spécifiée',
+                  document_type: guest.documentType || guest.document_type || 'passport',
                   place_of_birth: guest.placeOfBirth || guest.place_of_birth || ''
                 });
               }
             }
           }
           
-          // Replace empty guests with real submission data
+          // ✅ CORRECTION: Enrichissement sécurisé avec fallback intelligent
           if (realGuests.length > 0) {
-            booking.guests = realGuests;
-            console.log(`✅ Enriched booking with ${realGuests.length} real guests`);
+            // Conserver les invités existants de la DB si ils sont plus complets
+            const existingGuests = booking.guests || [];
+            
+            // Comparer et choisir la source la plus complète
+            if (existingGuests.length > 0 && realGuests.length > 0) {
+              console.log('🔍 Comparing guest data sources:', {
+                existing: existingGuests.length,
+                fromSubmissions: realGuests.length
+              });
+              
+              // Utiliser les soumissions si elles contiennent plus d'informations complètes
+              const completeSubmissionGuests = realGuests.filter(g => 
+                g.full_name && g.document_number && g.nationality !== 'Non spécifiée'
+              );
+              
+              if (completeSubmissionGuests.length >= existingGuests.length) {
+                booking.guests = realGuests;
+                console.log(`✅ Using submission data: ${realGuests.length} guests`);
+              } else {
+                console.log(`✅ Keeping existing DB data: ${existingGuests.length} guests`);
+              }
+            } else {
+              booking.guests = realGuests;
+              console.log(`✅ Enriched booking with ${realGuests.length} real guests`);
+            }
           }
         } else {
           console.log('❌ No guest submissions found, using booking.guests as fallback');
@@ -139,13 +171,50 @@ serve(async (req) => {
     }
 
     if (documentType === 'police') {
+      // ✅ CORRECTION: Validation avant génération des fiches de police
+      const guests = booking.guests || [];
+      if (guests.length === 0) {
+        console.error('❌ Cannot generate police forms: no guests found');
+        return new Response(
+          JSON.stringify({ 
+            error: 'Aucun invité trouvé pour générer les fiches de police',
+            code: 'NO_GUESTS_FOUND'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Valider que chaque invité a les données minimales requises
+      const invalidGuests = guests.filter(guest => 
+        !guest.full_name?.trim() || !guest.document_number?.trim()
+      );
+
+      if (invalidGuests.length > 0) {
+        console.error('❌ Invalid guest data found:', invalidGuests);
+        return new Response(
+          JSON.stringify({ 
+            error: `${invalidGuests.length} invité(s) ont des données incomplètes`,
+            code: 'INCOMPLETE_GUEST_DATA',
+            details: invalidGuests.map(g => ({ name: g.full_name, docNumber: g.document_number }))
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       // Import PDF-lib dynamically for police forms
       const { PDFDocument, StandardFonts, rgb } = await import('https://esm.sh/pdf-lib@1.17.1');
       
+      console.log(`📋 Generating police forms for ${guests.length} validated guests`);
       const policeFormPDFs = await generatePoliceFormsPDF(booking, PDFDocument, StandardFonts, rgb);
       
       const documentUrls = policeFormPDFs.map((pdfBytes, index) => {
-        const base64PDF = btoa(String.fromCharCode(...pdfBytes));
+        // ✅ CORRECTION: Conversion sécurisée des bytes en base64
+        let binary = '';
+        const bytes = new Uint8Array(pdfBytes);
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64PDF = btoa(binary);
         return `data:application/pdf;base64,${base64PDF}`;
       });
       
@@ -208,8 +277,13 @@ serve(async (req) => {
       
       const contractPDF = await generateContractPDF(booking, guestSignatureUrl, signedAt || signerInfo?.signed_at, PDFDocument, StandardFonts, rgb, signerInfo);
       
-      // Convert PDF to data URL for direct download
-      const base64PDF = btoa(String.fromCharCode(...contractPDF));
+      // ✅ CORRECTION: Convert PDF to data URL for direct download
+      let binary = '';
+      const bytes = new Uint8Array(contractPDF);
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64PDF = btoa(binary);
       const dataUrl = `data:application/pdf;base64,${base64PDF}`;
       
       const fileName = guestSignatureUrl 

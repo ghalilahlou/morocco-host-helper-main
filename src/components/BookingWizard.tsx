@@ -50,11 +50,30 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   const isStepValid = () => {
     switch (currentStep) {
       case 0:
-        return formData.checkInDate && formData.checkOutDate && formData.numberOfGuests > 0;
+        // ✅ VALIDATION RENFORCÉE : Vérifier propriété, dates et invités
+        const hasValidDates = formData.checkInDate && formData.checkOutDate;
+        const hasValidGuests = formData.numberOfGuests > 0;
+        const hasProperty = propertyId; // Vérifier que la propriété est sélectionnée
+        
+        if (!hasProperty) {
+          console.warn('⚠️ Étape 0 : Pas de propriété sélectionnée');
+        }
+        if (!hasValidDates) {
+          console.warn('⚠️ Étape 0 : Dates invalides');
+        }
+        if (!hasValidGuests) {
+          console.warn('⚠️ Étape 0 : Nombre d\'invités invalide');
+        }
+        
+        return hasValidDates && hasValidGuests && hasProperty;
       case 1:
-        return formData.guests.length > 0;
+        const hasGuests = formData.guests.length > 0;
+        if (!hasGuests) {
+          console.warn('⚠️ Étape 1 : Aucun invité ajouté');
+        }
+        return hasGuests;
       case 2:
-        return true;
+        return true; // Étape de révision, toujours valide
       default:
         return false;
     }
@@ -76,6 +95,19 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
   const handleSubmit = async () => {
     try {
+      // ✅ VALIDATION CRITIQUE : Vérifier propertyId obligatoire
+      if (!propertyId) {
+        console.error('❌ Tentative de création booking sans propertyId');
+        toast({
+          title: "Erreur critique",
+          description: "Impossible de créer une réservation sans propriété sélectionnée. Veuillez rafraîchir la page.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      console.log('🔍 PropertyId validé pour création booking:', propertyId);
+      
       const bookingId = editingBooking?.id || uuidv4();
       
 
@@ -86,13 +118,22 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           throw new Error('User not authenticated');
         }
 
+        console.log('📝 Création booking avec données:', {
+          bookingId,
+          propertyId,
+          userId: userData.user.id,
+          checkIn: formData.checkInDate,
+          checkOut: formData.checkOutDate,
+          guests: formData.numberOfGuests
+        });
+
         // 1. Insert booking
         const { data: bookingData, error: bookingError } = await supabase
           .from('bookings')
           .insert({
             id: bookingId,
             user_id: userData.user.id,
-            property_id: propertyId,
+            property_id: propertyId, // Maintenant sûr d'être défini
             check_in_date: formData.checkInDate,
             check_out_date: formData.checkOutDate,
             number_of_guests: formData.numberOfGuests,
@@ -107,8 +148,11 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           .single();
 
         if (bookingError) {
+          console.error('❌ Erreur création booking:', bookingError);
           throw bookingError;
         }
+
+        console.log('✅ Booking créé avec succès:', bookingData);
 
         
 
@@ -166,19 +210,69 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           status: formData.guests.length > 0 ? 'completed' : 'pending'
         });
 
-        // Replace existing guests with current list
-        await supabase.from('guests').delete().eq('booking_id', editingBooking.id);
-        if (formData.guests.length > 0) {
-          const guestsData = formData.guests.map(guest => ({
-            booking_id: editingBooking.id,
-            full_name: guest.fullName,
-            date_of_birth: guest.dateOfBirth,
-            document_number: guest.documentNumber,
-            nationality: guest.nationality,
-            place_of_birth: guest.placeOfBirth,
-            document_type: guest.documentType
-          }));
-          await supabase.from('guests').insert(guestsData);
+        // ✅ CORRECTION: Transaction sécurisée pour la synchronisation des invités
+        console.log('🔄 Syncing guests for booking:', editingBooking.id);
+        
+        try {
+          // Use RPC function for atomic guest replacement
+          const { error: syncError } = await supabase.rpc('sync_booking_guests', {
+            p_booking_id: editingBooking.id,
+            p_guests: formData.guests.map(guest => ({
+              full_name: guest.fullName,
+              date_of_birth: guest.dateOfBirth,
+              document_number: guest.documentNumber,
+              nationality: guest.nationality,
+              place_of_birth: guest.placeOfBirth || '',
+              document_type: guest.documentType
+            }))
+          });
+
+          if (syncError) {
+            console.error('❌ Error syncing guests via RPC:', syncError);
+            // Fallback to manual transaction if RPC fails
+            console.log('🔄 Falling back to manual guest sync...');
+            
+            // Delete existing guests
+            const { error: deleteError } = await supabase
+              .from('guests')
+              .delete()
+              .eq('booking_id', editingBooking.id);
+            
+            if (deleteError) {
+              throw new Error(`Failed to delete existing guests: ${deleteError.message}`);
+            }
+
+            // Insert new guests if any
+            if (formData.guests.length > 0) {
+              const guestsData = formData.guests.map(guest => ({
+                booking_id: editingBooking.id,
+                full_name: guest.fullName,
+                date_of_birth: guest.dateOfBirth,
+                document_number: guest.documentNumber,
+                nationality: guest.nationality,
+                place_of_birth: guest.placeOfBirth || '',
+                document_type: guest.documentType
+              }));
+              
+              const { error: insertError } = await supabase
+                .from('guests')
+                .insert(guestsData);
+              
+              if (insertError) {
+                throw new Error(`Failed to insert new guests: ${insertError.message}`);
+              }
+            }
+          }
+          
+          console.log('✅ Guests synchronized successfully');
+        } catch (guestSyncError) {
+          console.error('❌ Critical error during guest sync:', guestSyncError);
+          toast({
+            title: "Erreur de synchronisation",
+            description: "Échec de la mise à jour des invités. Veuillez réessayer.",
+            variant: "destructive"
+          });
+          return; // Don't continue if guest sync fails
         }
 
         // Sync uploaded documents: replace previous set with current form state

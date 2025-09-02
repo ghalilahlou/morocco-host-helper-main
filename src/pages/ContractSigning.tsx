@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ContractSignature } from '@/components/ContractSignature';
+import { motion } from 'framer-motion';
+import { WelcomingContractSignature } from '@/components/WelcomingContractSignature';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Home } from 'lucide-react';
+import { Loader2, Home, Heart, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useT } from '@/i18n/GuestLocaleProvider';
@@ -185,78 +186,161 @@ export const ContractSigning: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 flex items-center justify-center">
-        <Card className="p-8">
-          <CardContent className="flex items-center gap-4">
-            <Loader2 className="w-6 h-6 animate-spin" />
-            <span>{t('guest.contract.loading')}</span>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center space-y-6"
+        >
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="w-16 h-16 mx-auto border-4 border-blue-500 border-t-transparent rounded-full"
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="space-y-2"
+          >
+            <h3 className="text-2xl font-semibold text-gray-900">Préparation de votre contrat</h3>
+            <p className="text-lg text-gray-600">Nous personnalisons votre expérience...</p>
+          </motion.div>
+        </motion.div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 flex items-center justify-center">
-        <Card className="p-8 max-w-md">
-          <CardContent className="text-center space-y-4">
-            <h2 className="text-2xl font-bold text-destructive">{t('guest.contract.errorTitle')}</h2>
-            <p className="text-muted-foreground">{error}</p>
-            <Button onClick={() => navigate('/')} className="w-full">
-              <Home className="w-4 h-4 mr-2" />
-              {t('guest.contract.backHome')}
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md mx-auto"
+        >
+          <Card className="p-8 shadow-2xl border-red-200">
+            <CardContent className="text-center space-y-6">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: "spring" }}
+                className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center"
+              >
+                <Home className="w-8 h-8 text-red-600" />
+              </motion.div>
+              <div className="space-y-2">
+                <h2 className="text-2xl font-bold text-red-800">Oups ! Un problème est survenu</h2>
+                <p className="text-red-600">{error}</p>
+              </div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button onClick={() => navigate('/')} className="w-full bg-red-600 hover:bg-red-700">
+                  <Home className="w-4 h-4 mr-2" />
+                  Retour à l'accueil
+                </Button>
+              </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     );
   }
 
   if (isContractSigned) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 flex items-center justify-center">
-        <Card className="p-8 max-w-md bg-[hsl(var(--surface-white))]">
-          <CardContent className="text-center space-y-4">
-            <img src="/lovable-uploads/4288912e-fd68-4284-b900-7ee68839a115.png" alt="Icône de validation" className="w-16 h-16 mx-auto" />
-            <h2 className="text-2xl font-bold text-foreground">{t('guest.contract.signed.title')}</h2>
-            <p className="text-muted-foreground">
-              {t('guest.contract.signed.desc')}
-            </p>
-            <div className="pt-4">
-              <p className="text-sm text-muted-foreground">
-                {t('guest.contract.signed.thanks')}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 300 }}
+          className="max-w-lg mx-auto"
+        >
+          <Card className="p-8 shadow-2xl border-green-200 bg-white/90 backdrop-blur-sm">
+            <CardContent className="text-center space-y-6">
+              <motion.div
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                className="w-20 h-20 mx-auto bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center"
+              >
+                <Heart className="w-10 h-10 text-white" />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="space-y-4"
+              >
+                <h2 className="text-3xl font-bold text-gray-900">Contrat signé avec succès ! 🎉</h2>
+                <p className="text-xl text-gray-600">
+                  Félicitations ! Votre séjour est maintenant confirmé.
+                </p>
+                <div className="bg-green-50 p-6 rounded-2xl border border-green-200">
+                  <p className="text-green-800 font-medium">
+                    ✨ Vous recevrez toutes les informations par email<br/>
+                    🏠 Nous avons hâte de vous accueillir !
+                  </p>
+                </div>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.6 }}
+                className="flex justify-center gap-4 text-3xl"
+              >
+                <motion.span animate={{ rotate: [0, 10, -10, 0] }} transition={{ duration: 2, repeat: Infinity }}>🎉</motion.span>
+                <motion.span animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>❤️</motion.span>
+                <motion.span animate={{ rotate: [0, -10, 10, 0] }} transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}>🏠</motion.span>
+              </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     );
   }
 
   if (!submissionData || !submissionData.booking_data) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 flex items-center justify-center">
-        <Card className="p-8 max-w-md">
-          <CardContent className="text-center space-y-4">
-            <h2 className="text-2xl font-bold text-foreground">{t('guest.contract.missingData.title')}</h2>
-            <p className="text-muted-foreground">
-              {t('guest.contract.missingData.desc')}
-            </p>
-            <Button 
-              onClick={() => navigate(`/guest-verification/${propertyId}/${token}`)}
-              className="w-full"
-            >
-              {t('guest.contract.missingData.cta')}
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-orange-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md mx-auto"
+        >
+          <Card className="p-8 shadow-2xl border-yellow-200">
+            <CardContent className="text-center space-y-6">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: "spring" }}
+                className="w-16 h-16 mx-auto bg-yellow-100 rounded-full flex items-center justify-center"
+              >
+                <Sparkles className="w-8 h-8 text-yellow-600" />
+              </motion.div>
+              <div className="space-y-2">
+                <h2 className="text-2xl font-bold text-yellow-800">Quelques informations manquent</h2>
+                <p className="text-yellow-700">
+                  Nous avons besoin de vos informations de réservation pour générer le contrat.
+                </p>
+              </div>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button 
+                  onClick={() => navigate(`/guest-verification/${propertyId}/${token}`)}
+                  className="w-full bg-yellow-600 hover:bg-yellow-700"
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Compléter mes informations
+                </Button>
+              </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <ContractSignature
+    <WelcomingContractSignature
       bookingData={submissionData.booking_data}
       propertyData={propertyData}
       guestData={submissionData.guest_data}

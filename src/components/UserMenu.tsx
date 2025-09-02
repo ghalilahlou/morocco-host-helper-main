@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Settings, LogOut, Key } from 'lucide-react';
+import { User, Settings, LogOut, Key, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
@@ -12,6 +12,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
+import { useAdminContext } from '@/contexts/AdminContext';
 
 interface UserMenuProps {
   onSignOut: () => void;
@@ -19,7 +20,11 @@ interface UserMenuProps {
 
 export const UserMenu: React.FC<UserMenuProps> = ({ onSignOut }) => {
   const { user } = useAuth();
+  const { isAdmin } = useAdminContext();
   const navigate = useNavigate();
+  
+  // ✅ DEBUG TEMPORAIRE
+  console.log('👤 UserMenu - user:', user?.email, 'isAdmin:', isAdmin);
 
   if (!user) return null;
 
@@ -65,6 +70,12 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onSignOut }) => {
           <User className="mr-2 h-4 w-4" />
           <span>Profil</span>
         </DropdownMenuItem>
+        {isAdmin && (
+          <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--brand-2))] hover:text-white focus:bg-[hsl(var(--brand-2))] focus:text-white" onClick={() => navigate('/admin')}>
+            <Shield className="mr-2 h-4 w-4" />
+            <span>Administrateur</span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--brand-2))] hover:text-white focus:bg-[hsl(var(--brand-2))] focus:text-white" onClick={() => navigate('/account-settings')}>
           <Settings className="mr-2 h-4 w-4" />
           <span>Paramètres du compte</span>

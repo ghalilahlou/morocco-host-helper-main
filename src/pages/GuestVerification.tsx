@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,19 +8,20 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Upload, FileText, X, CheckCircle } from 'lucide-react';
+import { CalendarIcon, Upload, FileText, X, CheckCircle, Users, Calendar as CalendarLucide, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { OpenAIDocumentService } from '@/services/openaiDocumentService';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { EnhancedInput } from '@/components/ui/enhanced-input';
+import { EnhancedFileUpload } from '@/components/ui/enhanced-file-upload';
+import { AnimatedStepper } from '@/components/ui/animated-stepper';
+import { IntuitiveBookingPicker } from '@/components/ui/intuitive-date-picker';
 
-// Liste complète des nationalités (noms de pays en anglais)
+// Liste complète des nationalités
 const NATIONALITIES = [
-  'Morocco',
-  // Séparateur visuel après Morocco
-  '---',
-  'France', 'Spain', 'Italy', 'Germany', 'United Kingdom', 'Belgium', 'Netherlands', 'Portugal',
+  'Morocco', '---', 'France', 'Spain', 'Italy', 'Germany', 'United Kingdom', 'Belgium', 'Netherlands', 'Portugal',
   'Algeria', 'Tunisia', 'Turkey', 'United States', 'Canada', 'Brazil', 'Argentina', 'Russia', 'China', 
   'Japan', 'South Korea', 'India', 'Australia', 'New Zealand', 'South Africa', 'Egypt', 'Nigeria',
   'Saudi Arabia', 'United Arab Emirates', 'Qatar', 'Kuwait', 'Lebanon', 'Jordan', 'Syria', 'Iraq', 'Iran',
@@ -30,8 +32,7 @@ const NATIONALITIES = [
   'Switzerland', 'Austria', 'Luxembourg', 'Monaco', 'Andorra', 'San Marino', 'Vatican City',
   'Slovenia', 'Slovakia', 'Estonia', 'Latvia', 'Lithuania', 'Belarus', 'Moldova', 'Georgia',
   'Armenia', 'Azerbaijan', 'Kazakhstan', 'Kyrgyzstan', 'Uzbekistan', 'Tajikistan', 'Turkmenistan', 'Mongolia', 'North Korea',
-  'Taiwan', 'Hong Kong', 'Macao', 'Myanmar', 'Laos', 'Cambodia', 'Brunei', 'Timor-Leste',
-  'Other'
+  'Taiwan', 'Hong Kong', 'Macao', 'Myanmar', 'Laos', 'Cambodia', 'Brunei', 'Timor-Leste', 'Other'
 ];
 
 interface Guest {
@@ -50,12 +51,59 @@ interface UploadedDocument {
   isInvalid?: boolean;
 }
 
+// Animation variants
+const fadeInUp = {
+  initial: { opacity: 0, y: 30 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -30 }
+};
+
+const slideInRight = {
+  initial: { opacity: 0, x: 50 },
+  animate: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -50 }
+};
+
+const stagger = {
+  animate: {
+    transition: {
+      staggerChildren: 0.1
+    }
+  }
+};
+
 export const GuestVerification = () => {
-  const { propertyId, token, airbnbBookingId } = useParams<{ 
+  const { propertyId, token, airbnbBookingId } = useParams<{
     propertyId: string; 
     token: string; 
     airbnbBookingId?: string; 
   }>();
+
+  // ✅ FONCTION UTILITAIRE: Validation des dates
+  const validateDates = (checkIn: Date, checkOut: Date): { isValid: boolean; error?: string } => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkInDateStartOfDay = new Date(checkIn);
+    checkInDateStartOfDay.setHours(0, 0, 0, 0);
+    const checkOutDateStartOfDay = new Date(checkOut);
+    checkOutDateStartOfDay.setHours(0, 0, 0, 0);
+    
+    if (checkInDateStartOfDay < today) {
+      return { isValid: false, error: t('validation.dateFuture.desc') };
+    }
+
+    if (checkOutDateStartOfDay <= checkInDateStartOfDay) {
+      return { isValid: false, error: t('validation.checkoutAfterCheckin.desc') };
+    }
+
+    const daysDifference = Math.ceil((checkOutDateStartOfDay.getTime() - checkInDateStartOfDay.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDifference > 30) {
+      return { isValid: false, error: "La durée maximale du séjour est de 30 jours" };
+    }
+
+    return { isValid: true };
+  };
+
   const navigate = useNavigate();
   const { toast } = useToast();
   const t = useT();
@@ -77,6 +125,33 @@ export const GuestVerification = () => {
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
   const [currentStep, setCurrentStep] = useState<'booking' | 'documents' | 'signature'>('booking');
 
+  // Étapes pour le stepper
+  const steps = [
+    {
+      id: 'booking',
+      title: t('guest.booking.title'),
+      description: 'Dates et invités',
+      icon: CalendarLucide,
+      status: currentStep === 'booking' ? 'current' : 
+             ['documents', 'signature'].includes(currentStep) ? 'completed' : 'pending'
+    },
+    {
+      id: 'documents',
+      title: t('guest.documents.title'),
+      description: 'Pièces d\'identité',
+      icon: FileText,
+      status: currentStep === 'documents' ? 'current' : 
+             currentStep === 'signature' ? 'completed' : 'pending'
+    },
+    {
+      id: 'signature',
+      title: t('contractSignature.pill'),
+      description: 'Finalisation',
+      icon: CheckCircle,
+      status: currentStep === 'signature' ? 'current' : 'pending'
+    }
+  ];
+
   useEffect(() => {
     const verifyToken = async () => {
       if (!propertyId || !token) {
@@ -96,7 +171,7 @@ export const GuestVerification = () => {
           body: { 
             propertyId, 
             token, 
-            airbnbCode: airbnbBookingId // Use the router param
+            airbnbCode: airbnbBookingId
           }
         });
 
@@ -124,56 +199,48 @@ export const GuestVerification = () => {
   // Effect to handle Airbnb booking ID matching and date pre-filling
   useEffect(() => {
     const matchAirbnbBooking = async () => {
-      // Check if we have basic required data
       if (!isValidToken || !propertyId || !airbnbBookingId) {
         return;
       }
       
-        try {
-          const { data: searchResult, error: searchError } = await supabase.functions.invoke('get-airbnb-reservation', {
-            body: { propertyId, bookingId: airbnbBookingId }
-          });
+      try {
+        const { data: searchResult, error: searchError } = await supabase.functions.invoke('get-airbnb-reservation', {
+          body: { propertyId, bookingId: airbnbBookingId }
+        });
 
-          if (searchError) {
-            console.error('❌ Edge function error:', searchError);
-            // Toast removed - silent error handling
-            return;
+        if (searchError) {
+          console.error('❌ Edge function error:', searchError);
+          return;
+        }
+        
+        if (searchResult?.reservation) {
+          const matchedReservation = searchResult.reservation;
+          
+          const foundCheckInDate = new Date(matchedReservation.start_date);
+          const foundCheckOutDate = new Date(matchedReservation.end_date);
+          
+          setCheckInDate(foundCheckInDate);
+          setCheckOutDate(foundCheckOutDate);
+          
+          if (matchedReservation.number_of_guests) {
+            setNumberOfGuests(matchedReservation.number_of_guests);
           }
           
-          if (searchResult?.reservation) {
-            const matchedReservation = searchResult.reservation;
-            
-            // Found a matching reservation - auto-fill dates
-            const foundCheckInDate = new Date(matchedReservation.start_date);
-            const foundCheckOutDate = new Date(matchedReservation.end_date);
-            
-            setCheckInDate(foundCheckInDate);
-            setCheckOutDate(foundCheckOutDate);
-            
-            if (matchedReservation.number_of_guests) {
-              setNumberOfGuests(matchedReservation.number_of_guests);
-            }
-            
-            if (matchedReservation.guest_name) {
-              setGuests(prevGuests => {
-                const updatedGuests = [...prevGuests];
-                updatedGuests[0] = { ...updatedGuests[0], fullName: matchedReservation.guest_name };
-                return updatedGuests;
-              });
-            }
-            
-            // Silent success - dates auto-filled without notification
-          } else {
-            // No exact match found - silent handling
+          if (matchedReservation.guest_name) {
+            setGuests(prevGuests => {
+              const updatedGuests = [...prevGuests];
+              updatedGuests[0] = { ...updatedGuests[0], fullName: matchedReservation.guest_name };
+              return updatedGuests;
+            });
           }
+        }
       } catch (error) {
         console.error('❌ Error matching Airbnb booking:', error);
-        // Silent error handling - no toast notification
       }
     };
 
     matchAirbnbBooking();
-  }, [airbnbBookingId, isValidToken, propertyId, toast, t]);
+  }, [airbnbBookingId, isValidToken, propertyId]);
 
   const addGuest = () => {
     setGuests([...guests, {
@@ -200,11 +267,9 @@ export const GuestVerification = () => {
   const handleFileUpload = async (files: FileList) => {
     if (!files || files.length === 0) return;
 
-    // Process each file
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         toast({
           title: t('upload.error.notImage.title'),
@@ -224,133 +289,107 @@ export const GuestVerification = () => {
 
       setUploadedDocuments(prev => [...prev, newDoc]);
 
-    try {
-      // Process with OpenAI document extraction
-      const extractedData = await OpenAIDocumentService.extractDocumentData(file);
+      try {
+        const extractedData = await OpenAIDocumentService.extractDocumentData(file);
 
-      // Update document with extracted data
-      setUploadedDocuments(prev => 
-        prev.map(doc => 
-          doc.url === url 
-            ? { ...doc, processing: false, extractedData }
-            : doc
-        )
-      );
+        setUploadedDocuments(prev => 
+          prev.map(doc => 
+            doc.url === url 
+              ? { ...doc, processing: false, extractedData }
+              : doc
+          )
+        );
 
-      // Check if document is a valid ID document
-      if (extractedData && Object.keys(extractedData).length > 0) {
-        // Validate that essential ID fields are present
-        const hasRequiredIdFields = extractedData.fullName && 
-                                  extractedData.documentNumber && 
-                                  extractedData.nationality && 
-                                  extractedData.documentType;
+        if (extractedData && Object.keys(extractedData).length > 0) {
+          const hasRequiredIdFields = extractedData.fullName && 
+                                    extractedData.documentNumber && 
+                                    extractedData.nationality && 
+                                    extractedData.documentType;
 
-        if (!hasRequiredIdFields) {
-          // Document is not a valid ID - alert user
-          toast({
-            title: t('upload.docInvalid.title'),
-            description: t('upload.docInvalid.desc'),
-            variant: "destructive",
-          });
-          
-          // Mark document as invalid but keep it for manual review
-          setUploadedDocuments(prev => 
-            prev.map(doc => 
-              doc.url === url 
-                ? { ...doc, processing: false, extractedData: null, isInvalid: true }
-                : doc
-            )
+          if (!hasRequiredIdFields) {
+            toast({
+              title: t('upload.docInvalid.title'),
+              description: t('upload.docInvalid.desc'),
+              variant: "destructive",
+            });
+            
+            setUploadedDocuments(prev => 
+              prev.map(doc => 
+                doc.url === url 
+                  ? { ...doc, processing: false, extractedData: null, isInvalid: true }
+                  : doc
+              )
+            );
+            return;
+          }
+
+          const updatedGuests = [...guests];
+          const emptyGuestIndex = updatedGuests.findIndex(guest => 
+            !guest.fullName && !guest.documentNumber
           );
-          return;
-        }
+          
+          if (emptyGuestIndex !== -1) {
+            const targetIndex = emptyGuestIndex;
+            if (extractedData.fullName) updatedGuests[targetIndex].fullName = extractedData.fullName;
+            if (extractedData.nationality) updatedGuests[targetIndex].nationality = extractedData.nationality;
+            if (extractedData.documentNumber) updatedGuests[targetIndex].documentNumber = extractedData.documentNumber;
+            if (extractedData.documentType) updatedGuests[targetIndex].documentType = extractedData.documentType as 'passport' | 'national_id';
+            if (extractedData.dateOfBirth) {
+              const parsedDate = new Date(extractedData.dateOfBirth);
+              if (!isNaN(parsedDate.getTime())) {
+                updatedGuests[targetIndex].dateOfBirth = parsedDate;
+              }
+            }
+            setGuests(updatedGuests);
+          } else {
+            const newGuest: Guest = {
+              fullName: extractedData.fullName || '',
+              dateOfBirth: extractedData.dateOfBirth ? new Date(extractedData.dateOfBirth) : undefined,
+              nationality: extractedData.nationality || '',
+              documentNumber: extractedData.documentNumber || '',
+              documentType: (extractedData.documentType as 'passport' | 'national_id') || 'passport'
+            };
+            setGuests([...updatedGuests, newGuest]);
+          }
 
-        // Document is valid - proceed with auto-fill
-        const updatedGuests = [...guests];
-        const emptyGuestIndex = updatedGuests.findIndex(guest => 
-          !guest.fullName && !guest.documentNumber
+          toast({
+            title: "Document traité",
+            description: "Document d'identité valide. Informations extraites automatiquement.",
+          });
+        } else {
+          toast({
+            title: t('upload.docNotRecognized.title'),
+            description: t('upload.docNotRecognized.desc'),
+            variant: "destructive"
+          });
+        }
+      } catch (error) {
+        console.error('Document processing failed:', error);
+        setUploadedDocuments(prev => 
+          prev.map(doc => 
+            doc.url === url 
+              ? { ...doc, processing: false }
+              : doc
+          )
         );
         
-        if (emptyGuestIndex !== -1) {
-          const targetIndex = emptyGuestIndex;
-          if (extractedData.fullName) updatedGuests[targetIndex].fullName = extractedData.fullName;
-          if (extractedData.nationality) updatedGuests[targetIndex].nationality = extractedData.nationality;
-          if (extractedData.documentNumber) updatedGuests[targetIndex].documentNumber = extractedData.documentNumber;
-          if (extractedData.documentType) updatedGuests[targetIndex].documentType = extractedData.documentType as 'passport' | 'national_id';
-          if (extractedData.dateOfBirth) {
-            const parsedDate = new Date(extractedData.dateOfBirth);
-            if (!isNaN(parsedDate.getTime())) {
-              updatedGuests[targetIndex].dateOfBirth = parsedDate;
-            }
-          }
-          setGuests(updatedGuests);
-        } else {
-          // Add new guest if all existing guests are filled
-          const newGuest: Guest = {
-            fullName: extractedData.fullName || '',
-            dateOfBirth: extractedData.dateOfBirth ? new Date(extractedData.dateOfBirth) : undefined,
-            nationality: extractedData.nationality || '',
-            documentNumber: extractedData.documentNumber || '',
-            documentType: (extractedData.documentType as 'passport' | 'national_id') || 'passport'
-          };
-          setGuests([...updatedGuests, newGuest]);
-        }
-
         toast({
-          title: "Document traité",
-          description: "Document d'identité valide. Informations extraites automatiquement.",
-        });
-      } else {
-        // No data extracted - could be invalid document
-        toast({
-          title: t('upload.docNotRecognized.title'),
-          description: t('upload.docNotRecognized.desc'),
+          title: t('upload.warning.title'),
+          description: t('upload.warning.desc'),
           variant: "destructive"
         });
       }
-    } catch (error) {
-      console.error('Document processing failed:', error);
-      setUploadedDocuments(prev => 
-        prev.map(doc => 
-          doc.url === url 
-            ? { ...doc, processing: false }
-            : doc
-        )
-      );
-      
-      toast({
-        title: t('upload.warning.title'),
-        description: t('upload.warning.desc'),
-        variant: "destructive"
-      });
     }
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      handleFileUpload(files);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
   };
 
   const removeDocument = (url: string) => {
     console.log('🗑️ Removing document:', url);
     
-    // Find the document being removed
     const docToRemove = uploadedDocuments.find(doc => doc.url === url);
     
     if (docToRemove && docToRemove.extractedData) {
       console.log('📄 Document had extracted data, finding associated guest...');
       
-      // Find and clear the guest that was auto-filled from this document
       const guestToResetIndex = guests.findIndex(guest => 
         guest.fullName === docToRemove.extractedData?.fullName ||
         guest.documentNumber === docToRemove.extractedData?.documentNumber
@@ -376,7 +415,6 @@ export const GuestVerification = () => {
       }
     }
     
-    // Remove the document
     setUploadedDocuments(prev => prev.filter(doc => doc.url !== url));
     URL.revokeObjectURL(url);
   };
@@ -397,9 +435,8 @@ export const GuestVerification = () => {
       return;
     }
 
-    // Validation: Check if check-in date is in the future
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set to start of day for comparison
+    today.setHours(0, 0, 0, 0);
     const checkInDateStartOfDay = new Date(checkInDate);
     checkInDateStartOfDay.setHours(0, 0, 0, 0);
     
@@ -412,17 +449,6 @@ export const GuestVerification = () => {
       return;
     }
 
-    // Validation: Check if checkout date is after checkin date
-    if (checkOutDate <= checkInDate) {
-      toast({
-        title: t('validation.error.title'),
-        description: t('validation.checkoutAfterCheckin.desc'),
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Validation: Check if number of uploaded documents matches number of guests
     if (uploadedDocuments.length !== numberOfGuests) {
       console.log('❌ Document validation failed:', {
         uploadedCount: uploadedDocuments.length,
@@ -453,9 +479,6 @@ export const GuestVerification = () => {
 
     setIsLoading(true);
     try {
-      // Property validation is handled by the edge function with service-role access
-
-      // Prepare guest data
       const guestData = {
         guests: guests.map(guest => ({
           ...guest,
@@ -469,40 +492,113 @@ export const GuestVerification = () => {
         numberOfGuests
       };
 
-      // Upload documents to storage first
+      // ✅ CORRECTION : Déclarer uploadErrors AVANT de l'utiliser
+      const uploadErrors: string[] = [];
       const finalDocumentUrls: string[] = [];
+      
+      // ✅ CORRECTION : Validation préventive des noms de fichiers (autoriser caractères français)
+      const validateFileName = (fileName: string) => {
+        // Autoriser lettres, chiffres, points, tirets, espaces ET caractères français courants
+        const invalidChars = /[^a-zA-ZÀ-ÿ0-9.\-\s'`]/;
+        if (invalidChars.test(fileName)) {
+          return `Le nom de fichier "${fileName}" contient des caractères non autorisés. Utilisez seulement des lettres, chiffres, points, tirets, espaces et caractères français.`;
+        }
+        return null;
+      };
+      
+      // Vérifier tous les noms de fichiers avant l'upload
+      for (const doc of uploadedDocuments) {
+        const validationError = validateFileName(doc.file.name);
+        if (validationError) {
+          uploadErrors.push(validationError);
+        }
+      }
+      
+      if (uploadErrors.length > 0) {
+        const errorMessage = `Noms de fichiers invalides: ${uploadErrors.join(', ')}`;
+        console.error('❌', errorMessage);
+        toast({
+          title: "Noms de fichiers invalides",
+          description: errorMessage,
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Upload documents to storage first
       for (const doc of uploadedDocuments) {
         try {
-          const fileName = `${Date.now()}_${doc.file.name}`;
+                     // ✅ CORRECTION : Normaliser le nom de fichier pour éviter les erreurs Supabase
+           const sanitizeFileName = (originalName: string) => {
+             return originalName
+               // Remplacer TOUS les caractères spéciaux par des underscores pour Supabase
+               .replace(/[^a-zA-Z0-9.-]/g, '_')
+               .replace(/_+/g, '_')
+               .replace(/^_|_$/g, '')
+               // Limiter la longueur pour éviter les erreurs
+               .substring(0, 100);
+           };
+          
+          const safeFileName = sanitizeFileName(doc.file.name);
+          const fileName = `${Date.now()}_${safeFileName}`;
+          console.log('📤 Uploading document:', fileName);
           
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('guest-documents')
             .upload(fileName, doc.file);
 
-          if (uploadError) {
-            console.error('Upload error for', fileName, ':', uploadError);
+                     if (uploadError) {
+             console.error('❌ Upload error for', fileName, ':', uploadError);
+             console.error('💡 Original filename:', doc.file.name);
+             console.error('💡 Sanitized filename:', fileName);
+             
+             if (uploadError.message.includes('Invalid key')) {
+               uploadErrors.push(`Nom de fichier invalide: "${doc.file.name}" → "${fileName}"`);
+               console.error('💡 Suggestion: Le nom de fichier contient des caractères spéciaux non autorisés par Supabase');
+             } else {
+               uploadErrors.push(`Échec upload ${doc.file.name}: ${uploadError.message}`);
+             }
+             continue;
+           }
+
+          console.log('✅ Document uploaded successfully:', fileName);
+          
+          const { data: signedData, error: signedError } = await supabase.functions.invoke('storage-sign-url', {
+            body: { bucket: 'guest-documents', path: fileName, expiresIn: 3600 }
+          });
+          
+          if (signedError) {
+            console.error('❌ Signed URL error for', fileName, ':', signedError);
+            uploadErrors.push(`Échec URL signée ${doc.file.name}: ${signedError.message}`);
+            continue;
+          }
+          
+          if (signedData?.signedUrl) {
+            finalDocumentUrls.push(signedData.signedUrl);
+            console.log('✅ Signed URL created:', signedData.signedUrl);
           } else {
-            // Create signed URL for immediate use in submission
-            const { data: signedData } = await supabase.functions.invoke('storage-sign-url', {
-              body: { bucket: 'guest-documents', path: fileName, expiresIn: 3600 }
-            });
-            
-            if (signedData?.signedUrl) {
-              finalDocumentUrls.push(signedData.signedUrl);
-            }
+            console.error('❌ No signed URL returned for', fileName);
+            uploadErrors.push(`Pas d'URL signée pour ${doc.file.name}`);
           }
         } catch (error) {
-          console.error('Error uploading document:', error);
+          console.error('❌ Error uploading document:', error);
+          uploadErrors.push(`Erreur upload ${doc.file.name}: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
         }
       }
 
-      // Add document URLs to guest data
+      if (finalDocumentUrls.length !== uploadedDocuments.length) {
+        const errorMessage = `Échec upload: ${uploadedDocuments.length - finalDocumentUrls.length}/${uploadedDocuments.length} documents non uploadés. Erreurs: ${uploadErrors.join(', ')}`;
+        console.error('❌', errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      console.log('✅ Tous les documents uploadés avec succès:', finalDocumentUrls);
+
       const finalGuestData = {
         ...guestData,
         documentUrls: finalDocumentUrls
       };
 
-      // Call edge function to submit guest info and create booking
       const { data, error: functionError } = await supabase.functions.invoke('submit-guest-info', {
         body: {
           propertyId,
@@ -529,7 +625,6 @@ export const GuestVerification = () => {
         description: "Vous pouvez maintenant signer le contrat.",
       });
 
-      // Navigate to signing page with bookingId and pass data via state to avoid RLS reads
       const baseUrl = `/contract-signing/${propertyId}/${token}`;
       const url = airbnbBookingId ? `${baseUrl}/${airbnbBookingId}` : baseUrl;
       navigate(url, { state: { bookingId, bookingData, guestData: finalGuestData } });
@@ -549,31 +644,61 @@ export const GuestVerification = () => {
 
   if (checkingToken) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Vérification du lien...</p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-white to-teal-50 flex items-center justify-center">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+          className="text-center"
+        >
+          <motion.div 
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+            className="w-16 h-16 mx-auto mb-4 rounded-full border-4 border-primary/20 border-t-primary"
+          />
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="text-lg text-muted-foreground font-medium"
+          >
+            Vérification du lien...
+          </motion.p>
+        </motion.div>
       </div>
     );
   }
 
   if (!isValidToken) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Card className="max-w-md">
-          <CardHeader>
-            <CardTitle className="text-center text-destructive">{t('guest.invalidLink.title')}</CardTitle>
-            <CardDescription className="text-center">
-              {t('guest.invalidLink.desc')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center">
-            <p className="text-muted-foreground">
-              Veuillez contacter votre hôte pour obtenir un nouveau lien.
-            </p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md mx-auto"
+        >
+          <Card className="border-red-200 shadow-xl">
+            <CardHeader className="text-center">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: "spring" }}
+                className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center"
+              >
+                <X className="w-8 h-8 text-red-600" />
+              </motion.div>
+              <CardTitle className="text-red-800">{t('guest.invalidLink.title')}</CardTitle>
+              <CardDescription className="text-red-600">
+                {t('guest.invalidLink.desc')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center">
+              <p className="text-red-600">
+                Veuillez contacter votre hôte pour obtenir un nouveau lien.
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     );
   }
@@ -588,26 +713,11 @@ export const GuestVerification = () => {
       return;
     }
 
-    // Validation: Check if check-in date is in the future
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set to start of day for comparison
-    const checkInDateStartOfDay = new Date(checkInDate);
-    checkInDateStartOfDay.setHours(0, 0, 0, 0);
-    
-    if (checkInDateStartOfDay < today) {
+    const validation = validateDates(checkInDate, checkOutDate);
+    if (!validation.isValid) {
       toast({
         title: t('validation.error.title'),
-        description: t('validation.dateFuture.desc'),
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Validation: Check if checkout date is after checkin date
-    if (checkOutDate <= checkInDate) {
-      toast({
-        title: t('validation.error.title'),
-        description: t('validation.checkoutAfterCheckin.desc'),
+        description: validation.error!,
         variant: "destructive"
       });
       return;
@@ -620,421 +730,393 @@ export const GuestVerification = () => {
     setCurrentStep('booking');
   };
 
-  // Show completion screen with contract signing option
   if (submissionComplete) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 flex items-center justify-center">
-        <Card className="p-8 max-w-md">
-          <CardContent className="text-center space-y-4">
-            <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
-            <h2 className="text-2xl font-bold text-foreground">Merci!</h2>
-            <p className="text-muted-foreground">
-              Vos informations ont été soumises avec succès. Vous pouvez maintenant procéder à la signature du contrat.
-            </p>
-            <Button 
-              onClick={() => {
-                const baseUrl = `/contract-signing/${propertyId}/${token}`;
-                const url = airbnbBookingId ? `${baseUrl}/${airbnbBookingId}` : baseUrl;
-                navigate(url);
-              }}
-              className="w-full"
-              size="lg"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              {t('contractSignature.signContract')}
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 300 }}
+        >
+          <Card className="p-8 max-w-md border-green-200 shadow-2xl">
+            <CardContent className="text-center space-y-6">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
+              >
+                <CheckCircle className="w-20 h-20 text-green-500 mx-auto" />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+              >
+                <h2 className="text-3xl font-bold text-green-800">Merci!</h2>
+                <p className="text-green-600 mt-2">
+                  Vos informations ont été soumises avec succès. Vous pouvez maintenant procéder à la signature du contrat.
+                </p>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+              >
+                <Button 
+                  onClick={() => {
+                    const baseUrl = `/contract-signing/${propertyId}/${token}`;
+                    const url = airbnbBookingId ? `${baseUrl}/${airbnbBookingId}` : baseUrl;
+                    navigate(url);
+                  }}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  size="lg"
+                >
+                  <FileText className="w-5 h-5 mr-2" />
+                  {t('contractSignature.signContract')}
+                </Button>
+              </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
     );
   }
 
+  const currentStepIndex = ['booking', 'documents', 'signature'].indexOf(currentStep);
+
   return (
-    <div className="container mx-auto py-8 px-4 max-w-4xl">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-2xl">{t('guest.verification.title')}</CardTitle>
-          <CardDescription>
-            {t('guest.verification.subtitle', { propertyName })}
-          </CardDescription>
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground mt-4">
-            <div className={`flex items-center space-x-2 ${currentStep === 'booking' ? 'text-primary' : ''}`}>
-              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${currentStep === 'booking' ? 'border-primary bg-primary text-white' : 'border-muted-foreground'}`}>
-                1
-              </div>
-              <span>{t('guest.booking.title')}</span>
-            </div>
-            <div className="w-8 h-px bg-border"></div>
-            <div className={`flex items-center space-x-2 ${currentStep === 'documents' ? 'text-primary' : ''}`}>
-              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${currentStep === 'documents' ? 'border-primary bg-primary text-white' : 'border-muted-foreground'}`}>
-                2
-              </div>
-              <span>{t('guest.documents.title')}</span>
-            </div>
-            <div className="w-8 h-px bg-border"></div>
-            <div className={`flex items-center space-x-2 ${currentStep === 'signature' ? 'text-primary' : ''}`}>
-              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${currentStep === 'signature' ? 'border-primary bg-primary text-white' : 'border-muted-foreground'}`}>
-                3
-              </div>
-              <span>{t('contractSignature.pill')}</span>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {currentStep === 'booking' && (
-            <>
-              {/* Booking Information */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">{t('guest.booking.title')}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>{t('guest.booking.checkIn')}</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start text-left">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {checkInDate ? format(checkInDate, 'dd/MM/yyyy') : t('guest.booking.selectDate')}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={checkInDate}
-                          onSelect={setCheckInDate}
-                          initialFocus
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-turquoise/10 py-8">
+      <div className="container mx-auto px-4 max-w-5xl">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+        >
+          <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader className="bg-gradient-to-r from-brand-cyan/5 to-brand-turquoise/5 border-b border-gray-100">
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+              >
+                <CardTitle className="text-3xl font-bold text-center text-gray-900">
+                  {t('guest.verification.title')}
+                </CardTitle>
+                <CardDescription className="text-center text-lg mt-2 text-gray-600">
+                  {t('guest.verification.subtitle', { propertyName })}
+                </CardDescription>
+              </motion.div>
+              
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.4 }}
+                className="mt-8"
+              >
+                <AnimatedStepper
+                  steps={steps}
+                  currentStep={currentStepIndex}
+                  size="md"
+                />
+              </motion.div>
+            </CardHeader>
+            
+            <CardContent className="p-8">
+              <AnimatePresence mode="wait">
+                {currentStep === 'booking' && (
+                  <motion.div
+                    key="booking"
+                    variants={fadeInUp}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={{ duration: 0.5 }}
+                  >
+                    <motion.div variants={stagger} className="space-y-8">
+                      <motion.div variants={fadeInUp}>
+                        <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                          <CalendarLucide className="w-6 h-6 text-primary" />
+                          {t('guest.booking.title')}
+                        </h3>
+                      </motion.div>
+                      
+                      <motion.div variants={fadeInUp} className="flex justify-center">
+                        <IntuitiveBookingPicker
+                          checkInDate={checkInDate}
+                          checkOutDate={checkOutDate}
+                          onDatesChange={(checkIn, checkOut) => {
+                            setCheckInDate(checkIn);
+                            setCheckOutDate(checkOut);
+                          }}
+                          numberOfGuests={numberOfGuests}
+                          onGuestsChange={(newGuestCount) => {
+                            setNumberOfGuests(newGuestCount);
+                            
+                            const currentGuests = [...guests];
+                            
+                            if (newGuestCount > currentGuests.length) {
+                              for (let i = currentGuests.length; i < newGuestCount; i++) {
+                                currentGuests.push({
+                                  fullName: '',
+                                  dateOfBirth: undefined,
+                                  nationality: '',
+                                  documentNumber: '',
+                                  documentType: 'passport'
+                                });
+                              }
+                            } else if (newGuestCount < currentGuests.length) {
+                              currentGuests.splice(newGuestCount);
+                            }
+                            
+                            setGuests(currentGuests);
+                          }}
+                          propertyName={propertyName}
                         />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t('guest.booking.checkOut')}</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start text-left">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {checkOutDate ? format(checkOutDate, 'dd/MM/yyyy') : t('guest.booking.selectDate')}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={checkOutDate}
-                          onSelect={setCheckOutDate}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                   <div className="space-y-2">
-                     <Label>{t('guest.booking.numberOfGuests')}</Label>
-                     <div className="flex items-center space-x-2">
-                       <Button
-                         type="button"
-                         variant="outline"
-                         size="sm"
-                         onClick={() => {
-                           if (numberOfGuests > 1) {
-                             const newCount = numberOfGuests - 1;
-                             setNumberOfGuests(newCount);
-                             const currentGuests = [...guests];
-                             currentGuests.splice(newCount);
-                             setGuests(currentGuests);
-                           }
-                         }}
-                         disabled={numberOfGuests <= 1}
-                       >
-                         -
-                       </Button>
-                       <Input
-                         type="text"
-                         value={numberOfGuests === 0 ? '' : numberOfGuests.toString()}
-                         onChange={(e) => {
-                           const value = e.target.value;
-                           
-                           // Allow empty input or digits only
-                           if (value === '' || /^\d+$/.test(value)) {
-                             const newCount = value === '' ? 0 : parseInt(value);
-                             
-                             // Allow temporary 0 state for empty input
-                             if (newCount === 0) {
-                               setNumberOfGuests(0);
-                               return;
-                             }
-                             
-                             if (newCount >= 1 && newCount <= 20) {
-                               setNumberOfGuests(newCount);
-                               
-                               // Adjust guests array to match the number
-                               const currentGuests = [...guests];
-                               
-                               if (newCount > currentGuests.length) {
-                                 // Add more guests
-                                 for (let i = currentGuests.length; i < newCount; i++) {
-                                   currentGuests.push({
-                                     fullName: '',
-                                     dateOfBirth: undefined,
-                                     nationality: '',
-                                     documentNumber: '',
-                                     documentType: 'passport'
-                                   });
-                                 }
-                               } else if (newCount < currentGuests.length) {
-                                 // Remove excess guests
-                                 currentGuests.splice(newCount);
-                               }
-                               
-                               setGuests(currentGuests);
-                             }
-                           }
-                         }}
-                         onBlur={(e) => {
-                           // Ensure we have at least 1 when user leaves the field
-                           if (e.target.value === '' || parseInt(e.target.value) < 1) {
-                             setNumberOfGuests(1);
-                             // Reset guests array to have at least 1 guest
-                             if (guests.length === 0) {
-                               setGuests([{
-                                 fullName: '',
-                                 dateOfBirth: undefined,
-                                 nationality: '',
-                                 documentNumber: '',
-                                 documentType: 'passport'
-                               }]);
-                             }
-                           }
-                         }}
-                         className="w-20 text-center"
-                       />
-                       <Button
-                         type="button"
-                         variant="outline"
-                         size="sm"
-                         onClick={() => {
-                           if (numberOfGuests < 20) {
-                             const newCount = numberOfGuests + 1;
-                             setNumberOfGuests(newCount);
-                             const currentGuests = [...guests];
-                             
-                             // Add new guest
-                             currentGuests.push({
-                               fullName: '',
-                               dateOfBirth: undefined,
-                               nationality: '',
-                               documentNumber: '',
-                               documentType: 'passport'
-                             });
-                             
-                             setGuests(currentGuests);
-                           }
-                         }}
-                         disabled={numberOfGuests >= 20}
-                       >
-                         +
-                       </Button>
-                     </div>
-                   </div>
-                </div>
-              </div>
+                      </motion.div>
+                    </motion.div>
 
-              <div className="flex justify-end pt-4">
-                <Button onClick={handleNextStep}>
-                  {t('guest.navigation.next')}
-                </Button>
-              </div>
-            </>
-          )}
-
-          {currentStep === 'documents' && (
-            <>
-              {/* Document Upload */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">{t('guest.documents.title')}</h3>
-                <div 
-                  className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6"
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                >
-                  <div className="text-center">
-                    <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        {t('guest.documents.dropzone')}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {t('guest.documents.autoExtract')}
-                      </p>
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      id="document-upload"
-                      onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
-                    />
-                    <Button 
-                      variant="outline" 
-                      className="mt-4"
-                      onClick={() => document.getElementById('document-upload')?.click()}
+                    <motion.div 
+                      variants={fadeInUp}
+                      className="flex justify-end pt-8"
                     >
-                      <Upload className="w-4 h-4 mr-2" />
-                      {t('guest.documents.selectFiles')}
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Uploaded Documents */}
-                {uploadedDocuments.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="font-medium">{t('guest.documents.uploaded')}</h4>
-                    {uploadedDocuments.map((doc, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <FileText className="w-5 h-5 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm font-medium">{doc.file.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {doc.processing ? 'Traitement en cours...' : 
-                               doc.extractedData ? 'Traité avec succès' : 'Prêt'}
-                            </p>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeDocument(doc.url)}
-                        >
-                          <X className="w-4 h-4" />
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                        <Button onClick={handleNextStep} size="lg" className="px-8 py-3 bg-brand-teal hover:bg-brand-teal/90">
+                          {t('guest.navigation.next')}
+                          <ArrowRight className="w-5 h-5 ml-2" />
                         </Button>
-                      </div>
-                    ))}
-                  </div>
+                      </motion.div>
+                    </motion.div>
+                  </motion.div>
                 )}
-              </div>
 
-              {/* Guest Information */}
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-lg font-semibold">{t('guest.clients.title')}</h3>
-                </div>
+                {currentStep === 'documents' && (
+                  <motion.div
+                    key="documents"
+                    variants={slideInRight}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={{ duration: 0.5 }}
+                  >
+                    <motion.div variants={stagger} className="space-y-8">
+                      <motion.div variants={fadeInUp}>
+                        <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                          <FileText className="w-6 h-6 text-primary" />
+                          {t('guest.documents.title')}
+                        </h3>
+                      </motion.div>
+                      
+                      <motion.div variants={fadeInUp}>
+                        <EnhancedFileUpload
+                          onFilesUploaded={handleFileUpload}
+                          uploadedFiles={uploadedDocuments}
+                          onRemoveFile={removeDocument}
+                          maxFiles={numberOfGuests}
+                          acceptedTypes="image/*"
+                          maxSizeMB={5}
+                          showPreview={true}
+                        />
+                      </motion.div>
 
-                {guests.map((guest, index) => (
-                  <Card key={index} className="p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-medium">{t('guest.clients.clientNumber', { number: index + 1 })}</h4>
-                      {guests.length > 1 && (
-                        <Button 
-                          onClick={() => removeGuest(index)} 
-                          variant="destructive" 
-                          size="sm"
-                        >
-                          Supprimer
+                      <motion.div variants={fadeInUp} className="space-y-6">
+                        <div className="flex items-center gap-3 mb-4">
+                          <Users className="w-6 h-6 text-primary" />
+                          <h4 className="text-xl font-bold text-gray-900">{t('guest.clients.title')}</h4>
+                          <div className="flex-1 h-px bg-gradient-to-r from-primary/30 to-transparent"></div>
+                        </div>
+
+                        <motion.div variants={stagger} className="space-y-6">
+                          {guests.map((guest, index) => (
+                            <motion.div
+                              key={index}
+                              variants={fadeInUp}
+                              whileHover={{ y: -2 }}
+                              transition={{ type: "spring", stiffness: 300 }}
+                            >
+                              <Card className="p-6 border-2 border-gray-100 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-xl bg-gradient-to-r from-white to-gray-50/50">
+                                <div className="flex items-center justify-between mb-6">
+                                  <h4 className="font-bold text-lg text-gray-900 flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-full bg-brand-teal flex items-center justify-center text-white font-bold text-sm">
+                                      {index + 1}
+                                    </div>
+                                    {t('guest.clients.clientNumber', { number: index + 1 })}
+                                  </h4>
+                                  {guests.length > 1 && (
+                                    <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
+                                      <Button 
+                                        onClick={() => removeGuest(index)} 
+                                        variant="destructive" 
+                                        size="sm"
+                                        className="rounded-full"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </Button>
+                                    </motion.div>
+                                  )}
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <EnhancedInput
+                                    label={t('guest.clients.fullName')}
+                                    value={guest.fullName}
+                                    onChange={(e) => updateGuest(index, 'fullName', e.target.value)}
+                                    placeholder={t('guest.clients.fullNamePlaceholder')}
+                                    validation={{
+                                      required: true,
+                                      minLength: 2,
+                                      validator: (value) => {
+                                        if (value.trim().split(' ').length < 2) {
+                                          return "Veuillez saisir le nom et prénom";
+                                        }
+                                        return null;
+                                      }
+                                    }}
+                                  />
+                                  
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-medium text-gray-700">
+                                      {t('guest.clients.dateOfBirth')} *
+                                    </Label>
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                                          <Button variant="outline" className="w-full justify-start text-left h-12 border-2 hover:border-primary/50">
+                                            <CalendarIcon className="mr-3 h-5 w-5 text-primary" />
+                                            {guest.dateOfBirth ? format(guest.dateOfBirth, 'dd/MM/yyyy') : t('guest.booking.selectDate')}
+                                          </Button>
+                                        </motion.div>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-auto p-0 border-2 shadow-xl">
+                                        <Calendar
+                                          mode="single"
+                                          selected={guest.dateOfBirth}
+                                          onSelect={(date) => updateGuest(index, 'dateOfBirth', date)}
+                                          initialFocus
+                                        />
+                                      </PopoverContent>
+                                    </Popover>
+                                  </div>
+                                  
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-medium text-gray-700">
+                                      {t('guest.clients.nationality')} *
+                                    </Label>
+                                    {uploadedDocuments.length > 0 && !guest.nationality ? (
+                                      <Select 
+                                        value={guest.nationality || ''} 
+                                        onValueChange={(value) => updateGuest(index, 'nationality', value)}
+                                      >
+                                        <SelectTrigger className="h-12 border-2 hover:border-primary/50">
+                                          <SelectValue placeholder="Sélectionner la nationalité" />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-card border border-border shadow-lg z-50 max-h-60 overflow-y-auto">
+                                          {NATIONALITIES.map((nationality, idx) => (
+                                            nationality === '---' ? (
+                                              <div key={idx} className="mx-2 my-1 border-t border-border"></div>
+                                            ) : (
+                                              <SelectItem key={nationality} value={nationality}>
+                                                {nationality}
+                                              </SelectItem>
+                                            )
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <EnhancedInput
+                                        value={guest.nationality}
+                                        onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
+                                        placeholder={uploadedDocuments.length === 0 ? "Uploadez d'abord votre document" : "Nationalité"}
+                                        disabled={uploadedDocuments.length === 0}
+                                        validation={{ required: true }}
+                                      />
+                                    )}
+                                  </div>
+                                  
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-medium text-gray-700">
+                                      {t('guest.clients.documentType')} *
+                                    </Label>
+                                    <Select 
+                                      value={guest.documentType} 
+                                      onValueChange={(value) => updateGuest(index, 'documentType', value)}
+                                    >
+                                      <SelectTrigger className="h-12 border-2 hover:border-primary/50">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="passport">{t('guest.clients.passport')}</SelectItem>
+                                        <SelectItem value="national_id">{t('guest.clients.nationalId')}</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  
+                                  <EnhancedInput
+                                    label={t('guest.clients.documentNumber')}
+                                    value={guest.documentNumber}
+                                    onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
+                                    placeholder={t('guest.clients.documentNumberPlaceholder')}
+                                    validation={{
+                                      required: true,
+                                      minLength: 5,
+                                      validator: (value) => {
+                                        if (!/^[A-Z0-9]+$/i.test(value.replace(/\s/g, ''))) {
+                                          return "Format de document invalide";
+                                        }
+                                        return null;
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </Card>
+                            </motion.div>
+                          ))}
+                        </motion.div>
+                      </motion.div>
+                    </motion.div>
+
+                    <motion.div 
+                      variants={fadeInUp}
+                      className="flex justify-between pt-8"
+                    >
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                        <Button variant="outline" onClick={handlePrevStep} size="lg" className="px-8 py-3 border-2">
+                          <ArrowLeft className="w-5 h-5 mr-2" />
+                          {t('guest.navigation.previous')}
                         </Button>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>{t('guest.clients.fullName')} *</Label>
-                        <Input
-                          value={guest.fullName}
-                          onChange={(e) => updateGuest(index, 'fullName', e.target.value)}
-                          placeholder={t('guest.clients.fullNamePlaceholder')}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{t('guest.clients.dateOfBirth')} *</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-full justify-start text-left">
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {guest.dateOfBirth ? format(guest.dateOfBirth, 'dd/MM/yyyy') : t('guest.booking.selectDate')}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={guest.dateOfBirth}
-                              onSelect={(date) => updateGuest(index, 'dateOfBirth', date)}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{t('guest.clients.nationality')} *</Label>
-                        {/* Only show nationality dropdown if document uploaded and nationality not detected */}
-                        {uploadedDocuments.length > 0 && !guest.nationality ? (
-                          <Select 
-                            value={guest.nationality || ''} 
-                            onValueChange={(value) => updateGuest(index, 'nationality', value)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Sélectionner la nationalité" />
-                            </SelectTrigger>
-                            <SelectContent className="bg-card border border-border shadow-lg z-50 max-h-60 overflow-y-auto">
-                              {NATIONALITIES.map((nationality, idx) => (
-                                nationality === '---' ? (
-                                  <div key={idx} className="mx-2 my-1 border-t border-border"></div>
-                                ) : (
-                                  <SelectItem key={nationality} value={nationality}>
-                                    {nationality}
-                                  </SelectItem>
-                                )
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Input
-                            value={guest.nationality}
-                            onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
-                            placeholder={uploadedDocuments.length === 0 ? "Uploadez d'abord votre document" : "Nationalité"}
-                            disabled={uploadedDocuments.length === 0}
-                          />
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{t('guest.clients.documentType')} *</Label>
-                        <Select 
-                          value={guest.documentType} 
-                          onValueChange={(value) => updateGuest(index, 'documentType', value)}
+                      </motion.div>
+                      
+                      <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                        <Button 
+                          onClick={handleSubmit} 
+                          disabled={isLoading}
+                          size="lg"
+                          className="px-8 py-3 bg-brand-teal hover:bg-brand-teal/90"
                         >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                        <SelectItem value="passport">{t('guest.clients.passport')}</SelectItem>
-                        <SelectItem value="national_id">{t('guest.clients.nationalId')}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{t('guest.clients.documentNumber')} *</Label>
-                        <Input
-                          value={guest.documentNumber}
-                          onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
-                          placeholder={t('guest.clients.documentNumberPlaceholder')}
-                        />
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-
-              <div className="flex justify-between pt-4">
-                <Button variant="outline" onClick={handlePrevStep}>
-                  {t('guest.navigation.previous')}
-                </Button>
-                <Button 
-                  onClick={handleSubmit} 
-                  disabled={isLoading}
-                >
-                  {isLoading ? 'Envoi en cours...' : t('guest.cta.sendInfo')}
-                </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+                          {isLoading ? (
+                            <>
+                              <motion.div
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                                className="w-5 h-5 mr-2 border-2 border-white border-t-transparent rounded-full"
+                              />
+                              Envoi en cours...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-5 h-5 mr-2" />
+                              {t('guest.cta.sendInfo')}
+                            </>
+                          )}
+                        </Button>
+                      </motion.div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
     </div>
   );
 };
