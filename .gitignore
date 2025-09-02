@@ -122,7 +122,6 @@ scripts/
 src/components/*Test.tsx
 src/components/dev/
 src/components/mobile/
-src/components/admin/
 
 # Debug and development files
 src/hooks/useDebugTests.ts
