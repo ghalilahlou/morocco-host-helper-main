@@ -129,7 +129,6 @@ src/hooks/useDebugTests.ts
 src/hooks/useIsMobile.ts
 src/contexts/
 src/scripts/
-src/styles/
 src/types/admin.ts
 src/utils/
 
