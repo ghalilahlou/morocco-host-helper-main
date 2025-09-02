@@ -120,7 +120,6 @@ scripts/
 
 # Test components
 src/components/*Test.tsx
-src/components/dev/
 src/components/mobile/
 
 # Debug and development files
