@@ -126,7 +126,6 @@ src/components/mobile/
 # Debug and development files
 src/hooks/useDebugTests.ts
 src/hooks/useIsMobile.ts
-src/contexts/
 src/scripts/
 src/types/admin.ts
 src/utils/
