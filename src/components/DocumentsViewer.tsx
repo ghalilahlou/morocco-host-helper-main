@@ -16,12 +16,21 @@ interface DocumentsViewerProps {
   documentType?: 'all' | 'id-documents' | 'contract' | 'police-form';
 }
 interface DocumentUrls {
-  guestDocuments: UnifiedDocument[];
+  guestDocuments: DisplayDocument[];
   contract: string | null;
   policeForms: {
     name: string;
     url: string;
   }[];
+}
+
+// Transform UnifiedDocument to match expected structure for display
+interface DisplayDocument {
+  id: string;
+  name: string;
+  url: string;
+  guestName?: string;
+  metadata?: any;
 }
 export const DocumentsViewer = ({
   booking,
@@ -33,6 +42,17 @@ export const DocumentsViewer = ({
     contract: null,
     policeForms: []
   });
+
+  // Transform UnifiedDocument to DisplayDocument for consistent handling
+  const transformToDisplayDocuments = (unifiedDocs: UnifiedDocument[]): DisplayDocument[] => {
+    return unifiedDocs.map(doc => ({
+      id: doc.id,
+      name: doc.fileName || `Document_${doc.id}`,
+      url: doc.url,
+      guestName: doc.guestName,
+      metadata: doc.metadata
+    }));
+  };
   const [isLoading, setIsLoading] = useState(true);
   const {
     toast
@@ -109,6 +129,7 @@ export const DocumentsViewer = ({
           
           if (documentUrl) {
             idDocuments.push({
+              id: String(doc.id),
               name: doc.file_name || `Document_${doc.id}`,
               url: documentUrl,
               guestName: doc.guests?.full_name || 'Invité inconnu',
@@ -160,6 +181,7 @@ export const DocumentsViewer = ({
               const documentNumber = guest.documentNumber || guest.document_number || 'Non spécifié';
               
               idDocuments.push({
+                id: `id-${submission.id}-${guestName}`,
                 name: `ID_${guestName}`,
                 url: '#', // Pas de fichier physique, juste les informations
                 guestName: guestName,
@@ -311,8 +333,11 @@ export const DocumentsViewer = ({
       } catch {}
       // ✅ SUPPRIMÉ : Logs de debug pour éviter le spam
       
+      // Transform UnifiedDocument[] to DisplayDocument[] for consistent display
+      const displayDocuments = transformToDisplayDocuments(guestDocuments);
+
       setDocuments({
-        guestDocuments: guestDocuments, // ✅ Utiliser UNIQUEMENT les documents de DocumentStorageService
+        guestDocuments: displayDocuments, // ✅ Utiliser les documents transformés
         contract: contractUrl,
         policeForms
       });
@@ -410,8 +435,8 @@ export const DocumentsViewer = ({
                <div className="text-xs text-blue-600 bg-blue-50 p-2 mb-2 rounded">
                  <strong>ℹ️ INFO:</strong> {documents.guestDocuments.length} document(s) d'identité disponible(s)
                </div>
-              {/* ✅ FORCER L'AFFICHAGE POUR DEBUG */}
-              {(documents.guestDocuments && documents.guestDocuments.length > 0) || true ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* ✅ AFFICHAGE CONDITIONNEL DES DOCUMENTS */}
+              {documents.guestDocuments && documents.guestDocuments.length > 0 ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {documents.guestDocuments.map((doc, index) => <Card key={doc.id} className="p-6">
                       <div className="flex flex-col space-y-4">
                         <div className="flex items-center gap-3">
@@ -761,6 +786,7 @@ export const DocumentsViewer = ({
                     <p>Documents chargés: {documents.guestDocuments?.length || 0}</p>
                     <p>Documents avec URL: {documents.guestDocuments?.filter(d => d.url !== '#').length || 0}</p>
                     <p>Documents sans URL: {documents.guestDocuments?.filter(d => d.url === '#').length || 0}</p>
+                    <p>Premier document: {documents.guestDocuments?.[0] ? `${documents.guestDocuments[0].name} (${documents.guestDocuments[0].guestName})` : 'Aucun'}</p>
                   </div>
                   {/* Bouton pour tester la génération de documents d'identité */}
                   <Button
