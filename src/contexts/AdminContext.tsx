@@ -40,23 +40,21 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       console.log('🔍 [Context] Vérification admin pour:', user.email);
       
-      const { data: adminUser, error } = await supabase
-        .from('admin_users')
-        .select('role, is_active')
-        .eq('user_id', user.id)
-        .single();
+      // SOLUTION TEMPORAIRE : Utiliser une requête RPC au lieu de RLS
+      const { data: adminData, error } = await supabase.rpc('get_admin_user_by_id', {
+        user_id_param: user.id
+      });
 
       if (error) {
-        if (error.code === 'PGRST116') {
-          console.log('ℹ️ [Context] Non-admin:', user.email);
-          setIsAdmin(false);
-        } else {
-          console.error('❌ [Context] Erreur:', error);
-          setIsAdmin(false);
-        }
-      } else {
+        console.error('❌ [Context] Erreur RPC:', error);
+        setIsAdmin(false);
+      } else if (adminData && adminData.length > 0) {
+        const adminUser = adminData[0];
         console.log('✅ [Context] Admin confirmé:', user.email, adminUser.role);
         setIsAdmin(!!adminUser && adminUser.is_active);
+      } else {
+        console.log('ℹ️ [Context] Non-admin:', user.email);
+        setIsAdmin(false);
       }
       
       setCheckedUserId(user.id);
