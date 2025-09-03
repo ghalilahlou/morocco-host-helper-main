@@ -1,3 +1,4 @@
+// Last redeploy: 2025-09-03 18:00:43
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 function corsHeaders() {
