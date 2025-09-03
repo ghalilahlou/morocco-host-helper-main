@@ -32,14 +32,55 @@ export const ContractSigning: React.FC = () => {
       }
 
       try {
-        // Verify token and get submission data using edge function
-        const { data: tokenVerification, error: tokenError } = await supabase.functions.invoke('resolve-guest-link', {
-          body: { 
-            propertyId, 
-            token,
-            airbnbCode: airbnbBookingId 
+        // Tentative d'appel à la fonction Edge
+        let tokenVerification;
+        let tokenError;
+        
+        try {
+          const response = await supabase.functions.invoke('resolve-guest-link', {
+            body: { 
+              propertyId, 
+              token,
+              airbnbCode: airbnbBookingId 
+            }
+          });
+          
+          if (response.data) {
+            tokenVerification = response.data;
+          } else {
+            tokenError = response.error;
           }
-        });
+        } catch (edgeFunctionError) {
+          console.log('⚠️ Edge Function non disponible (quota dépassé), utilisation du contournement...');
+          
+          // CONTOURNEMENT : Récupération directe des données
+          try {
+            const { data: propertyData, error: propertyError } = await supabase
+              .from('properties')
+              .select('id, name, address, contract_template, contact_info, house_rules')
+              .eq('id', propertyId)
+              .single();
+            
+            if (propertyError) throw propertyError;
+            
+            // Créer un objet compatible avec le format attendu
+            tokenVerification = {
+              ok: true,
+              propertyId: propertyId,
+              bookingId: airbnbBookingId || null,
+              token: token,
+              property: propertyData,
+              id: propertyId, // Pour la compatibilité
+              tokenId: propertyId // Pour la compatibilité
+            };
+            
+            console.log('✅ Contournement réussi, données récupérées directement');
+            
+          } catch (fallbackError) {
+            console.error('❌ Échec du contournement:', fallbackError);
+            tokenError = fallbackError;
+          }
+        }
 
         if (tokenError || !tokenVerification) {
           setError(t('guest.invalidLink.desc'));

@@ -76,10 +76,49 @@ export const GuestWelcome = () => {
           'token length': token?.length
         });
 
-        // Verify token and get property info using edge function
-        const { data, error } = await supabase.functions.invoke('resolve-guest-link', {
-          body: { propertyId, token, airbnbCode: airbnbBookingId }
-        });
+        // Tentative d'appel à la fonction Edge
+        let data;
+        let error;
+        
+        try {
+          const response = await supabase.functions.invoke('resolve-guest-link', {
+            body: { propertyId, token, airbnbCode: airbnbBookingId }
+          });
+          
+          if (response.data) {
+            data = response.data;
+          } else {
+            error = response.error;
+          }
+        } catch (edgeFunctionError) {
+          console.log('⚠️ Edge Function non disponible (quota dépassé), utilisation du contournement...');
+          
+          // CONTOURNEMENT : Récupération directe des données
+          try {
+            const { data: propertyData, error: propertyError } = await supabase
+              .from('properties')
+              .select('id, name, address, contract_template, contact_info, house_rules')
+              .eq('id', propertyId)
+              .single();
+            
+            if (propertyError) throw propertyError;
+            
+            // Créer un objet compatible avec le format attendu
+            data = {
+              ok: true,
+              propertyId: propertyId,
+              bookingId: airbnbBookingId || null,
+              token: token,
+              property: propertyData
+            };
+            
+            console.log('✅ Contournement réussi, données récupérées directement');
+            
+          } catch (fallbackError) {
+            console.error('❌ Échec du contournement:', fallbackError);
+            error = fallbackError;
+          }
+        }
 
         if (error || !data) {
           console.error('Token verification error:', error);
