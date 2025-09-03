@@ -51,45 +51,27 @@ Deno.serve(async (req) => {
     // Debug log
     console.log('Resolving guest link:', { propertyId, token, airbnbCode });
 
-    // Try with airbnbCode first if present
+    // FIXED: Search for ANY token that matches propertyId and token, regardless of booking_id
     let bookingRow = null;
-    if (airbnbCode) {
-      const { data, error } = await server
-        .from('property_verification_tokens')
-        .select('*, properties!inner(id, name, address, contract_template, contact_info, house_rules)')
-        .eq('property_id', propertyId)
-        .eq('token', token)
-        .eq('booking_id', airbnbCode)
-        .eq('is_active', true)
-        .maybeSingle();
+    
+    // First, try to find the token with the exact criteria
+    const { data, error } = await server
+      .from('property_verification_tokens')
+      .select('*, properties!inner(id, name, address, contract_template, contact_info, house_rules)')
+      .eq('property_id', propertyId)
+      .eq('token', token)
+      .eq('is_active', true)
+      .maybeSingle();
 
-      if (error) {
-        console.error('lookup by airbnbCode error:', error);
-      } else {
-        bookingRow = data;
-      }
-    }
-
-    // Fallback: lookup without airbnbCode (for general tokens)
-    if (!bookingRow) {
-      const { data, error } = await server
-        .from('property_verification_tokens')
-        .select('*, properties!inner(id, name, address, contract_template, contact_info, house_rules)')
-        .eq('property_id', propertyId)
-        .eq('token', token)
-        .eq('is_active', true)
-        .is('booking_id', null)  // Only tokens without specific booking_id
-        .maybeSingle();
-
-      if (error) {
-        console.error('fallback lookup error:', error);
-      } else {
-        bookingRow = data;
-      }
+    if (error) {
+      console.error('Token lookup error:', error);
+    } else if (data) {
+      bookingRow = data;
+      console.log('✅ Token found:', { hasBookingId: !!data.booking_id });
     }
 
     if (!bookingRow) {
-      return new Response(JSON.stringify({ ok: false, reason: 'NOT_FOUND' }), {
+      return new Response(JSON.stringify({ ok: false, reason: 'NOT_FOUND', details: 'Token not found or inactive' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json', ...corsHeaders() },
       });
