@@ -262,7 +262,11 @@ export const useBookings = () => {
             document_number: guest.documentNumber,
             nationality: guest.nationality,
             place_of_birth: guest.placeOfBirth,
-            document_type: guest.documentType
+            document_type: guest.documentType,
+            profession: guest.profession || '',
+            motif_sejour: guest.motifSejour || 'TOURISME',
+            adresse_personnelle: guest.adressePersonnelle || '',
+            email: guest.email || null
           };
         });
 

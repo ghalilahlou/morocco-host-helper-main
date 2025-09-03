@@ -11,6 +11,9 @@ type Payload = {
   guestPhone?: string;
   documentNumber?: string;
   documentType?: string;
+  profession?: string;
+  motifSejour?: string;
+  adressePersonnelle?: string;
 };
 
 const corsHeaders = {
@@ -115,7 +118,11 @@ serve(async (req) => {
         date_of_birth: new Date().toISOString().split('T')[0], // Default to today
         document_number: body.documentNumber || 'TBD',
         nationality: 'Unknown',
-        document_type: body.documentType || 'passport'
+        document_type: body.documentType || 'passport',
+        profession: body.profession || '',
+        motif_sejour: body.motifSejour || 'TOURISME',
+        adresse_personnelle: body.adressePersonnelle || '',
+        email: body.guestEmail || null
       })
       .select("id, full_name, document_number")
       .single();

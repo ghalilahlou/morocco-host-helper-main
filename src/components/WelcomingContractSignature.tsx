@@ -246,31 +246,40 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   useEffect(() => {
     if (currentStep !== 'signature') return;
     
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      console.error('❌ Canvas not found');
-      return;
-    }
+    // Utiliser un délai pour s'assurer que le DOM est prêt
+    const setupCanvas = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        console.error('❌ Canvas not found');
+        return;
+      }
 
-    console.log('🎨 Setting up canvas...');
+      console.log('🎨 Setting up canvas...');
 
-    // Configuration simple du canvas
-    canvas.width = 600;
-    canvas.height = 250;
+      // Configuration simple du canvas
+      canvas.width = 600;
+      canvas.height = 250;
+      
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.error('❌ Cannot get canvas context');
+        return;
+      }
+
+      // Style de dessin
+      ctx.strokeStyle = '#1f2937';
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      console.log('✅ Canvas ready');
+    };
+
+    // Essayer immédiatement, puis avec un délai si nécessaire
+    setupCanvas();
+    const timeoutId = setTimeout(setupCanvas, 100);
     
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      console.error('❌ Cannot get canvas context');
-      return;
-    }
-
-    // Style de dessin
-    ctx.strokeStyle = '#1f2937';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    
-    console.log('✅ Canvas ready');
+    return () => clearTimeout(timeoutId);
   }, [currentStep]);
 
   const getMousePos = (canvas: HTMLCanvasElement, e: MouseEvent | TouchEvent) => {
@@ -364,36 +373,13 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
     setIsSubmitting(true);
     try {
-      let bookingId = bookingData?.id as string | undefined;
-      
+      // ✅ CORRECTION : Utiliser l'ID existant ou échouer
+      const bookingId = bookingData?.id;
       if (!bookingId) {
-        console.log('📝 No booking ID found, creating booking before signature...');
-        
-        const allGuests = (bookingData?.guests && Array.isArray(bookingData.guests) ? bookingData.guests : (guestData?.guests || []));
-        const guestName = allGuests?.[0]?.fullName || 'Guest';
-        
-        const { data: bookingResult, error: bookingError } = await supabase.functions.invoke('create-booking-for-signature', {
-          body: {
-            propertyId: propertyData?.id,
-            checkInDate: bookingData?.checkInDate,
-            checkOutDate: bookingData?.checkOutDate,
-            numberOfGuests: bookingData?.numberOfGuests || allGuests?.length || 1,
-            guestName: guestName,
-            guestEmail: guestData?.email,
-            guestPhone: guestData?.phone,
-            documentNumber: allGuests?.[0]?.documentNumber,
-            documentType: allGuests?.[0]?.documentType
-          }
-        });
-        
-        if (bookingError) {
-          console.error('❌ Error creating booking:', bookingError);
-          throw new Error('Failed to create booking for signature');
-        }
-        
-        bookingId = bookingResult.bookingId;
-        console.log('✅ Booking created successfully:', bookingId);
+        throw new Error('ID de réservation manquant. Impossible de signer le contrat.');
       }
+
+      console.log('✅ Utilisation de la réservation existante:', bookingId);
 
       const allGuests = (bookingData?.guests && Array.isArray(bookingData.guests) ? bookingData.guests : (guestData?.guests || [])) as any[];
       const signerName = allGuests?.[0]?.fullName || 'Guest';
@@ -446,6 +432,37 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         console.error('⚠️ Notification propriétaire échouée:', notifyError);
       }
 
+      // Envoi d'email au guest si il a fourni son email
+      try {
+        const guestEmail = guestData?.guests?.[0]?.email;
+        if (guestEmail && guestEmail.trim() !== '') {
+          console.log('📧 Envoi email au guest:', guestEmail);
+          
+          const { error: guestEmailError } = await supabase.functions.invoke('send-guest-contract', {
+            body: {
+              guestEmail: guestEmail,
+              guestName: guestName,
+              checkIn: bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'N/A',
+              checkOut: bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'N/A',
+              propertyName: propertyData?.name || 'Votre hébergement',
+              propertyAddress: propertyData?.address || '',
+              numberOfGuests: bookingData?.numberOfGuests || 1,
+              contractUrl: null // TODO: Ajouter le lien du contrat signé si disponible
+            }
+          });
+          
+          if (guestEmailError) {
+            console.error('⚠️ Erreur envoi email guest:', guestEmailError);
+          } else {
+            console.log('✅ Email envoyé au guest avec succès');
+          }
+        } else {
+          console.log('ℹ️ Aucun email guest fourni, pas d\'envoi d\'email');
+        }
+      } catch (guestNotifyError) {
+        console.error('⚠️ Notification guest échouée:', guestNotifyError);
+      }
+
       setCurrentStep('celebration');
       
       toast({
@@ -458,7 +475,11 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       }, 3000);
     } catch (error) {
       console.error('Error saving signature:', error);
-      toast({ title: 'Erreur', description: "Impossible d'enregistrer la signature. Veuillez réessayer.", variant: 'destructive' });
+      toast({ 
+        title: 'Erreur', 
+        description: error instanceof Error ? error.message : "Impossible d'enregistrer la signature. Veuillez réessayer.", 
+        variant: 'destructive' 
+      });
     } finally {
       setIsSubmitting(false);
     }

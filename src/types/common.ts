@@ -59,6 +59,9 @@ export interface GuestData {
   documentNumber: string;
   documentType: 'passport' | 'national_id';
   placeOfBirth?: string;
+  profession?: string;
+  motifSejour?: string;
+  adressePersonnelle?: string;
 }
 
 export interface ContractTemplate {

@@ -285,39 +285,13 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
     setIsSubmitting(true);
     try {
-      // Get or use existing booking ID - avoid direct DB operations from browser
-      let bookingId = bookingData?.id as string | undefined;
-      
-      // If no bookingId, create a real booking first
+      // ✅ CORRECTION : Utiliser l'ID existant ou échouer
+      const bookingId = bookingData?.id;
       if (!bookingId) {
-        console.log('📝 No booking ID found, creating booking before signature...');
-        
-        // Create booking using Edge Function
-        const allGuests = (bookingData?.guests && Array.isArray(bookingData.guests) ? bookingData.guests : (guestData?.guests || []));
-        const guestName = allGuests?.[0]?.fullName || 'Guest';
-        
-        const { data: bookingResult, error: bookingError } = await supabase.functions.invoke('create-booking-for-signature', {
-          body: {
-            propertyId: propertyData?.id,
-            checkInDate: bookingData?.checkInDate,
-            checkOutDate: bookingData?.checkOutDate,
-            numberOfGuests: bookingData?.numberOfGuests || allGuests?.length || 1,
-            guestName: guestName,
-            guestEmail: guestData?.email,
-            guestPhone: guestData?.phone,
-            documentNumber: allGuests?.[0]?.documentNumber,
-            documentType: allGuests?.[0]?.documentType
-          }
-        });
-        
-        if (bookingError) {
-          console.error('❌ Error creating booking:', bookingError);
-          throw new Error('Failed to create booking for signature');
-        }
-        
-        bookingId = bookingResult.bookingId;
-        console.log('✅ Booking created successfully:', bookingId);
+        throw new Error('ID de réservation manquant. Impossible de signer le contrat.');
       }
+
+      console.log('✅ Utilisation de la réservation existante:', bookingId);
 
       // Save contract signature via edge function (avoids RLS issues)
       const allGuests = (bookingData?.guests && Array.isArray(bookingData.guests) ? bookingData.guests : (guestData?.guests || [])) as any[];
@@ -379,7 +353,11 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       onSignatureComplete(signature);
     } catch (error) {
       console.error('Error saving signature:', error);
-      toast({ title: 'Erreur', description: "Impossible d'enregistrer la signature. Veuillez réessayer.", variant: 'destructive' });
+      toast({ 
+        title: 'Erreur', 
+        description: error instanceof Error ? error.message : "Impossible d'enregistrer la signature. Veuillez réessayer.", 
+        variant: 'destructive' 
+      });
     } finally {
       setIsSubmitting(false);
     }

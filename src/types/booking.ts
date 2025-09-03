@@ -6,44 +6,44 @@ export interface Guest {
   nationality: string;
   placeOfBirth?: string;
   documentType: 'passport' | 'national_id';
+  profession?: string;
+  motifSejour?: string;
+  adressePersonnelle?: string;
+  email?: string; // Champ email optionnel pour l'envoi du contrat
 }
 
 export interface Property {
   id: string;
   name: string;
   address?: string;
-  property_type: string;
-  max_occupancy: number;
+  property_type?: string;
+  max_occupancy?: number;
   description?: string;
-  contact_info?: any;
-  house_rules: string[];
-  contract_template: any;
-  user_id: string;
-  created_at: string;
-  updated_at: string;
-  airbnb_ics_url?: string;
   photo_url?: string;
+  house_rules?: string[];
+  contract_template?: any;
+  created_at?: string;
+  updated_at?: string;
+  user_id?: string;
 }
 
 export interface Booking {
   id: string;
-  checkInDate: string;        // ✅ DB: check_in_date
-  checkOutDate: string;       // ✅ DB: check_out_date
-  numberOfGuests: number;     // ✅ DB: number_of_guests
-  bookingReference?: string;  // ✅ DB: booking_reference
-  guests: Guest[];
+  property_id?: string;
+  checkInDate: string;
+  checkOutDate: string;
+  numberOfGuests: number;
+  bookingReference?: string;
   status: 'pending' | 'completed' | 'archived';
-  createdAt: string;          // ✅ DB: created_at
-  
-  // ✅ CORRECTION : CamelCase cohérent partout
-  propertyId?: string;        // ✅ DB: property_id (au lieu de property_id)
-  property?: Property;
-  source?: 'host' | 'guest' | 'airbnb'; // To differentiate booking source for signature handling
-  submissionId?: string;      // ✅ DB: submission_id (au lieu de submission_id)
-  documentsGenerated: {       // ✅ DB: documents_generated
+  documentsGenerated?: {
     policeForm: boolean;
     contract: boolean;
   };
+  guests: Guest[];
+  property?: Property;
+  created_at?: string;
+  updated_at?: string;
+  user_id?: string;
 }
 
 export interface UploadedDocument {

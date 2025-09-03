@@ -41,6 +41,10 @@ interface Guest {
   nationality: string;
   documentNumber: string;
   documentType: 'passport' | 'national_id';
+  profession?: string;
+  motifSejour?: string;
+  adressePersonnelle?: string;
+  email?: string; // Champ email optionnel pour l'envoi du contrat
 }
 
 interface UploadedDocument {
@@ -117,7 +121,11 @@ export const GuestVerification = () => {
     dateOfBirth: undefined,
     nationality: '',
     documentNumber: '',
-    documentType: 'passport'
+    documentType: 'passport',
+    profession: '',
+    motifSejour: 'TOURISME',
+    adressePersonnelle: '',
+    email: ''
   }]);
   const [checkInDate, setCheckInDate] = useState<Date | undefined>();
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
@@ -289,7 +297,11 @@ export const GuestVerification = () => {
       dateOfBirth: undefined,
       nationality: '',
       documentNumber: '',
-      documentType: 'passport'
+      documentType: 'passport',
+      profession: '',
+      motifSejour: 'TOURISME',
+      adressePersonnelle: '',
+      email: ''
     }]);
   };
 
@@ -445,7 +457,11 @@ export const GuestVerification = () => {
           dateOfBirth: undefined,
           nationality: '',
           documentNumber: '',
-          documentType: 'passport'
+          documentType: 'passport',
+          profession: '',
+          motifSejour: 'TOURISME',
+          adressePersonnelle: '',
+          email: ''
         };
         setGuests(updatedGuests);
         
@@ -1102,6 +1118,63 @@ export const GuestVerification = () => {
                                       validator: (value) => {
                                         if (!/^[A-Z0-9]+$/i.test(value.replace(/\s/g, ''))) {
                                           return "Format de document invalide";
+                                        }
+                                        return null;
+                                      }
+                                    }}
+                                  />
+                                  
+                                  <EnhancedInput
+                                    label="Profession"
+                                    value={guest.profession || ''}
+                                    onChange={(e) => updateGuest(index, 'profession', e.target.value)}
+                                    placeholder="Ex: Étudiant, Employé, Retraité..."
+                                    validation={{ required: false }}
+                                  />
+                                  
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-medium text-gray-700">
+                                      Motif du séjour *
+                                    </Label>
+                                    <Select 
+                                      value={guest.motifSejour || 'TOURISME'} 
+                                      onValueChange={(value) => updateGuest(index, 'motifSejour', value)}
+                                    >
+                                      <SelectTrigger className="h-12 border-2 hover:border-primary/50">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="TOURISME">Tourisme</SelectItem>
+                                        <SelectItem value="AFFAIRES">Affaires</SelectItem>
+                                        <SelectItem value="FAMILLE">Famille</SelectItem>
+                                        <SelectItem value="ÉTUDES">Études</SelectItem>
+                                        <SelectItem value="MÉDICAL">Médical</SelectItem>
+                                        <SelectItem value="AUTRE">Autre</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  
+                                  <EnhancedInput
+                                    label="Adresse personnelle"
+                                    value={guest.adressePersonnelle || ''}
+                                    onChange={(e) => updateGuest(index, 'adressePersonnelle', e.target.value)}
+                                    placeholder="Votre adresse au Maroc ou à l'étranger"
+                                    validation={{ required: false }}
+                                  />
+                                  
+                                  <EnhancedInput
+                                    label="Email (optionnel)"
+                                    type="email"
+                                    value={guest.email || ''}
+                                    onChange={(e) => updateGuest(index, 'email', e.target.value)}
+                                    placeholder="votre.email@exemple.com"
+                                    validation={{ 
+                                      required: false,
+                                      validator: (value) => {
+                                        if (!value || value.trim() === '') return null;
+                                        const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+                                        if (!emailRegex.test(value)) {
+                                          return "Format d'email invalide";
                                         }
                                         return null;
                                       }

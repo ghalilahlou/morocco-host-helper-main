@@ -33,6 +33,10 @@ export interface GuestVerificationFormData {
     documentNumber: string;
     documentType: 'passport' | 'national_id';
     placeOfBirth?: string;
+    profession?: string;
+    motifSejour?: string;
+    adressePersonnelle?: string;
+    email?: string; // Champ email optionnel pour l'envoi du contrat
   }>;
   signature?: string;
 }

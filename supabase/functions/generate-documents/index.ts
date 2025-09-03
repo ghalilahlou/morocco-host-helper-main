@@ -918,6 +918,9 @@ async function generatePoliceFormsPDF(booking: any, PDFDocument?: any, StandardF
     yPosition = drawField(page, 'TYPE DE DOCUMENT:', guest.document_type === 'passport' ? 'PASSEPORT' : 'CNI', leftColumn, yPosition, font, boldFont, fontSize);
     yPosition = drawField(page, 'NUMÉRO DU DOCUMENT:', guest.document_number || '', leftColumn, yPosition, font, boldFont, fontSize);
     
+    // Profession
+    yPosition = drawField(page, 'PROFESSION:', guest.profession || '', leftColumn, yPosition, font, boldFont, fontSize);
+    
     // Establishment info
     yPosition -= 20;
     const checkInDate = fmt(booking.check_in_date);
@@ -930,8 +933,8 @@ async function generatePoliceFormsPDF(booking: any, PDFDocument?: any, StandardF
     
     // Purpose of visit
     yPosition -= 20;
-    yPosition = drawField(page, 'MOTIF DU SÉJOUR:', 'TOURISME', leftColumn, yPosition, font, boldFont, fontSize);
-    yPosition = drawField(page, 'ADRESSE AU MAROC:', property.address || '', leftColumn, yPosition, font, boldFont, fontSize);
+    yPosition = drawField(page, 'MOTIF DU SÉJOUR:', guest.motif_sejour || 'TOURISME', leftColumn, yPosition, font, boldFont, fontSize);
+    yPosition = drawField(page, 'ADRESSE AU MAROC:', guest.adresse_personnelle || property.address || '', leftColumn, yPosition, font, boldFont, fontSize);
     
     // Signature section
     yPosition -= 40;
