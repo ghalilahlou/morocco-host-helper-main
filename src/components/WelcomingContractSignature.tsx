@@ -61,7 +61,7 @@ const floatingIcon = {
     transition: {
       duration: 4,
       repeat: Infinity,
-      ease: "easeInOut"
+      ease: "easeInOut" as const
     }
   }
 };
@@ -82,6 +82,48 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const { toast } = useToast();
   const location = useLocation();
   const t = useT();
+
+  // ✅ CORRECTION : Fonction robuste pour récupérer l'ID de réservation
+  const getBookingId = (): string | null => {
+    // 1. Vérifier location.state (navigation depuis GuestVerification)
+    const stateBookingId = (location as any)?.state?.bookingId;
+    if (stateBookingId) {
+      console.log('✅ Booking ID trouvé dans location.state:', stateBookingId);
+      return stateBookingId;
+    }
+
+    // 2. Vérifier les props bookingData
+    if (bookingData?.id) {
+      console.log('✅ Booking ID trouvé dans bookingData:', bookingData.id);
+      return bookingData.id;
+    }
+
+    // 3. Vérifier les paramètres URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlBookingId = urlParams.get('bookingId');
+    if (urlBookingId) {
+      console.log('✅ Booking ID trouvé dans URL:', urlBookingId);
+      return urlBookingId;
+    }
+
+    // 4. Vérifier localStorage
+    const storedBookingId = localStorage.getItem('currentBookingId');
+    if (storedBookingId) {
+      console.log('✅ Booking ID trouvé dans localStorage:', storedBookingId);
+      return storedBookingId;
+    }
+
+    console.warn('⚠️ Aucun Booking ID trouvé dans toutes les sources');
+    return null;
+  };
+
+  // ✅ CORRECTION : Persister l'ID de réservation dans localStorage
+  useEffect(() => {
+    const currentBookingId = getBookingId();
+    if (currentBookingId) {
+      localStorage.setItem('currentBookingId', currentBookingId);
+    }
+  }, [location.state, bookingData?.id]);
 
   const [contractUrl, setContractUrl] = useState<string | null>(null);
   const [loadingContract, setLoadingContract] = useState<boolean>(false);
@@ -374,9 +416,21 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     setIsSubmitting(true);
     try {
       // ✅ CORRECTION : Utiliser l'ID existant ou échouer
-      const bookingId = bookingData?.id;
+      const bookingId = getBookingId();
+      
       if (!bookingId) {
-        throw new Error('ID de réservation manquant. Impossible de signer le contrat.');
+        // ✅ CORRECTION : Message d'erreur plus informatif
+        const errorMessage = 'ID de réservation manquant. ' +
+          'Veuillez revenir à la page précédente et réessayer, ' +
+          'ou contactez votre hôte pour obtenir un nouveau lien.';
+        
+        toast({ 
+          title: 'Erreur de réservation', 
+          description: errorMessage, 
+          variant: 'destructive' 
+        });
+        
+        throw new Error(errorMessage);
       }
 
       console.log('✅ Utilisation de la réservation existante:', bookingId);

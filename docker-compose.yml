@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  morocco-host-helper:
+    build: .
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Service pour les Edge Functions (optionnel)
+  supabase-functions:
+    image: supabase/edge-runtime:latest
+    ports:
+      - "54321:54321"
+    environment:
+      - SUPABASE_URL=https://hboawihrwtwxmmnzawph.supabase.co
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - ./supabase/functions:/home/deno/functions
+    command: start --main-service /home/deno/functions
+    restart: unless-stopped
+    profiles:
+      - functions

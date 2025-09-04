@@ -18,6 +18,7 @@ import { EnhancedInput } from '@/components/ui/enhanced-input';
 import { EnhancedFileUpload } from '@/components/ui/enhanced-file-upload';
 import { AnimatedStepper } from '@/components/ui/animated-stepper';
 import { IntuitiveBookingPicker } from '@/components/ui/intuitive-date-picker';
+import { validateToken, isTestToken, logTestTokenUsage, TEST_TOKENS_CONFIG } from '@/utils/testTokens';
 
 // Liste complète des nationalités
 const NATIONALITIES = [
@@ -175,6 +176,21 @@ export const GuestVerification = () => {
       });
 
       try {
+        // ✅ NOUVEAU : Vérifier d'abord si c'est un token de test
+        if (TEST_TOKENS_CONFIG.enabled && isTestToken(token)) {
+          console.log('🧪 Token de test détecté:', token);
+          logTestTokenUsage(token, 'GuestVerification - Token validation');
+          
+          const testValidation = await validateToken(token, propertyId);
+          if (testValidation.isValid && testValidation.isTestToken) {
+            console.log('✅ Token de test valide, utilisation des données de test');
+            setIsValidToken(true);
+            setPropertyName('Propriété de Test - ' + propertyId);
+            setCheckingToken(false);
+            return;
+          }
+        }
+
         // Tentative d'appel à la fonction Edge
         let tokenData;
         let error;
@@ -671,20 +687,49 @@ export const GuestVerification = () => {
       }
 
       if (!data?.success || !data?.bookingId) {
+        console.error('❌ Réponse invalide de submit-guest-info:', data);
         throw new Error(data?.message || 'Erreur lors de la création de la réservation');
       }
 
       const bookingId = data.bookingId as string;
+      
+      // ✅ CORRECTION : Vérifier que l'ID est valide
+      if (!bookingId || typeof bookingId !== 'string' || bookingId.trim() === '') {
+        console.error('❌ Booking ID invalide:', bookingId);
+        throw new Error('ID de réservation invalide reçu du serveur');
+      }
+      
       console.log('✅ Booking created with ID:', bookingId);
+
+      // ✅ CORRECTION : Sauvegarder dans localStorage avant redirection
+      localStorage.setItem('currentBookingId', bookingId);
+      localStorage.setItem('currentBookingData', JSON.stringify(bookingData));
+      localStorage.setItem('currentGuestData', JSON.stringify(finalGuestData));
 
       toast({
         title: "Données soumises avec succès",
         description: "Vous pouvez maintenant signer le contrat.",
       });
 
+      // ✅ CORRECTION : Redirection avec état complet
       const baseUrl = `/contract-signing/${propertyId}/${token}`;
       const url = airbnbBookingId ? `${baseUrl}/${airbnbBookingId}` : baseUrl;
-      navigate(url, { state: { bookingId, bookingData, guestData: finalGuestData } });
+      
+      const navigationState = { 
+        bookingId, 
+        bookingData, 
+        guestData: finalGuestData,
+        propertyId,
+        token,
+        // ✅ AJOUTER : Timestamp pour éviter les conflits
+        timestamp: Date.now()
+      };
+      
+      console.log('🔍 DEBUG: Navigation vers signature avec state:', navigationState);
+      console.log('🔍 DEBUG: URL de navigation:', url);
+      console.log('🔍 DEBUG: bookingId à passer:', bookingId);
+      
+      navigate(url, { state: navigationState });
 
     } catch (error) {
       console.error('Error submitting guest information:', error);

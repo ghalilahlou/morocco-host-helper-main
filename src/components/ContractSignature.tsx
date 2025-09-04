@@ -41,12 +41,72 @@ export const ContractSignature: React.FC<ContractSignatureProps> = ({
   const [loadingContract, setLoadingContract] = useState<boolean>(false);
   const [contractError, setContractError] = useState<string | null>(null);
 
+  // ✅ CORRECTION : Fonction robuste pour récupérer le bookingId
+  const getBookingId = (): string | null => {
+    console.log('🔍 DEBUG: getBookingId() appelé');
+    console.log('🔍 DEBUG: location.state =', location.state);
+    console.log('🔍 DEBUG: bookingData =', bookingData);
+    console.log('🔍 DEBUG: window.location.search =', window.location.search);
+    
+    // 1. Essayer depuis l'état de navigation
+    const bookingIdFromState = (location as any)?.state?.bookingId;
+    console.log('🔍 DEBUG: bookingIdFromState =', bookingIdFromState);
+    if (bookingIdFromState) {
+      console.log('✅ Booking ID from navigation state:', bookingIdFromState);
+      return bookingIdFromState;
+    }
+
+    // 2. Essayer depuis les props bookingData
+    console.log('🔍 DEBUG: bookingData?.id =', bookingData?.id);
+    if (bookingData?.id) {
+      console.log('✅ Booking ID from props:', bookingData.id);
+      return bookingData.id;
+    }
+
+    // 3. Essayer depuis l'URL (si disponible)
+    const urlParams = new URLSearchParams(window.location.search);
+    const bookingIdFromUrl = urlParams.get('bookingId');
+    console.log('🔍 DEBUG: bookingIdFromUrl =', bookingIdFromUrl);
+    if (bookingIdFromUrl) {
+      console.log('✅ Booking ID from URL params:', bookingIdFromUrl);
+      return bookingIdFromUrl;
+    }
+
+    // 4. Essayer depuis le localStorage (fallback)
+    const bookingIdFromStorage = localStorage.getItem('currentBookingId');
+    console.log('🔍 DEBUG: bookingIdFromStorage =', bookingIdFromStorage);
+    if (bookingIdFromStorage) {
+      console.log('✅ Booking ID from localStorage:', bookingIdFromStorage);
+      return bookingIdFromStorage;
+    }
+
+    console.error('❌ No booking ID found from any source');
+    console.error('❌ DEBUG: Toutes les sources vérifiées:');
+    console.error('   - location.state:', location.state);
+    console.error('   - bookingData:', bookingData);
+    console.error('   - URL params:', window.location.search);
+    console.error('   - localStorage:', localStorage.getItem('currentBookingId'));
+    return null;
+  };
+
+  // ✅ CORRECTION : Récupérer le bookingId actuel
+  const currentBookingId = getBookingId();
+
+  // ✅ CORRECTION : Sauvegarder dans localStorage pour persistance
+  useEffect(() => {
+    if (currentBookingId) {
+      localStorage.setItem('currentBookingId', currentBookingId);
+      console.log('✅ Booking ID saved to localStorage:', currentBookingId);
+    }
+  }, [currentBookingId]);
+
   // Debug logs to trace the data flow
   console.log('🔍 ContractSignature - RAW bookingData received:', bookingData);
   console.log('🔍 ContractSignature - checkInDate:', bookingData?.checkInDate);
   console.log('🔍 ContractSignature - checkOutDate:', bookingData?.checkOutDate);
   console.log('🔍 ContractSignature - RAW propertyData:', propertyData);
   console.log('🔍 ContractSignature - RAW guestData:', guestData);
+  console.log('🔍 ContractSignature - Current Booking ID:', currentBookingId);
 
   const getContractContent = (includeGuestSignature = false) => {
     const allGuests = (bookingData?.guests && Array.isArray(bookingData.guests) ? bookingData.guests : (guestData?.guests || [])) as any[];
@@ -286,9 +346,21 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     setIsSubmitting(true);
     try {
       // ✅ CORRECTION : Utiliser l'ID existant ou échouer
-      const bookingId = bookingData?.id;
+      const bookingId = getBookingId();
+      
       if (!bookingId) {
-        throw new Error('ID de réservation manquant. Impossible de signer le contrat.');
+        // ✅ CORRECTION : Message d'erreur plus informatif
+        const errorMessage = 'ID de réservation manquant. ' +
+          'Veuillez revenir à la page précédente et réessayer, ' +
+          'ou contactez votre hôte pour obtenir un nouveau lien.';
+        
+        toast({ 
+          title: 'Erreur de réservation', 
+          description: errorMessage, 
+          variant: 'destructive' 
+        });
+        
+        throw new Error(errorMessage);
       }
 
       console.log('✅ Utilisation de la réservation existante:', bookingId);

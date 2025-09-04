@@ -54,20 +54,50 @@ Deno.serve(async (req) => {
     // FIXED: Search for ANY token that matches propertyId and token, regardless of booking_id
     let bookingRow = null;
     
-    // First, try to find the token with the exact criteria
-    const { data, error } = await server
-      .from('property_verification_tokens')
-      .select('*, properties!inner(id, name, address, contract_template, contact_info, house_rules)')
-      .eq('property_id', propertyId)
+    // First, try to find the token in guest_verification_tokens (new system)
+    const { data: guestTokenData, error: guestTokenError } = await server
+      .from('guest_verification_tokens')
+      .select(`
+        *,
+        bookings!inner(
+          id,
+          property_id,
+          properties!inner(id, name, address, contract_template, contact_info, house_rules)
+        )
+      `)
       .eq('token', token)
       .eq('is_active', true)
+      .eq('bookings.property_id', propertyId)
       .maybeSingle();
 
-    if (error) {
-      console.error('Token lookup error:', error);
-    } else if (data) {
-      bookingRow = data;
-      console.log('✅ Token found:', { hasBookingId: !!data.booking_id });
+    if (guestTokenError) {
+      console.error('Guest token lookup error:', guestTokenError);
+    } else if (guestTokenData) {
+      bookingRow = {
+        ...guestTokenData,
+        property_id: guestTokenData.bookings.property_id,
+        properties: guestTokenData.bookings.properties,
+        booking_id: guestTokenData.booking_id
+      };
+      console.log('✅ Guest token found:', { hasBookingId: !!guestTokenData.booking_id });
+    }
+
+    // Fallback: try property_verification_tokens (legacy system)
+    if (!bookingRow) {
+      const { data: propertyTokenData, error: propertyTokenError } = await server
+        .from('property_verification_tokens')
+        .select('*, properties!inner(id, name, address, contract_template, contact_info, house_rules)')
+        .eq('property_id', propertyId)
+        .eq('token', token)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (propertyTokenError) {
+        console.error('Property token lookup error:', propertyTokenError);
+      } else if (propertyTokenData) {
+        bookingRow = propertyTokenData;
+        console.log('✅ Property token found (legacy):', { hasBookingId: !!propertyTokenData.booking_id });
+      }
     }
 
     if (!bookingRow) {

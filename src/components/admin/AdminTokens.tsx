@@ -41,6 +41,24 @@ import {
 import { useAdmin } from '@/hooks/useAdmin';
 import { useToast } from '@/hooks/use-toast';
 import { TokenAllocation } from '@/types/admin';
+import { TokenControlService } from '@/services/tokenControlService';
+import { 
+  TokenControlSettings, 
+  TokenControlType, 
+  TOKEN_CONTROL_OPTIONS 
+} from '@/types/tokenControl';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { 
+  Settings, 
+  Shield, 
+  Building, 
+  RefreshCw, 
+  Trash2,
+  CheckCircle,
+  XCircle,
+  AlertTriangle
+} from 'lucide-react';
 
 export const AdminTokens = () => {
   const { tokenAllocations, users, allocateTokens, loadUsers, loadDashboardData } = useAdmin();
@@ -49,10 +67,106 @@ export const AdminTokens = () => {
   const [selectedUser, setSelectedUser] = useState('');
   const [tokenAmount, setTokenAmount] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  
+  // ✅ NOUVEAU : États pour le contrôle des tokens par propriété
+  const [tokenControlSettings, setTokenControlSettings] = useState<TokenControlSettings[]>([]);
+  const [properties, setProperties] = useState<any[]>([]);
+  const [selectedProperty, setSelectedProperty] = useState<string>('');
+  const [controlFormData, setControlFormData] = useState({
+    control_type: 'unlimited' as TokenControlType,
+    max_reservations: 10,
+    is_enabled: true
+  });
+  const [loadingControl, setLoadingControl] = useState(false);
 
   useEffect(() => {
     loadUsers();
+    loadTokenControlSettings();
+    loadProperties();
   }, [loadUsers]);
+
+  // ✅ NOUVEAU : Fonctions pour le contrôle des tokens par propriété
+  const loadTokenControlSettings = async () => {
+    try {
+      const data = await TokenControlService.getAllTokenControlSettings();
+      setTokenControlSettings(data);
+    } catch (error) {
+      console.error('Erreur lors du chargement des paramètres de contrôle:', error);
+    }
+  };
+
+  const loadProperties = async () => {
+    try {
+      // Charger les propriétés depuis le contexte admin ou directement
+      // Pour l'instant, on utilise une liste vide, à adapter selon votre structure
+      setProperties([]);
+    } catch (error) {
+      console.error('Erreur lors du chargement des propriétés:', error);
+    }
+  };
+
+  const handleSaveControlSettings = async () => {
+    if (!selectedProperty) {
+      toast({
+        title: "Erreur",
+        description: "Veuillez sélectionner une propriété",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoadingControl(true);
+    try {
+      const success = await TokenControlService.updateTokenControlSettings({
+        property_id: selectedProperty,
+        ...controlFormData
+      });
+
+      if (success) {
+        toast({
+          title: "Succès",
+          description: "Paramètres de contrôle mis à jour avec succès"
+        });
+        loadTokenControlSettings();
+        setSelectedProperty('');
+        setControlFormData({
+          control_type: 'unlimited',
+          max_reservations: 10,
+          is_enabled: true
+        });
+      } else {
+        throw new Error('Échec de la mise à jour');
+      }
+    } catch (error) {
+      console.error('Erreur lors de la sauvegarde:', error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de sauvegarder les paramètres",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingControl(false);
+    }
+  };
+
+  const handleResetCounter = async (propertyId: string) => {
+    try {
+      const success = await TokenControlService.resetReservationCount(propertyId);
+      if (success) {
+        toast({
+          title: "Succès",
+          description: "Compteur de réservations réinitialisé"
+        });
+        loadTokenControlSettings();
+      }
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: "Impossible de réinitialiser le compteur",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleAllocateTokens = async () => {
     if (!selectedUser || !tokenAmount) {
@@ -115,7 +229,7 @@ export const AdminTokens = () => {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Gestion des Tokens</h2>
           <p className="text-gray-600">
-            Allouez des tokens aux utilisateurs pour générer des liens de réservation
+            Allouez des tokens aux utilisateurs et contrôlez la génération par propriété
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -182,6 +296,22 @@ export const AdminTokens = () => {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* ✅ NOUVEAU : Onglets pour séparer les fonctionnalités */}
+      <Tabs defaultValue="allocation" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="allocation" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Allocation Utilisateurs
+          </TabsTrigger>
+          <TabsTrigger value="control" className="flex items-center gap-2">
+            <Shield className="h-4 w-4" />
+            Contrôle par Propriété
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Onglet Allocation Utilisateurs (existant) */}
+        <TabsContent value="allocation" className="space-y-6">
 
       {/* Statistiques */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -345,6 +475,189 @@ export const AdminTokens = () => {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* ✅ NOUVEAU : Onglet Contrôle par Propriété */}
+        <TabsContent value="control" className="space-y-6">
+          {/* Formulaire de configuration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Configuration du Contrôle des Tokens
+              </CardTitle>
+              <CardDescription>
+                Définir les paramètres de génération de tokens pour chaque propriété
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="property">Propriété</Label>
+                  <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner une propriété" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {properties.map((property) => (
+                        <SelectItem key={property.id} value={property.id}>
+                          <div className="flex items-center gap-2">
+                            <Building className="h-4 w-4" />
+                            {property.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="control_type">Type de Contrôle</Label>
+                  <Select 
+                    value={controlFormData.control_type} 
+                    onValueChange={(value: TokenControlType) => setControlFormData({...controlFormData, control_type: value})}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TOKEN_CONTROL_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <div className="flex items-center gap-2">
+                            <span>{option.icon}</span>
+                            <span>{option.label}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {controlFormData.control_type === 'limited' && (
+                <div className="space-y-2">
+                  <Label htmlFor="max_reservations">Nombre Maximum de Tokens</Label>
+                  <Input
+                    id="max_reservations"
+                    type="number"
+                    min="1"
+                    value={controlFormData.max_reservations}
+                    onChange={(e) => setControlFormData({...controlFormData, max_reservations: parseInt(e.target.value) || 1})}
+                    placeholder="10"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="is_enabled"
+                  checked={controlFormData.is_enabled}
+                  onCheckedChange={(checked) => setControlFormData({...controlFormData, is_enabled: checked})}
+                />
+                <Label htmlFor="is_enabled">Activer le contrôle</Label>
+              </div>
+
+              <Button 
+                onClick={handleSaveControlSettings} 
+                className="w-full"
+                disabled={loadingControl}
+              >
+                {loadingControl ? (
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Shield className="h-4 w-4 mr-2" />
+                )}
+                Sauvegarder les Paramètres
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Liste des paramètres existants */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Paramètres Actuels
+              </CardTitle>
+              <CardDescription>
+                Gérer les paramètres de contrôle des tokens par propriété
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {tokenControlSettings.length === 0 ? (
+                <div className="text-center py-8">
+                  <AlertTriangle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">Aucun paramètre configuré</h3>
+                  <p className="text-muted-foreground">
+                    Les tokens sont générés sans restriction par défaut.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {tokenControlSettings.map((setting) => (
+                    <div key={setting.id} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Building className="h-5 w-5 text-muted-foreground" />
+                          <div>
+                            <h3 className="font-medium">Propriété {setting.property_id.substring(0, 8)}...</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {setting.property_id}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={setting.control_type === 'blocked' ? 'destructive' : setting.control_type === 'limited' ? 'secondary' : 'default'}>
+                            {TOKEN_CONTROL_OPTIONS.find(opt => opt.value === setting.control_type)?.icon} {setting.control_type}
+                          </Badge>
+                          {setting.is_enabled ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500" />
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium">Statut:</span>
+                          <span className={`ml-2 ${setting.is_enabled ? 'text-green-600' : 'text-red-600'}`}>
+                            {setting.is_enabled ? 'Activé' : 'Désactivé'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-medium">Réservations:</span>
+                          <span className="ml-2">
+                            {setting.current_reservations}
+                            {setting.max_reservations && ` / ${setting.max_reservations}`}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-medium">Mis à jour:</span>
+                          <span className="ml-2">
+                            {new Date(setting.updated_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleResetCounter(setting.property_id)}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Réinitialiser
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

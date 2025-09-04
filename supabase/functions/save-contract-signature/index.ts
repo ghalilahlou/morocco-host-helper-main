@@ -48,95 +48,130 @@ serve(async (req) => {
 
     if (!body?.bookingId || !body?.signerName || !body?.signatureDataUrl) {
       console.log('❌ Missing required fields:', { 
-        hasBookingId: !!body?.bookingId, 
-        hasSignerName: !!body?.signerName, 
-        hasSignatureData: !!body?.signatureDataUrl 
+        hasBookingId: !!body?.bookingId,
+        hasSignerName: !!body?.signerName,
+        hasSignatureData: !!body?.signatureDataUrl
       });
-      return badRequest("bookingId, signerName, signatureDataUrl required");
+      return badRequest("Missing required fields: bookingId, signerName, signatureDataUrl");
     }
 
-    // Optional: validate data URL
-    if (!body.signatureDataUrl.startsWith("data:image/png;base64,")) {
-      console.log('❌ Invalid signature data URL format');
-      return badRequest("signatureDataUrl must be a base64 PNG data URL");
-    }
-
-    const server = await getServerClient();
-
-    // (1) Sanity-check booking exists (service role bypasses RLS)
-    // Skip validation for temporary booking IDs (generated for contracts without real bookings)
-    if (!body.bookingId.startsWith("contract-")) {
-      console.log('🔍 Checking if booking exists:', body.bookingId);
-      const { data: booking, error: bookingErr } = await server
-        .from("bookings")
-        .select("id")
-        .eq("id", body.bookingId)
-        .maybeSingle();
-
-      if (bookingErr) {
-        console.error('❌ Error checking booking:', bookingErr);
-        throw bookingErr;
-      }
-      if (!booking) {
-        console.log('❌ Booking not found:', body.bookingId);
-        return badRequest("Unknown booking");
-      }
-      console.log('✅ Booking found:', body.bookingId);
-    }
-
-    // (2) Write signature to contract_signatures
-    // Generate a proper UUID for temporary booking IDs
-    let finalBookingId = body.bookingId;
-    if (body.bookingId.startsWith("contract-")) {
-      console.log('🔧 Generating UUID for temporary booking ID:', body.bookingId);
-      // Generate a deterministic UUID based on the temporary ID
-      const crypto = globalThis.crypto || (await import("node:crypto")).webcrypto;
-      const encoder = new TextEncoder();
-      const data = encoder.encode(body.bookingId);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = new Uint8Array(hashBuffer);
-      
-      // Convert first 16 bytes to UUID format
-      const uuid = [
-        Array.from(hashArray.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(''),
-        Array.from(hashArray.slice(4, 6)).map(b => b.toString(16).padStart(2, '0')).join(''),
-        Array.from(hashArray.slice(6, 8)).map(b => b.toString(16).padStart(2, '0')).join(''),
-        Array.from(hashArray.slice(8, 10)).map(b => b.toString(16).padStart(2, '0')).join(''),
-        Array.from(hashArray.slice(10, 16)).map(b => b.toString(16).padStart(2, '0')).join('')
-      ].join('-');
-      
-      finalBookingId = uuid;
-      console.log('✅ Generated UUID:', finalBookingId);
-    }
-
-    console.log('💾 Inserting signature into database...');
-    const { data: inserted, error: insertErr } = await server
-      .from("contract_signatures")
-      .insert({
-        booking_id: finalBookingId,
-        signer_name: body.signerName,
-        signer_email: body.signerEmail ?? null,
-        signer_phone: body.signerPhone ?? null,
-        signature_data: body.signatureDataUrl,
-        contract_content: 'Contract signed electronically', // Required field
-        signed_at: new Date().toISOString()
-      })
-      .select("id")
+    const supabase = getServerClient(req);
+    
+    // ✅ CORRECTION : Vérifier que la réservation existe
+    console.log('🔍 Vérification de l\'existence de la réservation...');
+    
+    const { data: booking, error: bookingError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', body.bookingId)
       .single();
 
-    if (insertErr) {
-      console.error('❌ Error inserting signature:', insertErr);
-      throw insertErr;
+    if (bookingError || !booking) {
+      console.error('❌ Réservation non trouvée:', bookingError);
+      return badRequest("Réservation non trouvée");
     }
 
-    console.log(`✅ Contract signature saved for booking ${body.bookingId}, signature ID: ${inserted.id}`);
+    console.log('✅ Réservation trouvée:', booking.id);
+
+    // ✅ CORRECTION : Vérifier s'il existe déjà une signature pour cette réservation
+    console.log('🔍 Vérification des signatures existantes...');
     
-    return ok({ id: inserted.id });
-  } catch (e) {
-    console.error("❌ save-contract-signature error:", e);
-    return new Response(JSON.stringify({ error: "internal", details: e.message }), { 
-      status: 500, 
-      headers: { "content-type": "application/json", ...corsHeaders } 
+    const { data: existingSignatures, error: signatureSearchError } = await supabase
+      .from('contract_signatures')
+      .select('*')
+      .eq('booking_id', body.bookingId);
+
+    if (signatureSearchError) {
+      console.error('❌ Erreur lors de la recherche de signatures:', signatureSearchError);
+      return badRequest("Erreur lors de la recherche de signatures existantes");
+    }
+
+    let signatureId: string;
+    let isNewSignature = false;
+
+    if (existingSignatures && existingSignatures.length > 0) {
+      // ✅ CORRECTION : Mettre à jour la signature existante
+      const existingSignature = existingSignatures[0];
+      signatureId = existingSignature.id;
+      
+      console.log('✅ Signature existante trouvée:', signatureId);
+      
+      const { error: updateError } = await supabase
+        .from('contract_signatures')
+        .update({
+          signer_name: body.signerName,
+          signer_email: body.signerEmail,
+          signer_phone: body.signerPhone,
+          signature_data_url: body.signatureDataUrl,
+          signed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', signatureId);
+
+      if (updateError) {
+        console.error('❌ Erreur lors de la mise à jour de la signature:', updateError);
+        return badRequest("Erreur lors de la mise à jour de la signature");
+      }
+
+      console.log('✅ Signature mise à jour avec succès');
+    } else {
+      // ✅ CORRECTION : Créer une nouvelle signature seulement si aucune n'existe
+      console.log('🆕 Aucune signature existante trouvée, création d\'une nouvelle...');
+      
+      const { data: newSignature, error: createError } = await supabase
+        .from('contract_signatures')
+        .insert({
+          booking_id: body.bookingId,
+          signer_name: body.signerName,
+          signer_email: body.signerEmail,
+          signer_phone: body.signerPhone,
+          signature_data_url: body.signatureDataUrl,
+          signed_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('❌ Erreur lors de la création de la signature:', createError);
+        return badRequest("Erreur lors de la création de la signature");
+      }
+
+      signatureId = newSignature.id;
+      isNewSignature = true;
+      console.log('✅ Nouvelle signature créée:', signatureId);
+    }
+
+    // ✅ CORRECTION : Mettre à jour le statut de la réservation
+    console.log('🔄 Mise à jour du statut de la réservation...');
+    
+    const { error: updateBookingError } = await supabase
+      .from('bookings')
+      .update({
+        status: 'confirmed',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', body.bookingId);
+
+    if (updateBookingError) {
+      console.error('❌ Erreur lors de la mise à jour du statut de la réservation:', updateBookingError);
+      // Ne pas échouer pour cette erreur, juste logger
+    } else {
+      console.log('✅ Statut de la réservation mis à jour avec succès');
+    }
+
+    console.log('✅ Fonction save-contract-signature terminée avec succès');
+
+    return ok({
+      success: true,
+      signatureId: signatureId,
+      isNewSignature: isNewSignature,
+      message: isNewSignature ? 'Nouvelle signature créée' : 'Signature existante mise à jour'
     });
+
+  } catch (error) {
+    console.error('❌ Erreur dans save-contract-signature:', error);
+    return badRequest(error instanceof Error ? error.message : "Erreur inconnue");
   }
 });

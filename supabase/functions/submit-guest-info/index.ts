@@ -50,308 +50,278 @@ serve(async (req) => {
       hasToken: !!token
     });
 
-    // Basic validation
-    if (!propertyId || !bookingData) {
+    if (!propertyId || !token || !bookingData || !guestData) {
       return new Response(JSON.stringify({
         success: false,
-        message: 'Champs manquants: propertyId ou bookingData'
+        message: 'Missing required parameters'
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Get property info for user_id
-    const { data: propertyData, error: propertyError } = await supabase
-      .from('properties')
-      .select('user_id')
-      .eq('id', propertyId)
+    // Verify token
+    const { data: tokenData, error: tokenError } = await supabase
+      .from('guest_verification_tokens')
+      .select('*')
+      .eq('token', token)
+      .eq('is_active', true)
       .single();
 
-    if (propertyError || !propertyData) {
-      console.error('❌ Property query failed:', propertyError);
-      return new Response(JSON.stringify({
-        success: false,
-        message: 'Propriété introuvable'
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Resolve token (prefer exact if provided; else latest active for property)
-    let tokenDataRes;
-    if (token) {
-      tokenDataRes = await supabase
-        .from('property_verification_tokens')
-        .select('id')
-        .eq('property_id', propertyId)
-        .eq('token', token)
-        .eq('is_active', true)
-        .maybeSingle();
-    } else {
-      tokenDataRes = await supabase
-        .from('property_verification_tokens')
-        .select('id')
-        .eq('property_id', propertyId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-    }
-
-    const { data: tokenData, error: tokenError } = tokenDataRes;
     if (tokenError || !tokenData) {
-      console.error('❌ Token query failed:', tokenError);
       return new Response(JSON.stringify({
         success: false,
-        message: 'Token invalide ou inactif'
+        message: 'Token invalide ou expiré'
       }), {
-        status: 400,
+        status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Step 1: Ensure a guest submission row (manual find-or-create)
-    console.log('📝 Resolving guest submission...');
-    let submissionId = null;
+    // ✅ CORRECTION : Logique "find or update/create" pour éviter les doublons
+    console.log('🔍 Recherche d\'une réservation existante...');
     
-    // Extract document URLs from guest data
-    const documentUrls = guestData?.documentUrls || [];
-    console.log('📎 Document URLs to save:', documentUrls);
-
-    // Try to find the most recent submission for this token_id
-    const { data: existingSubmission } = await supabase
-      .from('guest_submissions')
-      .select('id')
-      .eq('token_id', tokenData.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingSubmission?.id) {
-      submissionId = existingSubmission.id;
-      const { error: updateSubErr } = await supabase
-        .from('guest_submissions')
-        .update({
-          booking_data: bookingData,
-          guest_data: guestData,
-          document_urls: Array.isArray(guestData?.documentUrls) ? guestData.documentUrls : [],
-          submitted_at: new Date().toISOString(),
-          status: 'completed'
-        })
-        .eq('id', submissionId);
-
-      if (updateSubErr) {
-        console.error('❌ Failed to update submission:', updateSubErr);
-        return new Response(JSON.stringify({
-          success: false,
-          message: 'Échec de la mise à jour de la soumission'
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      console.log('✅ Updated existing submission:', submissionId);
-    } else {
-      const { data: newSub, error: subErr } = await supabase
-        .from('guest_submissions')
-        .insert({
-          token_id: tokenData.id,
-          booking_data: bookingData,
-          guest_data: guestData,
-          document_urls: Array.isArray(guestData?.documentUrls) ? guestData.documentUrls : [],
-          submitted_at: new Date().toISOString(),
-          status: 'completed'
-        })
-        .select('id')
-        .single();
-
-      if (subErr || !newSub) {
-        console.error('❌ Guest submission failed:', subErr);
-        return new Response(JSON.stringify({
-          success: false,
-          message: 'Échec de la création de la soumission'
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      submissionId = newSub.id;
-      console.log('✅ Created new submission:', submissionId);
-    }
-
-    // Step 2: ✅ CORRECTION - TOUJOURS créer une nouvelle réservation (pas de réutilisation dangereuse)
-    console.log('📅 Creating new booking...');
-    let bookingId = null;
-
-    const toIsoOrNull = (d) => d ? new Date(d).toISOString() : null;
-    const checkInDate = toIsoOrNull(bookingData?.checkInDate);
-    const checkOutDate = toIsoOrNull(bookingData?.checkOutDate);
-
-    // ✅ CORRECTION: Toujours créer une nouvelle réservation pour chaque soumission
-    const payload = {
-      property_id: propertyId,
-      user_id: propertyData.user_id,
-      check_in_date: checkInDate,
-      check_out_date: checkOutDate,
-      number_of_guests: bookingData?.numberOfGuests ?? guestData?.guests?.length ?? 1,
-      status: 'pending',
-      submission_id: submissionId
-    };
-
-    const { data: newBooking, error: newErr } = await supabase
+    const { data: existingBookings, error: searchError } = await supabase
       .from('bookings')
-      .insert(payload)
-      .select('id')
-      .single();
+      .select('*')
+      .eq('property_id', propertyId)
+      .eq('check_in_date', bookingData.checkInDate)
+      .eq('check_out_date', bookingData.checkOutDate)
+      .order('created_at', { ascending: false });
 
-    if (newErr || !newBooking) {
-      console.error('❌ Booking creation failed:', newErr);
+    if (searchError) {
+      console.error('❌ Erreur lors de la recherche:', searchError);
       return new Response(JSON.stringify({
         success: false,
-        message: 'Échec de la création de la réservation'
+        message: 'Erreur lors de la recherche de réservation existante'
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-    
-    bookingId = newBooking.id;
-    console.log('✅ New booking created:', bookingId);
 
-    // ✅ CORRECTION: Lier le token à la réservation
-    console.log('🔗 Linking token to booking...');
-    const { error: tokenUpdateError } = await supabase
-      .from('property_verification_tokens')
-      .update({ booking_id: bookingId })
-      .eq('id', tokenData.id);
+    let bookingId: string;
+    let isNewBooking = false;
 
-    if (tokenUpdateError) {
-      console.error('❌ Failed to link token to booking:', tokenUpdateError);
-    } else {
-      console.log('✅ Token linked to booking:', { tokenId: tokenData.id, bookingId });
-    }
-
-    // Step 3: Create guests records in the guests table
-    console.log('👥 Creating guests records...');
-    let insertedGuests = [];
-    
-    if (guestData?.guests && Array.isArray(guestData.guests) && bookingId) {
-      // Insert new guests
-      const guestsData = guestData.guests.map((guest) => ({
-        booking_id: bookingId,
-        full_name: guest.fullName,
-        date_of_birth: guest.dateOfBirth,
-        document_number: guest.documentNumber,
-        nationality: guest.nationality,
-        place_of_birth: guest.placeOfBirth || '',
-        document_type: guest.documentType,
-        profession: guest.profession || '',
-        motif_sejour: guest.motifSejour || 'TOURISME',
-        adresse_personnelle: guest.adressePersonnelle || '',
-        email: guest.email || null
-      }));
-
-      const { error: insertError, data: guestInsertData } = await supabase
-        .from('guests')
-        .insert(guestsData)
-        .select('id, full_name');
-
-      if (insertError) {
-        console.error('❌ Failed to insert guests:', insertError);
+    if (existingBookings && existingBookings.length > 0) {
+      // ✅ CORRECTION : Mettre à jour la réservation existante
+      const existingBooking = existingBookings[0];
+      bookingId = existingBooking.id;
+      
+      console.log('✅ Réservation existante trouvée:', bookingId);
+      
+      // Mettre à jour la réservation existante
+      const { error: updateError } = await supabase
+        .from('bookings')
+        .update({ 
+          number_of_guests: bookingData.numberOfGuests,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
+        
+      if (updateError) {
+        console.error('❌ Erreur lors de la mise à jour:', updateError);
         return new Response(JSON.stringify({
           success: false,
-          message: 'Échec de la création des invités'
+          message: 'Erreur lors de la mise à jour de la réservation'
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      console.log('✅ Réservation mise à jour avec succès');
+    } else {
+      // ✅ CORRECTION : Créer une nouvelle réservation seulement si aucune n'existe
+      console.log('🆕 Aucune réservation existante trouvée, création d\'une nouvelle...');
+      
+      const { data: newBooking, error: createError } = await supabase
+        .from('bookings')
+        .insert({
+          property_id: propertyId,
+          check_in_date: bookingData.checkInDate,
+          check_out_date: bookingData.checkOutDate,
+          number_of_guests: bookingData.numberOfGuests,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('❌ Erreur lors de la création:', createError);
+        return new Response(JSON.stringify({
+          success: false,
+          message: 'Erreur lors de la création de la réservation'
         }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
-      insertedGuests = guestInsertData || [];
-      console.log(`✅ Inserted ${guestsData.length} guests for booking ${bookingId}`);
-
-      // Step 4: ✅ CORRECTION - Save documents to uploaded_documents table
-      console.log('📄 Processing uploaded documents...');
-      if (documentUrls && documentUrls.length > 0 && insertedGuests.length > 0) {
-        for (let i = 0; i < documentUrls.length && i < insertedGuests.length; i++) {
-          const documentUrl = documentUrls[i];
-          const guest = insertedGuests[i];
-          
-          if (documentUrl && guest) {
-            try {
-              // Extract file path from signed URL
-              let filePath = '';
-              
-              if (documentUrl.includes('/guest-documents/')) {
-                const pathMatch = documentUrl.match(/\/guest-documents\/([^?]+)/);
-                if (pathMatch) {
-                  filePath = pathMatch[1];
-                  console.log('✅ Extracted file path:', filePath);
-                } else {
-                  console.error('❌ Could not extract file path from URL:', documentUrl);
-                  filePath = `unknown_${Date.now()}_${guest.full_name}`;
-                }
-              } else {
-                console.error('❌ Invalid document URL format:', documentUrl);
-                filePath = `unknown_${Date.now()}_${guest.full_name}`;
-              }
-              
-              // Create record in uploaded_documents
-              const documentRecord = {
-                booking_id: bookingId,
-                guest_id: guest.id,
-                file_name: `ID_${guest.full_name}`,
-                file_path: filePath,
-                document_url: documentUrl,
-                processing_status: 'completed',
-                extracted_data: guestData.guests[i] ? {
-                  fullName: guestData.guests[i].fullName,
-                  documentType: guestData.guests[i].documentType,
-                  documentNumber: guestData.guests[i].documentNumber,
-                  nationality: guestData.guests[i].nationality,
-                  dateOfBirth: guestData.guests[i].dateOfBirth,
-                  placeOfBirth: guestData.guests[i].placeOfBirth
-                } : null
-              };
-
-              const { error: docError } = await supabase
-                .from('uploaded_documents')
-                .insert(documentRecord);
-
-              if (docError) {
-                console.error('❌ Failed to save document record:', docError);
-              } else {
-                console.log('✅ Document record saved:', {
-                  guestName: guest.full_name,
-                  filePath: filePath,
-                  bookingId: bookingId
-                });
-              }
-            } catch (error) {
-              console.error('❌ Error processing document URL:', error);
-            }
-          }
-        }
-      }
+      bookingId = newBooking.id;
+      isNewBooking = true;
+      console.log('✅ Nouvelle réservation créée:', bookingId);
     }
+
+    // ✅ CORRECTION : Créer l'enregistrement de soumission seulement pour les nouvelles réservations
+    if (isNewBooking) {
+      console.log('📝 Création de l\'enregistrement de soumission...');
+      
+      const { data: submission, error: submissionError } = await supabase
+        .from('submissions')
+        .insert({
+          booking_id: bookingId,
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (submissionError) {
+        console.error('❌ Erreur lors de la création de la soumission:', submissionError);
+        return new Response(JSON.stringify({
+          success: false,
+          message: 'Erreur lors de la création de la soumission'
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Mettre à jour la réservation avec l'ID de soumission
+      const { error: updateBookingError } = await supabase
+        .from('bookings')
+        .update({ 
+          submission_id: submission.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
+
+      if (updateBookingError) {
+        console.error('❌ Erreur lors de la mise à jour de la réservation:', updateBookingError);
+      }
+
+      console.log('✅ Enregistrement de soumission créé avec succès');
+    } else {
+      console.log('ℹ️ Réservation existante, pas de création d\'enregistrement de soumission');
+    }
+
+    // ✅ CORRECTION : Lier le token à la réservation seulement pour les nouvelles réservations
+    if (isNewBooking) {
+      console.log('🔗 Liaison du token à la réservation...');
+      
+      const { error: linkError } = await supabase
+        .from('guest_verification_tokens')
+        .update({ booking_id: bookingId })
+        .eq('id', tokenData.id);
+
+      if (linkError) {
+        console.error('❌ Erreur lors de la liaison du token:', linkError);
+        return new Response(JSON.stringify({
+          success: false,
+          message: 'Erreur lors de la liaison du token'
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log('✅ Token lié à la réservation avec succès');
+    } else {
+      console.log('ℹ️ Réservation existante, pas de liaison de token');
+    }
+
+    // ✅ CORRECTION : Créer les enregistrements invité seulement pour les nouvelles réservations
+    if (isNewBooking && guestData?.guests && Array.isArray(guestData.guests) && bookingId) {
+      console.log('👥 Création des enregistrements invité...');
+      
+      const guestsData = guestData.guests.map((guest: any) => ({
+        full_name: guest.fullName,
+        date_of_birth: guest.dateOfBirth,
+        nationality: guest.nationality,
+        document_number: guest.documentNumber,
+        document_type: guest.documentType,
+        profession: guest.profession,
+        motif_sejour: guest.motifSejour,
+        adresse_personnelle: guest.adressePersonnelle,
+        email: guest.email,
+        booking_id: bookingId,
+        created_at: new Date().toISOString()
+      }));
+
+      const { data: insertedGuests, error: guestsError } = await supabase
+        .from('guests')
+        .insert(guestsData)
+        .select();
+
+      if (guestsError) {
+        console.error('❌ Erreur lors de la création des invités:', guestsError);
+        return new Response(JSON.stringify({
+          success: false,
+          message: 'Erreur lors de la création des invités'
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log(`✅ ${guestsData.length} invités créés avec succès`);
+    } else {
+      console.log('ℹ️ Réservation existante ou pas d\'invités, pas de création d\'enregistrements invité');
+    }
+
+    // ✅ CORRECTION : Créer les enregistrements de documents seulement pour les nouvelles réservations
+    if (isNewBooking && guestData?.documentUrls && Array.isArray(guestData.documentUrls) && bookingId) {
+      console.log('📄 Création des enregistrements de documents...');
+      
+      const documentsData = guestData.documentUrls.map((url: string) => ({
+        booking_id: bookingId,
+        document_url: url,
+        document_type: 'identity',
+        created_at: new Date().toISOString()
+      }));
+
+      const { data: insertedDocuments, error: documentsError } = await supabase
+        .from('guest_documents')
+        .insert(documentsData)
+        .select();
+
+      if (documentsError) {
+        console.error('❌ Erreur lors de la création des documents:', documentsError);
+        return new Response(JSON.stringify({
+          success: false,
+          message: 'Erreur lors de la création des documents'
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      console.log(`✅ ${documentsData.length} documents créés avec succès`);
+    } else {
+      console.log('ℹ️ Réservation existante ou pas de documents, pas de création d\'enregistrements de documents');
+    }
+
+    console.log('✅ Fonction submit-guest-info terminée avec succès');
 
     return new Response(JSON.stringify({
       success: true,
-      bookingId,
-      submissionId,
-      tokenId: tokenData.id
+      bookingId: bookingId,
+      isNewBooking: isNewBooking,
+      message: isNewBooking ? 'Nouvelle réservation créée' : 'Réservation existante utilisée'
     }), {
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
-    console.error('❌ Error in submit-guest-info:', error);
-    const message = error?.message || 'Unknown error occurred';
+    console.error('❌ Erreur dans submit-guest-info:', error);
     return new Response(JSON.stringify({
       success: false,
-      message
+      message: error instanceof Error ? error.message : 'Erreur inconnue'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

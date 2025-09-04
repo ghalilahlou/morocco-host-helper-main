@@ -1,4 +1,3 @@
-
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { getServerClient } from '../_shared/serverClient.ts';
 
@@ -32,6 +31,44 @@ serve(async (req) => {
 
     const server = await getServerClient();
 
+    // ✅ NOUVEAU : Vérifier les permissions de génération de tokens
+    console.log('🔐 Vérification des permissions de génération de tokens...');
+    
+    const { data: permissionCheck, error: permissionError } = await server.rpc('check_reservation_allowed', {
+      property_uuid: propertyId
+    });
+
+    if (permissionError) {
+      console.error('❌ Erreur lors de la vérification des permissions:', permissionError);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Erreur lors de la vérification des permissions',
+          details: permissionError.message 
+        }), 
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    if (!permissionCheck?.allowed) {
+      console.log('🚫 Génération de tokens non autorisée:', permissionCheck);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Génération de tokens non autorisée',
+          reason: permissionCheck?.reason || 'Contrôle administrateur actif',
+          control_type: permissionCheck?.control_type || 'blocked'
+        }), 
+        { 
+          status: 403, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    console.log('✅ Génération de tokens autorisée:', permissionCheck);
+
     // If no bookingId is provided, try to find the most recent active booking for this property
     let finalBookingId = bookingId;
     if (!bookingId) {
@@ -49,109 +86,89 @@ serve(async (req) => {
         finalBookingId = recentBooking.id;
         console.log('✅ Found recent booking:', finalBookingId);
       } else {
-        console.log('⚠️ No active bookings found for property');
+        console.log('⚠️ No recent booking found for property');
       }
     }
 
-    // Check if property exists first
-    const { data: property, error: propertyError } = await server
-      .from('properties')
-      .select('id, name')
-      .eq('id', propertyId)
-      .maybeSingle();
+    // ✅ CORRECTION : Désactiver tous les tokens actifs existants pour cette propriété
+    console.log('🔄 Désactivation des tokens existants pour cette propriété...');
+    
+    const { error: deactivateError } = await server
+      .from('guest_verification_tokens')
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('booking_id', finalBookingId)
+      .eq('is_active', true);
 
-    if (propertyError || !property) {
-      console.error('❌ Property not found:', propertyError);
+    if (deactivateError) {
+      console.error('❌ Erreur lors de la désactivation des tokens existants:', deactivateError);
+      // Ne pas échouer pour cette erreur, juste logger
+    } else {
+      console.log('✅ Tokens existants désactivés avec succès');
+    }
+
+    // ✅ CORRECTION : Générer un nouveau token unique
+    console.log('🆕 Génération d\'un nouveau token...');
+    
+    const token = generateUniqueToken();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // Expire dans 7 jours
+
+    const { data: newToken, error: createError } = await server
+      .from('guest_verification_tokens')
+      .insert({
+        token,
+        booking_id: finalBookingId,
+        is_active: true,
+        expires_at: expiresAt.toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('❌ Erreur lors de la création du token:', createError);
       return new Response(
-        JSON.stringify({ error: 'Property not found' }), 
+        JSON.stringify({ error: 'Failed to create guest verification token' }), 
         { 
-          status: 404, 
+          status: 500, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       );
     }
 
-    // Check if a token already exists for this property (and booking if provided)
-    let tokenQuery = server
-      .from('property_verification_tokens')
-      .select('*')
-      .eq('property_id', propertyId)
-      .eq('is_active', true);
+    console.log('✅ Nouveau token créé avec succès:', newToken.id);
 
-    // If finalBookingId is provided, include it in the query
-    if (finalBookingId) {
-      tokenQuery = tokenQuery.eq('booking_id', finalBookingId);
+    // ✅ NOUVEAU : Incrémenter le compteur de réservations
+    console.log('📊 Incrémentation du compteur de réservations...');
+    
+    const { error: incrementError } = await server.rpc('increment_reservation_count', {
+      property_uuid: propertyId
+    });
+
+    if (incrementError) {
+      console.error('⚠️ Erreur lors de l\'incrémentation du compteur:', incrementError);
+      // Ne pas faire échouer la création du token pour cette erreur
     } else {
-      tokenQuery = tokenQuery.is('booking_id', null);
+      console.log('✅ Compteur de réservations incrémenté');
     }
 
-    const { data: existingToken, error: existingError } = await tokenQuery
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (existingError) {
-      console.error('❌ Error checking existing token:', existingError);
-    }
-
-    let token: string;
-    let tokenRecord: any;
-
-    if (existingToken && existingToken.is_active) {
-      // Use existing active token
-      token = existingToken.token;
-      tokenRecord = existingToken;
-      console.log('♻️ Using existing token');
-    } else {
-      // Generate a new token
-      token = crypto.randomUUID() + '-' + crypto.randomUUID();
-      
-      const tokenData: any = {
-        property_id: propertyId,
-        token: token,
-        is_active: true
-      };
-
-      // Add booking_id if provided
-      if (finalBookingId) {
-        tokenData.booking_id = finalBookingId;
-      }
-
-      const { data: newToken, error: createError } = await server
-        .from('property_verification_tokens')
-        .insert(tokenData)
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('❌ Error creating token:', createError);
-        return new Response(
-          JSON.stringify({ error: 'Failed to create verification token' }), 
-          { 
-            status: 500, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        );
-      }
-
-      token = newToken.token;
-      tokenRecord = newToken;
-      console.log('✅ Created new token');
-    }
-
-    // Generate the full URL
-    const origin = req.headers.get('origin') || 'http://localhost:5173';
-    const link = finalBookingId 
-      ? `${origin}/welcome/${propertyId}/${token}/${finalBookingId}`
-      : `${origin}/welcome/${propertyId}/${token}`;
-
-    console.log('✅ Generated guest link:', { link, propertyId, bookingId: finalBookingId });
+    // ✅ CORRECTION : Construire l'URL du lien invité
+    const baseUrl = Deno.env.get('SITE_URL') || 'http://localhost:3000';
+    const guestLink = `${baseUrl}/guest-verification/${propertyId}/${token}`;
+    
+    console.log('🔗 Lien invité généré:', guestLink);
 
     return new Response(
-      JSON.stringify({ 
-        link, 
-        token,
-        expiresAt: tokenRecord.created_at // Using created_at as reference since we don't have expires_at
+      JSON.stringify({
+        success: true,
+        token: newToken.token,
+        guestLink,
+        expiresAt: newToken.expires_at,
+        bookingId: finalBookingId
       }), 
       { 
         status: 200, 
@@ -160,9 +177,9 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('❌ Error in issue-guest-link function:', error);
+    console.error('❌ Erreur dans issue-guest-link:', error);
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }), 
+      JSON.stringify({ error: error.message }), 
       { 
         status: 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -170,3 +187,19 @@ serve(async (req) => {
     );
   }
 });
+
+// ✅ CORRECTION : Fonction améliorée pour générer un token unique
+function generateUniqueToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  
+  // Générer un token de 32 caractères
+  for (let i = 0; i < 32; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  
+  // Ajouter un timestamp pour garantir l'unicité
+  const timestamp = Date.now().toString(36);
+  
+  return `${result}${timestamp}`;
+}
