@@ -163,10 +163,9 @@ export const BookingDetailsModal = ({
       const {
         data,
         error
-      } = await supabase.functions.invoke('generate-documents', {
+      } = await supabase.functions.invoke('generate-police-forms', {
         body: {
-          bookingId: booking.id,
-          documentType: 'police'
+          bookingId: booking.id
         }
       });
       console.log('👮 Police generation response:', {
@@ -280,7 +279,7 @@ export const BookingDetailsModal = ({
       const signed = signatures && signatures.length > 0 ? signatures[0] : null;
       const body: any = {
         bookingId: booking.id,
-        documentType: 'contract'
+        action: signed?.signature_data ? 'sign' : 'generate'
       };
       if (signed?.signature_data) {
         body.signatureData = signed.signature_data;
@@ -289,7 +288,7 @@ export const BookingDetailsModal = ({
       const {
         data,
         error
-      } = await supabase.functions.invoke('generate-documents', {
+      } = await supabase.functions.invoke('generate-contract', {
         body
       });
       console.log('📄 Contract generation response:', {
@@ -548,7 +547,7 @@ export const BookingDetailsModal = ({
               </AlertDialog>
             </div>
             
-            {(booking.guests.length > 0 || booking.hasRealSubmissions) && <div className="grid grid-cols-3 gap-2">
+            {(booking.guests.length > 0 || booking.hasRealSubmissions) && <div className="grid grid-cols-2 gap-2">
                 <Button variant="outline" size="sm" onClick={async () => {
                 await handleGeneratePolice();
                 setShowDocuments('police-form');
@@ -565,7 +564,11 @@ export const BookingDetailsModal = ({
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setShowDocuments('id-documents')}>
                   <FileCheck className="w-4 h-4 mr-1" />
-                  ID Docs
+                  Pièces ID
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setShowDocuments('id-cards')}>
+                  <Users className="w-4 h-4 mr-1" />
+                  Fiches ID
                 </Button>
               </div>}
             

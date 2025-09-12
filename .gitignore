@@ -4,12 +4,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Build outputs
-dist/
-build/
-.next/
-out/
-
 # Environment variables
 .env
 .env.local
@@ -17,7 +11,74 @@ out/
 .env.test.local
 .env.production.local
 
-# IDE and editor files
+# Build outputs
+dist/
+build/
+out/
+
+# Logs
+*.log
+logs/
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# next.js build output
+.next
+
+# nuxt.js build output
+.nuxt
+
+# vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# IDE files
 .vscode/
 .idea/
 *.swp
@@ -33,120 +94,48 @@ out/
 ehthumbs.db
 Thumbs.db
 
-# Logs
-logs
-*.log
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+# Test files
+test-*.js
+debug-*.js
+fix-*.js
+*-test.js
+*-debug.js
 
-# Coverage directory used by tools like istanbul
-coverage/
-*.lcov
+# Keep deployment scripts
+!scripts/deploy-edge-functions.js
 
-# nyc test coverage
-.nyc_output
+# Backup directories
+backup-*
+*-backup/
+downloaded-functions/
+edge-functions-backup/
 
-# Dependency directories
-jspm_packages/
+# Generated files
+generate-contract-*.ts
+submit-guest-info-*.ts
+*-FIXED.ts
+*-IMPROVED.ts
+*-LAYOUT-FIXED.ts
+*-UNICODE-SAFE.ts
 
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
-.next
-
-# Nuxt.js build / generate output
-.nuxt
-dist
-
-# Gatsby files
-.cache/
-public
-
-# Storybook build outputs
-.out
-.storybook-out
-
-# Temporary folders
-tmp/
-temp/
+# Deployment files
+deploy-*.ps1
+deploy-*.js
+deploy-report.json
+fixes-report.json
+test-results.json
 
 # Supabase
 .supabase/
-supabase/.temp/
-supabase-cli.tar.gz
-
-# Diagnostic and test files
-*.txt
-*.md
-!README.md
-!CHANGELOG.md
-!LICENSE.md
-!CONTRIBUTING.md
-
-# SQL files (keep only migrations)
-*.sql
-!supabase/migrations/*.sql
-
-# Scripts (keep only essential)
-scripts/
-!scripts/install-rollup-natives.cjs
-
-# Test components (exclude only test files, keep essential components)
-src/components/*Test.tsx
-src/components/mobile/
-
-# Debug and development files (exclude only non-essential debug files)
-src/hooks/useDebugTests.ts
-src/hooks/useIsMobile.ts
-src/scripts/
-
-# Edge functions (keep only active ones)
-supabase/functions/add-admin-user/
-supabase/functions/generate-documents-fixed/
-supabase/functions/generate-id-documents/
-supabase/functions/get-all-users/
 
 # Vercel
-.vercel
+.vercel/
 
-# ========================================
-# FICHIERS ESSENTIELS À INCLURE (NE PAS EXCLURE)
-# ========================================
-# ✅ src/styles/ - Styles et animations
-# ✅ src/components/admin/ - Composants administrateur
-# ✅ src/components/dev/ - Composants de développement
-# ✅ src/contexts/ - Contextes React
-# ✅ src/utils/ - Utilitaires et helpers
-# ✅ src/types/ - Types TypeScript
-# ✅ src/services/ - Services métier
-# ✅ src/hooks/ - Hooks React personnalisés
-# ✅ src/pages/ - Pages de l'application
-# ✅ src/i18n/ - Internationalisation
-# ✅ src/integrations/ - Intégrations externes
+# Local development
+.local/

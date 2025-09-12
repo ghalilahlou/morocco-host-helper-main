@@ -8,12 +8,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { Booking } from '@/types/booking';
 import { useToast } from '@/hooks/use-toast';
 import { DocumentStorageService } from '@/services/documentStorageService';
+import { DocumentSynchronizationService } from '@/services/documentSynchronizationService';
 import { UnifiedDocument } from '@/types/document';
 import jsPDF from 'jspdf';
 interface DocumentsViewerProps {
   booking: Booking;
   onClose: () => void;
-  documentType?: 'all' | 'id-documents' | 'contract' | 'police-form';
+  documentType?: 'all' | 'id-documents' | 'contract' | 'police-form' | 'id-cards';
 }
 interface DocumentUrls {
   guestDocuments: DisplayDocument[];
@@ -63,6 +64,23 @@ export const DocumentsViewer = ({
   const handleGenerateIDDocuments = async () => {
     try {
       console.log('🔍 Récupération documents d\'identité pour:', booking.id);
+      
+      // ✅ CORRECTION : Vérifier et réparer l'intégrité des documents avant affichage
+      const integrityResult = await DocumentSynchronizationService.verifyDocumentIntegrity(booking.id);
+      
+      if (!integrityResult.success && integrityResult.issues.length > 0) {
+        console.warn('⚠️ Problèmes détectés dans les documents:', integrityResult.issues);
+        
+        // Proposer une réparation automatique
+        const repairResult = await DocumentSynchronizationService.repairDocumentIssues(booking.id);
+        if (repairResult.success) {
+          toast({
+            title: "Documents réparés",
+            description: repairResult.message,
+            variant: "default"
+          });
+        }
+      }
       
       // ✅ PRIORITÉ 1 : Récupérer d'abord depuis uploaded_documents (source principale)
       const { data: uploadedDocs, error: uploadedError } = await supabase
@@ -146,7 +164,7 @@ export const DocumentsViewer = ({
         const { data: submissions, error: submissionsError } = await supabase
           .from('v_guest_submissions')
           .select('*')
-          .eq('resolved_booking_id', booking.id)
+          .eq('booking_id', booking.id)
           .not('guest_data', 'is', null);
         
         if (submissionsError) {
@@ -268,16 +286,16 @@ export const DocumentsViewer = ({
             const {
               data: gen,
               error: genErr
-            } = await supabase.functions.invoke('generate-documents', {
+            } = await supabase.functions.invoke('generate-contract', {
               body: {
                 bookingId: booking.id,
-                documentType: 'contract',
+                action: 'sign',
                 signatureData: sig[0].signature_data,
                 signedAt: sig[0].signed_at
               }
             });
-            if (!genErr && gen?.documentUrls?.[0]) {
-              const dataUrl = gen.documentUrls[0] as string;
+            if (!genErr && (gen?.documentUrl || gen?.documentUrls?.[0])) {
+              const dataUrl = (gen.documentUrl || gen.documentUrls?.[0]) as string;
               contractUrl = dataUrl; // immediate display
               // Persist to storage in background
               try {
@@ -841,6 +859,134 @@ export const DocumentsViewer = ({
 
           {documentType === 'all' && <Separator />}
 
+          {/* ID Cards (Fiches ID) */}
+          {(documentType === 'all' || documentType === 'id-cards') && <div>
+              <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
+                <Users className="h-5 w-5" />
+                Fiches ID ({booking.guests?.length || 0})
+                <Badge variant="secondary">Générées</Badge>
+              </h3>
+              {booking.guests && booking.guests.length > 0 ? 
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                  {booking.guests.map((guest, index) => <Card key={guest.id} className="p-4">
+                    <div className="flex flex-col space-y-3">
+                      <div className="flex items-start gap-2">
+                        <Users className="h-4 w-4 text-primary flex-shrink-0 mt-1" />
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-sm leading-tight">
+                            Fiche ID - {guest.fullName.split(' ')[0]}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">Document d'identité formaté</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              console.log('🔍 Génération Fiche ID pour:', guest.fullName);
+                              
+                              const { data, error } = await supabase.functions.invoke('generate-id-documents', {
+                                body: { 
+                                  bookingId: booking.id,
+                                  guestName: guest.fullName,
+                                  guestInfo: {
+                                    guestName: guest.fullName,
+                                    documentType: guest.documentType || 'passport',
+                                    documentNumber: guest.documentNumber || 'Non spécifié',
+                                    nationality: guest.nationality || 'Non spécifiée',
+                                    dateOfBirth: guest.dateOfBirth || 'Non spécifiée',
+                                    placeOfBirth: guest.placeOfBirth || 'Non spécifié',
+                                    generatedAt: new Date().toLocaleString('fr-FR'),
+                                    bookingId: booking.id
+                                  }
+                                }
+                              });
+                              
+                              console.log('📄 Réponse generate-id-documents:', { data, error });
+                              
+                              if (error) {
+                                console.error('❌ Erreur generation Fiche ID:', error);
+                                toast({
+                                  title: "Erreur",
+                                  description: error.message || "Impossible de générer la fiche ID",
+                                  variant: "destructive"
+                                });
+                                return;
+                              }
+                              
+                              if (data && data.success && data.pdfBase64) {
+                                console.log('✅ Fiche ID générée avec succès');
+                                
+                                // Convertir base64 en blob et ouvrir
+                                try {
+                                  const base64Data = data.pdfBase64;
+                                  const byteCharacters = atob(base64Data);
+                                  const byteArray = new Uint8Array(byteCharacters.length);
+                                  
+                                  for (let i = 0; i < byteCharacters.length; i++) {
+                                    byteArray[i] = byteCharacters.charCodeAt(i);
+                                  }
+                                  
+                                  const blob = new Blob([byteArray], { type: 'application/pdf' });
+                                  const blobUrl = URL.createObjectURL(blob);
+                                  
+                                  window.open(blobUrl, '_blank');
+                                  console.log('✅ Fiche ID ouverte via blob');
+                                  
+                                  // Nettoyer l'URL après un délai
+                                  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                                  
+                                  toast({
+                                    title: "Fiche ID générée",
+                                    description: `Fiche d'identité de ${guest.fullName} générée avec succès`,
+                                  });
+                                } catch (blobError) {
+                                  console.error('❌ Erreur création blob:', blobError);
+                                  toast({
+                                    title: "Erreur",
+                                    description: "Erreur lors de l'ouverture du document",
+                                    variant: "destructive"
+                                  });
+                                }
+                              } else {
+                                console.error('❌ Format de réponse inattendu:', data);
+                                toast({
+                                  title: "Erreur",
+                                  description: "Format de réponse non reconnu",
+                                  variant: "destructive"
+                                });
+                              }
+                            } catch (error) {
+                              console.error('❌ Erreur critique:', error);
+                              toast({
+                                title: "Erreur",
+                                description: "Erreur lors de la génération de la fiche ID",
+                                variant: "destructive"
+                              });
+                            }
+                          }}
+                          className="w-full gap-1 text-xs"
+                        >
+                          <Eye className="h-3 w-3" />
+                          <span>Générer</span>
+                        </Button>
+                      </div>
+                    </div>
+                  </Card>)
+                }
+                </div>
+                : 
+                <div className="text-center py-8 text-muted-foreground">
+                  <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>Aucun invité pour générer les fiches ID</p>
+                </div>
+              }
+            </div>}
+
+          {documentType === 'all' && <Separator />}
+
           {/* Police Forms */}
           {(documentType === 'all' || documentType === 'police-form') && <div>
               <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
@@ -895,11 +1041,11 @@ export const DocumentsViewer = ({
                               try {
                                 console.log('🔍 Génération PDF police pour:', booking.id);
                                 
-                                const { data, error } = await supabase.functions.invoke('generate-documents', {
-                                  body: { bookingId: booking.id, documentType: 'police' }
+                                const { data, error } = await supabase.functions.invoke('generate-police-forms', {
+                                  body: { bookingId: booking.id }
                                 });
                                 
-                                console.log('📄 Réponse generate-documents:', { data, error });
+                                console.log('📄 Réponse generate-police-forms:', { data, error });
                                 
                                 if (error) {
                                   console.error('❌ Erreur generation:', error);
@@ -911,12 +1057,13 @@ export const DocumentsViewer = ({
                                   return;
                                 }
                                 
-                                // ✅ CORRECTION: La fonction retourne un objet avec documentUrls
-                                if (data && data.success && data.documentUrls && data.documentUrls.length > 0) {
-                                  console.log('✅ Documents générés:', data.documentUrls.length);
+                                // ✅ CORRECTION: Support des deux formats de réponse
+                                const documentUrls = data.documentUrls || (data.documentUrl ? [data.documentUrl] : []);
+                                if (data && data.success && documentUrls && documentUrls.length > 0) {
+                                  console.log('✅ Documents générés:', documentUrls.length);
                                   
                                   // ✅ CORRECTION: Convertir data URL en blob pour éviter les restrictions de sécurité
-                                  data.documentUrls.forEach((dataUrl: string, index: number) => {
+                                  documentUrls.forEach((dataUrl: string, index: number) => {
                                     if (dataUrl.startsWith('data:application/pdf;base64,')) {
                                       try {
                                         // Extraire le base64 et créer un blob
@@ -946,7 +1093,7 @@ export const DocumentsViewer = ({
                                   
                                   toast({
                                     title: "Fiches générées",
-                                    description: `${data.documentUrls.length} fiche(s) de police ouverte(s)`,
+                                    description: `${documentUrls.length} fiche(s) de police ouverte(s)`,
                                   });
                                 } else if (data && data.error) {
                                   console.error('❌ Erreur de la fonction:', data.error);
