@@ -109,6 +109,8 @@ fix-*.js
 
 # Keep deployment scripts
 !scripts/deploy-edge-functions.js
+!scripts/deploy-to-github-vercel.ps1
+!scripts/deploy-to-github-vercel.sh
 
 # Backup directories
 backup-*
