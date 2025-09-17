@@ -53,7 +53,7 @@ export class AirbnbEdgeFunctionService {
       console.log('✅ Sync completed via Edge Function');
       return {
         success: true,
-        count: data.count,
+        count: data?.count ?? data?.reservations_count ?? 0,
         message: data.message
       };
 

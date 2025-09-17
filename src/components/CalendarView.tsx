@@ -16,6 +16,7 @@ import {
 } from './calendar/CalendarUtils';
 import { AirbnbSyncService, AirbnbReservation } from '@/services/airbnbSyncService';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
+import { fetchAirbnbCalendarEvents, fetchAllCalendarEvents, CalendarEvent } from '@/services/calendarData';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -92,13 +93,20 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [lastSyncDate, setLastSyncDate] = useState<Date | undefined>();
   const [matchedBookings, setMatchedBookings] = useState<string[]>([]);
-const [syncConflicts, setSyncConflicts] = useState<string[]>([]);
-const [icsUrl, setIcsUrl] = useState<string | null>(null);
-const [hasIcs, setHasIcs] = useState(false);
+  const [syncConflicts, setSyncConflicts] = useState<string[]>([]);
+  const [icsUrl, setIcsUrl] = useState<string | null>(null);
+  const [hasIcs, setHasIcs] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
   const { toast } = useToast();
 
+  // Check for debug mode from URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    setDebugMode(urlParams.get('debugCalendar') === '1');
+  }, []);
+
   
-  // Optimized load function with caching
+  // Optimized load function with caching and debug logging
   const loadAirbnbReservations = useCallback(async () => {
     if (!propertyId) return;
     
@@ -106,23 +114,44 @@ const [hasIcs, setHasIcs] = useState(false);
     const cached = airbnbCache.get(propertyId);
     if (cached) {
       setAirbnbReservations(cached.data);
+      if (debugMode) {
+        console.debug('📅 Using cached Airbnb reservations:', cached.data);
+      }
       return;
     }
     
     try {
-      const dbReservations = await AirbnbEdgeFunctionService.getReservations(propertyId);
+      // Get current month range for calendar events
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const startDate = new Date(year, month, 1);
+      const endDate = new Date(year, month + 1, 0);
       
-      // Convert database reservations to AirbnbReservation format
-      const formattedReservations: AirbnbReservation[] = dbReservations.map(r => ({
-        id: r.id,
-        summary: r.summary,
-        startDate: new Date(r.start_date),
-        endDate: new Date(r.end_date),
-        description: r.description || '',
-        guestName: r.guest_name || undefined,
-        numberOfGuests: r.number_of_guests || undefined,
-        airbnbBookingId: r.airbnb_booking_id,
-        rawEvent: (r.raw_event_data as any)?.rawEvent || '',
+      const startStr = startDate.toISOString().split('T')[0];
+      const endStr = endDate.toISOString().split('T')[0];
+      
+      if (debugMode) {
+        console.debug('📅 Fetching Airbnb events for range:', { startStr, endStr, propertyId });
+      }
+      
+      // Use the new calendarData service
+      const calendarEvents = await fetchAirbnbCalendarEvents(propertyId, startStr, endStr);
+      
+      if (debugMode) {
+        console.debug('📅 Raw calendar events from service:', calendarEvents);
+      }
+      
+      // Convert calendar events back to AirbnbReservation format for compatibility
+      const formattedReservations: AirbnbReservation[] = calendarEvents.map(event => ({
+        id: event.id,
+        summary: event.title.replace('Airbnb – ', ''),
+        startDate: new Date(event.start),
+        endDate: new Date(event.end),
+        description: '',
+        guestName: event.title.includes('Airbnb – ') ? event.title.replace('Airbnb – ', '') : undefined,
+        numberOfGuests: undefined,
+        airbnbBookingId: event.id,
+        rawEvent: '',
         source: 'airbnb' as any
       }));
       
@@ -131,7 +160,11 @@ const [hasIcs, setHasIcs] = useState(false);
       
       setAirbnbReservations(formattedReservations);
       
-      // Toujours récupérer le statut de sync en base
+      if (debugMode) {
+        console.debug('📅 Formatted Airbnb reservations:', formattedReservations);
+      }
+      
+      // Get sync status
       const status = await AirbnbEdgeFunctionService.getSyncStatus(propertyId);
       if (status) {
         if (status.last_sync_at) {
@@ -152,7 +185,7 @@ const [hasIcs, setHasIcs] = useState(false);
     } catch (error) {
       console.error('Error loading Airbnb reservations:', error);
     }
-  }, [propertyId]);
+  }, [propertyId, currentDate, debugMode]);
 
   // Charger les réservations et le statut au chargement
   useEffect(() => {
