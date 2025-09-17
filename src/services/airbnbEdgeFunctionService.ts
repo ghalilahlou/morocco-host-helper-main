@@ -23,10 +23,10 @@ export class AirbnbEdgeFunctionService {
       console.log('👤 Session found, user ID:', session.user.id);
       console.log('📡 Calling Edge Function...');
       
-      const { data, error } = await supabase.functions.invoke('sync-airbnb-reservations', {
+      const { data, error } = await supabase.functions.invoke('sync-airbnb-unified', {
         body: {
           propertyId,
-          icsUrl
+          force: false
         },
         headers: {
           Authorization: `Bearer ${session.access_token}`,

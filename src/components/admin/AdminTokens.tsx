@@ -42,6 +42,8 @@ import { useAdmin } from '@/hooks/useAdmin';
 import { useToast } from '@/hooks/use-toast';
 import { TokenAllocation } from '@/types/admin';
 import { TokenControlService } from '@/services/tokenControlService';
+import { TokenCreationService } from '@/services/tokenCreationService';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   TokenControlSettings, 
   TokenControlType, 
@@ -88,20 +90,89 @@ export const AdminTokens = () => {
   // ✅ NOUVEAU : Fonctions pour le contrôle des tokens par propriété
   const loadTokenControlSettings = async () => {
     try {
-      const data = await TokenControlService.getAllTokenControlSettings();
-      setTokenControlSettings(data);
+      console.log('🔍 Chargement des paramètres de contrôle des tokens...');
+      
+      // ✅ CORRECTION : Charger sans relation pour éviter l'erreur PGRST200
+      const { data: settingsData, error: settingsError } = await supabase
+        .from('token_control_settings')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (settingsError) {
+        console.error('❌ Erreur lors du chargement des paramètres:', settingsError);
+        throw settingsError;
+      }
+      
+      console.log('✅ Paramètres de contrôle chargés:', settingsData?.length || 0);
+      
+      // ✅ CORRECTION : Enrichir les données avec les informations des propriétés
+      if (settingsData && settingsData.length > 0) {
+        const enrichedSettings = await Promise.all(
+          settingsData.map(async (setting) => {
+            try {
+              const { data: propertyData } = await supabase
+                .from('properties')
+                .select('id, name, address')
+                .eq('id', setting.property_id)
+                .single();
+              
+              return {
+                ...setting,
+                property_name: propertyData?.name || 'Propriété inconnue',
+                property_address: propertyData?.address || 'Adresse inconnue'
+              };
+            } catch (error) {
+              console.error('❌ Erreur lors du chargement de la propriété:', setting.property_id, error);
+              return {
+                ...setting,
+                property_name: 'Propriété inconnue',
+                property_address: 'Adresse inconnue'
+              };
+            }
+          })
+        );
+        
+        setTokenControlSettings(enrichedSettings);
+      } else {
+        setTokenControlSettings([]);
+      }
+      
     } catch (error) {
-      console.error('Erreur lors du chargement des paramètres de contrôle:', error);
+      console.error('❌ Erreur lors du chargement des paramètres de contrôle:', error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de charger les paramètres de contrôle",
+        variant: "destructive"
+      });
     }
   };
 
   const loadProperties = async () => {
     try {
-      // Charger les propriétés depuis le contexte admin ou directement
-      // Pour l'instant, on utilise une liste vide, à adapter selon votre structure
-      setProperties([]);
+      console.log('🔍 Chargement des propriétés pour la gestion des tokens...');
+      
+      // ✅ CORRECTION : Charger les propriétés depuis Supabase
+      const { data: propertiesData, error: propertiesError } = await supabase
+        .from('properties')
+        .select('id, name, address, is_active')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+      
+      if (propertiesError) {
+        console.error('❌ Erreur lors du chargement des propriétés:', propertiesError);
+        throw propertiesError;
+      }
+      
+      console.log('✅ Propriétés chargées:', propertiesData?.length || 0);
+      setProperties(propertiesData || []);
+      
     } catch (error) {
-      console.error('Erreur lors du chargement des propriétés:', error);
+      console.error('❌ Erreur lors du chargement des propriétés:', error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de charger les propriétés",
+        variant: "destructive"
+      });
     }
   };
 
@@ -117,31 +188,52 @@ export const AdminTokens = () => {
 
     setLoadingControl(true);
     try {
-      const success = await TokenControlService.updateTokenControlSettings({
-        property_id: selectedProperty,
-        ...controlFormData
-      });
-
-      if (success) {
-        toast({
-          title: "Succès",
-          description: "Paramètres de contrôle mis à jour avec succès"
-        });
-        loadTokenControlSettings();
-        setSelectedProperty('');
-        setControlFormData({
-          control_type: 'unlimited',
-          max_reservations: 10,
-          is_enabled: true
-        });
-      } else {
-        throw new Error('Échec de la mise à jour');
+      console.log('🔍 Sauvegarde des paramètres de contrôle pour la propriété:', selectedProperty);
+      console.log('🔍 Données du formulaire:', controlFormData);
+      
+      // ✅ CORRECTION : Créer ou mettre à jour les paramètres de contrôle directement
+      const { data, error } = await supabase
+        .from('token_control_settings')
+        .upsert({
+          property_id: selectedProperty,
+          control_type: controlFormData.control_type,
+          max_reservations: controlFormData.control_type === 'limited' ? controlFormData.max_reservations : null,
+          is_enabled: controlFormData.is_enabled,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'property_id'
+        })
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('❌ Erreur lors de la sauvegarde:', error);
+        throw error;
       }
+      
+      console.log('✅ Paramètres sauvegardés avec succès:', data);
+      
+      toast({
+        title: "Succès",
+        description: "Paramètres de contrôle sauvegardés avec succès"
+      });
+      
+      // Recharger les paramètres
+      await loadTokenControlSettings();
+      
+      // Réinitialiser le formulaire
+      setSelectedProperty('');
+      setControlFormData({
+        control_type: 'unlimited',
+        max_reservations: 10,
+        is_enabled: true
+      });
+      
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
+      console.error('❌ Erreur lors de la sauvegarde:', error);
       toast({
         title: "Erreur",
-        description: "Impossible de sauvegarder les paramètres",
+        description: error instanceof Error ? error.message : "Impossible de sauvegarder les paramètres",
         variant: "destructive"
       });
     } finally {
@@ -596,16 +688,16 @@ export const AdminTokens = () => {
                 <div className="space-y-4">
                   {tokenControlSettings.map((setting) => (
                     <div key={setting.id} className="border rounded-lg p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Building className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <h3 className="font-medium">Propriété {setting.property_id.substring(0, 8)}...</h3>
-                            <p className="text-sm text-muted-foreground">
-                              {setting.property_id}
-                            </p>
-                          </div>
-                        </div>
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-3">
+                           <Building className="h-5 w-5 text-muted-foreground" />
+                           <div>
+                             <h3 className="font-medium">{setting.property_name || 'Propriété inconnue'}</h3>
+                             <p className="text-sm text-muted-foreground">
+                               {setting.property_address || setting.property_id}
+                             </p>
+                           </div>
+                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant={setting.control_type === 'blocked' ? 'destructive' : setting.control_type === 'limited' ? 'secondary' : 'default'}>
                             {TOKEN_CONTROL_OPTIONS.find(opt => opt.value === setting.control_type)?.icon} {setting.control_type}

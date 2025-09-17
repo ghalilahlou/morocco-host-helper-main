@@ -1,0 +1,29 @@
+# Dockerfile pour les Edge Functions Supabase
+FROM denoland/deno:1.40.0
+
+# Définir le répertoire de travail
+WORKDIR /home/deno
+
+# Copier les Edge Functions
+COPY supabase/functions/ ./functions/
+
+# Copier la configuration Supabase
+COPY supabase/config.toml ./config.toml
+
+# Copier les migrations (optionnel, pour le développement local)
+COPY supabase/migrations/ ./migrations/
+
+# Exposer le port des Edge Functions
+EXPOSE 54321
+
+# Variables d'environnement par défaut
+ENV SUPABASE_URL=""
+ENV SUPABASE_ANON_KEY=""
+ENV SUPABASE_SERVICE_ROLE_KEY=""
+ENV SUPABASE_DB_URL=""
+
+# Installer curl pour les health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Commande de démarrage avec serveur HTTP simple
+CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "/home/deno/functions/server.ts"]

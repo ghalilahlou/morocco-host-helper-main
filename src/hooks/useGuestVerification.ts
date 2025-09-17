@@ -123,7 +123,7 @@ export const useGuestVerification = () => {
       
       for (const property of userProperties) {
         try {
-          const { data, error } = await supabase.functions.invoke('list-guest-docs', {
+          const { data, error } = await supabase.functions.invoke('get-guest-documents-unified', {
             body: { propertyId: property.id }
           });
 
@@ -133,30 +133,36 @@ export const useGuestVerification = () => {
           }
 
           // Transform the edge function response to match our types
-          const propertySubmissions: GuestSubmission[] = (data || []).map((item: any) => ({
-            id: item.id,
+          // The function returns { success, bookings, totalBookings }
+          const bookings = data?.bookings || [];
+          const propertySubmissions: GuestSubmission[] = bookings.map((booking: any) => ({
+            id: booking.bookingId || `booking-${Date.now()}-${Math.random()}`,
             token_id: '', // Not returned by edge function, but not needed for display
             booking_data: null, // Not returned by edge function
             guest_data: {
               guests: [{
-                fullName: item.fullName,
-                documentType: item.documentType,
-                documentNumber: item.documentNumber
+                fullName: 'Guest', // Default name since the function doesn't return guest names
+                documentType: 'identity', // Default type
+                documentNumber: 'N/A'
               }]
             },
-            document_urls: item.files?.map((f: any) => f.url) || [],
+            document_urls: [
+              ...(booking.documents?.identity || []).map((doc: any) => doc.url),
+              ...(booking.documents?.contract || []).map((doc: any) => doc.url),
+              ...(booking.documents?.police || []).map((doc: any) => doc.url)
+            ],
             signature_data: undefined,
-            submitted_at: item.createdAt,
-            status: 'completed' as const, // Default status since edge function doesn't return this
+            submitted_at: new Date().toISOString(),
+            status: 'completed' as const,
             reviewed_by: undefined,
             reviewed_at: undefined,
-            created_at: item.createdAt,
-            updated_at: item.createdAt
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           }));
 
           allSubmissions.push(...propertySubmissions);
         } catch (edgeError) {
-          console.error('Error calling list-guest-docs for property:', property.id, edgeError);
+          console.error('Error calling get-guest-documents-unified for property:', property.id, edgeError);
         }
       }
       

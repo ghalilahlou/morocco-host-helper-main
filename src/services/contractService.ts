@@ -55,13 +55,10 @@ export class ContractService {
           hasSignature: !!signedContract.signature_data
         });
         
-        const { data, error } = await supabase.functions.invoke('generate-documents', {
+        const { data, error } = await supabase.functions.invoke('generate-contract', {
           body: {
-            booking: {
-              ...booking,
-              // Remove source to ensure consistent processing
-            },
-            documentType: 'contract',
+            bookingId: booking.id,
+            action: 'sign',
             signatureData: signedContract.signature_data,
             signedAt: signedContract.signed_at
           }
@@ -75,8 +72,8 @@ export class ContractService {
         }
 
         // DOWNLOAD THE SIGNED CONTRACT PDF
-        if (data?.documentUrls && data.documentUrls.length > 0) {
-          const contractDataUrl = data.documentUrls[0];
+        if (data?.documentUrl || (data?.documentUrls && data.documentUrls.length > 0)) {
+          const contractDataUrl = data.documentUrl || data.documentUrls[0];
           console.log(`🔍 ContractService - SIGNED PDF generated for #${bookingShortId}, downloading...`);
           console.log(`🔍 ContractService - SIGNED PDF URL length for #${bookingShortId}:`, contractDataUrl.length);
           
@@ -111,13 +108,10 @@ export class ContractService {
           documentType: 'contract'
         });
         
-        const { data, error } = await supabase.functions.invoke('generate-documents', {
+        const { data, error } = await supabase.functions.invoke('generate-contract', {
           body: {
-            booking: {
-              ...booking,
-              // Remove source to ensure consistent processing
-            },
-            documentType: 'contract'
+            bookingId: booking.id,
+            action: 'generate'
           }
         });
 
@@ -128,9 +122,10 @@ export class ContractService {
           throw new Error('Failed to generate contract');
         }
 
-        // Download the generated PDF if available
-        if (data?.documentUrls && data.documentUrls.length > 0) {
-          const contractDataUrl = data.documentUrls[0];
+        
+        // ✅ CORRECTION : Gestion robuste des réponses
+        if (data?.documentUrl || (data?.documentUrls && data.documentUrls.length > 0)) {
+          const contractDataUrl = data.documentUrl || data.documentUrls[0];
           console.log(`🔍 ContractService - PDF generated for #${bookingShortId}, downloading...`);
           console.log(`🔍 ContractService - PDF URL length for #${bookingShortId}:`, contractDataUrl.length);
           
@@ -151,6 +146,7 @@ export class ContractService {
         } else {
           console.warn(`⚠️ ContractService - No PDF URLs returned for #${bookingShortId}`);
           console.warn(`⚠️ ContractService - Full response data for #${bookingShortId}:`, data);
+          throw new Error('Aucun PDF généré - vérifiez les données de réservation');
         }
         return {
           success: true,
@@ -195,10 +191,10 @@ export class ContractService {
     try {
       console.log('🔍 ContractService - Downloading signed contract PDF...');
       
-      const { data, error } = await supabase.functions.invoke('generate-documents', {
+      const { data, error } = await supabase.functions.invoke('generate-contract', {
         body: {
-          booking,
-          documentType: 'contract',
+          bookingId: booking.id,
+          action: 'sign',
           signatureData: signedContract.signature_data,
           signedAt: signedContract.signed_at
         }
@@ -258,10 +254,15 @@ export async function getContractPdfUrl(params: {
     throw new Error('Missing bookingId or bookingLike');
   }
 
-  const { data, error } = await supabase.functions.invoke('generate-documents', { body });
+  const { data, error } = await supabase.functions.invoke('generate-contract', { 
+    body: {
+      bookingId: bookingId || bookingLike?.id,
+      action: 'generate'
+    }
+  });
   if (error) throw error;
 
-  const url: string = (data?.documentUrls?.[0] || data?.documents?.[0]?.url || '') as string;
+  const url: string = (data?.documentUrl || data?.documentUrls?.[0] || data?.documents?.[0]?.url || '') as string;
 
   if (
     typeof url === 'string' && (

@@ -297,18 +297,18 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
                     return;
                   }
 
-                  console.log('🔍 AVANT APPEL generate-documents:', {
+                  console.log('🔍 AVANT APPEL generate-police-forms:', {
                     bookingId: booking.id,
                     documentType: 'police',
                     supabaseUrl: supabase.supabaseUrl,
                     timestamp: new Date().toISOString()
                   });
 
-                  const { data, error } = await supabase.functions.invoke('generate-documents', {
-                    body: { bookingId: booking.id, documentType: 'police' }
+                  const { data, error } = await supabase.functions.invoke('generate-police-forms', {
+                    body: { bookingId: booking.id }
                   });
 
-                  console.log('🔍 APRÈS APPEL generate-documents:', {
+                  console.log('🔍 APRÈS APPEL generate-police-forms:', {
                     data,
                     error,
                     hasData: !!data,
@@ -357,8 +357,8 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
                 try {
                   console.log('📄 Generating contract for booking:', booking.id);
                   
-                  const { data, error } = await supabase.functions.invoke('generate-documents', {
-                    body: { bookingId: booking.id, documentType: 'contract' }
+                  const { data, error } = await supabase.functions.invoke('generate-contract', {
+                    body: { bookingId: booking.id, action: 'generate' }
                   });
 
                   if (error) {

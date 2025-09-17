@@ -277,8 +277,8 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
         console.log('🔍 Police booking data being sent:', booking);
         console.log('🔍 Police contract template:', booking.property.contract_template);
 
-        const { data, error } = await supabase.functions.invoke('generate-documents', {
-          body: { documentType: 'police', isPreview: true, booking },
+        const { data, error } = await supabase.functions.invoke('generate-police-forms', {
+          body: { bookingId: booking.id },
         });
         if (error) throw error as any;
 

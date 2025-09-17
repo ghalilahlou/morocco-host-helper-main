@@ -1,163 +1,333 @@
 import { supabase } from '@/integrations/supabase/client';
-import { Booking, Guest } from '@/types/booking';
+import { Booking } from '@/types/booking';
 
+export interface DocumentInfo {
+  id: string;
+  type: 'identity' | 'contract' | 'police';
+  fileName: string;
+  url: string;
+  guestName?: string;
+  createdAt: string;
+  isSigned?: boolean;
+  signedAt?: string;
+}
+
+export interface GuestDocumentSummary {
+  bookingId: string;
+  guestCount: number;
+  documents: {
+    identity: DocumentInfo[];
+    contract: DocumentInfo[];
+    police: DocumentInfo[];
+  };
+  summary: {
+    totalDocuments: number;
+    hasAllRequired: boolean;
+    missingTypes: string[];
+  };
+}
+
+export interface EnrichedBooking extends Booking {
+  documentSummary?: GuestDocumentSummary;
+  hasCompleteDocuments: boolean;
+  missingDocumentTypes: string[];
+}
+
+/**
+ * Service unifié pour la gestion des documents
+ * Remplace les services fragmentés par une logique cohérente
+ */
 export class UnifiedDocumentService {
   
   /**
-   * Generate police forms for all guests with standardized format
+   * Récupérer tous les documents pour une réservation
    */
-  static async generatePoliceFormsForAllGuests(booking: Booking): Promise<string[]> {
+  static async getBookingDocuments(bookingId: string): Promise<GuestDocumentSummary | null> {
     try {
-      console.log('🚨 Generating police forms for booking:', booking.id);
+      console.log('📋 Fetching documents for booking:', bookingId);
       
-      const { data, error } = await supabase.functions.invoke('generate-documents', {
-        body: {
-          booking: {
-            ...booking,
-            source: booking.source || 'host' // Default to host if not specified
-          },
-          documentType: 'police'
-        }
+      const { data, error } = await supabase.functions.invoke('get-guest-documents-unified', {
+        body: { bookingId }
       });
 
       if (error) {
-        console.error('Error generating police forms:', error);
-        throw new Error('Failed to generate police forms');
+        console.error('❌ Error fetching documents:', error);
+        return null;
       }
 
-      console.log('✅ Police forms generated successfully');
-      return data.documentUrls || [];
+      if (!data.success || !data.bookings || data.bookings.length === 0) {
+        console.log('ℹ️ No documents found for booking');
+        return null;
+      }
+
+      return data.bookings[0];
     } catch (error) {
-      console.error('Error in generatePoliceFormsForAllGuests:', error);
-      throw error;
+      console.error('❌ Error in getBookingDocuments:', error);
+      return null;
     }
   }
 
   /**
-   * @deprecated Use ContractService.generateAndDownloadContract() instead
-   * This method is kept for backward compatibility only
+   * Récupérer tous les documents pour une propriété
    */
-  static async generateContract(booking: Booking, isSignedContract: boolean = false, signatureData?: string, signedAt?: string): Promise<string> {
-    console.warn('⚠️ UnifiedDocumentService.generateContract is deprecated. Use ContractService.generateAndDownloadContract() instead.');
-    
-    const { ContractService } = await import('./contractService');
-    const result = await ContractService.generateAndDownloadContract(booking);
-    
-    if (!result.success) {
-      throw new Error(result.message);
-    }
-    
-    return '';
-  }
-
-  /**
-   * @deprecated Use ContractService.generateAndDownloadContract() instead
-   * This method is kept for backward compatibility only
-   */
-  static async generateSignedContract(
-    booking: Booking, 
-    signatureData: string, 
-    signedAt: string
-  ): Promise<string> {
-    console.warn('⚠️ UnifiedDocumentService.generateSignedContract: generating server-side without auto-download.');
+  static async getPropertyDocuments(propertyId: string): Promise<GuestDocumentSummary[]> {
     try {
-      const body: any = { documentType: 'contract', signatureData, signedAt };
-      if ((booking as any)?.id) {
-        body.bookingId = (booking as any).id;
-      } else {
-        body.booking = booking;
-      }
-      const { error } = await supabase.functions.invoke('generate-documents', { body });
-      if (error) throw error;
-    } catch (e: any) {
-      console.error('Error generating signed contract without download:', e);
-      throw new Error(e?.message || 'Failed to generate signed contract');
-    }
-    
-    return '';
-  }
-
-  /**
-   * @deprecated Use ContractService.generateAndDownloadContract() instead
-   * This method is kept for backward compatibility only
-   */
-  static async downloadContract(booking: Booking): Promise<void> {
-    console.warn('⚠️ UnifiedDocumentService.downloadContract is deprecated. Use ContractService.generateAndDownloadContract() instead.');
-    
-    const { ContractService } = await import('./contractService');
-    const result = await ContractService.generateAndDownloadContract(booking);
-    
-    if (!result.success) {
-      throw new Error(result.message);
-    }
-  }
-
-  static async downloadPoliceFormsForAllGuests(booking: Booking): Promise<void> {
-    try {
-      console.log('📥 Downloading police forms for booking:', booking.id);
+      console.log('📋 Fetching documents for property:', propertyId);
       
-      const urls = await this.generatePoliceFormsForAllGuests(booking);
-      
-      // Download each police form as a proper PDF file (staggered + Blob URLs to avoid browser blocking)
-      urls.forEach((dataUrl, index) => {
-        const guest = booking.guests[index];
-        const guestName = guest?.fullName?.replace(/[^a-zA-Z0-9]/g, '_') || `guest_${index + 1}`;
-        const fileName = `fiche_police_${guestName}_${Date.now()}.pdf`;
-
-        setTimeout(async () => {
-          try {
-            // Convert data URL to Blob for more reliable downloads
-            let href = dataUrl;
-            if (dataUrl.startsWith('data:')) {
-              const res = await fetch(dataUrl);
-              const blob = await res.blob();
-              const blobUrl = URL.createObjectURL(blob);
-              href = blobUrl;
-
-              // Create a download link and trigger download
-              const link = document.createElement('a');
-              link.href = href;
-              link.download = fileName;
-              link.style.display = 'none';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-
-              // Cleanup
-              setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
-            } else {
-              // Fallback if it's already a regular URL
-              const link = document.createElement('a');
-              link.href = href;
-              link.download = fileName;
-              link.style.display = 'none';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            }
-          } catch (e) {
-            console.error('❌ Failed to download police form index', index, e);
-          }
-        }, index * 500); // stagger to avoid popup/download blocking
+      const { data, error } = await supabase.functions.invoke('get-guest-documents-unified', {
+        body: { propertyId }
       });
+
+      if (error) {
+        console.error('❌ Error fetching documents:', error);
+        return [];
+      }
+
+      if (!data.success || !data.bookings) {
+        console.log('ℹ️ No documents found for property');
+        return [];
+      }
+
+      return data.bookings;
     } catch (error) {
-      console.error('Error downloading police forms:', error);
-      throw error;
+      console.error('❌ Error in getPropertyDocuments:', error);
+      return [];
     }
   }
 
   /**
-   * Get document generation status
+   * Enrichir les réservations avec les informations de documents
    */
-  static getDocumentStatus(booking: Booking): {
-    hasPoliceForm: boolean;
-    hasContract: boolean;
-    hasGuests: boolean;
-  } {
-    return {
-      hasPoliceForm: booking.documentsGenerated?.policeForm || false,
-      hasContract: booking.documentsGenerated?.contract || false,
-      hasGuests: booking.guests && booking.guests.length > 0
+  static async enrichBookingsWithDocuments(bookings: Booking[]): Promise<EnrichedBooking[]> {
+    if (bookings.length === 0) return [];
+
+    try {
+      console.log(`📋 Enriching ${bookings.length} bookings with document data`);
+      
+      const enrichedBookings: EnrichedBooking[] = [];
+
+      for (const booking of bookings) {
+        const documentSummary = await this.getBookingDocuments(booking.id);
+        
+        const enrichedBooking: EnrichedBooking = {
+          ...booking,
+          documentSummary,
+          hasCompleteDocuments: documentSummary?.summary.hasAllRequired || false,
+          missingDocumentTypes: documentSummary?.summary.missingTypes || ['identity', 'contract', 'police']
+        };
+
+        enrichedBookings.push(enrichedBooking);
+      }
+
+      console.log(`✅ Enriched ${enrichedBookings.length} bookings`);
+      return enrichedBookings;
+    } catch (error) {
+      console.error('❌ Error enriching bookings:', error);
+      return bookings.map(booking => ({
+        ...booking,
+        hasCompleteDocuments: false,
+        missingDocumentTypes: ['identity', 'contract', 'police']
+      }));
+    }
+  }
+
+  /**
+   * Générer les documents manquants pour une réservation
+   */
+  static async generateMissingDocuments(bookingId: string, documentTypes: string[]): Promise<{
+    success: boolean;
+    message: string;
+    generatedDocuments: string[];
+  }> {
+    try {
+      console.log(`📄 Generating missing documents for booking ${bookingId}:`, documentTypes);
+      
+      const generatedDocuments: string[] = [];
+
+      for (const docType of documentTypes) {
+        try {
+          let functionName = '';
+          let requestBody: any = { bookingId };
+
+          switch (docType) {
+            case 'identity':
+              functionName = 'generate-id-documents';
+              break;
+            case 'contract':
+              functionName = 'generate-contract';
+              requestBody.action = 'generate';
+              break;
+            case 'police':
+              functionName = 'generate-police-forms';
+              break;
+            default:
+              console.warn(`⚠️ Unknown document type: ${docType}`);
+              continue;
+          }
+
+          const { data, error } = await supabase.functions.invoke(functionName, {
+            body: requestBody
+          });
+
+          if (error) {
+            console.error(`❌ Error generating ${docType}:`, error);
+          } else if (data.success || data.documentUrl) {
+            generatedDocuments.push(docType);
+            console.log(`✅ Generated ${docType} document`);
+          }
+        } catch (docError) {
+          console.error(`❌ Exception generating ${docType}:`, docError);
+        }
+      }
+
+      const success = generatedDocuments.length === documentTypes.length;
+      const message = success 
+        ? `Successfully generated ${generatedDocuments.length} document(s)`
+        : `Generated ${generatedDocuments.length} of ${documentTypes.length} document(s)`;
+
+      return {
+        success,
+        message,
+        generatedDocuments
+      };
+    } catch (error) {
+      console.error('❌ Error generating missing documents:', error);
+      return {
+        success: false,
+        message: 'Error generating documents',
+        generatedDocuments: []
+      };
+    }
+  }
+
+  /**
+   * Synchroniser les réservations Airbnb
+   */
+  static async syncAirbnbReservations(propertyId: string, force: boolean = false): Promise<{
+    success: boolean;
+    message: string;
+    reservationsCount: number;
+  }> {
+    try {
+      console.log(`🔄 Syncing Airbnb reservations for property ${propertyId}`);
+      
+      const { data, error } = await supabase.functions.invoke('sync-airbnb-unified', {
+        body: { propertyId, force }
+      });
+
+      if (error) {
+        console.error('❌ Error syncing Airbnb:', error);
+        return {
+          success: false,
+          message: `Sync failed: ${error.message}`,
+          reservationsCount: 0
+        };
+      }
+
+      if (data.success) {
+        console.log(`✅ Synced ${data.reservations_count} reservations`);
+        return {
+          success: true,
+          message: data.message,
+          reservationsCount: data.reservations_count
+        };
+      } else {
+        return {
+          success: false,
+          message: data.message || 'Sync failed',
+          reservationsCount: 0
+        };
+      }
+    } catch (error) {
+      console.error('❌ Error in syncAirbnbReservations:', error);
+      return {
+        success: false,
+        message: 'Sync failed due to error',
+        reservationsCount: 0
+      };
+    }
+  }
+
+  /**
+   * Vérifier l'intégrité des documents
+   */
+  static async verifyDocumentIntegrity(bookingId: string): Promise<{
+    success: boolean;
+    message: string;
+    issues: string[];
+    summary: {
+      totalDocuments: number;
+      identityDocuments: number;
+      contractDocuments: number;
+      policeDocuments: number;
     };
+  }> {
+    try {
+      const documentSummary = await this.getBookingDocuments(bookingId);
+      
+      if (!documentSummary) {
+        return {
+          success: false,
+          message: 'No documents found for booking',
+          issues: ['No documents found'],
+          summary: {
+            totalDocuments: 0,
+            identityDocuments: 0,
+            contractDocuments: 0,
+            policeDocuments: 0
+          }
+        };
+      }
+
+      const issues: string[] = [];
+      const summary = {
+        totalDocuments: documentSummary.summary.totalDocuments,
+        identityDocuments: documentSummary.documents.identity.length,
+        contractDocuments: documentSummary.documents.contract.length,
+        policeDocuments: documentSummary.documents.police.length
+      };
+
+      // Check for missing document types
+      if (summary.identityDocuments === 0) {
+        issues.push('Missing identity documents');
+      }
+      if (summary.contractDocuments === 0) {
+        issues.push('Missing contract documents');
+      }
+      if (summary.policeDocuments === 0) {
+        issues.push('Missing police forms');
+      }
+
+      // Check for unsigned contracts
+      const unsignedContracts = documentSummary.documents.contract.filter(doc => !doc.isSigned);
+      if (unsignedContracts.length > 0) {
+        issues.push(`${unsignedContracts.length} unsigned contract(s)`);
+      }
+
+      const success = issues.length === 0;
+      const message = success 
+        ? `All documents are complete and valid`
+        : `${issues.length} issue(s) found`;
+
+      return {
+        success,
+        message,
+        issues,
+        summary
+      };
+    } catch (error) {
+      console.error('❌ Error verifying document integrity:', error);
+      return {
+        success: false,
+        message: 'Error verifying documents',
+        issues: ['Verification failed'],
+        summary: {
+          totalDocuments: 0,
+          identityDocuments: 0,
+          contractDocuments: 0,
+          policeDocuments: 0
+        }
+      };
+    }
   }
 }

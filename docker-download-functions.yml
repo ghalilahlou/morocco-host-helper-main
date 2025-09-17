@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  supabase-downloader:
+    image: supabase/cli:latest
+    container_name: supabase-functions-downloader
+    volumes:
+      - ./downloaded-functions:/app/downloaded-functions
+      - ./.env:/app/.env:ro
+      - ./supabase:/app/supabase:ro
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    working_dir: /app
+    command: >
+      sh -c "
+        echo '🚀 Début du téléchargement des edge functions...' &&
+        supabase --version &&
+        echo '📋 Liste des fonctions disponibles:' &&
+        supabase functions list --project-id csopyblkfyofwkeqqegd &&
+        echo '📥 Téléchargement des fonctions...' &&
+        mkdir -p downloaded-functions &&
+        echo '✅ Téléchargement terminé'
+      "
+    networks:
+      - supabase-network
+
+  # Service alternatif utilisant curl pour télécharger via l'API
+  api-downloader:
+    image: curlimages/curl:latest
+    container_name: supabase-api-downloader
+    volumes:
+      - ./downloaded-functions:/app/downloaded-functions
+      - ./.env:/app/.env:ro
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    working_dir: /app
+    command: >
+      sh -c "
+        echo '🔗 Téléchargement via API REST...' &&
+        mkdir -p downloaded-functions &&
+        
+        # Liste des fonctions à télécharger
+        FUNCTIONS='extract-document-data sync-airbnb-calendar sync-airbnb-reservations get-airbnb-reservation send-owner-notification submit-guest-info resolve-guest-link storage-sign-url save-contract-signature issue-guest-link list-guest-docs get-guest-docs get-booking-verification-summary execute-sql get-admin-users get-admin-stats verify-admin-status suspend-user delete-user get-performance-stats save-contract-signature-v2 create-storage-bucket generate-documents-simple save-contract-signature-simple save-contract-signature-final save-signature-radical save-signature-sans-rfs save-contract-signature-fixed create-booking-for-signature add-admin-user generate-documents-fixed generate-id-documents get-all-users sync-documents generate-contract generate-police-forms document-utils'
+        
+        for func in $$FUNCTIONS; do
+          echo \"📥 Téléchargement de $$func...\" &&
+          mkdir -p downloaded-functions/$$func &&
+          
+          # Essayer de récupérer la fonction
+          curl -H \"Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY\" \
+               -H \"apikey: $$SUPABASE_SERVICE_ROLE_KEY\" \
+               -H \"Content-Type: application/json\" \
+               \"$$SUPABASE_URL/functions/v1/$$func\" \
+               -o downloaded-functions/$$func/response.json \
+               -w \"HTTP Status: %{http_code}\n\" || echo \"⚠️  Échec pour $$func\" &&
+          
+          # Récupérer les métadonnées
+          curl -H \"Authorization: Bearer $$SUPABASE_SERVICE_ROLE_KEY\" \
+               -H \"apikey: $$SUPABASE_SERVICE_ROLE_KEY\" \
+               -H \"Content-Type: application/json\" \
+               \"$$SUPABASE_URL/rest/v1/functions?name=eq.$$func\" \
+               -o downloaded-functions/$$func/metadata.json \
+               -w \"HTTP Status: %{http_code}\n\" || echo \"⚠️  Métadonnées non disponibles pour $$func\" &&
+          
+          sleep 1
+        done &&
+        
+        echo '📋 Génération du rapport...' &&
+        echo '{\"timestamp\": \"'$$(date -Iseconds)'\", \"method\": \"docker-api\", \"functions_downloaded\": '$$(ls downloaded-functions | wc -l)'}' > downloaded-functions/report.json &&
+        echo '✅ Téléchargement terminé!'
+      "
+    networks:
+      - supabase-network
+
+  # Service pour créer un script de sauvegarde local
+  local-backup:
+    image: alpine:latest
+    container_name: supabase-local-backup
+    volumes:
+      - ./supabase:/app/supabase:ro
+      - ./downloaded-functions:/app/downloaded-functions
+    working_dir: /app
+    command: >
+      sh -c "
+        echo '📦 Création de la sauvegarde locale...' &&
+        mkdir -p downloaded-functions/local-backup &&
+        
+        if [ -d 'supabase/functions' ]; then
+          cp -r supabase/functions downloaded-functions/local-backup/ &&
+          echo '✅ Fonctions locales sauvegardées' &&
+          
+          # Créer un index
+          find downloaded-functions/local-backup/functions -name 'index.ts' -type f > downloaded-functions/local-backup/functions-index.txt &&
+          echo '📋 Index des fonctions créé' &&
+          
+          # Compter les fonctions
+          FUNCTION_COUNT=$$(find downloaded-functions/local-backup/functions -name 'index.ts' -type f | wc -l) &&
+          echo \"📊 $$FUNCTION_COUNT fonctions locales trouvées\"
+        else
+          echo '⚠️  Dossier supabase/functions non trouvé'
+        fi &&
+        
+        echo '🎉 Sauvegarde locale terminée!'
+      "
+    networks:
+      - supabase-network
+
+networks:
+  supabase-network:
+    driver: bridge

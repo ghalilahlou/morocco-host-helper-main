@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Service principal pour les Edge Functions - Optimisé pour Docker Desktop
+  supabase-functions:
+    build:
+      context: .
+      dockerfile: Dockerfile.functions
+    container_name: morocco-host-functions
+    ports:
+      - "54321:54321"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL}
+      - DENO_ENV=production
+      - FUNCTIONS_PORT=54321
+    volumes:
+      # Montage en lecture seule pour la production
+      - ./supabase/functions:/home/deno/functions:ro
+      - ./supabase/config.toml:/home/deno/config.toml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:54321/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - supabase-network
+    labels:
+      - "com.docker.compose.project=morocco-host-helper"
+      - "com.docker.compose.service=functions"
+
+  # Service de base de données locale (optionnel pour le développement)
+  supabase-db:
+    image: supabase/postgres:15.1.0.117
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+    volumes:
+      - supabase_db_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    networks:
+      - supabase-network
+    profiles:
+      - local-db
+
+  # Service Redis pour le cache (optionnel)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - supabase-network
+    profiles:
+      - cache
+
+networks:
+  supabase-network:
+    driver: bridge
+
+volumes:
+  supabase_db_data:
+  redis_data:

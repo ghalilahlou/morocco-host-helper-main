@@ -19,6 +19,7 @@ import { EnhancedFileUpload } from '@/components/ui/enhanced-file-upload';
 import { AnimatedStepper } from '@/components/ui/animated-stepper';
 import { IntuitiveBookingPicker } from '@/components/ui/intuitive-date-picker';
 import { validateToken, isTestToken, logTestTokenUsage, TEST_TOKENS_CONFIG } from '@/utils/testTokens';
+import { validateTokenDirect } from '@/utils/tokenValidation';
 
 // Liste complète des nationalités
 const NATIONALITIES = [
@@ -169,11 +170,6 @@ export const GuestVerification = () => {
       }
 
       console.log('🔍 GuestVerification params:', { propertyId, token, airbnbBookingId });
-      console.log('🔍 About to call resolve-guest-link with:', { 
-        propertyId, 
-        token, 
-        airbnbCode: airbnbBookingId 
-      });
 
       try {
         // ✅ NOUVEAU : Vérifier d'abord si c'est un token de test
@@ -191,65 +187,20 @@ export const GuestVerification = () => {
           }
         }
 
-        // Tentative d'appel à la fonction Edge
-        let tokenData;
-        let error;
+        // ✅ CORRECTION : Utilisation de la validation directe
+        console.log('🔍 Validation directe du token...');
         
-        try {
-          const response = await supabase.functions.invoke('resolve-guest-link', {
-            body: { 
-              propertyId, 
-              token, 
-              airbnbCode: airbnbBookingId
-            }
-          });
-          
-          if (response.data) {
-            tokenData = response.data;
-          } else {
-            error = response.error;
-          }
-        } catch (edgeFunctionError) {
-          console.log('⚠️ Edge Function non disponible (quota dépassé), utilisation du contournement...');
-          
-          // CONTOURNEMENT : Récupération directe des données
-          try {
-            // Récupérer les informations de la propriété directement
-            const { data: propertyData, error: propertyError } = await supabase
-              .from('properties')
-              .select('id, name, address, contract_template, contact_info, house_rules')
-              .eq('id', propertyId)
-              .single();
-            
-            if (propertyError) throw propertyError;
-            
-            // Créer un objet compatible avec le format attendu
-            tokenData = {
-              ok: true,
-              propertyId: propertyId,
-              bookingId: airbnbBookingId || null,
-              token: token,
-              property: propertyData
-            };
-            
-            console.log('✅ Contournement réussi, données récupérées directement');
-            
-          } catch (fallbackError) {
-            console.error('❌ Échec du contournement:', fallbackError);
-            error = fallbackError;
-          }
-        }
-
-        if (error) {
-          console.error('resolve-guest-link error:', error);
-          setIsValidToken(false);
-        } else if (tokenData?.ok) {
+        const validationResult = await validateTokenDirect(propertyId, token);
+        
+        if (validationResult.isValid && validationResult.propertyData) {
+          console.log('✅ Token validé avec succès');
           setIsValidToken(true);
-          setPropertyName(tokenData.property?.name || 'Property');
+          setPropertyName(validationResult.propertyData.name || 'Property');
         } else {
-          console.error('resolve-guest-link failed:', tokenData);
+          console.error('❌ Token invalide:', validationResult.error);
           setIsValidToken(false);
         }
+        
       } catch (error) {
         console.error('Error verifying token:', error);
         setIsValidToken(false);
@@ -672,6 +623,14 @@ export const GuestVerification = () => {
         documentUrls: finalDocumentUrls
       };
 
+      // ✅ CORRECTION : Gestion d'erreur améliorée pour submit-guest-info
+      console.log('🔍 Appel de submit-guest-info avec:', {
+        propertyId,
+        hasToken: !!token,
+        hasBookingData: !!bookingData,
+        hasGuestData: !!finalGuestData
+      });
+
       const { data, error: functionError } = await supabase.functions.invoke('submit-guest-info', {
         body: {
           propertyId,
@@ -682,8 +641,14 @@ export const GuestVerification = () => {
       });
 
       if (functionError) {
-        console.error('Function error:', functionError);
-        throw new Error(functionError.message || 'Erreur lors de la soumission');
+        console.error('❌ Function error:', functionError);
+        
+        // ✅ CORRECTION : Gestion spécifique des erreurs 401
+        if (functionError.message?.includes('401') || functionError.message?.includes('non-2xx')) {
+          throw new Error('Token invalide ou expiré. Veuillez contacter votre hôte pour obtenir un nouveau lien.');
+        }
+        
+        throw new Error(functionError.message || 'Erreur lors de la soumission des données');
       }
 
       if (!data?.success || !data?.bookingId) {
@@ -700,6 +665,22 @@ export const GuestVerification = () => {
       }
       
       console.log('✅ Booking created with ID:', bookingId);
+
+      // ✅ NOUVEAU : Synchroniser les documents après création de la réservation
+      try {
+        console.log('🔄 Synchronizing documents after booking creation...');
+        const { DocumentSyncService } = await import('@/services/documentSyncService');
+        const syncResult = await DocumentSyncService.syncAllDocuments(bookingId);
+        
+        if (syncResult.success) {
+          console.log('✅ Documents synchronized successfully:', syncResult.message);
+        } else {
+          console.warn('⚠️ Document sync failed:', syncResult.error);
+        }
+      } catch (syncError) {
+        console.error('❌ Document sync error:', syncError);
+        // Ne pas faire échouer le processus pour une erreur de sync
+      }
 
       // ✅ CORRECTION : Sauvegarder dans localStorage avant redirection
       localStorage.setItem('currentBookingId', bookingId);

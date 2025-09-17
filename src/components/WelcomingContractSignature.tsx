@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getContractPdfUrl } from '@/services/contractService';
+import { ApiService } from '@/services/apiService';
 import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface WelcomingContractSignatureProps {
@@ -74,7 +75,16 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   onBack,
   onSignatureComplete
 }) => {
-  const [currentStep, setCurrentStep] = useState<'welcome' | 'review' | 'signature' | 'celebration'>('welcome');
+  const [currentStep, setCurrentStep] = useState<'welcome' | 'review' | 'signature' | 'celebration'>('review');
+  
+  // Debug: Log current step
+  useEffect(() => {
+    console.log('🔍 Current step:', currentStep);
+    // Réinitialiser l'état du canvas quand on change d'étape
+    if (currentStep !== 'signature') {
+      setCanvasInitialized(false);
+    }
+  }, [currentStep]);
   const [isAgreed, setIsAgreed] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,6 +93,8 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const location = useLocation();
   const t = useT();
 
+  
+  
   // ✅ CORRECTION : Fonction robuste pour récupérer l'ID de réservation
   const getBookingId = (): string | null => {
     // 1. Vérifier location.state (navigation depuis GuestVerification)
@@ -113,7 +125,14 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
       return storedBookingId;
     }
 
-    console.warn('⚠️ Aucun Booking ID trouvé dans toutes les sources');
+    // 5. ✅ NOUVEAU : Essayer de créer un ID temporaire basé sur les données disponibles
+    if (propertyData?.id && guestData?.guests?.[0]?.fullName) {
+      const tempId = `temp-${propertyData.id}-${Date.now()}`;
+      console.log("⚠️ Création d'un ID temporaire:", tempId);
+      return tempId;
+    }
+
+    console.warn("⚠️ Aucun Booking ID trouvé dans toutes les sources");
     return null;
   };
 
@@ -221,6 +240,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           documentType: g.documentType,
         }));
         const bookingLike = {
+          id: bookingData?.id || bookingIdFromState, // ← AJOUT DE L'ID !
           property: {
             id: propertyData?.id,
             name: propertyData?.name,
@@ -284,20 +304,17 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
   // État pour la signature
   const [isDrawing, setIsDrawing] = useState(false);
+  const [canvasInitialized, setCanvasInitialized] = useState(false);
+  const [signedContractUrl, setSignedContractUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (currentStep !== 'signature') return;
-    
-    // Utiliser un délai pour s'assurer que le DOM est prêt
-    const setupCanvas = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        console.error('❌ Canvas not found');
-        return;
-      }
-
-      console.log('🎨 Setting up canvas...');
-
+  // Configuration du canvas avec un callback ref (une seule fois)
+  const canvasCallbackRef = useCallback((canvas: HTMLCanvasElement | null) => {
+    if (canvas && currentStep === 'signature' && !canvasInitialized) {
+      console.log('🎨 Setting up canvas via callback ref...');
+      
+      // Mettre à jour la ref pour les autres fonctions
+      canvasRef.current = canvas;
+      
       // Configuration simple du canvas
       canvas.width = 600;
       canvas.height = 250;
@@ -313,16 +330,29 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      ctx.imageSmoothingEnabled = true;
       
-      console.log('✅ Canvas ready');
-    };
+      setCanvasInitialized(true);
+      console.log('✅ Canvas ready via callback ref');
+    }
+  }, [currentStep, canvasInitialized]);
 
-    // Essayer immédiatement, puis avec un délai si nécessaire
-    setupCanvas();
-    const timeoutId = setTimeout(setupCanvas, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, [currentStep]);
+  // Restaurer la signature si elle existe déjà
+  useEffect(() => {
+    if (signature && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          console.log('🔄 Signature restaurée sur le canvas');
+        };
+        img.src = signature;
+      }
+    }
+  }, [signature, currentStep]);
 
   const getMousePos = (canvas: HTMLCanvasElement, e: MouseEvent | TouchEvent) => {
     const rect = canvas.getBoundingClientRect();
@@ -380,12 +410,33 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     setIsDrawing(false);
     
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      console.error('❌ Canvas not found during stop drawing');
+      return;
+    }
     
     // Sauvegarder la signature
     const dataURL = canvas.toDataURL('image/png');
-    setSignature(dataURL);
-    console.log('✅ Signature saved');
+    
+    // Vérifier que la signature n'est pas vide
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hasSignature = imageData.data.some((pixel, index) => 
+        index % 4 === 3 && pixel > 0 // Vérifier les pixels alpha (transparence)
+      );
+      
+      if (hasSignature) {
+        setSignature(dataURL);
+        console.log('✅ Signature saved with content');
+      } else {
+        console.log('⚠️ No signature content detected');
+      }
+    } else {
+      // Fallback si on ne peut pas vérifier le contenu
+      setSignature(dataURL);
+      console.log('✅ Signature saved (verification skipped)');
+    }
   };
 
   const clearSignature = () => {
@@ -411,15 +462,53 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   };
 
   const handleSubmitSignature = async () => {
-    if (!signature || !isAgreed) return;
+    if (!signature || !isAgreed) {
+      toast({
+        title: 'Signature requise',
+        description: 'Veuillez signer le contrat et accepter les conditions avant de continuer.',
+        variant: 'destructive'
+      });
+      return;
+    }
 
+    
+    // ✅ CORRECTION : Validation robuste de la signature
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      toast({
+        title: 'Erreur technique',
+        description: 'Impossible de capturer la signature. Veuillez recharger la page et réessayer.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Vérifier que la signature n'est pas vide
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hasSignature = imageData.data.some((pixel, index) => 
+        index % 4 === 3 && pixel > 0 // Vérifier les pixels alpha (transparence)
+      );
+      
+      if (!hasSignature) {
+        toast({
+          title: 'Signature requise',
+          description: 'Veuillez dessiner votre signature avant de continuer.',
+          variant: 'destructive'
+        });
+        return;
+      }
+    }
+
+    console.log('🔄 Submitting signature...');
     setIsSubmitting(true);
     try {
       // ✅ CORRECTION : Utiliser l'ID existant ou échouer
       const bookingId = getBookingId();
-      
+
       if (!bookingId) {
-        // ✅ CORRECTION : Message d'erreur plus informatif
+        // ✅ CORRECTION : Message d'erreur plus informatif et solution
         const errorMessage = 'ID de réservation manquant. ' +
           'Veuillez revenir à la page précédente et réessayer, ' +
           'ou contactez votre hôte pour obtenir un nouveau lien.';
@@ -429,6 +518,17 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           description: errorMessage, 
           variant: 'destructive' 
         });
+        
+        // ✅ NOUVEAU : Essayer de rediriger vers la page de vérification
+        setTimeout(() => {
+          const currentPath = window.location.pathname;
+          const pathParts = currentPath.split('/');
+          if (pathParts.length >= 4) {
+            const propertyId = pathParts[2];
+            const token = pathParts[3];
+            window.location.href = `/guest-verification/${propertyId}/${token}`;
+          }
+        }, 3000);
         
         throw new Error(errorMessage);
       }
@@ -440,28 +540,30 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       const signerEmail = guestData?.email || null;
       const signerPhone = guestData?.phone || null;
       
-      const { data: signatureResult, error: signErr } = await supabase.functions.invoke('save-contract-signature', {
-        body: {
-          bookingId: bookingId,
-          signerName: signerName,
-          signerEmail: signerEmail,
-          signerPhone: signerPhone,
-          signatureDataUrl: signature
-        }
+      const signatureResult = await ApiService.saveContractSignature({
+        bookingId: bookingId,
+        signerName: signerName,
+        signerEmail: signerEmail,
+        signerPhone: signerPhone,
+        signatureDataUrl: signature
       });
-      
-      if (signErr) {
-        console.error('❌ Contract signature error:', signErr);
-        throw signErr;
-      }
 
       console.log('✅ Contract signature saved successfully:', signatureResult);
 
-      // Generate signed PDF (non-blocking)
+      // Generate signed PDF and get URL
       try {
         const { UnifiedDocumentService } = await import('@/services/unifiedDocumentService');
         const signedAt = new Date().toISOString();
-        await UnifiedDocumentService.generateSignedContract({ id: bookingId } as any, signature, signedAt);
+        const contractResult = await UnifiedDocumentService.generateSignedContract({ id: bookingId } as any, signature, signedAt);
+        console.log('✅ Contrat signé généré avec succès:', contractResult);
+        
+        // Récupérer l'URL du contrat signé
+        if (contractResult && contractResult.documentUrl) {
+          setSignedContractUrl(contractResult.documentUrl);
+          console.log('📄 URL du contrat signé:', contractResult.documentUrl);
+        } else {
+          console.warn('⚠️ Aucune URL de contrat signé retournée');
+        }
       } catch (generateError) {
         console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
       }
@@ -685,6 +787,12 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 <p className="text-xl text-gray-600 max-w-2xl mx-auto">
                   Prenez le temps de lire attentivement les conditions de votre séjour
                 </p>
+                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
+                  <p className="text-blue-800 font-medium">
+                    📋 Important : Veuillez lire entièrement le contrat ci-dessous avant de procéder à la signature. 
+                    Votre signature électronique a la même valeur légale qu'une signature manuscrite.
+                  </p>
+                </div>
               </div>
 
               <Card className="shadow-2xl border-0 bg-white/90 backdrop-blur-sm">
@@ -778,7 +886,36 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 <p className="text-xl text-gray-600 max-w-2xl mx-auto">
                   Votre signature électronique a la même valeur légale qu'une signature manuscrite
                 </p>
+                <div className="flex justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={() => setCurrentStep('welcome')}
+                    size="sm"
+                    className="px-4 py-2"
+                  >
+                    ← Retour à l'accueil
+                  </Button>
+                </div>
               </div>
+
+              {/* Affichage du contrat pendant la signature */}
+              {contractUrl && (
+                <Card className="shadow-2xl border-0 bg-white/90 backdrop-blur-sm">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-teal-50 border-b">
+                    <CardTitle className="flex items-center gap-3 text-xl">
+                      <FileText className="w-6 h-6 text-blue-600" />
+                      Votre contrat de location
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <iframe 
+                      src={contractUrl} 
+                      title="Contrat de location" 
+                      className="w-full h-[400px] rounded-b-lg" 
+                    />
+                  </CardContent>
+                </Card>
+              )}
 
               <Card className="shadow-2xl border-0 bg-white/90 backdrop-blur-sm max-w-3xl mx-auto">
                 <CardContent className="p-8 space-y-8">
@@ -842,7 +979,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                               ${signature ? 'border-green-300 shadow-green-100' : 'border-gray-300 group-hover:border-blue-400'}
                             `}>
                               <canvas
-                                ref={canvasRef}
+                                ref={canvasCallbackRef}
                                 width={600}
                                 height={250}
                                 className="w-full h-full cursor-crosshair touch-none select-none rounded-2xl border border-blue-200"
@@ -855,6 +992,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                   minHeight: '200px',
                                   backgroundColor: 'white'
                                 }}
+                                willreadfrequently={true}
                                 onContextMenu={(e) => e.preventDefault()}
                                 onMouseDown={startDrawing}
                                 onMouseMove={draw}
@@ -1156,6 +1294,46 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                     <p>🏠 Les informations d'accès vous seront envoyées avant votre arrivée</p>
                     <p>📞 Notre équipe reste à votre disposition pour toute question</p>
                   </div>
+                  
+                  {/* Affichage du contrat signé */}
+                  {signedContractUrl && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.8 }}
+                      className="mt-8 p-6 bg-white rounded-2xl border border-gray-200 shadow-lg"
+                    >
+                      <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-blue-600" />
+                        Votre contrat signé
+                      </h3>
+                      <div className="space-y-4">
+                        <p className="text-gray-600">
+                          Votre contrat a été généré et signé avec succès. Vous pouvez le télécharger ou le consulter.
+                        </p>
+                        <div className="flex gap-3 justify-center">
+                          <Button
+                            onClick={() => window.open(signedContractUrl, '_blank')}
+                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                          >
+                            <FileText className="w-4 h-4 mr-2" />
+                            Voir le contrat
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = signedContractUrl;
+                              link.download = `contrat-signe-${bookingId}.pdf`;
+                              link.click();
+                            }}
+                            variant="outline"
+                          >
+                            Télécharger PDF
+                          </Button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
 
                   <div className="pt-4">
                     <p className="text-2xl text-center">

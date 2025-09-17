@@ -116,7 +116,7 @@ export const ContractSigning: React.FC = () => {
         }
 
         // Get the guest submission data using edge function (safer with RLS)
-        const { data: guestDocs, error: submissionError } = await supabase.functions.invoke('list-guest-docs', {
+        const { data: guestDocs, error: submissionError } = await supabase.functions.invoke('get-guest-documents-unified', {
           body: { propertyId: propertyId }
         });
 
@@ -132,12 +132,20 @@ export const ContractSigning: React.FC = () => {
         console.log('🔍 TOKEN VERIFICATION ID:', tokenData.id);
         console.log('🔍 SUBMISSION DATA:', latestSubmission);
 
+        
+        // ✅ CORRECTION : Gestion robuste des données de soumission
+        
+        // ✅ CORRECTION : Gestion robuste des données de soumission
         if (latestSubmission) {
-          // Transform edge function response to expected format
+          // Transformer la réponse de l'edge function au format attendu
           const transformedSubmission = {
             id: latestSubmission.id,
             token_id: tokenData.id,
             booking_data: {
+              id: latestSubmission.bookingId || latestSubmission.id, // ✅ CORRECTION : Utiliser l'ID de réservation
+              checkInDate: latestSubmission.checkInDate || new Date().toISOString().split('T')[0],
+              checkOutDate: latestSubmission.checkOutDate || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              numberOfGuests: latestSubmission.numberOfGuests || 1,
               guests: [{
                 fullName: latestSubmission.fullName,
                 documentType: latestSubmission.documentType,
@@ -157,28 +165,32 @@ export const ContractSigning: React.FC = () => {
           
           setSubmissionData(transformedSubmission);
           
-          // Check if contract is already signed using RPC
-          const { data: signature, error: signatureError } = await (supabase as any).rpc('check_contract_signature', {
-            p_submission_id: latestSubmission.id
-          });
+          // ✅ CORRECTION : Vérifier la signature avec gestion d'erreurs
+          try {
+            const { data: signature, error: signatureError } = await (supabase as any).rpc('check_contract_signature', {
+              p_submission_id: latestSubmission.id
+            });
 
-          console.log('📍 Signature check result:', { signature, signatureError });
+            console.log('📍 Signature check result:', { signature, signatureError });
 
-          if (signature) {
-            setIsContractSigned(true);
+            if (signature && signature.length > 0 && signature[0].signature_data) {
+              setIsContractSigned(true);
+            }
+          } catch (signatureCheckError) {
+            console.warn('⚠️ Erreur lors de la vérification de signature:', signatureCheckError);
+            // Ne pas faire échouer pour cette erreur non-critique
           }
         } else {
-          // No submission found - create minimal booking data structure from token verification
+          // ✅ CORRECTION : Créer des données minimales plus robustes
           console.log('📍 No submission found, using token verification data for contract signing');
           
-          // Create minimal structure needed for contract signing
           const mockSubmissionData = {
             id: 'temp-contract-signing',
             token_id: tokenData.id,
             booking_data: {
-              id: tokenVerification.bookingId || `temp-${propertyId}`,
-              checkInDate: new Date().toISOString().split('T')[0], // Fallback date
-              checkOutDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Tomorrow
+              id: tokenVerification.bookingId || `temp-${propertyId}-${Date.now()}`,
+              checkInDate: new Date().toISOString().split('T')[0],
+              checkOutDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
               numberOfGuests: 1,
               guests: [{
                 fullName: 'Guest User',

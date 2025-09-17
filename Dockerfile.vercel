@@ -1,0 +1,39 @@
+# Dockerfile optimisé pour Vercel
+FROM node:18-alpine AS builder
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier les fichiers de configuration
+COPY package*.json ./
+COPY tsconfig*.json ./
+COPY vite.config*.ts ./
+COPY tailwind.config.ts ./
+COPY postcss.config.js ./
+COPY components.json ./
+
+# Installer les dépendances
+RUN npm ci
+
+# Copier le code source
+COPY src/ ./src/
+COPY public/ ./public/
+COPY index.html ./
+
+# Construire l'application pour Vercel
+RUN npm run vercel-build
+
+# Étape de production avec nginx optimisé pour Vercel
+FROM nginx:alpine
+
+# Copier la configuration nginx optimisée pour Vercel
+COPY nginx.vercel.conf /etc/nginx/nginx.conf
+
+# Copier les fichiers construits
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Exposer le port 80
+EXPOSE 80
+
+# Démarrer nginx
+CMD ["nginx", "-g", "daemon off;"]

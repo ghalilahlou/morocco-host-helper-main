@@ -9,7 +9,10 @@ verify_jwt = true
 [functions.get-airbnb-reservation]
 verify_jwt = false
 
-[functions.generate-documents]
+[functions.generate-contract]
+verify_jwt = true
+
+[functions.generate-police-forms]
 verify_jwt = true
 
 [functions.send-owner-notification]
@@ -31,4 +34,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.save-contract-signature]
+verify_jwt = false
+
+[functions.sync-documents]
 verify_jwt = false

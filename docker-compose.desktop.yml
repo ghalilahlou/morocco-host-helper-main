@@ -1,0 +1,139 @@
+version: '3.8'
+
+# Configuration optimisée pour Docker Desktop
+# Usage: docker-compose -f docker-compose.desktop.yml up -d
+
+services:
+  # Application principale
+  morocco-host-helper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: morocco-host-app
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+    volumes:
+      - app_data:/usr/share/nginx/html
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - morocco-network
+    labels:
+      - "com.docker.compose.project=morocco-host-helper"
+      - "com.docker.compose.service=app"
+
+  # Edge Functions Supabase
+  supabase-functions:
+    build:
+      context: .
+      dockerfile: Dockerfile.functions
+    container_name: morocco-host-functions
+    ports:
+      - "54321:54321"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL}
+      - DENO_ENV=production
+      - FUNCTIONS_PORT=54321
+    volumes:
+      - ./supabase/functions:/home/deno/functions:ro
+      - ./supabase/config.toml:/home/deno/config.toml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:54321/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - morocco-network
+    labels:
+      - "com.docker.compose.project=morocco-host-helper"
+      - "com.docker.compose.service=functions"
+    depends_on:
+      - morocco-host-helper
+
+  # Base de données locale (optionnel)
+  postgres:
+    image: postgres:15-alpine
+    container_name: morocco-host-db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-morocco_host}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    networks:
+      - morocco-network
+    labels:
+      - "com.docker.compose.project=morocco-host-helper"
+      - "com.docker.compose.service=database"
+    profiles:
+      - local-db
+
+  # Redis pour le cache (optionnel)
+  redis:
+    image: redis:7-alpine
+    container_name: morocco-host-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - morocco-network
+    labels:
+      - "com.docker.compose.project=morocco-host-helper"
+      - "com.docker.compose.service=cache"
+    profiles:
+      - cache
+
+  # Nginx reverse proxy (optionnel)
+  nginx:
+    image: nginx:alpine
+    container_name: morocco-host-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    restart: unless-stopped
+    networks:
+      - morocco-network
+    labels:
+      - "com.docker.compose.project=morocco-host-helper"
+      - "com.docker.compose.service=proxy"
+    depends_on:
+      - morocco-host-helper
+      - supabase-functions
+    profiles:
+      - proxy
+
+networks:
+  morocco-network:
+    driver: bridge
+    name: morocco-host-network
+
+volumes:
+  app_data:
+    name: morocco-host-app-data
+  postgres_data:
+    name: morocco-host-postgres-data
+  redis_data:
+    name: morocco-host-redis-data
