@@ -49,7 +49,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
   const isStepValid = () => {
     switch (currentStep) {
-      case 0:
+      case 0: {
         // ✅ VALIDATION RENFORCÉE : Vérifier propriété, dates et invités
         const hasValidDates = formData.checkInDate && formData.checkOutDate;
         const hasValidGuests = formData.numberOfGuests > 0;
@@ -66,12 +66,14 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         }
         
         return hasValidDates && hasValidGuests && hasProperty;
-      case 1:
+      }
+      case 1: {
         const hasGuests = formData.guests.length > 0;
         if (!hasGuests) {
           console.warn('⚠️ Étape 1 : Aucun invité ajouté');
         }
         return hasGuests;
+      }
       case 2:
         return true; // Étape de révision, toujours valide
       default:

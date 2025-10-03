@@ -105,7 +105,7 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
 
   const currentStepData = tutorialSteps[currentStep];
 
-  if (!isVisible) return null;
+  // Avoid early return before hooks; render conditionally in JSX instead
 
   const getTooltipPosition = (): CSSProperties => {
     // On mobile, always center the tooltip
@@ -176,7 +176,7 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
 
     // Position tooltip based on the determined best position
     switch (bestPosition) {
-      case 'bottom':
+      case 'bottom': {
         top = rect.bottom + margin;
         left = rect.left + (rect.width / 2);
         transform = 'translateX(-50%)';
@@ -192,8 +192,9 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
           transform = 'translateX(-50%)';
         }
         break;
+      }
 
-      case 'top':
+      case 'top': {
         top = rect.top - tooltipHeight - margin;
         left = rect.left + (rect.width / 2);
         transform = 'translateX(-50%)';
@@ -209,8 +210,9 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
           transform = 'translateX(-50%)';
         }
         break;
+      }
 
-      case 'right':
+      case 'right': {
         top = rect.top + (rect.height / 2);
         left = rect.right + margin;
         transform = 'translateY(-50%)';
@@ -226,8 +228,9 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
           transform = 'translateY(-50%)';
         }
         break;
+      }
 
-      case 'left':
+      case 'left': {
         top = rect.top + (rect.height / 2);
         left = rect.left - tooltipWidth - margin;
         transform = 'translateY(-50%)';
@@ -243,6 +246,7 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
           transform = 'translateY(-50%)';
         }
         break;
+      }
     }
 
     // Final safety check - ensure tooltip is fully within viewport
@@ -297,6 +301,9 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
 
   return (
     <>
+      {/* Render nothing when hidden to keep hooks order stable */}
+      {!isVisible ? null : (
+      <>
       {/* Overlay with blur */}
       <div className="fixed inset-0 w-full h-full backdrop-blur-sm bg-black/30 z-[1000]" />
       
@@ -351,6 +358,8 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
           </div>
         </CardContent>
       </Card>
+      </>
+      )}
     </>
   );
 };

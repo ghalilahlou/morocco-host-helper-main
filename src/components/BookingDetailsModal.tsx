@@ -277,8 +277,9 @@ export const BookingDetailsModal = ({
       console.log('📄 Generating contract for booking:', booking.id);
 
       // ✅ DEBUG: Initialiser la session de debug
-      const { useContractDebug } = await import('@/utils/contractDebug');
-      const debug = useContractDebug(booking.id);
+      // Import debug util without calling React hooks here
+      const { createContractDebug } = await import('@/utils/contractDebug');
+      const debug = createContractDebug(booking.id);
       debug.startSession();
 
       // Check if there is a signed contract for this booking to include the guest signature

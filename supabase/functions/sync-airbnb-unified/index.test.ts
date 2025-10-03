@@ -6,7 +6,6 @@ import { assertEquals, assertExists } from "https://deno.land/std@0.168.0/testin
 
 class TestUnifiedAirbnbSyncService {
   static parseEvent(eventContent: string): any | null {
-    try {
       const lines = eventContent.split('\n').map(line => line.replace('\r', ''));
       
       let uid = '';
@@ -79,9 +78,6 @@ class TestUnifiedAirbnbSyncService {
         numberOfGuests,
         rawEvent: eventContent.substring(0, 500) + '...'
       };
-    } catch (error) {
-      return null;
-    }
   }
 
   static extractDateFromLine(line: string): string | null {
@@ -90,31 +86,22 @@ class TestUnifiedAirbnbSyncService {
   }
 
   static parseICSDate(dateStr: string): Date {
-    try {
       if (dateStr.length !== 8) {
         throw new Error(`Invalid date format: ${dateStr}`);
       }
-      
       const year = parseInt(dateStr.substring(0, 4));
       const month = parseInt(dateStr.substring(4, 6)) - 1;
       const day = parseInt(dateStr.substring(6, 8));
-      
       if (isNaN(year) || isNaN(month) || isNaN(day)) {
         throw new Error(`Invalid date values: ${dateStr}`);
       }
-      
       if (month < 0 || month > 11) {
         throw new Error(`Invalid month: ${month + 1}`);
       }
-      
       if (day < 1 || day > 31) {
         throw new Error(`Invalid day: ${day}`);
       }
-      
       return new Date(year, month, day);
-    } catch (error) {
-      throw error;
-    }
   }
 
   static decodeICSDescription(description: string): string {
