@@ -732,7 +732,7 @@ export const GuestVerification = () => {
       // ✨ NOUVEAU : Utiliser le workflow unifié au lieu de l'ancien système
       console.log('🚀 Utilisation du workflow unifié pour:', {
         token: token ? 'Présent' : 'Manquant',
-        airbnbCode: verificationData.airbnbCode,
+        airbnbCode: airbnbBookingId,
         guestCount: guests.length,
         documentsCount: finalDocumentUrls.length
       });
@@ -791,7 +791,7 @@ export const GuestVerification = () => {
       
       const result = await submitDocumentsUnified({
         token: token!,
-        airbnbCode: verificationData.airbnbCode,
+        airbnbCode: airbnbBookingId,
         guestInfo,
         idDocuments
       });
