@@ -111,11 +111,13 @@ export async function submitDocumentsUnified(
     }
 
     console.log('✅ [DocumentServiceUnified] All documents generated successfully');
+    console.log('📋 [DocumentServiceUnified] Full response:', response);
     console.log('📋 [DocumentServiceUnified] Response data:', {
       hasBookingId: !!response.data?.bookingId,
       hasContractUrl: !!response.data?.contractUrl,
       hasPoliceUrl: !!response.data?.policeUrl,
-      propertyName: response.data?.booking?.propertyName
+      propertyName: response.data?.booking?.propertyName,
+      bookingId: response.data?.bookingId
     });
 
     // Toast de succès
@@ -124,6 +126,17 @@ export async function submitDocumentsUnified(
       description: "Contrat et fiche de police créés. Email envoyé.",
     });
     
+    // ✅ CORRECTION : Vérifier que response.data existe
+    if (!response.data) {
+      console.error('❌ [DocumentServiceUnified] No data in response:', response);
+      throw new Error('Aucune donnée reçue du serveur');
+    }
+
+    if (!response.data.bookingId) {
+      console.error('❌ [DocumentServiceUnified] No bookingId in response data:', response.data);
+      throw new Error('ID de réservation manquant dans la réponse');
+    }
+
     return {
       bookingId: response.data.bookingId,
       contractUrl: response.data.contractUrl,
