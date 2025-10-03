@@ -793,7 +793,12 @@ export const GuestVerification = () => {
         token: token!,
         airbnbCode: airbnbBookingId || 'INDEPENDENT_BOOKING',
         guestInfo,
-        idDocuments
+        idDocuments,
+        bookingData: {
+          checkIn: bookingData.checkInDate,
+          checkOut: bookingData.checkOutDate,
+          numberOfGuests: bookingData.numberOfGuests
+        }
       });
 
       console.log('✅ Workflow unifié réussi:', result);

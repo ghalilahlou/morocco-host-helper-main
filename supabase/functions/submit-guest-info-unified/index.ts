@@ -1013,7 +1013,7 @@ async function updateFinalStatus(
 // FONCTION POUR RÉSERVATIONS INDÉPENDANTES
 // =====================================================
 
-async function createIndependentBooking(token: string, guestInfo: GuestInfo): Promise<ResolvedBooking> {
+async function createIndependentBooking(token: string, guestInfo: GuestInfo, bookingData?: { checkIn: string; checkOut: string; numberOfGuests: number }): Promise<ResolvedBooking> {
   log('info', 'Création d\'une réservation indépendante', {
     guestName: `${guestInfo.firstName} ${guestInfo.lastName}`,
     token: token.substring(0, 8) + '...'
@@ -1045,12 +1045,31 @@ async function createIndependentBooking(token: string, guestInfo: GuestInfo): Pr
 
     const property = tokenData.properties;
     
-    // 2. Créer une réservation indépendante avec des dates par défaut
-    const today = new Date();
-    const checkIn = new Date(today);
-    checkIn.setDate(today.getDate() + 1); // Demain
-    const checkOut = new Date(checkIn);
-    checkOut.setDate(checkIn.getDate() + 1); // 1 nuit par défaut
+    // 2. Créer une réservation indépendante avec les dates fournies ou par défaut
+    let checkIn: Date;
+    let checkOut: Date;
+    let numberOfGuests: number;
+    
+    if (bookingData) {
+      // Utiliser les dates fournies par l'invité
+      checkIn = new Date(bookingData.checkIn);
+      checkOut = new Date(bookingData.checkOut);
+      numberOfGuests = bookingData.numberOfGuests;
+      log('info', 'Utilisation des dates fournies par l\'invité', {
+        checkIn: bookingData.checkIn,
+        checkOut: bookingData.checkOut,
+        numberOfGuests: bookingData.numberOfGuests
+      });
+    } else {
+      // Dates par défaut (fallback)
+      const today = new Date();
+      checkIn = new Date(today);
+      checkIn.setDate(today.getDate() + 1); // Demain
+      checkOut = new Date(checkIn);
+      checkOut.setDate(checkIn.getDate() + 1); // 1 nuit par défaut
+      numberOfGuests = 1;
+      log('warn', 'Utilisation des dates par défaut (aucune date fournie)');
+    }
 
     const booking: ResolvedBooking = {
       id: crypto.randomUUID(),
@@ -1079,7 +1098,7 @@ async function createIndependentBooking(token: string, guestInfo: GuestInfo): Pr
         city: property.city,
         country: property.country
       },
-      numberOfGuests: 1,
+      numberOfGuests: numberOfGuests,
       totalPrice: null
     };
 
@@ -1452,7 +1471,7 @@ serve(async (req) => {
       // ✅ NOUVEAU : Gérer les réservations indépendantes (sans code Airbnb)
       if (requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode) {
         log('info', 'Réservation indépendante détectée, création directe');
-        booking = await createIndependentBooking(requestBody.token, requestBody.guestInfo);
+        booking = await createIndependentBooking(requestBody.token, requestBody.guestInfo, requestBody.bookingData);
       } else {
         booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
       }

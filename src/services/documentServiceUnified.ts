@@ -30,6 +30,11 @@ export interface DocumentGenerationRequest {
   airbnbCode: string;
   guestInfo: GuestInfo;
   idDocuments: IdDocument[];
+  bookingData?: {
+    checkIn: string;
+    checkOut: string;
+    numberOfGuests: number;
+  };
   signature?: {
     data: string;
     timestamp: string;
@@ -96,6 +101,7 @@ export async function submitDocumentsUnified(
       airbnbCode: request.airbnbCode,
       guestInfo: request.guestInfo,
       idDocuments: request.idDocuments,
+      bookingData: request.bookingData,
       signature: request.signature
     });
 
