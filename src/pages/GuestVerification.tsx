@@ -791,7 +791,7 @@ export const GuestVerification = () => {
       
       const result = await submitDocumentsUnified({
         token: token!,
-        airbnbCode: airbnbBookingId,
+        airbnbCode: airbnbBookingId || 'INDEPENDENT_BOOKING',
         guestInfo,
         idDocuments
       });

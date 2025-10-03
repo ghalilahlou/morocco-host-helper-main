@@ -1010,6 +1010,92 @@ async function updateFinalStatus(
 }
 
 // =====================================================
+// FONCTION POUR RÉSERVATIONS INDÉPENDANTES
+// =====================================================
+
+async function createIndependentBooking(token: string, guestInfo: GuestInfo): Promise<ResolvedBooking> {
+  log('info', 'Création d\'une réservation indépendante', {
+    guestName: `${guestInfo.firstName} ${guestInfo.lastName}`,
+    token: token.substring(0, 8) + '...'
+  });
+
+  return await withRetry(async () => {
+    const supabase = await getServerClient();
+    
+    // 1. Récupérer les informations de la propriété depuis le token
+    const { data: tokenData, error: tokenError } = await supabase
+      .from('property_verification_tokens')
+      .select(`
+        property_id,
+        properties!inner(
+          id,
+          name,
+          address,
+          city,
+          country
+        )
+      `)
+      .eq('token', token)
+      .eq('is_active', true)
+      .single();
+
+    if (tokenError || !tokenData) {
+      throw new Error('Token invalide ou expiré');
+    }
+
+    const property = tokenData.properties;
+    
+    // 2. Créer une réservation indépendante avec des dates par défaut
+    const today = new Date();
+    const checkIn = new Date(today);
+    checkIn.setDate(today.getDate() + 1); // Demain
+    const checkOut = new Date(checkIn);
+    checkOut.setDate(checkIn.getDate() + 1); // 1 nuit par défaut
+
+    const booking: ResolvedBooking = {
+      id: crypto.randomUUID(),
+      checkIn: checkIn.toISOString().split('T')[0],
+      checkOut: checkOut.toISOString().split('T')[0],
+      propertyName: property.name,
+      status: 'pending',
+      airbnbCode: 'INDEPENDENT_BOOKING',
+      guestId: crypto.randomUUID(),
+      guestName: `${guestInfo.firstName} ${guestInfo.lastName}`,
+      guests: [{
+        fullName: `${guestInfo.firstName} ${guestInfo.lastName}`,
+        dateOfBirth: guestInfo.dateOfBirth ? new Date(guestInfo.dateOfBirth) : undefined,
+        nationality: guestInfo.nationality || '',
+        documentNumber: guestInfo.idNumber || '',
+        documentType: (guestInfo.idType as 'passport' | 'national_id') || 'passport',
+        profession: '',
+        motifSejour: 'TOURISME',
+        adressePersonnelle: '',
+        email: guestInfo.email || ''
+      }],
+      property: {
+        id: property.id,
+        name: property.name,
+        address: property.address,
+        city: property.city,
+        country: property.country
+      },
+      numberOfGuests: 1,
+      totalPrice: null
+    };
+
+    log('info', 'Réservation indépendante créée', {
+      bookingId: booking.id,
+      propertyName: booking.propertyName,
+      guestName: booking.guestName,
+      checkIn: booking.checkIn,
+      checkOut: booking.checkOut
+    });
+
+    return booking;
+  }, 'Création réservation indépendante');
+}
+
+// =====================================================
 // FONCTION PRINCIPALE
 // =====================================================
 
@@ -1362,7 +1448,14 @@ serve(async (req) => {
     try {
       // ÉTAPE 1: Résolution de la réservation
       log('info', '🎯 ÉTAPE 1/5: Résolution de la réservation');
-      booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
+      
+      // ✅ NOUVEAU : Gérer les réservations indépendantes (sans code Airbnb)
+      if (requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode) {
+        log('info', 'Réservation indépendante détectée, création directe');
+        booking = await createIndependentBooking(requestBody.token, requestBody.guestInfo);
+      } else {
+        booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
+      }
       
       // ✅ CORRECTION : Vérifier si le booking a déjà été traité en utilisant property_id et booking_reference
       const supabaseClient = await getServerClient();
