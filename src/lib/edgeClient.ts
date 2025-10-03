@@ -48,6 +48,11 @@ export class EdgeClient {
         return { success: false, error: errorBody.error || errorBody.message || text || "Unknown error" };
       }
 
+      // ✅ CORRECTION : Si la réponse a déjà une structure { success, data }, on retourne directement
+      if (data && typeof data === 'object' && 'success' in data && 'data' in data) {
+        return data as EdgeFunctionResponse<T>;
+      }
+      
       return { success: true, data };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);

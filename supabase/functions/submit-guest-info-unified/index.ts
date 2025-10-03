@@ -1605,6 +1605,16 @@ serve(async (req) => {
       resultType: typeof result
     });
 
+    // ✅ CORRECTION : Vérifier que result a les bonnes propriétés
+    if (!result.bookingId) {
+      log('error', '❌ CRITICAL: result.bookingId is missing', {
+        result,
+        resultKeys: Object.keys(result),
+        resultType: typeof result
+      });
+      throw new Error('bookingId manquant dans le résultat');
+    }
+
     const responseData = {
       success: true,
       data: {
