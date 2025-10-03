@@ -151,7 +151,7 @@ SIGNATURES:
 
 PROPRIÉTAIRE (Bailleur):                    LOCATAIRE:
 
-Nom: ${propertyData?.contact_info?.name || propertyData?.name || 'Propriétaire'}              Nom: ${allGuests?.[0]?.fullName || '________________________'}
+Nom: ${propertyData?.contact_info?.name || propertyData?.name || '________________________'}              Nom: ${allGuests?.[0]?.fullName || '________________________'}
 
 Signature: [Signature électronique - Propriétaire]        Signature: ${includeGuestSignature && signature ? '[Signature électronique - Locataire collectée]' : '[En attente de signature électronique]'}
 

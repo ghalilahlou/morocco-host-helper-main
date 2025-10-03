@@ -155,25 +155,31 @@ export const calculateBookingLayout = (
       // Airbnb bookings use pending (gray) color by default
       color = 'bg-pending';
     } else {
-      // For manual bookings, determine color based on potential matching with Airbnb
+      // For manual bookings, determine color based on status and Airbnb matching
       const manualBooking = booking as Booking;
-      const hasAirbnbMatch = bookings.some(b => {
-        if (!('source' in b) || b.source !== 'airbnb') return false;
-        const airbnb = b as unknown as AirbnbReservation;
-        const manualStart = new Date(manualBooking.checkInDate);
-        const manualEnd = new Date(manualBooking.checkOutDate);
-        const airbnbStart = new Date(airbnb.startDate);
-        const airbnbEnd = new Date(airbnb.endDate);
-        
-        return manualStart.getTime() === airbnbStart.getTime() && 
-               manualEnd.getTime() === airbnbEnd.getTime();
-      });
       
-      if (hasAirbnbMatch) {
-        color = 'bg-success'; // Green for matched bookings
+      // Priority 1: Confirmed/completed bookings appear green
+      if (manualBooking.status === 'confirmed' || manualBooking.status === 'completed') {
+        color = 'bg-success'; // Green for confirmed/completed bookings
       } else {
-        // Check for conflicts with Airbnb bookings
-        const hasConflict = bookings.some(b => {
+        // Priority 2: Check for Airbnb match
+        const hasAirbnbMatch = bookings.some(b => {
+          if (!('source' in b) || b.source !== 'airbnb') return false;
+          const airbnb = b as unknown as AirbnbReservation;
+          const manualStart = new Date(manualBooking.checkInDate);
+          const manualEnd = new Date(manualBooking.checkOutDate);
+          const airbnbStart = new Date(airbnb.startDate);
+          const airbnbEnd = new Date(airbnb.endDate);
+          
+          return manualStart.getTime() === airbnbStart.getTime() && 
+                 manualEnd.getTime() === airbnbEnd.getTime();
+        });
+        
+        if (hasAirbnbMatch) {
+          color = 'bg-success'; // Green for matched bookings
+        } else {
+          // Priority 3: Check for conflicts with Airbnb bookings
+          const hasConflict = bookings.some(b => {
           if (!('source' in b) || b.source !== 'airbnb') return false;
           const airbnb = b as unknown as AirbnbReservation;
           const manualStart = new Date(manualBooking.checkInDate);
@@ -184,7 +190,8 @@ export const calculateBookingLayout = (
           return manualStart < airbnbEnd && manualEnd > airbnbStart;
         });
         
-        color = hasConflict ? 'bg-destructive' : 'bg-pending'; // Red for conflicts, gray for no match
+          color = hasConflict ? 'bg-destructive' : 'bg-pending'; // Red for conflicts, gray for no match
+        }
       }
     }
     
@@ -324,12 +331,20 @@ export const detectBookingConflicts = (bookings: Booking[]): string[] => {
 export const getBookingDisplayText = (booking: Booking | AirbnbReservation, isStart: boolean): string => {
   if (isStart) {
     if ('source' in booking && booking.source === 'airbnb') {
-      return (booking as unknown as AirbnbReservation).guestName?.split(' ')[0] || 'Airbnb';
+      // Afficher le code de réservation Airbnb avec le préfixe "Reservation"
+      const airbnbReservation = booking as unknown as AirbnbReservation;
+      const bookingCode = airbnbReservation.airbnbBookingId || airbnbReservation.airbnb_booking_id || 'Airbnb';
+      return `Reservation ${bookingCode}`;
     } else {
       const regularBooking = booking as Booking;
       const enrichedBooking = booking as EnrichedBooking;
       
-      // Prioritize real guest names from submissions
+      // Pour les réservations manuelles, afficher aussi le code de réservation avec préfixe si disponible
+      if (regularBooking.bookingReference) {
+        return `Reservation ${regularBooking.bookingReference}`;
+      }
+      
+      // Sinon, priorité aux noms réels des soumissions
       if (enrichedBooking.realGuestNames && enrichedBooking.realGuestNames.length > 0) {
         const firstName = enrichedBooking.realGuestNames[0].split(' ')[0];
         const totalGuests = enrichedBooking.realGuestCount;

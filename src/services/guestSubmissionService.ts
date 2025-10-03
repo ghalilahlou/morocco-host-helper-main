@@ -1,6 +1,10 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Booking } from '@/types/booking';
 
+// ✅ CACHE : Éviter les appels répétés
+let submissionsCache: { data: any[], timestamp: number } | null = null;
+const CACHE_DURATION = 5000; // 5 secondes
+
 interface GuestSubmissionData {
   id: string;
   resolved_booking_id: string | null;  // ✅ CORRECTION : Utiliser resolved_booking_id
@@ -49,29 +53,41 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       }));
     }
     
-    // ✅ CORRECTION : Utiliser resolved_booking_id au lieu de booking_id
-    const { data: submissions, error } = await supabase
-      .from('v_guest_submissions')
-      .select('*')
-      .in('resolved_booking_id', bookingIds)  // ✅ Utiliser resolved_booking_id
-      .not('resolved_booking_id', 'is', null); // ✅ Utiliser resolved_booking_id
+    // ✅ CACHE : Vérifier le cache d'abord
+    const now = Date.now();
+    let submissions;
+    
+    if (submissionsCache && (now - submissionsCache.timestamp) < CACHE_DURATION) {
+      console.log('📋 Using cached guest submissions');
+      submissions = submissionsCache.data;
+    } else {
+      // ✅ CORRECTION : Utiliser resolved_booking_id au lieu de booking_id
+      const { data: submissionsData, error } = await supabase
+        .from('v_guest_submissions')
+        .select('*')
+        .in('resolved_booking_id', bookingIds)  // ✅ Utiliser resolved_booking_id
+        .not('resolved_booking_id', 'is', null); // ✅ Utiliser resolved_booking_id
 
-    if (error) {
-      console.error('❌ Error fetching guest submissions:', error);
-      return bookings.map(booking => ({
-        ...booking,
-        realGuestNames: [],
-        realGuestCount: 0,
-        hasRealSubmissions: false,
-        submissionStatus: {
-          hasDocuments: false,
-          hasSignature: false,
-          documentsCount: 0
-        }
-      }));
+      if (error) {
+        console.error('❌ Error fetching guest submissions:', error);
+        return bookings.map(booking => ({
+          ...booking,
+          realGuestNames: [],
+          realGuestCount: 0,
+          hasRealSubmissions: false,
+          submissionStatus: {
+            hasDocuments: false,
+            hasSignature: false,
+            documentsCount: 0
+          }
+        }));
+      }
+
+      // ✅ CACHE : Mettre en cache les résultats
+      submissions = submissionsData;
+      submissionsCache = { data: submissions, timestamp: now };
+      console.log('✅ Fetched guest submissions:', submissions);
     }
-
-    console.log('✅ Fetched guest submissions:', submissions);
 
     // ✅ CORRECTION : Utiliser resolved_booking_id
     const submissionsByBooking = (submissions || []).reduce((acc, submission) => {

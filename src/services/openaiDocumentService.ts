@@ -1,8 +1,18 @@
 import { Guest } from '@/types/booking';
 import { supabase } from '@/integrations/supabase/client';
 
+// ✅ Interface spécifique pour les données extraites (en string)
+interface ExtractedGuestData {
+  fullName?: string;
+  dateOfBirth?: string; // Toujours string depuis l'extraction
+  documentNumber?: string;
+  nationality?: string;
+  placeOfBirth?: string;
+  documentType?: 'passport' | 'national_id';
+}
+
 export class OpenAIDocumentService {
-  static async extractDocumentData(imageFile: File): Promise<Partial<Guest>> {
+  static async extractDocumentData(imageFile: File): Promise<ExtractedGuestData> {
     try {
       console.log('🤖 Starting OpenAI-powered document extraction for:', imageFile.name);
       console.log('📄 File size:', (imageFile.size / 1024 / 1024).toFixed(2), 'MB');
@@ -30,7 +40,7 @@ export class OpenAIDocumentService {
       console.log('✅ Successfully extracted data via OpenAI:', extractedData);
 
       // Validate and clean the extracted data
-      const cleanedData: Partial<Guest> = {
+      const cleanedData: ExtractedGuestData = {
         fullName: extractedData.fullName || '',
         dateOfBirth: extractedData.dateOfBirth || '',
         documentNumber: extractedData.documentNumber || '',
@@ -39,11 +49,20 @@ export class OpenAIDocumentService {
         documentType: extractedData.documentType || 'passport'
       };
 
-      // Remove empty strings and replace with undefined
+      // Remove empty strings and replace with undefined, but keep null values for debugging
       Object.keys(cleanedData).forEach(key => {
-        if (cleanedData[key as keyof Partial<Guest>] === '') {
-          delete cleanedData[key as keyof Partial<Guest>];
+        const value = cleanedData[key as keyof ExtractedGuestData];
+        if (value === '' || value === 'null' || value === 'undefined') {
+          delete cleanedData[key as keyof ExtractedGuestData];
         }
+      });
+
+      // ✅ DEBUG: Log specifically for dateOfBirth extraction
+      console.log('🔍 DEBUG - Date extraction details:', {
+        originalDateOfBirth: extractedData.dateOfBirth,
+        cleanedDateOfBirth: cleanedData.dateOfBirth,
+        wasDateOfBirthExtracted: !!extractedData.dateOfBirth,
+        isDateOfBirthInCleanedData: !!cleanedData.dateOfBirth
       });
 
       console.log('🎯 Final cleaned extraction result:', cleanedData);

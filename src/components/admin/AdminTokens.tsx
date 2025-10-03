@@ -42,6 +42,7 @@ import { useAdmin } from '@/hooks/useAdmin';
 import { useToast } from '@/hooks/use-toast';
 import { TokenAllocation } from '@/types/admin';
 import { TokenControlService } from '@/services/tokenControlService';
+import { selectActiveProperties } from '@/lib/properties';
 import { TokenCreationService } from '@/services/tokenCreationService';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -55,10 +56,7 @@ import {
   Settings, 
   Shield, 
   Building, 
-  RefreshCw, 
   Trash2,
-  CheckCircle,
-  XCircle,
   AlertTriangle
 } from 'lucide-react';
 
@@ -80,12 +78,55 @@ export const AdminTokens = () => {
     is_enabled: true
   });
   const [loadingControl, setLoadingControl] = useState(false);
+  const didRun = useRef(false);
 
   useEffect(() => {
-    loadUsers();
-    loadTokenControlSettings();
-    loadProperties();
-  }, [loadUsers]);
+    // Prevent React 18 dev double-invoke
+    if (didRun.current) return;
+    didRun.current = true;
+
+    let cancelled = false;
+
+    const loadData = async () => {
+      if (isLoading || cancelled) return;
+      
+      setIsLoading(true);
+      try {
+        console.log('🔄 Loading admin data...');
+        
+        // Load data sequentially to avoid overwhelming the server
+        await loadUsers();
+        if (cancelled) return;
+        
+        await loadTokenControlSettings();
+        if (cancelled) return;
+        
+        await loadProperties();
+        if (cancelled) return;
+        
+        console.log('✅ Admin data loaded successfully');
+      } catch (error) {
+        if (!cancelled) {
+          console.error('❌ Error loading admin data:', error);
+          toast({
+            title: "Erreur de chargement",
+            description: "Impossible de charger les données administrateur",
+            variant: "destructive"
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      cancelled = true;
+    };
+  }, []); // Empty dependency array - run once only
 
   // ✅ NOUVEAU : Fonctions pour le contrôle des tokens par propriété
   const loadTokenControlSettings = async () => {
@@ -151,28 +192,16 @@ export const AdminTokens = () => {
     try {
       console.log('🔍 Chargement des propriétés pour la gestion des tokens...');
       
-      // ✅ CORRECTION : Charger les propriétés depuis Supabase
-      const { data: propertiesData, error: propertiesError } = await supabase
-        .from('properties')
-        .select('id, name, address, is_active')
-        .eq('is_active', true)
-        .order('name', { ascending: true });
-      
-      if (propertiesError) {
-        console.error('❌ Erreur lors du chargement des propriétés:', propertiesError);
-        throw propertiesError;
-      }
+      // Use the defensive helper that handles missing is_active column
+      const propertiesData = await selectActiveProperties(supabase);
       
       console.log('✅ Propriétés chargées:', propertiesData?.length || 0);
       setProperties(propertiesData || []);
       
     } catch (error) {
       console.error('❌ Erreur lors du chargement des propriétés:', error);
-      toast({
-        title: "Erreur",
-        description: "Impossible de charger les propriétés",
-        variant: "destructive"
-      });
+      // Don't show toast here - let the main error handler deal with it
+      throw error;
     }
   };
 

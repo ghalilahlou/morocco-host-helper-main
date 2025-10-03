@@ -52,17 +52,10 @@ export interface GuestSubmissionData {
   status: 'pending' | 'approved' | 'rejected';
 }
 
-export interface GuestData {
-  fullName: string;
-  dateOfBirth: string;
-  nationality: string;
-  documentNumber: string;
-  documentType: 'passport' | 'national_id';
-  placeOfBirth?: string;
-  profession?: string;
-  motifSejour?: string;
-  adressePersonnelle?: string;
-}
+import { Guest } from './booking';
+
+// ✅ CORRECTION: Utiliser le type centralisé Guest au lieu de GuestData
+export type GuestData = Guest;
 
 export interface ContractTemplate {
   landlordName: string;

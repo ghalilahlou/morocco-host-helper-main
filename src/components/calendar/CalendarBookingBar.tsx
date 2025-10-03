@@ -22,9 +22,15 @@ export const CalendarBookingBar = memo(({
 }: CalendarBookingBarProps) => {
   const isConflict = conflicts.includes(bookingData.booking.id);
   
-  // Determine the color based on the booking color
+  // Determine the color based on the booking color and conflict status
   const getBackgroundColor = () => {
     const c = bookingData.color;
+    
+    // Si c'est en conflit, utiliser une couleur spéciale avec pattern
+    if (isConflict) {
+      return BOOKING_COLORS.conflict.hex;
+    }
+    
     // Support both semantic tokens and centralized tailwind classes
     if (c === 'bg-success' || c === BOOKING_COLORS.completed.tailwind) {
       return BOOKING_COLORS.completed.hex;
@@ -34,19 +40,40 @@ export const CalendarBookingBar = memo(({
     }
     return BOOKING_COLORS.pending.hex;
   };
+
+  // Style spécial pour les réservations en conflit avec un motif diagonal
+  const getConflictStyle = () => {
+    if (!isConflict) return {};
+    
+    return {
+      backgroundImage: `repeating-linear-gradient(
+        45deg,
+        ${getBackgroundColor()},
+        ${getBackgroundColor()} 4px,
+        rgba(255,255,255,0.2) 4px,
+        rgba(255,255,255,0.2) 8px
+      )`,
+      border: '1px solid rgba(255,255,255,0.4)'
+    };
+  };
   
   return (
     <div
       className={`
-        text-white h-6 rounded-full flex items-center px-2 md:px-3
-        cursor-pointer transition-all duration-200 hover:scale-[1.02]
-        ${isConflict ? 'ring-2 ring-destructive ring-offset-1' : ''}
-        relative group shadow-lg w-full text-xs
+        text-white h-5 rounded-full flex items-center px-2 md:px-3
+        cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:z-[1010]
+        ${isConflict ? 'ring-1 ring-white/60 ring-offset-1' : ''}
+        relative group shadow-sm w-full text-xs
+        ${bookingData.layer && bookingData.layer > 0 ? 'opacity-90' : 'opacity-100'}
       `}
       style={{
-        backgroundColor: getBackgroundColor(),
-        minHeight: '24px',
-        zIndex: 1000
+        backgroundColor: isConflict ? undefined : getBackgroundColor(),
+        minHeight: '20px',
+        zIndex: 1000 + (bookingData.layer || 0),
+        // Ajouter une légère transparence aux réservations superposées
+        opacity: bookingData.layer && bookingData.layer > 0 ? 0.85 : 1,
+        // Appliquer le style de conflit si nécessaire
+        ...getConflictStyle()
       }}
       onClick={() => onBookingClick(bookingData.booking)}
       title={bookingData.isAirbnb ? 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Users, FileCheck, Download, Edit, Link, X, Shield, FileText, Trash2 } from 'lucide-react';
+import { Calendar, Users, FileCheck, Download, Edit, Link, X, Shield, FileText, Trash2, Pen } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
@@ -12,8 +12,11 @@ import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
 import { DocumentsViewer } from './DocumentsViewer';
+import { HostSignatureCapture } from './HostSignatureCapture';
+import { ContractDebugPanel } from './ContractDebugPanel';
 import { supabase } from '@/integrations/supabase/client';
 import { copyToClipboard } from '@/lib/clipboardUtils';
+import { ApiService } from '@/services/apiService';
 
 interface BookingDetailsModalProps {
   booking: EnrichedBooking;
@@ -40,6 +43,9 @@ export const BookingDetailsModal = ({
     isLoading: isGeneratingLink
   } = useGuestVerification();
   const [showDocuments, setShowDocuments] = useState<'id-documents' | 'contract' | 'police-form' | null>(null);
+  const [showHostSignature, setShowHostSignature] = useState(false);
+  const [isSubmittingHostSignature, setIsSubmittingHostSignature] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
 
   // Enhanced fallback: fetch guest name from multiple sources
   const [fallbackGuestName, setFallbackGuestName] = useState<string | null>(null);
@@ -160,12 +166,14 @@ export const BookingDetailsModal = ({
   const handleGeneratePolice = async () => {
     try {
       console.log('👮 Generating police forms for booking:', booking.id);
+      // ✅ CORRECTION : Utiliser submit-guest-info-unified au lieu de generate-police-forms
       const {
         data,
         error
-      } = await supabase.functions.invoke('generate-police-forms', {
+      } = await supabase.functions.invoke('submit-guest-info-unified', {
         body: {
-          bookingId: booking.id
+          bookingId: booking.id,
+          action: 'generate_police_only'
         }
       });
       console.log('👮 Police generation response:', {
@@ -176,48 +184,12 @@ export const BookingDetailsModal = ({
         console.error('❌ Police generation error:', error);
         throw error;
       }
-      if (data?.success && data?.documentUrls?.length > 0) {
-        // Store police forms in Supabase Storage with UNIQUE filenames (one per guest)
-        console.log('👮 Storing police forms in storage...');
-
-        // Cleanup: remove any previous police forms for this booking to avoid duplicates
-        try {
-          const {
-            data: existing
-          } = await supabase.storage.from('police-forms').list(booking.id, {
-            limit: 100
-          });
-          if (existing && existing.length > 0) {
-            const paths = existing.map(f => `${booking.id}/${f.name}`);
-            await supabase.storage.from('police-forms').remove(paths);
-            console.log('🧹 Removed old police forms:', paths);
-          }
-        } catch (cleanupErr) {
-          console.warn('Could not cleanup previous police forms (will continue):', cleanupErr);
-        }
-        for (let i = 0; i < data.documentUrls.length; i++) {
-          const policeUrl = data.documentUrls[i];
-          const guest = booking.guests?.[i];
-          const rawName = guest?.fullName || `guest_${i + 1}`;
-          const safeGuest = rawName.normalize('NFKD').replace(/[\u0300-\u036f]/g, '') // remove accents
-          .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase();
-          const indexPadded = String(i + 1).padStart(2, '0');
-          const fileName = `${booking.id}/police-form-${indexPadded}-${safeGuest}.pdf`;
-
-          // Convert data URL to blob
-          const response = await fetch(policeUrl);
-          const blob = await response.blob();
-          const {
-            error: uploadError
-          } = await supabase.storage.from('police-forms').upload(fileName, blob, {
-            upsert: true
-          });
-          if (uploadError) {
-            console.error('❌ Police storage upload error:', uploadError);
-            throw uploadError;
-          }
-        }
-        console.log('✅ Police forms stored successfully');
+      if (data?.success && data?.policeUrl) {
+        // ✅ CORRECTION : La nouvelle Edge Function retourne policeUrl (singulier)
+        console.log('👮 Police form generated successfully:', data.policeUrl);
+        
+        // Pas besoin de re-uploader, l'URL est déjà publique
+        console.log('✅ Police form ready for display');
         updateBooking(booking.id, {
           documentsGenerated: {
             ...booking.documentsGenerated,
@@ -225,8 +197,8 @@ export const BookingDetailsModal = ({
           }
         });
         toast({
-          title: "Fiches police générées",
-          description: `${data.documentUrls.length} fiche(s) police générée(s)`
+          title: "Fiche de police générée",
+          description: "Fiche de police générée avec succès"
         });
       } else {
         throw new Error('Failed to generate police forms');
@@ -264,9 +236,50 @@ export const BookingDetailsModal = ({
     }
   };
 
+  const handleHostSignatureComplete = async (signatureData: string) => {
+    try {
+      setIsSubmittingHostSignature(true);
+      console.log('🖊️ Submitting host signature for booking:', booking.id);
+
+      const hostName = booking.property?.contact_info?.name || 'Host';
+      const signedAt = new Date().toISOString();
+
+      await ApiService.saveHostSignature({
+        bookingId: booking.id,
+        hostSignatureDataUrl: signatureData,
+        hostSignerName: hostName,
+        signedAt: signedAt
+      });
+
+      toast({
+        title: "Signature enregistrée",
+        description: "Votre signature a été enregistrée avec succès",
+      });
+
+      setShowHostSignature(false);
+      
+      // Refresh the booking data to show updated contract
+      onEdit?.();
+    } catch (error) {
+      console.error('❌ Error submitting host signature:', error);
+      toast({
+        title: "Erreur",
+        description: "Erreur lors de l'enregistrement de la signature",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmittingHostSignature(false);
+    }
+  };
+
   const handleGenerateContract = async () => {
     try {
       console.log('📄 Generating contract for booking:', booking.id);
+
+      // ✅ DEBUG: Initialiser la session de debug
+      const { useContractDebug } = await import('@/utils/contractDebug');
+      const debug = useContractDebug(booking.id);
+      debug.startSession();
 
       // Check if there is a signed contract for this booking to include the guest signature
       const {
@@ -285,23 +298,45 @@ export const BookingDetailsModal = ({
         body.signatureData = signed.signature_data;
         body.signedAt = signed.signed_at;
       }
+
+      // ✅ DEBUG: Log avant l'appel API
+      console.log('🔍 Contract generation request body:', body);
+
       const {
         data,
         error
-      } = await supabase.functions.invoke('generate-contract', {
-        body
+      } = await supabase.functions.invoke('submit-guest-info-unified', {
+        body: {
+          bookingId: body.bookingId,
+          action: 'generate_contract_only',
+          signature: body.signatureData ? {
+            data: body.signatureData,
+            timestamp: body.signedAt
+          } : null
+        }
       });
+
+      // ✅ DEBUG: Log la réponse API
+      debug.logApiResponse(data, error);
       console.log('📄 Contract generation response:', {
         data,
         error
+      });
+
+      // ✅ DEBUG: Log avant génération PDF
+      debug.logBeforePdfGeneration({
+        hostName: booking.property?.contact_info?.name || booking.property?.name,
+        hostSignature: 'Will be resolved by Edge Function',
+        propertyAddress: booking.property?.address
       });
       if (error) {
         console.error('❌ Contract generation error:', error);
         throw error;
       }
-      if (data?.success && data?.documentUrls?.length > 0) {
+      // ✅ CORRECTION : Vérifier la réponse correctement selon la structure backend
+      if (data?.success && (data?.contractUrl || data?.documentUrls?.length > 0)) {
         // Store the contract in Supabase Storage
-        const contractUrl = data.documentUrls[0];
+        const contractUrl = data.contractUrl || data.documentUrls[0];
         const fileName = `${booking.id}/contract.pdf`;
         console.log('📄 Storing contract in storage...');
 
@@ -310,7 +345,7 @@ export const BookingDetailsModal = ({
         const blob = await response.blob();
         const {
           error: uploadError
-        } = await supabase.storage.from('contracts').upload(fileName, blob, {
+        } = await supabase.storage.from('guest-documents').upload(fileName, blob, {
           upsert: true
         });
         if (uploadError) {
@@ -329,7 +364,8 @@ export const BookingDetailsModal = ({
           description: signed ? 'Le contrat signé a été généré et sauvegardé' : 'Le contrat a été généré avec succès'
         });
       } else {
-        throw new Error('Failed to generate contract');
+        console.error('❌ Contract generation failed:', { data, error });
+        throw new Error(`Contract generation failed: ${data?.error || error?.message || 'No success response'}`);
       }
     } catch (error) {
       console.error('❌ Error generating contract:', error);
@@ -562,6 +598,10 @@ export const BookingDetailsModal = ({
                   <FileText className="w-4 h-4 mr-1" />
                   Contrat
                 </Button>
+                <Button variant="outline" size="sm" onClick={() => setShowHostSignature(true)}>
+                  <Pen className="w-4 h-4 mr-1" />
+                  Signature Hôte
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => setShowDocuments('id-documents')}>
                   <FileCheck className="w-4 h-4 mr-1" />
                   Pièces ID
@@ -580,6 +620,32 @@ export const BookingDetailsModal = ({
         {showDocuments && <DocumentsViewer booking={booking} documentType={showDocuments} onClose={() => setShowDocuments(null)} />}
       </DialogContent>
     </Dialog>
+
+    {/* Host Signature Modal */}
+    {showHostSignature && (
+      <Dialog open={showHostSignature} onOpenChange={setShowHostSignature}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Signature de l'hôte</DialogTitle>
+            <DialogDescription>
+              Signez le contrat pour cette réservation. Votre signature sera intégrée au document final.
+            </DialogDescription>
+          </DialogHeader>
+          <HostSignatureCapture
+            onSignatureComplete={handleHostSignatureComplete}
+            onCancel={() => setShowHostSignature(false)}
+            hostName={booking.property?.contact_info?.name || 'Host'}
+          />
+        </DialogContent>
+      </Dialog>
+    )}
+
+    {/* Debug Panel */}
+    <ContractDebugPanel 
+      bookingId={booking.id}
+      isVisible={showDebugPanel}
+      onToggle={setShowDebugPanel}
+    />
 
   </>;
 };

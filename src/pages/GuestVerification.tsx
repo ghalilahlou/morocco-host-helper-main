@@ -20,6 +20,7 @@ import { AnimatedStepper } from '@/components/ui/animated-stepper';
 import { IntuitiveBookingPicker } from '@/components/ui/intuitive-date-picker';
 import { validateToken, isTestToken, logTestTokenUsage, TEST_TOKENS_CONFIG } from '@/utils/testTokens';
 import { validateTokenDirect } from '@/utils/tokenValidation';
+import { Guest } from '@/types/booking'; // ✅ Importer le type centralisé
 
 // Liste complète des nationalités
 const NATIONALITIES = [
@@ -37,17 +38,7 @@ const NATIONALITIES = [
   'Taiwan', 'Hong Kong', 'Macao', 'Myanmar', 'Laos', 'Cambodia', 'Brunei', 'Timor-Leste', 'Other'
 ];
 
-interface Guest {
-  fullName: string;
-  dateOfBirth: Date | undefined;
-  nationality: string;
-  documentNumber: string;
-  documentType: 'passport' | 'national_id';
-  profession?: string;
-  motifSejour?: string;
-  adressePersonnelle?: string;
-  email?: string; // Champ email optionnel pour l'envoi du contrat
-}
+// ✅ Interface Guest supprimée - utilisation du type centralisé de @/types/booking
 
 interface UploadedDocument {
   file: File;
@@ -129,6 +120,19 @@ export const GuestVerification = () => {
     adressePersonnelle: '',
     email: ''
   }]);
+
+  // ✅ DEBUG: Log de l'état des invités à chaque changement
+  useEffect(() => {
+    console.log('🔍 DEBUG - État des invités mis à jour:', {
+      totalGuests: guests.length,
+      guests: guests.map((g, i) => ({
+        index: i,
+        fullName: g.fullName,
+        hasDateOfBirth: !!g.dateOfBirth,
+        dateOfBirth: g.dateOfBirth
+      }))
+    });
+  }, [guests]);
   const [checkInDate, setCheckInDate] = useState<Date | undefined>();
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
   const [numberOfGuests, setNumberOfGuests] = useState(1);
@@ -272,6 +276,24 @@ export const GuestVerification = () => {
     }]);
   };
 
+  // ✅ TEST: Fonction pour tester manuellement la date de naissance
+  const testDateOfBirth = () => {
+    console.log('🧪 TEST - Ajout manuel de date de naissance');
+    const updatedGuests = [...guests];
+    if (updatedGuests[0]) {
+      updatedGuests[0].dateOfBirth = new Date('1990-07-13');
+      updatedGuests[0].fullName = 'Test User';
+      updatedGuests[0].nationality = 'FRANÇAIS';
+      updatedGuests[0].documentNumber = 'TEST123456';
+      setGuests(updatedGuests);
+      console.log('🧪 TEST - Date de naissance ajoutée manuellement:', {
+        dateOfBirth: updatedGuests[0].dateOfBirth,
+        typeOfDateOfBirth: typeof updatedGuests[0].dateOfBirth,
+        isDateObject: updatedGuests[0].dateOfBirth instanceof Date
+      });
+    }
+  };
+
   const updateGuest = (index: number, field: keyof Guest, value: any) => {
     const updatedGuests = [...guests];
     updatedGuests[index] = { ...updatedGuests[index], [field]: value };
@@ -285,6 +307,7 @@ export const GuestVerification = () => {
   };
 
   const handleFileUpload = async (files: FileList) => {
+    console.log('🚨 ALERTE - handleFileUpload appelé avec', files.length, 'fichier(s)');
     if (!files || files.length === 0) return;
 
     for (let i = 0; i < files.length; i++) {
@@ -311,6 +334,11 @@ export const GuestVerification = () => {
 
       try {
         const extractedData = await OpenAIDocumentService.extractDocumentData(file);
+        console.log('🚨 ALERTE - Données extraites:', {
+          hasDateOfBirth: !!extractedData.dateOfBirth,
+          dateOfBirth: extractedData.dateOfBirth,
+          fullName: extractedData.fullName
+        });
 
         setUploadedDocuments(prev => 
           prev.map(doc => 
@@ -344,24 +372,27 @@ export const GuestVerification = () => {
           }
 
           const updatedGuests = [...guests];
-          const emptyGuestIndex = updatedGuests.findIndex(guest => 
-            !guest.fullName && !guest.documentNumber
-          );
           
-          if (emptyGuestIndex !== -1) {
-            const targetIndex = emptyGuestIndex;
-            if (extractedData.fullName) updatedGuests[targetIndex].fullName = extractedData.fullName;
-            if (extractedData.nationality) updatedGuests[targetIndex].nationality = extractedData.nationality;
-            if (extractedData.documentNumber) updatedGuests[targetIndex].documentNumber = extractedData.documentNumber;
-            if (extractedData.documentType) updatedGuests[targetIndex].documentType = extractedData.documentType as 'passport' | 'national_id';
-            if (extractedData.dateOfBirth) {
-              const parsedDate = new Date(extractedData.dateOfBirth);
-              if (!isNaN(parsedDate.getTime())) {
-                updatedGuests[targetIndex].dateOfBirth = parsedDate;
-              }
-            }
-            setGuests(updatedGuests);
-          } else {
+          // ✅ CORRECTION: Chercher un invité existant avec le même nom ou document, sinon créer un nouveau
+          let targetIndex = -1;
+          
+          // 1. Chercher un invité existant avec le même nom ou document
+          if (extractedData.fullName || extractedData.documentNumber) {
+            targetIndex = updatedGuests.findIndex(guest => 
+              (extractedData.fullName && guest.fullName === extractedData.fullName) ||
+              (extractedData.documentNumber && guest.documentNumber === extractedData.documentNumber)
+            );
+          }
+          
+          // 2. Si pas trouvé, chercher un invité vide
+          if (targetIndex === -1) {
+            targetIndex = updatedGuests.findIndex(guest => 
+              !guest.fullName && !guest.documentNumber
+            );
+          }
+          
+          // 3. Si toujours pas trouvé, créer un nouvel invité
+          if (targetIndex === -1) {
             const newGuest: Guest = {
               fullName: extractedData.fullName || '',
               dateOfBirth: extractedData.dateOfBirth ? new Date(extractedData.dateOfBirth) : undefined,
@@ -370,7 +401,87 @@ export const GuestVerification = () => {
               documentType: (extractedData.documentType as 'passport' | 'national_id') || 'passport'
             };
             setGuests([...updatedGuests, newGuest]);
+            return;
           }
+          
+          // ✅ Mise à jour de l'invité existant ou vide
+          console.log('🔍 DEBUG - Mise à jour invité à l\'index:', targetIndex);
+          console.log('🚨 ALERTE - Code de mise à jour exécuté !', {
+            targetIndex,
+            extractedData,
+            currentGuests: guests.length
+          });
+          
+          if (extractedData.fullName) updatedGuests[targetIndex].fullName = extractedData.fullName;
+          if (extractedData.nationality) updatedGuests[targetIndex].nationality = extractedData.nationality;
+          if (extractedData.documentNumber) updatedGuests[targetIndex].documentNumber = extractedData.documentNumber;
+          if (extractedData.documentType) updatedGuests[targetIndex].documentType = extractedData.documentType as 'passport' | 'national_id';
+          
+          // ✅ AMÉLIORATION: Debugging complet de la date de naissance
+          console.log('🔍 DEBUG - Analyse complète dateOfBirth:', {
+            hasDateOfBirth: !!extractedData.dateOfBirth,
+            dateOfBirthValue: extractedData.dateOfBirth,
+            dateOfBirthType: typeof extractedData.dateOfBirth,
+            allExtractedData: extractedData,
+            targetIndex,
+            currentGuest: updatedGuests[targetIndex]
+          });
+
+          if (extractedData.dateOfBirth) {
+            // ✅ Améliorer la parsing de date avec plusieurs tentatives
+            let parsedDate: Date | null = null;
+            
+            // Tentative 1: Direct parsing
+            parsedDate = new Date(extractedData.dateOfBirth);
+            if (isNaN(parsedDate.getTime())) {
+              // Tentative 2: Format ISO
+              const isoMatch = extractedData.dateOfBirth.match(/(\d{4})-(\d{2})-(\d{2})/);
+              if (isoMatch) {
+                parsedDate = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+              }
+            }
+            
+            if (parsedDate && !isNaN(parsedDate.getTime())) {
+              updatedGuests[targetIndex].dateOfBirth = parsedDate;
+              console.log('✅ DEBUG - DateOfBirth extraite et mise à jour:', {
+                originalDate: extractedData.dateOfBirth,
+                parsedDate: parsedDate,
+                formattedDate: parsedDate.toLocaleDateString('fr-FR'),
+                targetIndex,
+                guestName: extractedData.fullName,
+                updatedGuest: updatedGuests[targetIndex]
+              });
+            } else {
+              console.log('❌ DEBUG - DateOfBirth invalide après toutes les tentatives:', {
+                originalDate: extractedData.dateOfBirth,
+                parsedDate: parsedDate,
+                guestName: extractedData.fullName
+              });
+            }
+          } else {
+            console.log('❌ DEBUG - Pas de dateOfBirth dans extractedData:', {
+              extractedData,
+              hasFullName: !!extractedData.fullName,
+              hasDocumentNumber: !!extractedData.documentNumber,
+              allKeys: Object.keys(extractedData)
+            });
+          }
+          
+          setGuests(updatedGuests);
+          
+          // ✅ DEBUG: Vérifier l'état final des invités
+          console.log('🔍 DEBUG - État final des invités après mise à jour:', {
+            totalGuests: updatedGuests.length,
+            targetGuest: updatedGuests[targetIndex],
+            hasDateOfBirth: !!updatedGuests[targetIndex]?.dateOfBirth,
+            dateOfBirthValue: updatedGuests[targetIndex]?.dateOfBirth,
+            allGuests: updatedGuests.map((g, i) => ({
+              index: i,
+              fullName: g.fullName,
+              hasDateOfBirth: !!g.dateOfBirth,
+              dateOfBirth: g.dateOfBirth
+            }))
+          });
 
           toast({
             title: "Document traité",
@@ -618,45 +729,75 @@ export const GuestVerification = () => {
 
       console.log('✅ Tous les documents uploadés avec succès:', finalDocumentUrls);
 
-      const finalGuestData = {
-        ...guestData,
-        documentUrls: finalDocumentUrls
+      // ✨ NOUVEAU : Utiliser le workflow unifié au lieu de l'ancien système
+      console.log('🚀 Utilisation du workflow unifié pour:', {
+        token: token ? 'Présent' : 'Manquant',
+        airbnbCode: verificationData.airbnbCode,
+        guestCount: guests.length,
+        documentsCount: finalDocumentUrls.length
+      });
+
+      // Convertir les données vers le format unifié
+      // ✅ DEBUG: Log des données avant envoi
+      console.log('🔍 DEBUG - Données guest avant envoi:', {
+        guest: guests[0],
+        hasDateOfBirth: !!guests[0]?.dateOfBirth,
+        dateOfBirth: guests[0]?.dateOfBirth,
+        formattedDateOfBirth: guests[0]?.dateOfBirth ? format(guests[0].dateOfBirth, 'yyyy-MM-dd') : undefined
+      });
+
+      const guestInfo = {
+        firstName: guests[0]?.fullName?.split(' ')[0] || '',
+        lastName: guests[0]?.fullName?.split(' ').slice(1).join(' ') || '',
+        email: guests[0]?.email || '',
+        phone: guests[0]?.phone || '',
+        nationality: guests[0]?.nationality || '',
+        idType: guests[0]?.documentType || 'passport',
+        idNumber: guests[0]?.documentNumber || '',
+        dateOfBirth: guests[0]?.dateOfBirth ? format(guests[0].dateOfBirth, 'yyyy-MM-dd') : undefined
       };
 
-      // ✅ CORRECTION : Gestion d'erreur améliorée pour submit-guest-info
-      console.log('🔍 Appel de submit-guest-info avec:', {
-        propertyId,
-        hasToken: !!token,
-        hasBookingData: !!bookingData,
-        hasGuestData: !!finalGuestData
+      // ✅ DEBUG: Log des données finales
+      console.log('🔍 DEBUG - guestInfo final:', guestInfo);
+
+      // ✅ CORRECTION : Convertir les fichiers en base64 au lieu d'envoyer des blob URLs
+      console.log('📄 Converting documents to base64...');
+      const idDocuments = await Promise.all(
+        uploadedDocuments.map(async (doc, index) => {
+          // Convertir le fichier en base64
+          const fileData = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(doc.file);
+          });
+          
+          return {
+            name: doc.file.name || `document_${index + 1}`,
+            url: fileData, // data:image/...;base64,...
+            type: doc.file.type || 'application/octet-stream',
+            size: doc.file.size
+          };
+        })
+      );
+      
+      console.log('✅ Documents converted to base64:', {
+        count: idDocuments.length,
+        sizes: idDocuments.map(d => d.size)
       });
 
-      const { data, error: functionError } = await supabase.functions.invoke('submit-guest-info', {
-        body: {
-          propertyId,
-          token,
-          bookingData,
-          guestData: finalGuestData
-        }
+      // Utiliser le service unifié
+      const { submitDocumentsUnified } = await import('@/services/documentServiceUnified');
+      
+      const result = await submitDocumentsUnified({
+        token: token!,
+        airbnbCode: verificationData.airbnbCode,
+        guestInfo,
+        idDocuments
       });
 
-      if (functionError) {
-        console.error('❌ Function error:', functionError);
-        
-        // ✅ CORRECTION : Gestion spécifique des erreurs 401
-        if (functionError.message?.includes('401') || functionError.message?.includes('non-2xx')) {
-          throw new Error('Token invalide ou expiré. Veuillez contacter votre hôte pour obtenir un nouveau lien.');
-        }
-        
-        throw new Error(functionError.message || 'Erreur lors de la soumission des données');
-      }
-
-      if (!data?.success || !data?.bookingId) {
-        console.error('❌ Réponse invalide de submit-guest-info:', data);
-        throw new Error(data?.message || 'Erreur lors de la création de la réservation');
-      }
-
-      const bookingId = data.bookingId as string;
+      console.log('✅ Workflow unifié réussi:', result);
+      const bookingId = result.bookingId;
       
       // ✅ CORRECTION : Vérifier que l'ID est valide
       if (!bookingId || typeof bookingId !== 'string' || bookingId.trim() === '') {
@@ -666,30 +807,21 @@ export const GuestVerification = () => {
       
       console.log('✅ Booking created with ID:', bookingId);
 
-      // ✅ NOUVEAU : Synchroniser les documents après création de la réservation
-      try {
-        console.log('🔄 Synchronizing documents after booking creation...');
-        const { DocumentSyncService } = await import('@/services/documentSyncService');
-        const syncResult = await DocumentSyncService.syncAllDocuments(bookingId);
-        
-        if (syncResult.success) {
-          console.log('✅ Documents synchronized successfully:', syncResult.message);
-        } else {
-          console.warn('⚠️ Document sync failed:', syncResult.error);
-        }
-      } catch (syncError) {
-        console.error('❌ Document sync error:', syncError);
-        // Ne pas faire échouer le processus pour une erreur de sync
-      }
+      // ✅ Le workflow unifié a déjà tout synchronisé automatiquement !
+      console.log('✅ Documents déjà synchronisés par le workflow unifié');
 
-      // ✅ CORRECTION : Sauvegarder dans localStorage avant redirection
+      // ✅ CORRECTION : Sauvegarder les données enrichies du workflow unifié
       localStorage.setItem('currentBookingId', bookingId);
       localStorage.setItem('currentBookingData', JSON.stringify(bookingData));
-      localStorage.setItem('currentGuestData', JSON.stringify(finalGuestData));
+      localStorage.setItem('currentGuestData', JSON.stringify(guestInfo));
+      localStorage.setItem('contractUrl', result.contractUrl);
+      if (result.policeUrl) {
+        localStorage.setItem('policeUrl', result.policeUrl);
+      }
 
       toast({
-        title: "Données soumises avec succès",
-        description: "Vous pouvez maintenant signer le contrat.",
+        title: "Documents générés avec succès !",
+        description: "Contrat et fiche de police créés. Vous pouvez maintenant les consulter et signer.",
       });
 
       // ✅ CORRECTION : Redirection avec état complet
@@ -699,7 +831,9 @@ export const GuestVerification = () => {
       const navigationState = { 
         bookingId, 
         bookingData, 
-        guestData: finalGuestData,
+        guestData: guestInfo, // ✅ Utiliser les données unifiées
+        contractUrl: result.contractUrl,
+        policeUrl: result.policeUrl,
         propertyId,
         token,
         // ✅ AJOUTER : Timestamp pour éviter les conflits
@@ -983,10 +1117,21 @@ export const GuestVerification = () => {
                   >
                     <motion.div variants={stagger} className="space-y-8">
                       <motion.div variants={fadeInUp}>
-                        <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-                          <FileText className="w-6 h-6 text-primary" />
-                          {t('guest.documents.title')}
-                        </h3>
+                        <div className="flex items-center justify-between mb-6">
+                          <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+                            <FileText className="w-6 h-6 text-primary" />
+                            {t('guest.documents.title')}
+                          </h3>
+                          {/* ✅ TEST: Bouton pour tester manuellement la date de naissance */}
+                          <Button 
+                            onClick={testDateOfBirth}
+                            variant="outline"
+                            size="sm"
+                            className="text-xs"
+                          >
+                            🧪 Test Date
+                          </Button>
+                        </div>
                       </motion.div>
                       
                       <motion.div variants={fadeInUp}>

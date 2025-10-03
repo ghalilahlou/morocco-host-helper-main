@@ -11,6 +11,115 @@ export const useGuestVerification = () => {
   const [submissions, setSubmissions] = useState<GuestSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  // ✅ NOUVEAU : Valider un code de réservation Airbnb avec le token
+  const validateBookingPassword = async (propertyId: string, password: string, token?: string): Promise<{ valid: boolean; token?: string; error?: string }> => {
+    if (!user) return { valid: false, error: 'User not authenticated' };
+
+    try {
+      console.log('🔐 Validating Airbnb code:', { propertyId, codeLength: password.length });
+      
+      // Utiliser issue-guest-link avec action 'resolve'
+      const { data, error } = await supabase.functions.invoke('issue-guest-link', {
+        body: { 
+          action: 'resolve',
+          propertyId, 
+          token: token || '', // Token requis pour resolve
+          airbnbCode: password 
+        }
+      });
+
+      if (error) {
+        console.error('❌ Error calling issue-guest-link (resolve):', error);
+        return { valid: false, error: error.message || "Erreur de validation" };
+      }
+
+      if (!data || !data.success) {
+        console.error('❌ Function returned error:', data);
+        
+        // Gestion des erreurs spécifiques
+        if (data?.error === 'code_required') {
+          return { valid: false, error: "Code de réservation Airbnb requis" };
+        } else if (data?.error === 'invalid_code') {
+          return { valid: false, error: "Code de réservation invalide" };
+        } else if (data?.error === 'expired') {
+          return { valid: false, error: "Lien expiré" };
+        }
+        
+        return { valid: false, error: data?.error || "Réponse invalide du serveur" };
+      }
+
+      console.log('✅ Airbnb code validation successful');
+      return { 
+        valid: true, 
+        token: token, // Retourner le token original
+        error: undefined 
+      };
+    } catch (error) {
+      console.error('❌ Error validating Airbnb code:', error);
+      return { valid: false, error: "Erreur lors de la validation" };
+    }
+  };
+
+  // ✅ NOUVEAU : Valider un token avec résolution (pour GuestVerification.tsx)
+  const validateTokenWithResolution = async (propertyId: string, token: string, airbnbCode?: string) => {
+    try {
+      console.log('🔍 Validating token with resolution:', { propertyId, hasCode: !!airbnbCode });
+      
+      const { data, error } = await supabase.functions.invoke('issue-guest-link', {
+        body: {
+          action: 'resolve',
+          propertyId,
+          token,
+          airbnbCode // Optionnel au début
+        }
+      });
+
+      if (error) {
+        console.error('❌ Token resolution error:', error);
+        return { isValid: false, error: error.message };
+      }
+
+      if (!data || !data.success) {
+        // Gérer les erreurs spécifiques
+        if (data?.error === 'code_required') {
+          return { 
+            isValid: false, 
+            requiresCode: true, 
+            error: 'Code de réservation Airbnb requis' 
+          };
+        } else if (data?.error === 'invalid_code') {
+          return { 
+            isValid: false, 
+            requiresCode: true,
+            error: 'Code de réservation invalide' 
+          };
+        } else if (data?.error === 'expired') {
+          return { 
+            isValid: false, 
+            error: 'Lien expiré' 
+          };
+        } else {
+          return { 
+            isValid: false, 
+            error: data?.error || 'Token invalide' 
+          };
+        }
+      }
+
+      console.log('✅ Token validated successfully');
+      return { 
+        isValid: true, 
+        requiresCode: data.requiresCode,
+        propertyId: data.propertyId,
+        bookingId: data.bookingId
+      };
+
+    } catch (error) {
+      console.error('❌ Validation error:', error);
+      return { isValid: false, error: 'Erreur de validation' };
+    }
+  };
+
   // Generate or get existing token for a property using the edge function
   const generatePropertyVerificationUrl = async (propertyId: string, airbnbBookingId?: string): Promise<string | null> => {
     if (!user) return null;
@@ -23,8 +132,9 @@ export const useGuestVerification = () => {
       // Use the Edge Function instead of direct database access
       const { data, error } = await supabase.functions.invoke('issue-guest-link', {
         body: { 
+          action: 'issue', // Explicite
           propertyId, 
-          bookingId: airbnbBookingId 
+          airbnbCode: airbnbBookingId // Utiliser airbnbCode au lieu de bookingId
         }
       });
 
@@ -32,29 +142,58 @@ export const useGuestVerification = () => {
         console.error('❌ Error calling issue-guest-link function:', error);
         toast({
           title: "Erreur",
-          description: "Impossible de créer le lien de vérification",
+          description: error.message || "Impossible de créer le lien de vérification",
           variant: "destructive"
         });
         return null;
       }
 
-      if (!data || !data.link) {
-        console.error('❌ No link returned from Edge Function:', data);
+      if (!data || !data.success) {
+        console.error('❌ Function returned error:', data);
+        const errorMessage = data?.error || "Réponse invalide du serveur";
+        const errorDetails = data?.details ? ` (${JSON.stringify(data.details)})` : '';
         toast({
           title: "Erreur",
-          description: "Réponse invalide du serveur",
+          description: `${errorMessage}${errorDetails}`,
           variant: "destructive"
         });
         return null;
       }
 
-      console.log('✅ Generated verification URL via Edge Function:', data.link);
-      toast({
-        title: "Lien généré",
-        description: "Lien de vérification créé avec succès"
-      });
+      if (!data.url) {
+        console.error('❌ No URL returned from Edge Function:', data);
+        toast({
+          title: "Erreur",
+          description: "Aucune URL générée",
+          variant: "destructive"
+        });
+        return null;
+      }
 
-      return data.link;
+      console.log('✅ Generated verification URL via Edge Function:', data.url);
+      
+      // ✅ NOUVEAU : Informer sur le type de lien
+      const linkType = data.requiresCode ? "sécurisé" : "standard";
+      const linkDescription = data.requiresCode 
+        ? "Ce lien nécessitera le code de réservation Airbnb pour l'accès" 
+        : "Lien de vérification standard créé";
+      
+      // Copy URL to clipboard
+      try {
+        await navigator.clipboard.writeText(data.url);
+        toast({
+          title: `Lien ${linkType} généré et copié`,
+          description: linkDescription
+        });
+      } catch (clipboardError) {
+        console.warn('⚠️ Failed to copy to clipboard:', clipboardError);
+        toast({
+          title: `Lien ${linkType} généré`,
+          description: linkDescription
+        });
+      }
+
+      return data.url;
     } catch (error) {
       console.error('❌ Error generating verification URL:', error);
       toast({
@@ -255,6 +394,8 @@ export const useGuestVerification = () => {
     submissions,
     isLoading,
     generatePropertyVerificationUrl,
+    validateBookingPassword, // ✅ NOUVEAU : Exposer la fonction de validation
+    validateTokenWithResolution, // ✅ NOUVEAU : Exposer la nouvelle fonction
     loadVerificationTokens,
     loadGuestSubmissions,
     deactivateToken,

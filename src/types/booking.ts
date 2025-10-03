@@ -1,7 +1,7 @@
 export interface Guest {
-  id: string;
+  id?: string;
   fullName: string;
-  dateOfBirth: string;
+  dateOfBirth: Date | undefined; // ✅ CORRECTION: Utiliser Date comme dans GuestVerification
   documentNumber: string;
   nationality: string;
   placeOfBirth?: string;

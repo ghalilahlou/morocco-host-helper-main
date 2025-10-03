@@ -76,7 +76,7 @@ async function handleRequest(req: Request): Promise<Response> {
 
 Your task is to extract the following information from the document image:
 - Full name (given names + surname)
-- Date of birth (in YYYY-MM-DD format)
+- Date of birth (in YYYY-MM-DD format) - THIS IS CRITICAL, LOOK CAREFULLY FOR BIRTH DATES
 - Document number
 - Nationality (in French, e.g., BRITANNIQUE, FRANÇAIS, NÉERLANDAIS, etc.)
 - Place of birth (if visible)
@@ -84,11 +84,18 @@ Your task is to extract the following information from the document image:
 
 IMPORTANT RULES:
 1. Be extremely precise - only extract information that is clearly visible and readable
-2. For dates, convert to YYYY-MM-DD format (e.g., "22 AUG 87" becomes "1987-08-22")
-3. For nationalities, use French terms: BRITISH→BRITANNIQUE, FRENCH→FRANÇAIS, DUTCH→NÉERLANDAIS, GERMAN→ALLEMAND, ITALIAN→ITALIEN, SPANISH→ESPAGNOL
-4. For names, combine given names and surname into fullName (e.g., "STEVEN ALAN DAVIES")
-5. If any field is not clearly visible, set it as null
-6. Document type mapping: use "passport" for passports, "national_id" for ID cards, and when the document is a driver's license (e.g., shows terms like "DRIVER LICENSE", "PERMIS DE CONDUIRE", or state-issued DL), set documentType to "national_id" as well.
+2. For dates, convert to YYYY-MM-DD format (e.g., "22 AUG 87" becomes "1987-08-22", "26/07/1990" becomes "1990-07-26")
+3. DATE OF BIRTH is CRITICAL - look for variations like: "Date of birth", "DOB", "Born", "Né(e) le", "Date de naissance", birth date numbers near year patterns
+4. For nationalities, use French terms: BRITISH→BRITANNIQUE, FRENCH→FRANÇAIS, DUTCH→NÉERLANDAIS, GERMAN→ALLEMAND, ITALIAN→ITALIEN, SPANISH→ESPAGNOL
+5. For names, combine given names and surname into fullName (e.g., "STEVEN ALAN DAVIES")
+6. If any field is not clearly visible, set it as null
+7. Document type mapping: use "passport" for passports, "national_id" for ID cards, and when the document is a driver's license (e.g., shows terms like "DRIVER LICENSE", "PERMIS DE CONDUIRE", or state-issued DL), set documentType to "national_id" as well.
+
+SPECIAL ATTENTION FOR DATE OF BIRTH:
+- Look for patterns like: DD/MM/YYYY, MM/DD/YYYY, DD-MM-YYYY, DD.MM.YYYY
+- Look for month names: JAN, FEB, MAR, APR, MAY, JUN, JUL, AUG, SEP, OCT, NOV, DEC
+- Look for French months: JANV, FÉVR, MARS, AVRL, MAI, JUIN, JUIL, AOÛT, SEPT, OCTO, NOVE, DÉCE
+- Check areas near "Born", "Birth", "Naissance", "DOB", age calculations
 
 Return ONLY a JSON object with this exact structure:
 {

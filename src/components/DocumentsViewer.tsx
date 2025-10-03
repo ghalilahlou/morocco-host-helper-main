@@ -65,158 +65,34 @@ export const DocumentsViewer = ({
     try {
       console.log('🔍 Récupération documents d\'identité pour:', booking.id);
       
-      // ✅ CORRECTION : Vérifier et réparer l'intégrité des documents avant affichage
-      const integrityResult = await DocumentSynchronizationService.verifyDocumentIntegrity(booking.id);
-      
-      if (!integrityResult.success && integrityResult.issues.length > 0) {
-        console.warn('⚠️ Problèmes détectés dans les documents:', integrityResult.issues);
-        
-        // Proposer une réparation automatique
-        const repairResult = await DocumentSynchronizationService.repairDocumentIssues(booking.id);
-        if (repairResult.success) {
-          toast({
-            title: "Documents réparés",
-            description: repairResult.message,
-            variant: "default"
-          });
-        }
-      }
-      
-      // ✅ PRIORITÉ 1 : Récupérer d'abord depuis uploaded_documents (source principale)
-      const { data: uploadedDocs, error: uploadedError } = await supabase
-        .from('uploaded_documents')
-        .select(`
-          id,
-          file_name,
-          document_url,
-          file_path,
-          created_at,
-          guest_id,
-          guests(full_name),
-          extracted_data
-        `)
-        .eq('booking_id', booking.id);
+      // ✅ CORRECTION : Utiliser get-guest-documents-unified au lieu de requêtes directes
+      const { data: documentsData, error: documentsError } = await supabase.functions.invoke('get-guest-documents-unified', {
+        body: { bookingId: booking.id }
+      });
 
-      if (uploadedError) {
-        console.error('❌ Erreur récupération uploaded_documents:', uploadedError);
+      if (documentsError) {
+        console.error('❌ Erreur récupération documents:', documentsError);
+        toast({
+          title: "Erreur",
+          description: "Impossible de récupérer les documents d'identité",
+          variant: "destructive"
+        });
+        return;
       }
 
-      let idDocuments = [];
-      
-      // Traiter les documents de uploaded_documents
-      if (uploadedDocs && uploadedDocs.length > 0) {
-        console.log('✅ Documents trouvés dans uploaded_documents:', uploadedDocs.length);
-        
-        for (const doc of uploadedDocs) {
-          let documentUrl = doc.document_url;
-          
-          // Si pas d'URL ou URL expirée, créer une nouvelle URL signée
-          if (!documentUrl && doc.file_path) {
-            console.log('🔄 Generating signed URL for file_path:', doc.file_path);
-            
-            const { data: signedUrlData, error: signedUrlError } = await supabase.functions.invoke('storage-sign-url', {
-              body: { bucket: 'guest-documents', path: doc.file_path, expiresIn: 7200 } // 2 heures
-            });
-            
-            if (!signedUrlError && signedUrlData?.signedUrl) {
-              documentUrl = signedUrlData.signedUrl;
-              console.log('✅ Generated new signed URL');
-            } else {
-              console.error('❌ Failed to generate signed URL:', signedUrlError);
-            }
-          } else if (documentUrl && documentUrl.includes('token=')) {
-            // Vérifier si l'URL signée existante est encore valide
-            try {
-              const response = await fetch(documentUrl, { method: 'HEAD' });
-              if (!response.ok) {
-                console.log('🔄 Existing URL expired, generating new one for:', doc.file_path);
-                
-                const { data: signedUrlData, error: signedUrlError } = await supabase.functions.invoke('storage-sign-url', {
-                  body: { bucket: 'guest-documents', path: doc.file_path, expiresIn: 7200 }
-                });
-                
-                if (!signedUrlError && signedUrlData?.signedUrl) {
-                  documentUrl = signedUrlData.signedUrl;
-                  console.log('✅ Refreshed expired signed URL');
-                }
-              }
-            } catch (error) {
-              console.warn('⚠️ Could not verify URL validity:', error);
-            }
-          }
-          
-          if (documentUrl) {
-            idDocuments.push({
-              id: String(doc.id),
-              name: doc.file_name || `Document_${doc.id}`,
-              url: documentUrl,
-              guestName: doc.guests?.full_name || 'Invité inconnu',
-              metadata: doc.extracted_data
-            });
-          }
-        }
+      if (!documentsData?.success || !documentsData.bookings || documentsData.bookings.length === 0) {
+        toast({
+          title: "Aucun document",
+          description: "Aucun document d'identité trouvé pour cette réservation",
+          variant: "destructive"
+        });
+        return;
       }
+
+      const bookingData = documentsData.bookings[0];
+      const identityDocs = transformToDisplayDocuments(bookingData.documents.identity);
       
-      // ✅ PRIORITÉ 2 : Compléter avec guest_submissions si nécessaire
-      if (idDocuments.length === 0) {
-        console.log('🔄 Aucun document dans uploaded_documents, vérification guest_submissions...');
-        
-        const { data: submissions, error: submissionsError } = await supabase
-          .from('v_guest_submissions')
-          .select('*')
-          .eq('booking_id', booking.id)
-          .not('guest_data', 'is', null);
-        
-        if (submissionsError) {
-          console.error('❌ Erreur récupération soumissions:', submissionsError);
-          toast({
-            title: "Erreur",
-            description: "Impossible de récupérer les documents d'identité",
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        if (!submissions || submissions.length === 0) {
-          toast({
-            title: "Aucun document",
-            description: "Aucun document d'identité trouvé pour cette réservation",
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        console.log('📝 Soumissions trouvées:', submissions.length);
-        
-        // Extraiter les documents des soumissions (fallback)
-        for (const submission of submissions) {
-          const guestData = submission.guest_data as { guests?: Array<{ fullName?: string; full_name?: string; documentNumber?: string; document_number?: string; documentType?: string; document_type?: string; nationality?: string; dateOfBirth?: string; date_of_birth?: string; placeOfBirth?: string; place_of_birth?: string }> };
-          
-          if (guestData?.guests && Array.isArray(guestData.guests)) {
-            for (const guest of guestData.guests) {
-              const guestName = guest.fullName || guest.full_name || 'Invité inconnu';
-              const documentType = guest.documentType || guest.document_type || 'Document d\'identité';
-              const documentNumber = guest.documentNumber || guest.document_number || 'Non spécifié';
-              
-              idDocuments.push({
-                id: `id-${submission.id}-${guestName}`,
-                name: `ID_${guestName}`,
-                url: '#', // Pas de fichier physique, juste les informations
-                guestName: guestName,
-                metadata: {
-                  documentType,
-                  documentNumber,
-                  nationality: guest.nationality || 'Non spécifiée',
-                  dateOfBirth: guest.dateOfBirth || guest.date_of_birth || 'Non spécifiée',
-                  placeOfBirth: guest.placeOfBirth || guest.place_of_birth || 'Non spécifié'
-                }
-              });
-            }
-          }
-        }
-      }
-      
-      if (idDocuments.length === 0) {
+      if (identityDocs.length === 0) {
         toast({
           title: "Aucun document",
           description: "Aucun document d'identité trouvé pour cette réservation",
@@ -226,15 +102,15 @@ export const DocumentsViewer = ({
       }
       
       // ✅ Mettre à jour l'état des documents
-      console.log('✅ Documents d\'identité trouvés:', idDocuments.length);
+      console.log('✅ Documents d\'identité trouvés:', identityDocs.length);
       setDocuments(prev => ({
         ...prev,
-        guestDocuments: idDocuments
+        guestDocuments: identityDocs
       }));
       
       toast({
         title: "Documents récupérés",
-        description: `${idDocuments.length} document(s) d'identité trouvé(s)`,
+        description: `${identityDocs.length} document(s) d'identité trouvé(s)`,
         variant: "default"
       });
       
@@ -251,119 +127,73 @@ export const DocumentsViewer = ({
   const loadDocuments = async () => {
     try {
       setIsLoading(true);
+      console.log('📋 Loading documents for booking:', booking.id);
 
-      // ✅ CORRECTION : Utiliser UNIQUEMENT DocumentStorageService (plus de double chargement)
-      const guestDocuments = await DocumentStorageService.getDocumentsForBooking(booking);
-      
-      // ✅ SUPPRIMÉ : Le chargement en double depuis v_guest_submissions
-      // DocumentStorageService gère déjà tout via la vue unifiée
+      // ✅ CORRECTION : Utiliser la fonction unifiée pour récupérer TOUS les documents
+      const { data: documentsData, error: documentsError } = await supabase.functions.invoke('get-guest-documents-unified', {
+        body: { bookingId: booking.id }
+      });
 
-      // Clean up any potential duplications
-      await DocumentStorageService.cleanupDuplicateSubmissions(booking);
-
-      // Check for generated contract (attempt regardless of flag)
-      let contractUrl: string | null = null;
-      try {
-        const {
-          data
-        } = await supabase.functions.invoke('storage-sign-url', {
-          body: { bucket: 'contracts', path: `${booking.id}/contract.pdf`, expiresIn: 3600 }
+      if (documentsError) {
+        console.error('❌ Error fetching documents:', documentsError);
+        toast({
+          title: "Erreur",
+          description: "Impossible de charger les documents",
+          variant: "destructive"
         });
-        if (data?.signedUrl) {
-          contractUrl = data.signedUrl;
-        }
-      } catch {}
-
-      // Fallback: if no stored contract but a signature exists, generate on-the-fly and persist
-      if (!contractUrl) {
-        try {
-          const {
-            data: sig
-          } = await supabase.from('contract_signatures').select('signature_data,signed_at').eq('booking_id', booking.id).order('signed_at', {
-            ascending: false
-          }).limit(1);
-          if (sig && sig.length > 0 && sig[0].signature_data) {
-            const {
-              data: gen,
-              error: genErr
-            } = await supabase.functions.invoke('generate-contract', {
-              body: {
-                bookingId: booking.id,
-                action: 'sign',
-                signatureData: sig[0].signature_data,
-                signedAt: sig[0].signed_at
-              }
-            });
-            if (!genErr && (gen?.documentUrl || gen?.documentUrls?.[0])) {
-              const dataUrl = (gen.documentUrl || gen.documentUrls?.[0]) as string;
-              contractUrl = dataUrl; // immediate display
-              // Persist to storage in background
-              try {
-                const resp = await fetch(dataUrl);
-                const blob = await resp.blob();
-                await supabase.storage.from('contracts').upload(`${booking.id}/contract.pdf`, blob, {
-                  upsert: true
-                });
-                const {
-                  data: signed
-                } = await supabase.functions.invoke('storage-sign-url', {
-                  body: { bucket: 'contracts', path: `${booking.id}/contract.pdf`, expiresIn: 3600 }
-                });
-                if (signed?.signedUrl) contractUrl = signed.signedUrl;
-              } catch (persistErr) {
-                console.warn('Contract persistence failed, using data URL', persistErr);
-              }
-            }
-          }
-        } catch (fallbackErr) {
-          console.warn('Contract fallback generation failed', fallbackErr);
-        }
+        return;
       }
 
-      // Fetch all generated police forms for this booking (folder = booking.id)
-      let policeForms: {
-        name: string;
-        url: string;
-      }[] = [];
-      try {
-        const {
-          data: files,
-          error: listErr
-        } = await supabase.storage.from('police-forms').list(booking.id, {
-          limit: 100
+      if (!documentsData?.success || !documentsData.bookings || documentsData.bookings.length === 0) {
+        console.log('ℹ️ No documents found for booking');
+        setDocuments({
+          guestDocuments: [],
+          contract: null,
+          policeForms: []
         });
-        if (!listErr && files && files.length > 0) {
-          for (const f of files) {
-            const path = `${booking.id}/${f.name}`;
-            const {
-              data: signed
-            } = await supabase.functions.invoke('storage-sign-url', {
-              body: { bucket: 'police-forms', path: path, expiresIn: 3600 }
-            });
-            if (signed?.signedUrl) {
-              policeForms.push({
-                name: f.name,
-                url: signed.signedUrl
-              });
-            }
-          }
-        }
-      } catch {}
-      // ✅ SUPPRIMÉ : Logs de debug pour éviter le spam
-      
-      // Transform UnifiedDocument[] to DisplayDocument[] for consistent display
-      const displayDocuments = transformToDisplayDocuments(guestDocuments);
+        return;
+      }
 
-      setDocuments({
-        guestDocuments: displayDocuments, // ✅ Utiliser les documents transformés
-        contract: contractUrl,
-        policeForms
+      const bookingData = documentsData.bookings[0];
+      console.log('📋 Documents loaded:', {
+        identity: bookingData.documents.identity.length,
+        contract: bookingData.documents.contract.length,
+        police: bookingData.documents.police.length,
+        totalDocuments: bookingData.summary.totalDocuments
       });
+
+      // ✅ CORRECTION : Transformer les documents pour l'affichage
+      const transformedDocs = {
+        guestDocuments: transformToDisplayDocuments(bookingData.documents.identity),
+        contract: bookingData.documents.contract.length > 0 ? bookingData.documents.contract[0].url : null,
+        policeForms: transformToDisplayDocuments(bookingData.documents.police)
+      };
+
+      console.log('📋 Transformed documents:', {
+        hasContract: !!transformedDocs.contract,
+        contractUrl: transformedDocs.contract?.substring(0, 50) + '...',
+        contractUrlFull: transformedDocs.contract,
+        guestDocsCount: transformedDocs.guestDocuments.length,
+        policeFormsCount: transformedDocs.policeForms.length
+      });
+      
+      // ✅ DEBUG : Vérifier la validité des URLs
+      if (transformedDocs.contract) {
+        console.log('🔍 Contract URL validation:', {
+          url: transformedDocs.contract,
+          isValid: transformedDocs.contract !== '#' && transformedDocs.contract !== '',
+          startsWithHttp: transformedDocs.contract.startsWith('http'),
+          startsWithData: transformedDocs.contract.startsWith('data:'),
+          length: transformedDocs.contract.length
+        });
+      }
+
+      setDocuments(transformedDocs);
     } catch (error) {
-      console.error('Error loading documents:', error);
+      console.error('❌ Error loading documents:', error);
       toast({
-        title: "Error",
-        description: "Failed to load documents",
+        title: "Erreur",
+        description: "Erreur lors du chargement des documents",
         variant: "destructive"
       });
     } finally {
@@ -372,22 +202,45 @@ export const DocumentsViewer = ({
   };
   const downloadDocument = async (url: string, baseFilename: string) => {
     try {
-      // Extract the actual file extension from the URL
-      const urlPath = new URL(url).pathname;
-      const actualExtension = urlPath.split('.').pop() || 'pdf';
+      console.log('🔍 downloadDocument called with:', { url, baseFilename });
+      
+      // ✅ CORRECTION : Valider l'URL avant utilisation
+      if (!url || url === '#' || url === '') {
+        throw new Error('URL invalide ou vide');
+      }
+      
+      // ✅ CORRECTION : Vérifier si l'URL est valide
+      let urlPath: string;
+      let actualExtension: string;
+      
+      try {
+        const urlObj = new URL(url);
+        urlPath = urlObj.pathname;
+        actualExtension = urlPath.split('.').pop() || 'pdf';
+        console.log('✅ URL valide:', { urlPath, actualExtension });
+      } catch (urlError) {
+        console.warn('⚠️ URL invalide, utilisation de l\'extension par défaut:', urlError);
+        // Pour les URLs invalides, utiliser l'extension par défaut
+        actualExtension = 'pdf';
+      }
 
       // Remove any existing extension from baseFilename and add the correct one
       const cleanFilename = baseFilename.replace(/\.[^/.]+$/, "");
       const filename = `${cleanFilename}.${actualExtension}`;
+      
+      console.log('🔍 Downloading:', { url, filename });
+      
       const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Accept': '*/*'
         }
       });
+      
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -398,21 +251,77 @@ export const DocumentsViewer = ({
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
+      
+      console.log('✅ Download completed successfully');
       toast({
         title: "Success",
         description: `${filename} downloaded successfully`
       });
     } catch (error) {
-      console.error('Download error:', error);
+      console.error('❌ Download error:', error);
       toast({
-        title: "Error",
-        description: "Failed to download document. Please try viewing the document instead.",
+        title: "Erreur de téléchargement",
+        description: error instanceof Error ? error.message : "Impossible de télécharger le document",
         variant: "destructive"
       });
     }
   };
   const openDocument = (url: string) => {
-    window.open(url, '_blank');
+    console.log('🔍 openDocument called with URL:', url);
+    console.log('🔍 URL type:', typeof url);
+    console.log('🔍 URL length:', url?.length);
+    console.log('🔍 URL starts with http:', url?.startsWith('http'));
+    console.log('🔍 URL starts with data:', url?.startsWith('data:'));
+    
+    if (!url || url === '#' || url === '') {
+      console.error('❌ Invalid URL provided to openDocument:', url);
+      toast({
+        title: "Erreur",
+        description: "URL du document invalide",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // ✅ DEBUG : Test de l'URL avant ouverture
+    if (url.startsWith('http')) {
+      console.log('🔍 Testing URL accessibility...');
+      fetch(url, { method: 'HEAD' })
+        .then(response => {
+          console.log('🔍 URL test response:', response.status, response.statusText);
+          if (response.ok) {
+            window.open(url, '_blank');
+            console.log('✅ Document opened successfully');
+          } else {
+            console.error('❌ URL not accessible:', response.status);
+            toast({
+              title: "Erreur",
+              description: `Document non accessible (${response.status})`,
+              variant: "destructive"
+            });
+          }
+        })
+        .catch(error => {
+          console.error('❌ URL test failed:', error);
+          toast({
+            title: "Erreur",
+            description: "Impossible d'accéder au document",
+            variant: "destructive"
+          });
+        });
+    } else {
+      try {
+        window.open(url, '_blank');
+        console.log('✅ Document opened successfully');
+      } catch (error) {
+        console.error('❌ Error opening document:', error);
+        toast({
+          title: "Erreur",
+          description: "Impossible d'ouvrir le document",
+          variant: "destructive"
+        });
+      }
+    }
   };
   if (isLoading) {
     return <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -815,6 +724,50 @@ export const DocumentsViewer = ({
                   >
                     Récupérer documents d'identité
                   </Button>
+                  
+                  {/* Bouton pour nettoyer les doublons de contrats */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        console.log('🧹 Nettoyage des doublons de contrats...');
+                        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+                          body: {
+                            action: 'clean_duplicate_contracts',
+                            bookingId: booking.id
+                          }
+                        });
+                        
+                        if (error) {
+                          console.error('❌ Erreur nettoyage:', error);
+                          toast({
+                            title: "Erreur",
+                            description: "Erreur lors du nettoyage des doublons",
+                            variant: "destructive"
+                          });
+                        } else {
+                          console.log('✅ Nettoyage réussi:', data);
+                          toast({
+                            title: "Nettoyage terminé",
+                            description: data.message || "Doublons supprimés avec succès"
+                          });
+                          // Recharger les documents
+                          loadDocuments();
+                        }
+                      } catch (error) {
+                        console.error('❌ Erreur nettoyage:', error);
+                        toast({
+                          title: "Erreur",
+                          description: "Erreur lors du nettoyage des doublons",
+                          variant: "destructive"
+                        });
+                      }
+                    }}
+                    className="mt-2 text-orange-600 hover:text-orange-700"
+                  >
+                    🧹 Nettoyer doublons contrats
+                  </Button>
                 </div>}
             </div>}
 
@@ -1041,14 +994,18 @@ export const DocumentsViewer = ({
                               try {
                                 console.log('🔍 Génération PDF police pour:', booking.id);
                                 
-                                const { data, error } = await supabase.functions.invoke('generate-police-forms', {
-                                  body: { bookingId: booking.id }
+                                // ✅ CORRECTION : Utiliser submit-guest-info-unified au lieu de generate-police-forms
+                                const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+                                  body: { 
+                                    bookingId: booking.id,
+                                    action: 'generate_police_only'
+                                  }
                                 });
                                 
-                                console.log('📄 Réponse generate-police-forms:', { data, error });
+                                console.log('📄 Réponse submit-guest-info-unified:', { data, error });
                                 
                                 if (error) {
-                                  console.error('❌ Erreur generation:', error);
+                                  console.error('❌ Erreur génération police:', error);
                                   toast({
                                     title: "Erreur",
                                     description: error.message || "Impossible de générer la fiche de police",
@@ -1058,7 +1015,7 @@ export const DocumentsViewer = ({
                                 }
                                 
                                 // ✅ CORRECTION: Support des deux formats de réponse
-                                const documentUrls = data.documentUrls || (data.documentUrl ? [data.documentUrl] : []);
+                                const documentUrls = data.documentUrls || (data.documentUrl ? [data.documentUrl] : []) || (data.policeUrl ? [data.policeUrl] : []);
                                 if (data && data.success && documentUrls && documentUrls.length > 0) {
                                   console.log('✅ Documents générés:', documentUrls.length);
                                   

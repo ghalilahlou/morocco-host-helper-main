@@ -11,6 +11,7 @@ import { PropertyDetail } from "@/components/PropertyDetail";
 import { GuestVerification } from "@/pages/GuestVerification";
 import { GuestWelcome } from "@/pages/GuestWelcome";
 import { ContractSigning } from "@/pages/ContractSigning";
+import { VerifyToken } from "@/pages/VerifyToken";
 import { Landing } from "@/pages/Landing";
 import { Pricing } from "@/pages/Pricing";
 import { AirbnbSyncHelp } from "@/pages/AirbnbSyncHelp";
@@ -64,6 +65,13 @@ const App = () => (
             <GuestLocaleProvider>
               <GuestLayout>
                 <GuestVerification />
+              </GuestLayout>
+            </GuestLocaleProvider>
+          } />
+          <Route path="/verify/:token" element={
+            <GuestLocaleProvider>
+              <GuestLayout>
+                <VerifyToken />
               </GuestLayout>
             </GuestLocaleProvider>
           } />

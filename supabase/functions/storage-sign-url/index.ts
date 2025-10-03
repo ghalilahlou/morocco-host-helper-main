@@ -1,109 +1,98 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
 
-interface SignUrlRequest {
-  bucket: 'guest-documents' | 'contracts' | 'police-forms';
-  path: string;
-  expiresIn?: number;
-}
-
-async function getServerClient() {
-  const url = Deno.env.get('SUPABASE_URL');
-  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-  if (!url || !key) {
-    throw new Error('Missing Supabase credentials');
-  }
-
-  return createClient(url, key, { auth: { persistSession: false } });
-}
-
 serve(async (req) => {
-  // Handle CORS preflight requests
+  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  try {
-    console.log('🔗 storage-sign-url function called');
-    console.log('📅 Timestamp:', new Date().toISOString());
-    
-    const { bucket, path, expiresIn = 3600 }: SignUrlRequest = await req.json();
-    
-    console.log('📥 Request data:', {
-      bucket,
-      path,
-      expiresIn
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({
+      error: 'Only POST method is allowed'
+    }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
+  }
 
-    // Validate bucket is one of the allowed sensitive buckets
-    const allowedBuckets = ['guest-documents', 'contracts', 'police-forms'] as const;
-    if (!allowedBuckets.includes(bucket)) {
-      console.error('❌ Invalid bucket:', bucket);
-      return new Response(
-        JSON.stringify({ error: 'Invalid bucket' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(JSON.stringify({
+        error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    // Create service role client
-    const server = await getServerClient();
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false }
+    });
 
-    // Create signed URL
-    const { data, error } = await server.storage
+    const { bucket, path, expiresIn = 3600 } = await req.json();
+
+    if (!bucket || !path) {
+      return new Response(JSON.stringify({
+        error: 'bucket and path are required'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`🔗 Generating signed URL for ${bucket}/${path}`);
+
+    const { data: signedData, error: signedError } = await supabase.storage
       .from(bucket)
       .createSignedUrl(path, expiresIn);
 
-    if (error) {
-      console.error('❌ Error creating signed URL:', error);
-      
-      // Check if it's a file not found error
-      if (error.message?.includes('not found') || error.message?.includes('does not exist')) {
-        return new Response(
-          JSON.stringify({ error: 'File not found' }),
-          { 
-            status: 404, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({ error: 'Failed to create signed URL' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
+    if (signedError) {
+      console.error(`❌ Error generating signed URL:`, signedError);
+      return new Response(JSON.stringify({
+        error: `Failed to generate signed URL: ${signedError.message}`
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
-    console.log('✅ Signed URL created successfully');
-    
-    return new Response(
-      JSON.stringify({ signedUrl: data.signedUrl }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+    if (!signedData?.signedUrl) {
+      return new Response(JSON.stringify({
+        error: 'No signed URL generated'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`✅ Signed URL generated successfully`);
+
+    return new Response(JSON.stringify({
+      success: true,
+      signedUrl: signedData.signedUrl,
+      expiresIn
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
 
   } catch (error) {
-    console.error('❌ Unexpected error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    );
+    console.error('❌ Error in storage-sign-url:', error);
+    return new Response(JSON.stringify({
+      error: error instanceof Error ? error.message : 'Internal server error'
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
   }
 });

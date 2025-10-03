@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # Service pour extraire les Edge Functions de Supabase
+  supabase-extractor:
+    image: supabase/cli:latest
+    container_name: supabase-functions-extractor
+    environment:
+      - SUPABASE_ACCESS_TOKEN=${SUPABASE_ACCESS_TOKEN}
+      - SUPABASE_DB_PASSWORD=${SUPABASE_DB_PASSWORD}
+    volumes:
+      - ./supabase:/workspace/supabase
+      - ./extracted_functions:/workspace/extracted_functions
+    working_dir: /workspace
+    command: >
+      sh -c "
+        echo '🚀 Démarrage de l'\''extraction des Edge Functions...' &&
+        supabase link --project-ref csopyblkfyofwkeqqegd &&
+        echo '📤 Liste des fonctions disponibles:' &&
+        supabase functions list &&
+        echo '📥 Extraction de toutes les fonctions...' &&
+        mkdir -p extracted_functions &&
+        for func in \$(supabase functions list | grep -v 'Name' | grep -v '^$'); do
+          echo \"📥 Extraction de la fonction: \$func\" &&
+          supabase functions download \$func --output-dir extracted_functions/ ||
+          echo \"⚠️  Impossible d'\''extraire \$func\"
+        done &&
+        echo '✅ Extraction terminée!' &&
+        ls -la extracted_functions/
+      "
+    networks:
+      - supabase-network
+
+  # Service pour synchroniser avec la base de données locale
+  supabase-sync:
+    image: supabase/postgres:15.1.0.117
+    container_name: supabase-sync-db
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - supabase_sync_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - supabase-network
+    profiles:
+      - sync
+
+networks:
+  supabase-network:
+    driver: bridge
+
+volumes:
+  supabase_sync_data:

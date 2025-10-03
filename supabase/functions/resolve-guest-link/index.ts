@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { addCorsHeaders, handleOptions } from '../_shared/cors.ts';
 import { handleError, ValidationError, NotFoundError } from '../_shared/errors.ts';
 import { getServerClient, verifyPropertyToken } from '../_shared/serverClient.ts';
+import { hashAccessCode, isAirbnbCode } from '../_shared/security.ts';
 
 serve(async (req) => {
   try {
@@ -46,7 +47,7 @@ serve(async (req) => {
       throw new NotFoundError('Property not found', { propertyError });
     }
 
-    // ✅ CORRECTION : Rechercher une réservation active ou récente
+    // ✅ Rechercher une réservation active ou récente
     let booking = null;
     const { data: bookings, error: bookingError } = await client
       .from('bookings')
@@ -62,14 +63,65 @@ serve(async (req) => {
       booking = bookings[0];
     }
 
-    // ✅ CORRECTION : Format de réponse compatible avec le frontend
+    // ✅ Vérifier si le token nécessite un code (access_code_hash non NULL)
+    const { data: tokenRow } = await client
+      .from('property_verification_tokens')
+      .select('access_code_hash, airbnb_confirmation_code, used_count, expires_at')
+      .eq('token', token)
+      .eq('property_id', resolvedPropertyId)
+      .maybeSingle();
+
+    let requiresCode = !!tokenRow?.access_code_hash;
+
+    // 410 expired if token has expires_at < now
+    if (tokenRow?.expires_at && new Date(tokenRow.expires_at) < new Date()) {
+      return addCorsHeaders(new Response(JSON.stringify({
+        success: false,
+        error: 'expired'
+      }), { status: 410, headers: { 'Content-Type': 'application/json' } }));
+    }
+
+    // If code required, verify provided airbnbCode by comparing hashes
+    if (requiresCode) {
+      if (!airbnbCode || !isAirbnbCode(String(airbnbCode))) {
+        return addCorsHeaders(new Response(JSON.stringify({
+          success: false,
+          error: 'code_required',
+          requiresCode: true
+        }), { status: 403, headers: { 'Content-Type': 'application/json' } }));
+      }
+
+      const providedHash = await hashAccessCode(String(airbnbCode).toUpperCase());
+      if (providedHash !== tokenRow!.access_code_hash) {
+        return addCorsHeaders(new Response(JSON.stringify({
+          success: false,
+          error: 'invalid_code',
+          requiresCode: true
+        }), { status: 401, headers: { 'Content-Type': 'application/json' } }));
+      }
+
+      // Update used_count and last_used_at on success
+      try {
+        await client
+          .from('property_verification_tokens')
+          .update({
+            used_count: (tokenRow!.used_count ?? 0) + 1,
+            last_used_at: new Date().toISOString()
+          })
+          .eq('token', token)
+          .eq('property_id', resolvedPropertyId);
+      } catch (_) {}
+    }
+
+    // ✅ Format de réponse
     const responseData = {
       success: true,
       propertyId: resolvedPropertyId,
       bookingId: booking?.id || null,
       token: token,
       property: property,
-      booking: booking
+      booking: booking,
+      requiresCode
     };
 
     console.log('✅ resolve-guest-link success:', { 

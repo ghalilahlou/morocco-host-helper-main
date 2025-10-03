@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "supabase-mcp": {
+      "command": "node",
+      "args": ["./tools/supabase-mcp.js"]
+    },
+    "claude-mcp": {
+      "command": "node", 
+      "args": ["./tools/claude-mcp.js"]
+    }
+  }
+}

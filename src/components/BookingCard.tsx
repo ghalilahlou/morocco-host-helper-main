@@ -304,8 +304,11 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
                     timestamp: new Date().toISOString()
                   });
 
-                  const { data, error } = await supabase.functions.invoke('generate-police-forms', {
-                    body: { bookingId: booking.id }
+                  const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+                    body: { 
+                      bookingId: booking.id,
+                      action: 'generate_police_only'
+                    }
                   });
 
                   console.log('🔍 APRÈS APPEL generate-police-forms:', {
@@ -357,8 +360,11 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
                 try {
                   console.log('📄 Generating contract for booking:', booking.id);
                   
-                  const { data, error } = await supabase.functions.invoke('generate-contract', {
-                    body: { bookingId: booking.id, action: 'generate' }
+                  const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+                    body: { 
+                      bookingId: booking.id, 
+                      action: 'generate_contract_only' 
+                    }
                   });
 
                   if (error) {

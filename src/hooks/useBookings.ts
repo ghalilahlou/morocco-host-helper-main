@@ -19,7 +19,7 @@ export const useBookings = () => {
     if (user) {
       loadBookings();
     }
-  }, [user]);
+  }, [user?.id]); // ✅ FIX: Utiliser user.id au lieu de user pour éviter les re-renders
 
   // Set up real-time subscriptions for automatic updates
   useEffect(() => {
@@ -90,10 +90,16 @@ export const useBookings = () => {
       console.log('🛑 Cleaning up real-time subscriptions');
       supabase.removeChannel(bookingsChannel);
     };
-  }, [user]);
+  }, [user?.id]); // ✅ FIX: Utiliser user.id au lieu de user pour éviter les re-renders
 
   const loadBookings = async () => {
     try {
+      // ✅ PROTECTION : Éviter les appels multiples simultanés
+      if (isLoading) {
+        console.log('⏳ Already loading bookings, skipping...');
+        return;
+      }
+      
       setIsLoading(true);
       
       // Check if user is authenticated

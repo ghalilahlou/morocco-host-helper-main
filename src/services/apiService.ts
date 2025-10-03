@@ -54,6 +54,13 @@ export interface ContractSignatureParams {
   signatureDataUrl: string;
 }
 
+export interface HostSignatureParams {
+  bookingId: string;
+  hostSignatureDataUrl: string;
+  hostSignerName: string;
+  signedAt: string;
+}
+
 export class ApiService {
   /**
    * Résoudre un lien invité avec gestion d'erreurs robuste
@@ -149,11 +156,78 @@ export class ApiService {
   }
 
   /**
-   * Soumettre les informations d'un invité
+   * ✨ NOUVEAU : Soumettre les informations d'un invité avec workflow unifié
+   * Remplace l'ancien submitGuestInfo avec une logique consolidée
+   */
+  static async submitGuestInfoUnified(
+    token: string,
+    airbnbCode: string,
+    guestInfo: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone?: string;
+      nationality?: string;
+      idType?: string;
+      idNumber?: string;
+      dateOfBirth?: string;
+    },
+    idDocuments: Array<{
+      name: string;
+      url: string;
+      type: string;
+      size?: number;
+    }>,
+    signature?: {
+      data: string;
+      timestamp: string;
+    }
+  ): Promise<ApiResponse> {
+    try {
+      console.log('🚀 ApiService.submitGuestInfoUnified called');
+
+      // Utiliser le service unifié importé
+      const { submitDocumentsUnified } = await import('@/services/documentServiceUnified');
+      
+      const result = await submitDocumentsUnified({
+        token,
+        airbnbCode,
+        guestInfo,
+        idDocuments,
+        signature
+      });
+
+      console.log('✅ Unified workflow success:', result);
+      
+      return {
+        success: true,
+        data: {
+          bookingId: result.bookingId,
+          contractUrl: result.contractUrl,
+          policeUrl: result.policeUrl,
+          booking: result.booking
+        },
+        message: 'Documents générés avec succès via workflow unifié'
+      };
+
+    } catch (error) {
+      console.error('❌ ApiService.submitGuestInfoUnified error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Erreur workflow unifié'
+      };
+    }
+  }
+
+  /**
+   * @deprecated Utiliser submitGuestInfoUnified à la place
+   * Ancienne méthode maintenue pour compatibilité temporaire
    */
   static async submitGuestInfo(params: GuestInfoParams): Promise<ApiResponse> {
+    console.warn('⚠️ submitGuestInfo is deprecated. Use submitGuestInfoUnified instead.');
+    
     try {
-      console.log('📝 ApiService.submitGuestInfo called');
+      console.log('📝 ApiService.submitGuestInfo called (deprecated)');
 
       const { data, error } = await supabase.functions.invoke('submit-guest-info', {
         body: params
@@ -199,6 +273,37 @@ export class ApiService {
   }
 
   /**
+   * Sauvegarder une signature d'hôte
+   */
+  static async saveHostSignature(params: HostSignatureParams): Promise<ApiResponse> {
+    try {
+      console.log('✍️ ApiService.saveHostSignature called');
+
+      const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+        body: {
+          bookingId: params.bookingId,
+          action: 'save_host_signature',
+          hostSignatureData: params.hostSignatureDataUrl,
+          hostSignerName: params.hostSignerName,
+          signedAt: params.signedAt
+        }
+      });
+
+      if (error) {
+        console.error('❌ generate-contract host signature error:', error);
+        throw new Error(error.message || 'Erreur lors de la sauvegarde de la signature hôte');
+      }
+
+      console.log('✅ Host signature saved successfully:', data);
+      return data as ApiResponse;
+
+    } catch (error) {
+      console.error('❌ ApiService.saveHostSignature error:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Synchroniser les documents
    */
   static async syncDocuments(bookingId: string, documentType: string = 'all'): Promise<ApiResponse> {
@@ -227,47 +332,33 @@ export class ApiService {
   }
 
   /**
-   * Générer des documents (contrat et fiches de police)
+   * Générer des documents (contrat et fiches de police) - Version unifiée
    */
   static async generateDocuments(bookingId: string): Promise<ApiResponse> {
     try {
       console.log('📄 ApiService.generateDocuments called for booking:', bookingId);
 
-      // Générer le contrat
-      const { data: contractData, error: contractError } = await supabase.functions.invoke('generate-contract', {
+      // ✅ CORRECTION : Utiliser la fonction unifiée pour tous les documents
+      const { data: unifiedData, error: unifiedError } = await supabase.functions.invoke('submit-guest-info-unified', {
         body: {
           bookingId: bookingId,
-          action: 'generate'
+          action: 'generate_all_documents'
         }
       });
 
-      if (contractError) {
-        console.error('❌ generate-contract error:', contractError);
-        throw new Error(contractError.message || 'Erreur lors de la génération du contrat');
+      if (unifiedError) {
+        console.error('❌ submit-guest-info-unified error:', unifiedError);
+        throw new Error(unifiedError.message || 'Erreur lors de la génération des documents');
       }
 
-      console.log('✅ generate-contract success:', contractData);
+      console.log('✅ submit-guest-info-unified success:', unifiedData);
 
-      // Générer les fiches de police
-      const { data: policeData, error: policeError } = await supabase.functions.invoke('generate-police-forms', {
-        body: {
-          bookingId: bookingId
-        }
-      });
-
-      if (policeError) {
-        console.error('❌ generate-police-forms error:', policeError);
-        throw new Error(policeError.message || 'Erreur lors de la génération des fiches de police');
-      }
-
-      console.log('✅ generate-police-forms success:', policeData);
-
-      // Retourner les deux résultats
+      // Retourner les résultats unifiés
       return {
         success: true,
-        contract: contractData,
-        police: policeData,
-        message: 'Documents générés avec succès'
+        contract: unifiedData?.contractUrl ? { contractUrl: unifiedData.contractUrl } : null,
+        police: unifiedData?.policeUrl ? { policeUrl: unifiedData.policeUrl } : null,
+        message: 'Documents générés avec succès via fonction unifiée'
       } as ApiResponse;
 
     } catch (error) {

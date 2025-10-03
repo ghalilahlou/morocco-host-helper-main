@@ -8,16 +8,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { MobileLayout } from './MobileLayout';
+import { Guest } from '@/types/booking'; // ✅ Utiliser le type centralisé
 
-// Interfaces
-interface Guest {
-  fullName: string;
-  dateOfBirth: string;
-  documentNumber: string;
-  nationality: string;
-  placeOfBirth?: string;
-  documentType: 'passport' | 'id_card';
-}
+// ✅ Interface Guest supprimée - utilisation du type centralisé
 
 interface BookingData {
   checkInDate: Date | null;

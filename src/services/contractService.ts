@@ -55,12 +55,14 @@ export class ContractService {
           hasSignature: !!signedContract.signature_data
         });
         
-        const { data, error } = await supabase.functions.invoke('generate-contract', {
+        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
           body: {
             bookingId: booking.id,
-            action: 'sign',
-            signatureData: signedContract.signature_data,
-            signedAt: signedContract.signed_at
+            action: 'generate_contract_only',
+            signature: {
+              data: signedContract.signature_data,
+              timestamp: signedContract.signed_at
+            }
           }
         });
 
@@ -108,10 +110,10 @@ export class ContractService {
           documentType: 'contract'
         });
         
-        const { data, error } = await supabase.functions.invoke('generate-contract', {
+        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
           body: {
             bookingId: booking.id,
-            action: 'generate'
+            action: 'generate_contract_only'
           }
         });
 
@@ -191,12 +193,14 @@ export class ContractService {
     try {
       console.log('🔍 ContractService - Downloading signed contract PDF...');
       
-      const { data, error } = await supabase.functions.invoke('generate-contract', {
+      const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
         body: {
           bookingId: booking.id,
-          action: 'sign',
-          signatureData: signedContract.signature_data,
-          signedAt: signedContract.signed_at
+          action: 'generate_contract_only',
+          signature: {
+            data: signedContract.signature_data,
+            timestamp: signedContract.signed_at
+          }
         }
       });
 
@@ -254,10 +258,10 @@ export async function getContractPdfUrl(params: {
     throw new Error('Missing bookingId or bookingLike');
   }
 
-  const { data, error } = await supabase.functions.invoke('generate-contract', { 
+  const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', { 
     body: {
       bookingId: bookingId || bookingLike?.id,
-      action: 'generate'
+      action: 'generate_contract_only'
     }
   });
   if (error) throw error;

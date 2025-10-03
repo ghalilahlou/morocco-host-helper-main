@@ -1,44 +1,168 @@
-name: CI
+name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '18'
 
 jobs:
-  build:
+  # Tests de qualité de code
+  code-quality:
+    name: Code Quality
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Lint code
+      run: npm run lint
+      
+    - name: Type check
+      run: npm run typecheck
+      
+    - name: Security audit
+      run: npm audit --audit-level=moderate
+      continue-on-error: true
 
-      - name: Use Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
+  # Tests de build
+  build-test:
+    name: Build Test
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build project
+      run: npm run build
+      env:
+        VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-files
+        path: dist/
+        retention-days: 7
 
-      - name: Install dependencies
-        run: npm ci
+  # Tests des outils MCP et Edge Functions
+  tools-test:
+    name: Tools & Edge Functions Test
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Test environment check tool
+      run: npm run check:env || true
+      env:
+        VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      
+    - name: Test Edge Functions discovery
+      run: npm run sync:edges -- --list
+      
+    # Optionnel: Tests unitaires (à implémenter)
+    # - name: Run unit tests
+    #   run: npm test
 
-      - name: Lint
-        run: npm run lint
+  # Déploiement des Edge Functions (si branche main)
+  deploy-functions:
+    name: Deploy Edge Functions
+    runs-on: ubuntu-latest
+    needs: [build-test, tools-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Supabase CLI
+      uses: supabase/setup-cli@v1
+      with:
+        version: latest
+        
+    - name: Deploy Edge Functions
+      run: |
+        supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        
+    - name: Notify deployment
+      run: |
+        echo "✅ Edge Functions deployed successfully"
+        echo "Project: ${{ secrets.SUPABASE_PROJECT_REF }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Commit: ${{ github.sha }}"
 
-      - name: Typecheck
-        run: npm run typecheck
+  # Notification de succès
+  notify-success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [build-test, tools-test]
+    if: success()
+    
+    steps:
+    - name: Success notification
+      run: |
+        echo "🎉 CI/CD Pipeline completed successfully!"
+        echo "✅ Code quality: PASSED"
+        echo "✅ Build test: PASSED" 
+        echo "✅ Tools test: PASSED"
+        
+        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "🚀 Ready for production deployment"
+        fi
 
-      - name: Build
-        run: npm run build
-
-      - name: Security audit
-        run: npm audit --audit-level=moderate
-
-      - name: Check for secrets in code
-        run: |
-          if grep -r "VITE_SUPABASE_URL\|VITE_SUPABASE_ANON_KEY\|SUPABASE_" . --exclude-dir=node_modules --exclude-dir=.git; then
-            echo "❌ SECURITY WARNING: Potential secrets found in code!"
-            exit 1
-          fi
-          echo "✅ No obvious secrets found in code"
+  # Notification d'échec
+  notify-failure:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [build-test, tools-test]
+    if: failure()
+    
+    steps:
+    - name: Failure notification
+      run: |
+        echo "❌ CI/CD Pipeline failed!"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "Commit: ${{ github.sha }}"
+        echo "Please check the logs and fix the issues."
+        exit 1

@@ -80,20 +80,27 @@ serve(async (req) => {
     const requestData = await req.json();
     console.log('📥 Request data:', requestData);
 
-    const { bookingId } = requestData;
+    const { bookingId, booking: previewBooking } = requestData;
 
-    if (!bookingId) {
+    let booking: Booking;
+
+    if (bookingId) {
+      // Mode normal : récupérer depuis la base de données
+      console.log('📋 Mode normal : récupération depuis DB avec bookingId:', bookingId);
+      booking = await fetchBookingFromDatabase(client, bookingId);
+    } else if (previewBooking) {
+      // Mode aperçu : utiliser les données fournies directement
+      console.log('👁️ Mode aperçu : utilisation des données fournies directement');
+      booking = previewBooking;
+    } else {
       return new Response(JSON.stringify({
         success: false,
-        message: 'bookingId is required'
+        message: 'bookingId ou données de booking requises'
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-
-    // Fetch booking data
-    const booking = await fetchBookingFromDatabase(client, bookingId);
 
     if (!booking.property) {
       return new Response(JSON.stringify({
@@ -278,7 +285,7 @@ async function saveDocumentToDatabase(
   return documentRecord;
 }
 
-// Generate police forms PDF
+// Generate police forms PDF - Format officiel marocain bilingue EXACT
 async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
   console.log('📄 Creating police forms PDF...');
   
@@ -389,34 +396,57 @@ async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
     try {
       const contractTemplate = property.contract_template || {};
       const landlordSignature = contractTemplate.landlord_signature;
-      if (landlordSignature) {
-        const clean = landlordSignature.replace(/^data:image\/[^;]+;base64,/, '');
-        let img;
+      if (landlordSignature && landlordSignature.trim()) {
         try {
-          img = await pdfDoc.embedPng(Uint8Array.from(atob(clean), (c) => c.charCodeAt(0)));
-        } catch {
-          img = await pdfDoc.embedJpg(Uint8Array.from(atob(clean), (c) => c.charCodeAt(0)));
+          // Vérifier que c'est une data URL valide
+          if (!landlordSignature.startsWith('data:image/')) {
+            throw new Error('Invalid signature format');
+          }
+          
+          const clean = landlordSignature.replace(/^data:image\/[^;]+;base64,/, '');
+          
+          // Vérifier que le base64 est valide
+          if (!clean || clean.length === 0) {
+            throw new Error('Empty base64 data');
+          }
+          
+          let img;
+          try {
+            img = await pdfDoc.embedPng(Uint8Array.from(atob(clean), (c) => c.charCodeAt(0)));
+          } catch {
+            try {
+              img = await pdfDoc.embedJpg(Uint8Array.from(atob(clean), (c) => c.charCodeAt(0)));
+            } catch {
+              throw new Error('Failed to decode image');
+            }
+          }
+          
+          const maxWidth = 220;
+          const maxHeight = 100;
+          const aspect = img.width / img.height;
+          let width = maxWidth;
+          let height = maxWidth / aspect;
+          if (height > maxHeight) {
+            height = maxHeight;
+            width = maxHeight * aspect;
+          }
+          
+          page.drawImage(img, {
+            x: leftColumn,
+            y: yPosition - height - 10,
+            width,
+            height
+          });
+          console.log('✅ Landlord signature embedded');
+        } catch (signatureError) {
+          console.warn('⚠️ Skipped landlord signature (invalid format):', signatureError.message);
+          // Continuer sans la signature
         }
-        
-        const maxWidth = 220;
-        const maxHeight = 100;
-        const aspect = img.width / img.height;
-        let width = maxWidth;
-        let height = maxWidth / aspect;
-        if (height > maxHeight) {
-          height = maxHeight;
-          width = maxHeight * aspect;
-        }
-        
-        page.drawImage(img, {
-          x: leftColumn,
-          y: yPosition - height - 10,
-          width,
-          height
-        });
+      } else {
+        console.log('ℹ️ No landlord signature');
       }
     } catch (e) {
-      console.error('Failed to embed landlord signature on police form:', e);
+      console.warn('⚠️ Signature section error:', e.message);
     }
     
     yPosition -= 60;

@@ -277,12 +277,16 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
         console.log('🔍 Police booking data being sent:', booking);
         console.log('🔍 Police contract template:', booking.property.contract_template);
 
-        const { data, error } = await supabase.functions.invoke('generate-police-forms', {
-          body: { bookingId: booking.id },
+        // ✅ CORRECTION : Utiliser submit-guest-info-unified au lieu de generate-police-forms
+        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+          body: { 
+            bookingId: booking.id,
+            action: 'generate_police_only'
+          }
         });
         if (error) throw error as any;
 
-        const urls = (data as any)?.documentUrls || [];
+        const urls = (data as any)?.documentUrls || (data as any)?.policeUrl ? [(data as any).policeUrl] : [];
         const normalized: string[] = [];
         for (const u of urls) {
           const final = await normalizePdfUrl(u);
@@ -328,7 +332,8 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
     const companyName = contractTemplate.landlord_company || 'Société';
     const companyRegistration = contractTemplate.landlord_registration || 'N/A';
     const companyAddress = contractTemplate.landlord_address || 'Adresse non renseignée';
-    const landlordName = contractTemplate.landlord_name || 'Propriétaire';
+    // ✅ CORRECTION: Ne plus forcer "Propriétaire" - laisser vide si pas de données
+    const landlordName = contractTemplate.landlord_name || '';
     const landlordStatus = String(formData?.landlord_status ?? contractTemplate.landlord_status ?? (property as any)?.status ?? '').toLowerCase();
     const landlordText = landlordStatus === 'particulier'
       ? `${landlordName}, Gestionnaire et/ou propriétaire du bien, ci-après dénommée "Le Bailleur"`

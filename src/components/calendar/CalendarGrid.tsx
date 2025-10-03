@@ -71,9 +71,11 @@ export const CalendarGrid = ({
               <div className="absolute inset-0 top-6 sm:top-8 pointer-events-none z-20">
                 <div className="grid grid-cols-7 h-full">
                   {bookingLayout[weekIndex].map((bookingData, arrayIndex) => {
-                    const barHeight = isMobile ? 16 : 24;
+                    const barHeight = isMobile ? 16 : 20; // Hauteur légèrement réduite sur desktop
                     const layer = bookingData.layer || 0;
-                    const topOffset = isMobile ? 12 + (layer * 18) : 20 + (layer * 26);
+                    // Espacement réduit entre les layers pour un meilleur aspect visuel
+                    const layerSpacing = isMobile ? 14 : 18; // Réduit de 18->14 et 26->18
+                    const topOffset = isMobile ? 12 + (layer * layerSpacing) : 20 + (layer * layerSpacing);
                     const endDayIndex = bookingData.startDayIndex + bookingData.span - 1;
                     const overhangRight = endDayIndex < 6 ? (isMobile ? 4 : 12) : 0;
                     const startInset = bookingData.startDayIndex > 0 ? (isMobile ? 4 : 12) : 0;

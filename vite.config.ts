@@ -8,6 +8,16 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 3000,
+    proxy: {
+      '/functions': {
+        target: process.env.VITE_SUPABASE_URL,
+        changeOrigin: true,
+        headers: {
+          'Authorization': `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`,
+          'apikey': process.env.VITE_SUPABASE_ANON_KEY || '',
+        },
+      },
+    },
   },
   plugins: [
     react(),

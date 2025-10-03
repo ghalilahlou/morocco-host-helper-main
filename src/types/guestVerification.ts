@@ -22,21 +22,12 @@ export interface GuestSubmission {
   updated_at: string;
 }
 
+import { Guest } from './booking';
+
 export interface GuestVerificationFormData {
   checkInDate: string;
   checkOutDate: string;
   numberOfGuests: number;
-  guests: Array<{
-    fullName: string;
-    dateOfBirth: string;
-    nationality: string;
-    documentNumber: string;
-    documentType: 'passport' | 'national_id';
-    placeOfBirth?: string;
-    profession?: string;
-    motifSejour?: string;
-    adressePersonnelle?: string;
-    email?: string; // Champ email optionnel pour l'envoi du contrat
-  }>;
+  guests: Guest[]; // ✅ CORRECTION: Utiliser le type centralisé
   signature?: string;
 }

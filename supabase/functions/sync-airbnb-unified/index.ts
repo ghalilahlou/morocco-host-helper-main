@@ -448,6 +448,107 @@ serve(async (req) => {
       console.log(`✅ Upserted ${data?.length || 0} reservations for property ${propertyId}`);
     }
 
+    // ✅ NOUVEAU : Créer automatiquement les tokens sécurisés pour les codes Airbnb HM…
+    console.log('🔐 Génération automatique des tokens sécurisés pour les codes Airbnb...');
+    let tokensCreated = 0;
+    try {
+      const pepper = Deno.env.get('ACCESS_CODE_PEPPER');
+      if (!pepper) {
+        console.warn('⚠️ ACCESS_CODE_PEPPER not configured - skipping automatic token creation');
+      } else {
+        // Filtrer uniquement les codes Airbnb valides (HM...)
+        const airbnbCodes = reservationData
+          .map(r => ({ 
+            code: r.airbnb_booking_id, 
+            endDate: r.end_date,
+            summary: r.summary 
+          }))
+          .filter(item => item.code && /^HM[A-Z0-9]{8,12}$/.test(String(item.code)));
+
+        console.log(`🎯 Found ${airbnbCodes.length} valid Airbnb codes (HM...)`);
+
+        if (airbnbCodes.length > 0) {
+          // Dédupliquer par code Airbnb
+          const uniqueCodesMap = new Map();
+          airbnbCodes.forEach(item => {
+            const normalizedCode = String(item.code).trim().toUpperCase();
+            if (!uniqueCodesMap.has(normalizedCode)) {
+              uniqueCodesMap.set(normalizedCode, item);
+            }
+          });
+
+          const uniqueCodes = Array.from(uniqueCodesMap.values());
+          console.log(`📋 Creating tokens for ${uniqueCodes.length} unique Airbnb codes`);
+
+          // Fonction de hashage sécurisée (identique à issue-guest-link)
+          async function hashAccessCode(code: string): Promise<string> {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(`${code}::${pepper}`);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(digest));
+            return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+          }
+
+          // Générer un token crypto-secure
+          function generateSecureToken(): string {
+            const bytes = new Uint8Array(24);
+            crypto.getRandomValues(bytes);
+            const base64 = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, '');
+            return `${base64}${Date.now().toString(36)}`;
+          }
+
+          const nowIso = new Date().toISOString();
+          const tokenRows = await Promise.all(uniqueCodes.map(async (item) => {
+            const code = String(item.code).trim().toUpperCase();
+            const accessCodeHash = await hashAccessCode(code);
+            
+            // Calculer la date d'expiration : end_date + 7 jours
+            const endDate = new Date(item.endDate + 'T00:00:00Z');
+            endDate.setDate(endDate.getDate() + 7);
+
+            return {
+              property_id: propertyId,
+              airbnb_confirmation_code: code,
+              access_code_hash: accessCodeHash,
+              token: generateSecureToken(),
+              is_active: true,
+              created_at: nowIso,
+              updated_at: nowIso,
+              expires_at: endDate.toISOString(),
+              metadata: { 
+                source: 'sync-airbnb-unified',
+                sync_date: nowIso,
+                reservation_summary: item.summary,
+                auto_generated: true
+              }
+            };
+          }));
+
+          if (tokenRows.length > 0) {
+            const { data: insertedTokens, error: tokenError } = await supabaseClient
+              .from('property_verification_tokens')
+              .upsert(tokenRows, { onConflict: 'property_id,airbnb_confirmation_code' })
+              .select('id, airbnb_confirmation_code, expires_at');
+
+            if (tokenError) {
+              console.error('❌ Failed to create automatic tokens:', tokenError);
+            } else {
+              tokensCreated = insertedTokens?.length || 0;
+              console.log(`✅ Created/updated ${tokensCreated} automatic tokens for Airbnb codes`);
+              
+              // Log des tokens créés (sans exposer les codes en clair)
+              insertedTokens?.forEach(token => {
+                console.log(`   - Token pour code HM*** (expires: ${token.expires_at})`);
+              });
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error creating automatic tokens:', error);
+      // Ne pas faire échouer la synchronisation pour cette erreur
+    }
+
     // Update sync status to "success"
     await supabaseClient
       .from('airbnb_sync_status')
@@ -468,8 +569,9 @@ serve(async (req) => {
         propertyName: property.name,
         reservations_count: reservationData.length,
         count: reservationData.length, // Add count field for compatibility
+        tokens_created: tokensCreated,
         reservations: upsertResult,
-        message: 'Unified sync completed successfully'
+        message: `Unified sync completed successfully. ${reservationData.length} reservations synced, ${tokensCreated} automatic tokens created for Airbnb codes.`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

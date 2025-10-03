@@ -127,7 +127,9 @@ export class AILocrService {
                 }
                 break;
               case 'dateOfBirth':
+                console.log('🔍 DEBUG AILocrService - Raw dateOfBirth answer:', answer.answer);
                 result.dateOfBirth = this.standardizeDate(answer.answer);
+                console.log('🔍 DEBUG AILocrService - Standardized dateOfBirth:', result.dateOfBirth);
                 break;
               case 'nationality':
                 result.nationality = this.standardizeNationality(answer.answer);
@@ -384,7 +386,14 @@ export class AILocrService {
   }
 
   private static standardizeDate(dateString: string): string {
+    if (!dateString) {
+      console.log('❌ DEBUG standardizeDate - Empty input');
+      return '';
+    }
+
+    console.log('🔍 DEBUG standardizeDate - Input:', dateString);
     const cleaned = dateString.replace(/\s+/g, ' ').trim();
+    console.log('🔍 DEBUG standardizeDate - Cleaned:', cleaned);
     
     // Handle "DD MMM YYYY" format
     const monthNames: { [key: string]: string } = {
@@ -398,35 +407,52 @@ export class AILocrService {
 
     const monthMatch = cleaned.match(/(\d{1,2})\s*([A-Z]{3,4})\s*(\d{4})/i);
     if (monthMatch) {
+      console.log('🔍 DEBUG standardizeDate - Month format matched:', monthMatch);
       const day = monthMatch[1].padStart(2, '0');
       const monthStr = monthMatch[2].toUpperCase();
       const year = monthMatch[3];
       const month = monthNames[monthStr] || monthNames[monthStr.substring(0, 3)];
       
       if (month) {
-        return `${year}-${month}-${day}`;
+        const result = `${year}-${month}-${day}`;
+        console.log('✅ DEBUG standardizeDate - Month format result:', result);
+        return result;
       }
     }
 
-    // Handle standard formats
+    // Handle standard formats - improved with more patterns
     const formats = [
-      /(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})/, // DD/MM/YYYY
-      /(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/, // YYYY/MM/DD
+      { pattern: /(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{4})/, type: 'DD/MM/YYYY' }, // DD/MM/YYYY
+      { pattern: /(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/, type: 'YYYY/MM/DD' }, // YYYY/MM/DD
+      { pattern: /(\d{2})[-\/\.](\d{2})[-\/\.](\d{2})/, type: 'DD/MM/YY' }, // DD/MM/YY format  
     ];
 
-    for (const format of formats) {
-      const match = cleaned.match(format);
+    for (const { pattern, type } of formats) {
+      const match = cleaned.match(pattern);
       if (match) {
+        console.log(`🔍 DEBUG standardizeDate - ${type} format matched:`, match);
         const [, first, second, third] = match;
         
-        if (third.length === 4) {
+        if (type === 'DD/MM/YY') {
+          // Assuming YY > 50 means 19XX, otherwise 20XX
+          const year = parseInt(third) > 50 ? `19${third}` : `20${third}`;
           const day = first.padStart(2, '0');
           const month = second.padStart(2, '0');
-          return `${third}-${month}-${day}`;
+          const result = `${year}-${month}-${day}`;
+          console.log(`✅ DEBUG standardizeDate - ${type} result:`, result);
+          return result;
+        } else if (third.length === 4) {
+          const day = first.padStart(2, '0');
+          const month = second.padStart(2, '0');
+          const result = `${third}-${month}-${day}`;
+          console.log(`✅ DEBUG standardizeDate - ${type} result:`, result);
+          return result;
         } else if (first.length === 4) {
           const month = second.padStart(2, '0');
           const day = third.padStart(2, '0');
-          return `${first}-${month}-${day}`;
+          const result = `${first}-${month}-${day}`;
+          console.log(`✅ DEBUG standardizeDate - ${type} result:`, result);
+          return result;
         }
       }
     }

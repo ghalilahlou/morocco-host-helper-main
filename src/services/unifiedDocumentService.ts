@@ -55,7 +55,7 @@ export class UnifiedDocumentService {
         return null;
       }
 
-      if (!data.success || !data.bookings || data.bookings.length === 0) {
+      if (!data?.success || !data?.bookings || data.bookings.length === 0) {
         console.log('ℹ️ No documents found for booking');
         return null;
       }
@@ -83,7 +83,7 @@ export class UnifiedDocumentService {
         return [];
       }
 
-      if (!data.success || !data.bookings) {
+      if (!data?.success || !data?.bookings) {
         console.log('ℹ️ No documents found for property');
         return [];
       }
@@ -144,40 +144,34 @@ export class UnifiedDocumentService {
       
       const generatedDocuments: string[] = [];
 
-      for (const docType of documentTypes) {
-        try {
-          let functionName = '';
-          let requestBody: any = { bookingId };
-
-          switch (docType) {
-            case 'identity':
-              functionName = 'generate-id-documents';
-              break;
-            case 'contract':
-              functionName = 'generate-contract';
-              requestBody.action = 'generate';
-              break;
-            case 'police':
-              functionName = 'generate-police-forms';
-              break;
-            default:
-              console.warn(`⚠️ Unknown document type: ${docType}`);
-              continue;
+      // ✅ CORRECTION : Utiliser la fonction unifiée pour tous les types de documents
+      try {
+        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+          body: {
+            bookingId: bookingId,
+            action: 'generate_all_documents',
+            documentTypes: documentTypes
           }
+        });
 
-          const { data, error } = await supabase.functions.invoke(functionName, {
-            body: requestBody
-          });
-
-          if (error) {
-            console.error(`❌ Error generating ${docType}:`, error);
-          } else if (data.success || data.documentUrl) {
-            generatedDocuments.push(docType);
-            console.log(`✅ Generated ${docType} document`);
+        if (error) {
+          console.error(`❌ Error generating documents via unified function:`, error);
+        } else if (data?.success) {
+          // Analyser les documents générés
+          if (data.contractUrl && documentTypes.includes('contract')) {
+            generatedDocuments.push('contract');
           }
-        } catch (docError) {
-          console.error(`❌ Exception generating ${docType}:`, docError);
+          if (data.policeUrl && documentTypes.includes('police')) {
+            generatedDocuments.push('police');
+          }
+          if (data.identityDocuments && documentTypes.includes('identity')) {
+            generatedDocuments.push('identity');
+          }
+          
+          console.log(`✅ Generated documents via unified function:`, generatedDocuments);
         }
+      } catch (docError) {
+        console.error(`❌ Exception generating documents via unified function:`, docError);
       }
 
       const success = generatedDocuments.length === documentTypes.length;
@@ -224,7 +218,7 @@ export class UnifiedDocumentService {
         };
       }
 
-      if (data.success) {
+      if (data?.success) {
         console.log(`✅ Synced ${data.reservations_count} reservations`);
         return {
           success: true,

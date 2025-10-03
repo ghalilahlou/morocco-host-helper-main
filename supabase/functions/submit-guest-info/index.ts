@@ -330,7 +330,7 @@ serve(async (req) => {
       // Créer les nouveaux invités
       const guestsData = guestData.guests.map((guest) => ({
         full_name: guest.fullName || guest.full_name || '',
-        date_of_birth: guest.dateOfBirth || guest.date_of_birth || '',
+        date_of_birth: guest.dateOfBirth || guest.date_of_birth || null, // ✅ CORRECTION : null au lieu de ''
         nationality: guest.nationality || 'Non spécifiée',
         document_number: guest.documentNumber || guest.document_number || '',
         document_type: guest.documentType || guest.document_type || 'passport',

@@ -320,8 +320,8 @@ export const useAdmin = () => {
 
       // Les données sont déjà enrichies par get_users_for_admin
       const adminUsers = data.map((user: any) => ({
-        id: user.id,
-        email: user.email,
+        id: user.user_id || user.id,
+        email: user.email || 'unknown@example.com',
         full_name: user.full_name || user.email?.split('@')[0] || 'Unknown',
         role: user.role || 'user' as const,
         created_at: user.created_at,
