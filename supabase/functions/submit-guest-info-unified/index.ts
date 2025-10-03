@@ -1073,6 +1073,7 @@ async function createIndependentBooking(token: string, guestInfo: GuestInfo, boo
 
     const booking: ResolvedBooking = {
       id: crypto.randomUUID(),
+      propertyId: property.id, // ✅ CORRECTION : Ajouter le propertyId
       checkIn: checkIn.toISOString().split('T')[0],
       checkOut: checkOut.toISOString().split('T')[0],
       propertyName: property.name,
