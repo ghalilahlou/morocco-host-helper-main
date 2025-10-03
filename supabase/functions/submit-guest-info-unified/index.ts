@@ -1596,7 +1596,16 @@ serve(async (req) => {
       totalTimeMs: processingTime
     });
 
-    return new Response(JSON.stringify({
+    // ✅ DEBUG : Log de la structure de result
+    log('info', '🔍 DEBUG: Structure de result', {
+      hasBookingId: !!result.bookingId,
+      hasContractUrl: !!result.contractUrl,
+      hasPoliceUrl: !!result.policeUrl,
+      resultKeys: Object.keys(result),
+      resultType: typeof result
+    });
+
+    const responseData = {
       success: true,
       data: {
         bookingId: result.bookingId,
@@ -1620,7 +1629,17 @@ serve(async (req) => {
         },
         expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       }
-    }), {
+    };
+
+    // ✅ DEBUG : Log de la réponse finale
+    log('info', '🔍 DEBUG: Réponse finale', {
+      hasData: !!responseData.data,
+      hasBookingId: !!responseData.data.bookingId,
+      dataKeys: Object.keys(responseData.data),
+      responseDataString: JSON.stringify(responseData).substring(0, 200) + '...'
+    });
+
+    return new Response(JSON.stringify(responseData), {
       status: 200,
       headers: corsHeaders
     });
