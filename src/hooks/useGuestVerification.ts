@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react';
+import runtime from '@/config/runtime';
 import { supabase } from '@/integrations/supabase/client';
 import { PropertyVerificationToken, GuestSubmission } from '@/types/guestVerification';
 import { useAuth } from './useAuth';
@@ -160,17 +161,19 @@ export const useGuestVerification = () => {
         return null;
       }
 
-      if (!data.url) {
-        console.error('❌ No URL returned from Edge Function:', data);
+      if (!data.token) {
+        console.error('❌ No token returned from Edge Function:', data);
         toast({
           title: "Erreur",
-          description: "Aucune URL générée",
+          description: "Aucun token généré",
           variant: "destructive"
         });
         return null;
       }
 
-      console.log('✅ Generated verification URL via Edge Function:', data.url);
+      // Construire un lien client indépendant (A→Z) vers la page front
+      const clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
+      console.log('✅ Generated client verification URL:', clientUrl);
       
       // ✅ NOUVEAU : Informer sur le type de lien
       const linkType = data.requiresCode ? "sécurisé" : "standard";
@@ -180,7 +183,7 @@ export const useGuestVerification = () => {
       
       // Copy URL to clipboard
       try {
-        await navigator.clipboard.writeText(data.url);
+        await navigator.clipboard.writeText(clientUrl);
         toast({
           title: `Lien ${linkType} généré et copié`,
           description: linkDescription
@@ -189,11 +192,11 @@ export const useGuestVerification = () => {
         console.warn('⚠️ Failed to copy to clipboard:', clipboardError);
         toast({
           title: `Lien ${linkType} généré`,
-          description: linkDescription
+          description: `${linkDescription} (${clientUrl})`
         });
       }
 
-      return data.url;
+      return clientUrl;
     } catch (error) {
       console.error('❌ Error generating verification URL:', error);
       toast({
