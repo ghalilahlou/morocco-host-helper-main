@@ -9,7 +9,7 @@
     "preview": "vite preview --port 4173",
     "lint": "eslint . --max-warnings=100",
     "typecheck": "tsc --noEmit",
-    "vercel-build": "vite build --config vite.config.vercel.ts --mode production",
+    "vercel-build": "VITE_PUBLIC_APP_URL=$VERCEL_URL vite build --config vite.config.vercel.ts --mode production",
     "mcp:supabase": "node ./tools/supabase-mcp.js",
     "mcp:claude": "node ./tools/claude-mcp.js",
     "start:mcp:supabase": "node ./tools/supabase-mcp.js",
