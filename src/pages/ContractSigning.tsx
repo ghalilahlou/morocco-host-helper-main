@@ -68,7 +68,7 @@ export const ContractSigning: React.FC = () => {
             contractUrl: navigationState.contractUrl,
             policeUrl: navigationState.policeUrl,
             guestData: navigationState.guestData,
-            bookingData: navigationState.bookingData
+            booking_data: navigationState.bookingData // ✅ CORRECTION : booking_data au lieu de bookingData
           });
           
           setIsLoading(false);
