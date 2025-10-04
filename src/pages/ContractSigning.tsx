@@ -34,6 +34,11 @@ export const ContractSigning: React.FC = () => {
       try {
         // ✅ CORRECTION : Vérifier d'abord les données de navigation state
         const navigationState = location.state;
+        console.log('🔍 DEBUG: Navigation state reçu:', navigationState);
+        console.log('🔍 DEBUG: Location:', location);
+        console.log('🔍 DEBUG: PropertyId:', propertyId);
+        console.log('🔍 DEBUG: Token:', token);
+        
         if (navigationState && navigationState.bookingId && navigationState.contractUrl) {
           console.log('✅ Utilisation des données de navigation state:', navigationState);
           
@@ -72,6 +77,7 @@ export const ContractSigning: React.FC = () => {
 
         // Si pas de navigation state, essayer la validation du token
         console.log('⚠️ Pas de navigation state, validation du token...');
+        console.log('🔍 DEBUG: Paramètres URL disponibles:', { propertyId, token, airbnbBookingId });
         
         // Tentative d'appel à la fonction Edge
         let tokenVerification;
