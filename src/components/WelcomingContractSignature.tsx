@@ -220,14 +220,25 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
   // Contract PDF fetching
   const loadContract = async () => {
+    console.log('🔍 [WelcomingContractSignature] loadContract called');
     try {
       setLoadingContract(true);
       setContractError(null);
+      console.log('🔍 [WelcomingContractSignature] Loading contract...');
 
       const bookingIdFromState = (location as any)?.state?.bookingId as string | undefined;
       const hasGuests = Array.isArray(guestData?.guests) && guestData.guests.length > 0;
       const hasBookingGuests = Array.isArray(bookingData?.guests) && bookingData.guests.length > 0;
       const shouldUsePreview = hasGuests || hasBookingGuests;
+      
+      console.log('🔍 [WelcomingContractSignature] Debug data:', {
+        bookingIdFromState,
+        hasGuests,
+        hasBookingGuests,
+        shouldUsePreview,
+        guestData,
+        bookingData
+      });
       let url: string;
 
       if (shouldUsePreview) {
@@ -283,8 +294,9 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       }
 
       setContractUrl(`${url}${sep}t=${bust}`);
+      console.log('✅ [WelcomingContractSignature] Contract URL set:', `${url}${sep}t=${bust}`);
     } catch (e: any) {
-      console.error('Erreur génération du contrat:', e);
+      console.error('❌ [WelcomingContractSignature] Erreur génération du contrat:', e);
       setContractError(e?.message || 'Erreur lors de la génération du contrat');
       setContractUrl(null);
     } finally {

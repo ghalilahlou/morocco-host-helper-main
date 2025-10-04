@@ -266,7 +266,7 @@ export async function getContractPdfUrl(params: {
   });
   if (error) throw error;
 
-  const url: string = (data?.documentUrl || data?.documentUrls?.[0] || data?.documents?.[0]?.url || '') as string;
+  const url: string = (data?.contractUrl || data?.documentUrl || data?.documentUrls?.[0] || data?.documents?.[0]?.url || '') as string;
 
   if (
     typeof url === 'string' && (
