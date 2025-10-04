@@ -32,6 +32,47 @@ export const ContractSigning: React.FC = () => {
       }
 
       try {
+        // ✅ CORRECTION : Vérifier d'abord les données de navigation state
+        const navigationState = location.state;
+        if (navigationState && navigationState.bookingId && navigationState.contractUrl) {
+          console.log('✅ Utilisation des données de navigation state:', navigationState);
+          
+          setTokenData({
+            ok: true,
+            propertyId: navigationState.propertyId,
+            bookingId: navigationState.bookingId,
+            token: navigationState.token,
+            property: { 
+              id: navigationState.propertyId,
+              name: 'Propriété',
+              address: 'Adresse',
+              contract_template: null,
+              contact_info: null,
+              house_rules: []
+            }
+          });
+          
+          setPropertyData({
+            id: navigationState.propertyId,
+            name: 'Propriété',
+            address: 'Adresse'
+          });
+          
+          setSubmissionData({
+            bookingId: navigationState.bookingId,
+            contractUrl: navigationState.contractUrl,
+            policeUrl: navigationState.policeUrl,
+            guestData: navigationState.guestData,
+            bookingData: navigationState.bookingData
+          });
+          
+          setIsLoading(false);
+          return;
+        }
+
+        // Si pas de navigation state, essayer la validation du token
+        console.log('⚠️ Pas de navigation state, validation du token...');
+        
         // Tentative d'appel à la fonction Edge
         let tokenVerification;
         let tokenError;
