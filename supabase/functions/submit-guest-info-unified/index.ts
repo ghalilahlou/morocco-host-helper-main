@@ -517,21 +517,88 @@ async function saveGuestDataInternal(
       .eq('document_number', guestData.document_number)
       .single();
 
-    if (existingGuest) {
-      log('info', 'Invité déjà existant, pas de doublon créé', { 
-        guestId: existingGuest.id,
-        guestName: guestData.full_name 
-      });
-    } else {
-      const { error: guestError } = await supabase
-        .from('guests')
-        .insert(guestData);
+    // ✅ Récupérer le nombre d'invités déjà associés à la réservation
+    const { data: existingGuestsForBooking } = await supabase
+      .from('guests')
+      .select('id')
+      .eq('booking_id', bookingId);
 
-      if (guestError) {
-        log('warn', 'Avertissement sauvegarde invité', { error: guestError });
-        // Continuer, ce n'est pas critique
+    const maxGuests = booking.numberOfGuests || 1;
+
+    if (maxGuests === 1) {
+      // Cas réservation pour 1 invité: on met à jour l'unique ligne au lieu d'insérer
+      if (existingGuest && existingGuest.id) {
+        const { error: updateErr } = await supabase
+          .from('guests')
+          .update({
+            full_name: guestData.full_name,
+            nationality: guestData.nationality,
+            document_type: guestData.document_type,
+            document_number: guestData.document_number,
+            date_of_birth: guestData.date_of_birth,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingGuest.id);
+        if (updateErr) {
+          log('warn', 'Avertissement mise à jour invité (single booking)', { error: updateErr });
+        } else {
+          log('info', 'Invité mis à jour (single booking)');
+        }
+      } else if (Array.isArray(existingGuestsForBooking) && existingGuestsForBooking.length > 0) {
+        // Une ligne existe déjà pour cette réservation: la mettre à jour
+        const firstGuestId = existingGuestsForBooking[0].id;
+        const { error: updateErr } = await supabase
+          .from('guests')
+          .update({
+            full_name: guestData.full_name,
+            nationality: guestData.nationality,
+            document_type: guestData.document_type,
+            document_number: guestData.document_number,
+            date_of_birth: guestData.date_of_birth,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', firstGuestId);
+        if (updateErr) {
+          log('warn', 'Avertissement mise à jour invité existant (single booking)', { error: updateErr });
+        } else {
+          log('info', 'Invité existant mis à jour (single booking)');
+        }
       } else {
-        log('info', 'Informations invité sauvegardées');
+        // Aucune ligne existante: insérer l'unique invité
+        const { error: guestError } = await supabase
+          .from('guests')
+          .insert(guestData);
+        if (guestError) {
+          log('warn', 'Avertissement sauvegarde invité (single booking)', { error: guestError });
+        } else {
+          log('info', 'Informations invité sauvegardées (single booking)');
+        }
+      }
+    } else {
+      // Réservations multi-invités: éviter doublons et ne pas dépasser le maximum
+      if (existingGuest) {
+        log('info', 'Invité déjà existant, pas de doublon créé', { 
+          guestId: existingGuest.id,
+          guestName: guestData.full_name 
+        });
+      } else {
+        const currentCount = Array.isArray(existingGuestsForBooking) ? existingGuestsForBooking.length : 0;
+        if (currentCount >= maxGuests) {
+          log('warn', 'Nombre maximum d\'invités atteint pour la réservation, insertion ignorée', {
+            bookingId,
+            maxGuests,
+            currentCount
+          });
+        } else {
+          const { error: guestError } = await supabase
+            .from('guests')
+            .insert(guestData);
+          if (guestError) {
+            log('warn', 'Avertissement sauvegarde invité (multi booking)', { error: guestError });
+          } else {
+            log('info', 'Informations invité sauvegardées (multi booking)');
+          }
+        }
       }
     }
 
