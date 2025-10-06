@@ -445,6 +445,7 @@ export const ContractSigning: React.FC = () => {
       propertyData={propertyData}
       guestData={submissionData.guest_data}
       documentUrls={submissionData.document_urls}
+      initialContractUrl={(location as any)?.state?.contractUrl || (submissionData as any)?.contractUrl}
       onBack={() => navigate(`/guest-verification/${propertyId}/${token}`)}
       onSignatureComplete={handleSignatureComplete}
     />

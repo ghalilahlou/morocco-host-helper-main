@@ -67,13 +67,14 @@ const floatingIcon = {
   }
 };
 
-export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProps> = ({
+export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProps & { initialContractUrl?: string }> = ({
   bookingData,
   propertyData,
   guestData,
   documentUrls,
   onBack,
-  onSignatureComplete
+  onSignatureComplete,
+  initialContractUrl
 }) => {
   const [currentStep, setCurrentStep] = useState<'welcome' | 'review' | 'signature' | 'celebration'>('review');
   
@@ -144,7 +145,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
     }
   }, [location.state, bookingData?.id]);
 
-  const [contractUrl, setContractUrl] = useState<string | null>(null);
+  const [contractUrl, setContractUrl] = useState<string | null>(initialContractUrl || null);
   const [loadingContract, setLoadingContract] = useState<boolean>(false);
   const [contractError, setContractError] = useState<string | null>(null);
 
@@ -309,10 +310,11 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     const hasBookingId = !!bookingData?.id;
     const anyGuests = (Array.isArray(guestData?.guests) && guestData.guests.length > 0) || (Array.isArray(bookingData?.guests) && bookingData.guests.length > 0);
     const hasBookingLike = !!(propertyData?.id && (bookingData?.checkInDate || bookingData?.checkOutDate) && anyGuests);
+    if (contractUrl) return; // si déjà fourni via navigation state
     if (hasBookingId || hasBookingLike) {
       loadContract();
     }
-  }, [propertyData, bookingData, guestData]);
+  }, [propertyData, bookingData, guestData, contractUrl]);
 
   // État pour la signature
   const [isDrawing, setIsDrawing] = useState(false);
