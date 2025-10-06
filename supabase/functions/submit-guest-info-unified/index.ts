@@ -1039,8 +1039,9 @@ async function updateFinalStatus(
   try {
     const supabase = await getServerClient();
     
+    // ✅ Utiliser des statuts valides pour l'énum booking_status (frontend attend 'pending' | 'completed' | 'archived')
     const updateData = {
-      status: hasSignature ? 'confirmed' : 'pending_signature',
+      status: hasSignature ? 'completed' : 'pending',
       updated_at: new Date().toISOString()
     };
 
