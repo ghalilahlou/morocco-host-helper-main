@@ -162,7 +162,8 @@ serve(async (req) => {
     const { error: updateBookingError } = await supabase
       .from('bookings')
       .update({
-        status: 'confirmed',
+        // Utiliser un statut compatible avec le frontend ('pending' | 'completed' | 'archived')
+        status: 'completed',
         updated_at: new Date().toISOString()
       })
       .eq('id', body.bookingId);
