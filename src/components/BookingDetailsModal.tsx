@@ -336,30 +336,18 @@ export const BookingDetailsModal = ({
       }
       // ✅ CORRECTION : Vérifier la réponse correctement selon la structure backend
       if (data?.success && (data?.contractUrl || data?.documentUrls?.length > 0)) {
-        // Store the contract in Supabase Storage
+        // ✅ CORRECTION : Le contrat est déjà généré et stocké, pas besoin de re-uploader
         const contractUrl = data.contractUrl || data.documentUrls[0];
-        const fileName = `${booking.id}/contract.pdf`;
-        console.log('📄 Storing contract in storage...');
-
-        // Convert data URL to blob
-        const response = await fetch(contractUrl);
-        const blob = await response.blob();
-        const {
-          error: uploadError
-        } = await supabase.storage.from('guest-documents').upload(fileName, blob, {
-          upsert: true
-        });
-        if (uploadError) {
-          console.error('❌ Storage upload error:', uploadError);
-          throw uploadError;
-        }
-        console.log('✅ Contract stored successfully');
+        console.log('✅ Contract already generated and stored:', contractUrl);
+        
+        // Mettre à jour l'état local seulement
         updateBooking(booking.id, {
           documentsGenerated: {
             ...booking.documentsGenerated,
             contract: true
           }
         });
+        
         toast({
           title: signed ? 'Contrat signé généré' : 'Contrat généré',
           description: signed ? 'Le contrat signé a été généré et sauvegardé' : 'Le contrat a été généré avec succès'

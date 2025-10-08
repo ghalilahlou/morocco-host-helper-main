@@ -2398,7 +2398,6 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
           document_type: documentType,
           is_signed: isSigned,
           processing_status: 'completed',
-          upload_timestamp: new Date().toISOString(),
           created_at: new Date().toISOString()
         })
         .select()
