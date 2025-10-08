@@ -1303,6 +1303,48 @@ serve(async (req) => {
       }
     }
     
+    // ✅ NOUVELLE ACTION : generate_contract_with_signature (depuis save-contract-signature)
+    if (requestBody.action === 'generate_contract_with_signature') {
+      log('info', '🔄 Mode: Génération contrat avec signature invité');
+      
+      if (!requestBody.bookingId || !requestBody.signatureData || !requestBody.signerName) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'bookingId, signatureData et signerName requis'
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+      
+      try {
+        const signatureData: SignatureData = {
+          data: requestBody.signatureData,
+          timestamp: new Date().toISOString(),
+          signerName: requestBody.signerName
+        };
+        
+        const contractUrl = await generateContractInternal(requestBody.bookingId, signatureData);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          contractUrl,
+          message: 'Contrat avec signature généré avec succès'
+        }), {
+          status: 200,
+          headers: corsHeaders
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: error instanceof Error ? error.message : 'Erreur génération contrat signé'
+        }), {
+          status: 500,
+          headers: corsHeaders
+        });
+      }
+    }
+    
     // ✅ NOUVELLE ACTION : clean_duplicate_contracts (nettoyage des doublons)
     if (requestBody.action === 'clean_duplicate_contracts') {
       log('info', '🔄 Mode: Nettoyage des contrats dupliqués');

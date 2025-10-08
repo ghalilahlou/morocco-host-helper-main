@@ -175,6 +175,36 @@ serve(async (req) => {
       console.log('✅ Statut de la réservation mis à jour avec succès');
     }
 
+    // ✅ NOUVEAU : Régénérer le contrat avec la signature intégrée
+    console.log('🔄 Régénération du contrat avec signature intégrée...');
+    
+    try {
+      // Appeler la fonction de génération de contrat avec signature
+      const contractGenerationUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/submit-guest-info-unified`;
+      const contractResponse = await fetch(contractGenerationUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+        },
+        body: JSON.stringify({
+          action: 'generate_contract_with_signature',
+          bookingId: body.bookingId,
+          signatureData: body.signatureDataUrl,
+          signerName: body.signerName
+        })
+      });
+
+      if (!contractResponse.ok) {
+        console.warn('⚠️ Échec de la régénération du contrat, mais signature sauvegardée');
+      } else {
+        console.log('✅ Contrat régénéré avec signature intégrée');
+      }
+    } catch (regenerationError) {
+      console.warn('⚠️ Erreur lors de la régénération du contrat:', regenerationError);
+      // Ne pas faire échouer la fonction pour cette erreur
+    }
+
     console.log('✅ Fonction save-contract-signature terminée avec succès');
 
     // Successful response
