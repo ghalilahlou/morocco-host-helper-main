@@ -109,6 +109,7 @@ export const GuestVerification = () => {
   const [isValidToken, setIsValidToken] = useState(false);
   const [checkingToken, setCheckingToken] = useState(true);
   const [propertyName, setPropertyName] = useState('');
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [guests, setGuests] = useState<Guest[]>([{
     fullName: '',
     dateOfBirth: undefined,
@@ -854,9 +855,13 @@ export const GuestVerification = () => {
     } catch (error) {
       console.error('Error submitting guest information:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      
+      // ✅ NOUVEAU : Afficher l'erreur sur la page au lieu de rediriger
+      setSubmissionError(`Erreur lors de l'envoi des informations: ${errorMessage}`);
+      
       toast({
         title: "Erreur",
-        description: `Erreur lors de l'envoi des informations: ${errorMessage}`,
+        description: `Erreur lors de l'envoi des informations. Veuillez réessayer ou contacter votre hôte.`,
         variant: "destructive"
       });
     } finally {
@@ -951,6 +956,73 @@ export const GuestVerification = () => {
   const handlePrevStep = () => {
     setCurrentStep('booking');
   };
+
+  // ✅ NOUVEAU : Afficher l'erreur de soumission au lieu de rediriger
+  if (submissionError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 300 }}
+        >
+          <Card className="p-8 max-w-md border-red-200 shadow-2xl">
+            <CardContent className="text-center space-y-6">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
+              >
+                <X className="w-20 h-20 text-red-500 mx-auto" />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+              >
+                <h2 className="text-3xl font-bold text-red-800">Interruption de la procédure</h2>
+                <p className="text-red-600 mt-2">
+                  {submissionError}
+                </p>
+                <p className="text-gray-600 mt-4 text-sm">
+                  Veuillez réessayer ou contacter votre hôte pour obtenir de l'aide.
+                </p>
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="space-y-3"
+              >
+                <Button 
+                  onClick={() => {
+                    setSubmissionError(null);
+                    setCurrentStep('booking');
+                  }}
+                  className="w-full bg-red-600 hover:bg-red-700"
+                  size="lg"
+                >
+                  <RefreshCw className="w-5 h-5 mr-2" />
+                  Réessayer
+                </Button>
+                <Button 
+                  onClick={() => {
+                    window.location.reload();
+                  }}
+                  variant="outline"
+                  className="w-full"
+                  size="lg"
+                >
+                  <RotateCcw className="w-5 h-5 mr-2" />
+                  Recharger la page
+                </Button>
+              </motion.div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    );
+  }
 
   if (submissionComplete) {
     return (

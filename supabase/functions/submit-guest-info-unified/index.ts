@@ -1545,16 +1545,33 @@ serve(async (req) => {
         booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
       }
       
-      // ✅ CORRECTION : Vérifier si le booking a déjà été traité en utilisant property_id et booking_reference
+      // ✅ CORRECTION : Vérifier si le booking a déjà été traité
       const supabaseClient = await getServerClient();
-      const { data: existingBooking } = await supabaseClient
-        .from('bookings')
-        .select('id, status')
-        .eq('property_id', booking.propertyId)
-        .eq('booking_reference', booking.airbnbCode)
-        .maybeSingle();
+      let existingBooking;
+      
+      if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
+        // Pour les réservations indépendantes, vérifier par property_id + guest_name + check_in_date
+        const { data } = await supabaseClient
+          .from('bookings')
+          .select('id, status')
+          .eq('property_id', booking.propertyId)
+          .eq('booking_reference', 'INDEPENDENT_BOOKING')
+          .eq('guest_name', `${requestBody.guestInfo.firstName} ${requestBody.guestInfo.lastName}`)
+          .eq('check_in_date', booking.checkIn)
+          .maybeSingle();
+        existingBooking = data;
+      } else {
+        // Pour les réservations Airbnb, utiliser property_id + booking_reference
+        const { data } = await supabaseClient
+          .from('bookings')
+          .select('id, status')
+          .eq('property_id', booking.propertyId)
+          .eq('booking_reference', booking.airbnbCode)
+          .maybeSingle();
+        existingBooking = data;
+      }
         
-      if (existingBooking && existingBooking.status === 'confirmed') {
+      if (existingBooking && (existingBooking.status === 'confirmed' || existingBooking.status === 'completed')) {
         log('warn', `Booking ${existingBooking.id} already processed, skipping duplicate processing`);
         return new Response(JSON.stringify({
           success: true,
