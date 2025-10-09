@@ -171,8 +171,30 @@ export const useGuestVerification = () => {
         return null;
       }
 
-      // Construire un lien client indépendant (A→Z) vers la page front
-      const clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
+      // ✅ CORRECTION : Distinction claire entre les deux logiques
+      let clientUrl;
+      
+      if (airbnbBookingId && airbnbBookingId !== 'INDEPENDENT_BOOKING') {
+        // LOGIQUE ICS : Le guest entre le code Airbnb, les dates sont pré-remplies
+        clientUrl = `${runtime.urls.app.base}/verify/${data.token}`;
+        console.log('🔗 Lien ICS généré (code Airbnb requis):', { 
+          propertyId, 
+          token: data.token, 
+          airbnbCode: airbnbBookingId,
+          fullUrl: clientUrl,
+          workflow: 'Guest entre le code Airbnb → Dates automatiquement remplies'
+        });
+      } else {
+        // LOGIQUE INDÉPENDANTE : Le guest entre toutes les dates manuellement
+        clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
+        console.log('🔗 Lien indépendant généré (dates manuelles):', { 
+          propertyId, 
+          token: data.token,
+          fullUrl: clientUrl,
+          workflow: 'Guest entre toutes les dates manuellement'
+        });
+      }
+      
       console.log('✅ Generated client verification URL:', clientUrl);
       
       // ✅ NOUVEAU : Informer sur le type de lien

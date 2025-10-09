@@ -1579,12 +1579,29 @@ serve(async (req) => {
       // ÉTAPE 1: Résolution de la réservation
       log('info', '🎯 ÉTAPE 1/5: Résolution de la réservation');
       
-      // ✅ NOUVEAU : Gérer les réservations indépendantes (sans code Airbnb)
+      // ✅ CORRECTION : Distinction claire entre réservations normales et liens ICS
       if (requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode) {
-        log('info', 'Réservation indépendante détectée, création directe');
+        log('info', 'Réservation indépendante détectée (formulaire), création directe');
         booking = await createIndependentBooking(requestBody.token, requestBody.guestInfo, requestBody.bookingData);
       } else {
+        log('info', 'Réservation via lien ICS détectée, résolution avec dates prédéfinies');
         booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
+        
+        // ✅ CORRECTION : S'assurer que les dates sont bien définies pour les liens ICS
+        if (!booking.checkIn || !booking.checkOut) {
+          log('error', 'Dates manquantes pour réservation ICS', { 
+            hasCheckIn: !!booking.checkIn, 
+            hasCheckOut: !!booking.checkOut,
+            airbnbCode: requestBody.airbnbCode 
+          });
+          throw new Error('Dates de réservation manquantes pour ce lien ICS');
+        }
+        
+        log('info', 'Dates ICS résolues avec succès', {
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          propertyName: booking.propertyName
+        });
       }
       
       // ✅ CORRECTION : Vérifier si le booking a déjà été traité
@@ -1753,6 +1770,15 @@ serve(async (req) => {
         booking: {
           ...booking,
           locked: true
+        },
+        // ✅ CORRECTION : Inclure les dates de réservation pour les liens ICS
+        bookingDates: {
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          numberOfGuests: booking.numberOfGuests,
+          propertyName: booking.propertyName,
+          airbnbCode: booking.airbnbCode,
+          isICSLink: booking.airbnbCode !== 'INDEPENDENT_BOOKING'
         },
         metadata: {
           emailSent: result.emailSent,
