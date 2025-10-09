@@ -8,16 +8,16 @@ import { type Booking, type Property, type Guest } from '@/types/booking';
 import { edgeClient } from '@/lib/edgeClient';
 
 export interface ResolvedBooking {
-  id: string;
+  propertyId: string;
+  airbnbCode: string;
   checkIn: string;
   checkOut: string;
-  propertyName?: string;
-  status: string;
-  airbnbCode: string;
-  guestId?: string;
+  propertyName: string;
+  propertyAddress?: string;
   guestName?: string;
-  guests: Guest[];
-  property: Property;
+  numberOfGuests?: number;
+  totalPrice?: number;
+  currency?: string;
 }
 
 export interface BookingResolveError {
@@ -38,11 +38,12 @@ export async function resolveBooking(token: string, airbnbCode: string): Promise
     throw new Error("Airbnb confirmation code is missing.");
   }
 
-  console.log("Calling booking-resolve edge function...");
+  console.log("Calling submit-guest-info-unified for booking resolution...");
   try {
-    const { data, error } = await edgeClient.post<{ booking: ResolvedBooking }>('/booking-resolve', {
+    const { data, error } = await edgeClient.post<{ success: boolean; booking: ResolvedBooking }>('/submit-guest-info-unified', {
       token: token,
-      airbnb_code: airbnbCode,
+      airbnbCode: airbnbCode,
+      action: 'resolve_booking_only'
     });
 
     if (error) {
@@ -50,7 +51,7 @@ export async function resolveBooking(token: string, airbnbCode: string): Promise
       throw new Error(`Failed to resolve booking: ${error}`);
     }
 
-    if (!data?.booking) {
+    if (!data?.success || !data?.booking) {
       throw new Error("Booking data not found in response.");
     }
 

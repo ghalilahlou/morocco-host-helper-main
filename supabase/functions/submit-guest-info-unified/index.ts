@@ -321,20 +321,54 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
       propertyName: tokenData.property.name
     });
 
-    // 2. Recherche de la réservation Airbnb avec informations détaillées
+    // 2. Recherche de la réservation Airbnb - d'abord dans bookings, puis dans airbnb_reservations
     log('info', 'Recherche de la réservation Airbnb');
-    const { data: airbnbReservation, error: airbnbError } = await supabase
-      .from('airbnb_reservations')
+    
+    // Essayer d'abord dans la table bookings (réservations créées via le système unifié)
+    const { data: bookingReservation, error: bookingError } = await supabase
+      .from('bookings')
       .select('*')
       .eq('property_id', tokenData.property.id)
-      .eq('airbnb_booking_id', airbnbCode)
-      .single();
+      .eq('booking_reference', airbnbCode)
+      .maybeSingle();
 
-    if (airbnbError || !airbnbReservation) {
+    let airbnbReservation = null;
+    
+    if (bookingReservation) {
+      log('info', 'Réservation trouvée dans la table bookings', { bookingId: bookingReservation.id });
+      // Convertir le format bookings vers le format airbnb_reservations
+      airbnbReservation = {
+        property_id: bookingReservation.property_id,
+        airbnb_booking_id: bookingReservation.booking_reference,
+        start_date: bookingReservation.check_in_date,
+        end_date: bookingReservation.check_out_date,
+        guest_name: bookingReservation.guest_name,
+        number_of_guests: bookingReservation.number_of_guests,
+        total_price: bookingReservation.total_price,
+        currency: 'EUR'
+      };
+    } else {
+      // Fallback: chercher dans airbnb_reservations (réservations synchronisées)
+      log('info', 'Réservation non trouvée dans bookings, recherche dans airbnb_reservations');
+      const { data: airbnbReservationData, error: airbnbError } = await supabase
+        .from('airbnb_reservations')
+        .select('*')
+        .eq('property_id', tokenData.property.id)
+        .eq('airbnb_booking_id', airbnbCode)
+        .maybeSingle();
+      
+      if (airbnbReservationData) {
+        airbnbReservation = airbnbReservationData;
+        log('info', 'Réservation trouvée dans airbnb_reservations');
+      }
+    }
+
+    if (!airbnbReservation) {
       log('error', 'Réservation Airbnb non trouvée', { 
-        error: airbnbError,
         propertyId: tokenData.property.id,
-        airbnbCode 
+        airbnbCode,
+        searchedInBookings: !bookingError,
+        searchedInAirbnbReservations: true
       });
       throw new Error(`Réservation Airbnb ${airbnbCode} non trouvée pour cette propriété`);
     }
@@ -1254,6 +1288,43 @@ serve(async (req) => {
         status: 200,
         headers: corsHeaders
       });
+    }
+    
+    // ✅ NOUVELLE ACTION : resolve_booking_only (pour resolveBooking)
+    if (requestBody.action === 'resolve_booking_only') {
+      log('info', '🔄 Mode: Résolution de réservation uniquement');
+      
+      if (!requestBody.token || !requestBody.airbnbCode) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'token et airbnbCode requis'
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+      
+      try {
+        // Résoudre la réservation
+        const booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          booking: booking
+        }), {
+          status: 200,
+          headers: corsHeaders
+        });
+      } catch (error) {
+        log('error', 'Erreur résolution réservation', { error: error.message });
+        return new Response(JSON.stringify({
+          success: false,
+          error: error.message
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
     }
     
     // ✅ NOUVELLE ACTION : generate_contract_only (depuis dashboard hôte)
