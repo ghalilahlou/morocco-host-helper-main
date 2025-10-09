@@ -276,12 +276,6 @@ export const BookingDetailsModal = ({
     try {
       console.log('📄 Generating contract for booking:', booking.id);
 
-      // ✅ DEBUG: Initialiser la session de debug
-      // Import debug util without calling React hooks here
-      const { createContractDebug } = await import('@/utils/contractDebug');
-      const debug = createContractDebug(booking.id);
-      debug.startSession();
-
       // Check if there is a signed contract for this booking to include the guest signature
       const {
         data: signatures,
@@ -291,49 +285,33 @@ export const BookingDetailsModal = ({
         console.warn('⚠️ Unable to check contract signatures:', sigError);
       }
       const signed = signatures && signatures.length > 0 ? signatures[0] : null;
-      const body: any = {
-        bookingId: booking.id,
-        action: signed?.signature_data ? 'sign' : 'generate'
-      };
-      if (signed?.signature_data) {
-        body.signatureData = signed.signature_data;
-        body.signedAt = signed.signed_at;
-      }
 
-      // ✅ DEBUG: Log avant l'appel API
-      console.log('🔍 Contract generation request body:', body);
+      console.log('🔍 Contract generation request for booking:', booking.id);
 
       const {
         data,
         error
       } = await supabase.functions.invoke('submit-guest-info-unified', {
         body: {
-          bookingId: body.bookingId,
+          bookingId: booking.id,
           action: 'generate_contract_only',
-          signature: body.signatureData ? {
-            data: body.signatureData,
-            timestamp: body.signedAt
+          signature: signed?.signature_data ? {
+            data: signed.signature_data,
+            timestamp: signed.signed_at
           } : null
         }
       });
 
-      // ✅ DEBUG: Log la réponse API
-      debug.logApiResponse(data, error);
       console.log('📄 Contract generation response:', {
         data,
         error
       });
 
-      // ✅ DEBUG: Log avant génération PDF
-      debug.logBeforePdfGeneration({
-        hostName: booking.property?.contact_info?.name || booking.property?.name,
-        hostSignature: 'Will be resolved by Edge Function',
-        propertyAddress: booking.property?.address
-      });
       if (error) {
         console.error('❌ Contract generation error:', error);
         throw error;
       }
+      
       // ✅ CORRECTION : Vérifier la réponse correctement selon la structure backend
       if (data?.success && (data?.contractUrl || data?.documentUrls?.length > 0)) {
         // ✅ CORRECTION : Le contrat est déjà généré et stocké, pas besoin de re-uploader
