@@ -75,7 +75,7 @@ async function handleRequest(req: Request): Promise<Response> {
             content: `You are an expert document reader specialized in extracting information from identity documents (passports, national ID cards, driver's licenses, etc.).
 
 Your task is to extract the following information from the document image:
-- Full name (given names + surname)
+- Full name (given names + surname) - ONLY the person's actual name, NOT phone numbers, addresses, or other text
 - Date of birth (in YYYY-MM-DD format) - THIS IS CRITICAL, LOOK CAREFULLY FOR BIRTH DATES
 - Document number
 - Nationality (in French, e.g., BRITANNIQUE, FRANÇAIS, NÉERLANDAIS, etc.)
@@ -88,8 +88,15 @@ IMPORTANT RULES:
 3. DATE OF BIRTH is CRITICAL - look for variations like: "Date of birth", "DOB", "Born", "Né(e) le", "Date de naissance", birth date numbers near year patterns
 4. For nationalities, use French terms: BRITISH→BRITANNIQUE, FRENCH→FRANÇAIS, DUTCH→NÉERLANDAIS, GERMAN→ALLEMAND, ITALIAN→ITALIEN, SPANISH→ESPAGNOL
 5. For names, combine given names and surname into fullName (e.g., "STEVEN ALAN DAVIES")
-6. If any field is not clearly visible, set it as null
-7. Document type mapping: use "passport" for passports, "national_id" for ID cards, and when the document is a driver's license (e.g., shows terms like "DRIVER LICENSE", "PERMIS DE CONDUIRE", or state-issued DL), set documentType to "national_id" as well.
+6. CRITICAL: fullName must be ONLY the person's name - ignore phone numbers, addresses, document numbers, or any other text that is not the person's actual name
+7. If any field is not clearly visible, set it as null
+8. Document type mapping: use "passport" for passports, "national_id" for ID cards, and when the document is a driver's license (e.g., shows terms like "DRIVER LICENSE", "PERMIS DE CONDUIRE", or state-issued DL), set documentType to "national_id" as well.
+
+SPECIAL ATTENTION FOR FULL NAME:
+- Look for the person's name in fields labeled "Name", "Nom", "Surname", "Given names", "Prénom", "Nom de famille"
+- IGNORE phone numbers, addresses, document numbers, or any text that is not the person's actual name
+- The fullName should contain only letters and spaces (no numbers unless part of the actual name)
+- If you see text like "JBFDPhone Number" or similar, this is NOT a name - look for the actual person's name elsewhere on the document
 
 SPECIAL ATTENTION FOR DATE OF BIRTH:
 - Look for patterns like: DD/MM/YYYY, MM/DD/YYYY, DD-MM-YYYY, DD.MM.YYYY

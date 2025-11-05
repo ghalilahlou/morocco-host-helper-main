@@ -30,7 +30,7 @@ export const AirbnbReservationModal = ({
   } = useGuestVerification();
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
-  // Function to generate guest verification link with Airbnb booking ID
+  // Function to generate guest verification link with Airbnb booking ID (sans validation de code)
   const handleGenerateGuestLink = async () => {
     if (!propertyId || !reservation?.airbnbBookingId) {
       toast({
@@ -57,13 +57,25 @@ export const AirbnbReservationModal = ({
         }
       }
     }
-    const url = await generatePropertyVerificationUrl(propertyId, bookingCode);
+
+    // ✅ NOUVEAU : Générer un lien sans validation de code, avec données ICS pré-remplies
+    const url = await generatePropertyVerificationUrl(propertyId, bookingCode, {
+      linkType: 'ics_direct',
+      reservationData: {
+        airbnbCode: bookingCode,
+        startDate: reservation.startDate,
+        endDate: reservation.endDate,
+        guestName: reservation.guestName,
+        numberOfGuests: reservation.numberOfGuests
+      }
+    });
+    
     if (url) {
       const success = await copyToClipboard(url);
       if (success) {
         toast({
           title: "Lien généré et copié",
-          description: `Lien de vérification avec code Airbnb ${bookingCode} copié dans le presse-papiers`
+          description: `Lien direct avec dates pré-remplies (${bookingCode}) copié dans le presse-papiers`
         });
       } else {
         toast({

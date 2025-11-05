@@ -157,9 +157,15 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       });
 
       // Remove duplicates and clean names
-      const uniqueNames = [...new Set(realGuestNames)]
+      let uniqueNames = [...new Set(realGuestNames)]
         .filter(name => name && name.trim().length > 0)
         .map(name => name.trim().toUpperCase());
+
+      // ✅ NOUVEAU : Si pas de noms trouvés dans les soumissions, utiliser le guest_name de la réservation
+      if (uniqueNames.length === 0 && booking.guest_name) {
+        uniqueNames = [booking.guest_name.trim().toUpperCase()];
+        console.log('🔍 Utilisation du guest_name de la réservation comme fallback:', booking.guest_name);
+      }
 
       return {
         ...booking,

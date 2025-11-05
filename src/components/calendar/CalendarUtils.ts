@@ -1,6 +1,8 @@
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
+import { getUnifiedBookingDisplayText, getGuestInitials as getUnifiedGuestInitials } from '@/utils/bookingDisplay';
+import { BOOKING_COLORS as CONSTANT_BOOKING_COLORS } from '@/constants/bookingColors';
 
 export interface CalendarDay {
   date: Date;
@@ -19,10 +21,11 @@ export interface BookingLayout {
   layer?: number;
 }
 
+// ✅ CORRIGÉ : Palette bleu turquoise pour les réservations (rouge réservé aux conflits)
 export const BOOKING_COLORS = [
-  'bg-red-800', 'bg-red-900', 'bg-rose-800', 'bg-rose-900', 
-  'bg-red-700', 'bg-rose-700', 'bg-red-950', 'bg-rose-950',
-  'bg-slate-800', 'bg-slate-900', 'bg-stone-800', 'bg-stone-900'
+  'bg-cyan-400', 'bg-cyan-500', 'bg-teal-500', 'bg-teal-600',
+  'bg-teal-700', 'bg-cyan-600', 'bg-teal-400', 'bg-teal-500',
+  'bg-cyan-300', 'bg-teal-300', 'bg-cyan-400', 'bg-teal-600'
 ];
 
 export const generateCalendarDays = (currentDate: Date): CalendarDay[] => {
@@ -80,41 +83,84 @@ const doBookingPeriodsOverlap = (booking1: BookingLayout, booking2: BookingLayou
   return start1 <= end2 && start2 <= end1;
 };
 
-// Assign layers to bookings to avoid visual overlaps
+// ✅ OPTIMISÉ : Algorithme amélioré pour l'espacement des réservations avec gestion intelligente des chevauchements
 const assignBookingLayers = (bookings: BookingLayout[]): BookingLayout[] => {
   if (bookings.length === 0) return bookings;
   
-  // Sort bookings by start day, then by span (shorter bookings first to prioritize them)
+  // ✅ OPTIMISÉ : Tri intelligent multi-critères pour un placement optimal
   const sortedBookings = [...bookings].sort((a, b) => {
+    // 1. Priorité aux réservations qui commencent plus tôt (affichage chronologique)
     if (a.startDayIndex !== b.startDayIndex) {
       return a.startDayIndex - b.startDayIndex;
     }
-    return a.span - b.span; // Shorter bookings get priority
+    // 2. Ensuite par durée (plus longues en premier pour un meilleur empilement)
+    if (a.span !== b.span) {
+      return b.span - a.span; // Inversé : plus longues d'abord
+    }
+    // 3. Enfin par type (réservations manuelles en premier pour visibilité)
+    if (a.isAirbnb !== b.isAirbnb) {
+      return a.isAirbnb ? 1 : -1; // Inversé : manuelles d'abord
+    }
+    return 0;
   });
   
-  // Track which layer each booking is assigned to
   const layeredBookings: BookingLayout[] = [];
   
   for (const booking of sortedBookings) {
     let assignedLayer = 0;
     let placed = false;
     
-    // Try to find a layer where this booking doesn't overlap with existing ones
+    // ✅ OPTIMISÉ : Algorithme de placement avec recherche intelligente de couche
     while (!placed) {
       const bookingsInThisLayer = layeredBookings.filter(b => b.layer === assignedLayer);
       
-      // Check if this booking overlaps with any booking in the current layer
+      // Vérifier s'il y a un chevauchement avec des réservations existantes dans cette couche
       const hasOverlap = bookingsInThisLayer.some(existingBooking => 
         doBookingPeriodsOverlap(booking, existingBooking)
       );
       
       if (!hasOverlap) {
-        // No overlap found, place booking in this layer
+        // ✅ Pas de chevauchement : placer la réservation dans cette couche
         layeredBookings.push({ ...booking, layer: assignedLayer });
         placed = true;
       } else {
-        // Overlap found, try next layer
+        // ✅ Chevauchement détecté : essayer la couche suivante
         assignedLayer++;
+      }
+      
+      // ✅ OPTIMISÉ : Limite de sécurité renforcée avec meilleur message de debug
+      if (assignedLayer > 15) {
+        console.warn(`⚠️ Trop de couches (${assignedLayer}) pour la réservation ${booking.booking.id}. Placement forcé.`, {
+          bookingStart: booking.startDayIndex,
+          bookingSpan: booking.span,
+          weekIndex: booking.weekIndex,
+          totalBookingsInWeek: bookings.length
+        });
+        layeredBookings.push({ ...booking, layer: assignedLayer });
+        placed = true;
+      }
+    }
+  }
+  
+  // ✅ NOUVEAU : Optimisation post-placement pour compacter les couches
+  // Réduire les "trous" dans les couches quand c'est possible
+  const maxLayer = Math.max(...layeredBookings.map(b => b.layer || 0));
+  for (let layer = 1; layer <= maxLayer; layer++) {
+    const bookingsInLayer = layeredBookings.filter(b => b.layer === layer);
+    
+    for (const booking of bookingsInLayer) {
+      // Essayer de déplacer cette réservation vers une couche inférieure
+      for (let targetLayer = 0; targetLayer < layer; targetLayer++) {
+        const bookingsInTargetLayer = layeredBookings.filter(b => b.layer === targetLayer);
+        const hasOverlap = bookingsInTargetLayer.some(existingBooking => 
+          doBookingPeriodsOverlap(booking, existingBooking)
+        );
+        
+        if (!hasOverlap) {
+          // Déplacer vers la couche inférieure
+          booking.layer = targetLayer;
+          break;
+        }
       }
     }
   }
@@ -142,8 +188,17 @@ export const calculateBookingLayout = (
   // Process each booking and find all weeks it appears in
   bookings.forEach((booking, bookingIndex) => {
     const isAirbnb = 'source' in booking && booking.source === 'airbnb';
-    const checkIn = isAirbnb ? (booking as unknown as AirbnbReservation).startDate : new Date((booking as Booking).checkInDate);
-    const checkOut = isAirbnb ? (booking as unknown as AirbnbReservation).endDate : new Date((booking as Booking).checkOutDate);
+    // ✅ NORMALISATION LOCALE : éviter les décalages de fuseau sur 'YYYY-MM-DD'
+    const toLocalMidnight = (d: Date | string) => {
+      const date = typeof d === 'string' ? new Date(d) : d;
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    };
+    const checkIn = isAirbnb 
+      ? toLocalMidnight((booking as unknown as AirbnbReservation).startDate)
+      : toLocalMidnight((booking as Booking).checkInDate);
+    const checkOut = isAirbnb 
+      ? toLocalMidnight((booking as unknown as AirbnbReservation).endDate)
+      : toLocalMidnight((booking as Booking).checkOutDate);
     
     // Use color override if provided, otherwise use status-based or default colors
     const bookingId = isAirbnb ? booking.id : booking.id;
@@ -152,8 +207,8 @@ export const calculateBookingLayout = (
     if (colorOverrides?.[bookingId]) {
       color = colorOverrides[bookingId];
     } else if (isAirbnb) {
-      // Airbnb bookings use pending (gray) color by default
-      color = 'bg-pending';
+      // ✅ CORRIGÉ : Airbnb bookings use blue by default (not red/gray)
+      color = CONSTANT_BOOKING_COLORS.airbnb.tailwind;
     } else {
       // For manual bookings, determine color based on status and Airbnb matching
       const manualBooking = booking as Booking;
@@ -190,7 +245,8 @@ export const calculateBookingLayout = (
           return manualStart < airbnbEnd && manualEnd > airbnbStart;
         });
         
-          color = hasConflict ? 'bg-destructive' : 'bg-pending'; // Red for conflicts, gray for no match
+          // ✅ CORRIGÉ : Red ONLY for conflicts, blue for normal bookings
+          color = hasConflict ? 'bg-destructive' : CONSTANT_BOOKING_COLORS.manual.tailwind;
         }
       }
     }
@@ -304,78 +360,90 @@ export const calculateBookingLayout = (
   return bookingRows;
 };
 
-export const detectBookingConflicts = (bookings: Booking[]): string[] => {
+/**
+ * ✅ AMÉLIORÉ : Détection simple et intuitive des conflits
+ * Détecte les chevauchements entre toutes les réservations (manuelles et Airbnb)
+ */
+export const detectBookingConflicts = (
+  bookings: Booking[], 
+  airbnbReservations?: (Booking | AirbnbReservation)[]
+): string[] => {
   const conflicts: string[] = [];
+  const allReservations: Array<{id: string, start: Date, end: Date}> = [];
   
-  for (let i = 0; i < bookings.length; i++) {
-    for (let j = i + 1; j < bookings.length; j++) {
-      const booking1 = bookings[i];
-      const booking2 = bookings[j];
+  // Ajouter toutes les réservations manuelles
+  bookings.forEach(booking => {
+    allReservations.push({
+      id: booking.id,
+      start: new Date(booking.checkInDate),
+      end: new Date(booking.checkOutDate)
+    });
+  });
+  
+  // Ajouter toutes les réservations Airbnb
+  if (airbnbReservations) {
+    airbnbReservations.forEach(reservation => {
+      const isAirbnb = 'source' in reservation && reservation.source === 'airbnb';
+      if (isAirbnb) {
+        const airbnb = reservation as unknown as AirbnbReservation;
+        allReservations.push({
+          id: reservation.id,
+          start: new Date(airbnb.startDate),
+          end: new Date(airbnb.endDate)
+        });
+      }
+    });
+  }
+  
+  // Détecter les chevauchements : deux réservations se chevauchent si
+  // start1 < end2 && start2 < end1 (logique simple et intuitive)
+  for (let i = 0; i < allReservations.length; i++) {
+    for (let j = i + 1; j < allReservations.length; j++) {
+      const res1 = allReservations[i];
+      const res2 = allReservations[j];
       
-      const start1 = new Date(booking1.checkInDate);
-      const end1 = new Date(booking1.checkOutDate);
-      const start2 = new Date(booking2.checkInDate);
-      const end2 = new Date(booking2.checkOutDate);
+      // Normaliser les dates (midnight local pour éviter les problèmes de timezone)
+      const start1 = new Date(res1.start.getFullYear(), res1.start.getMonth(), res1.start.getDate());
+      const end1 = new Date(res1.end.getFullYear(), res1.end.getMonth(), res1.end.getDate());
+      const start2 = new Date(res2.start.getFullYear(), res2.start.getMonth(), res2.start.getDate());
+      const end2 = new Date(res2.end.getFullYear(), res2.end.getMonth(), res2.end.getDate());
       
-      // Check if dates overlap
-      if (start1 < end2 && start2 < end1) {
-        if (!conflicts.includes(booking1.id)) conflicts.push(booking1.id);
-        if (!conflicts.includes(booking2.id)) conflicts.push(booking2.id);
+      // Vérifier si les dates se chevauchent (logique simple et intuitive)
+      const overlaps = start1 < end2 && start2 < end1;
+      
+      if (overlaps) {
+        console.log('⚠️ CONFLIT DÉTECTÉ:', {
+          res1: { id: res1.id, start: start1.toISOString().split('T')[0], end: end1.toISOString().split('T')[0] },
+          res2: { id: res2.id, start: start2.toISOString().split('T')[0], end: end2.toISOString().split('T')[0] }
+        });
+        
+        if (!conflicts.includes(res1.id)) {
+          conflicts.push(res1.id);
+        }
+        if (!conflicts.includes(res2.id)) {
+          conflicts.push(res2.id);
+        }
       }
     }
   }
   
+  if (conflicts.length > 0) {
+    console.log('✅ Total conflits détectés:', conflicts.length, conflicts);
+  }
   return conflicts;
 };
 
+/**
+ * ✅ CORRIGÉ : Utilise la logique unifiée pour éviter les doubles logiques
+ * et les préfixes/suffixes aberrants
+ */
 export const getBookingDisplayText = (booking: Booking | AirbnbReservation, isStart: boolean): string => {
-  if (isStart) {
-    if ('source' in booking && booking.source === 'airbnb') {
-      // Afficher le code de réservation Airbnb avec le préfixe "Reservation"
-      const airbnbReservation = booking as unknown as AirbnbReservation;
-      const bookingCode = airbnbReservation.airbnbBookingId || airbnbReservation.airbnb_booking_id || 'Airbnb';
-      return `Reservation ${bookingCode}`;
-    } else {
-      const regularBooking = booking as Booking;
-      const enrichedBooking = booking as EnrichedBooking;
-      
-      // Pour les réservations manuelles, afficher aussi le code de réservation avec préfixe si disponible
-      if (regularBooking.bookingReference) {
-        return `Reservation ${regularBooking.bookingReference}`;
-      }
-      
-      // Sinon, priorité aux noms réels des soumissions
-      if (enrichedBooking.realGuestNames && enrichedBooking.realGuestNames.length > 0) {
-        const firstName = enrichedBooking.realGuestNames[0].split(' ')[0];
-        const totalGuests = enrichedBooking.realGuestCount;
-        return totalGuests > 1 ? `${firstName} + ${totalGuests - 1}` : firstName;
-      }
-      
-      // Fallback to manual guest data
-      const guestName = regularBooking.guests[0]?.fullName?.split(' ')[0] || 'Client';
-      const guestCount = regularBooking.guests.length;
-      return guestCount > 1 ? `${guestName} + ${guestCount - 1}` : guestName;
-    }
-  }
-  return '';
+  return getUnifiedBookingDisplayText(booking, isStart);
 };
 
+/**
+ * ✅ CORRIGÉ : Utilise la logique unifiée pour générer les initiales
+ */
 export const getGuestInitials = (booking: Booking | AirbnbReservation): string => {
-  if ('source' in booking && booking.source === 'airbnb') {
-    const guestName = (booking as unknown as AirbnbReservation).guestName || 'AB';
-    return guestName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  } else {
-    const regularBooking = booking as Booking;
-    const enrichedBooking = booking as EnrichedBooking;
-    
-    // Prioritize real guest names from submissions
-    if (enrichedBooking.realGuestNames && enrichedBooking.realGuestNames.length > 0) {
-      const guestName = enrichedBooking.realGuestNames[0];
-      return guestName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-    }
-    
-    // Fallback to manual guest data
-    const guestName = regularBooking.guests[0]?.fullName || 'Client';
-    return guestName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  }
+  return getUnifiedGuestInitials(booking);
 };

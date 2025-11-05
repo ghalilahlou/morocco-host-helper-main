@@ -50,6 +50,14 @@ type IssueReq = {
   airbnbCode?: string;
   bookingId?: string;
   expiresIn?: number;
+  linkType?: 'ics_direct' | 'ics_with_code' | 'independent';
+  reservationData?: {
+    airbnbCode: string;
+    startDate: Date;
+    endDate: Date;
+    guestName?: string;
+    numberOfGuests?: number;
+  };
 };
 
 type ResolveReq = {
@@ -245,31 +253,127 @@ serve(async (req) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresIn); // Use provided expiresIn
 
-    // ✅ NOUVEAU : Gestion des codes Airbnb sécurisés
+    // ✅ NOUVEAU : Gestion des codes Airbnb sécurisés avec support des liens directs
     let requiresCode = false;
     let airbnb_confirmation_code: string | null = null;
     let access_code_hash: string | null = null;
+    let reservation_metadata: any = null;
 
-    // Vérifier si un code Airbnb est fourni (soit explicitement soit via bookingId)
-    const candidate = normalizeCode(airbnbCode || finalBookingId || '');
-    if (isAirbnbCode(candidate)) {
-      requiresCode = true;
-      airbnb_confirmation_code = candidate;
-      try {
-        access_code_hash = await hashAccessCode(candidate);
-        console.log('✅ Code Airbnb détecté et hashé avec succès (code non loggé pour sécurité)');
-      } catch (error) {
-        console.error('❌ Failed to hash access code (not logging code for security)');
-        console.error('❌ Error details:', error.message);
-        console.error('❌ Vérifiez que ACCESS_CODE_PEPPER est configuré');
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'MISSING_ACCESS_CODE_PEPPER',
-          details: 'Le secret ACCESS_CODE_PEPPER n\'est pas configuré sur le serveur'
-        }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+    // Vérifier le type de lien demandé
+    const linkType = (requestBody as IssueReq).linkType || 'ics_with_code';
+    
+    if (linkType === 'ics_direct') {
+      // Lien direct : pas de validation de code, créer la réservation immédiatement
+      console.log('🔗 Création d\'un lien ICS direct (sans validation de code)');
+      requiresCode = false;
+      
+      const reservationData = (requestBody as IssueReq).reservationData;
+      if (reservationData) {
+        // ✅ NOUVEAU : Créer la réservation immédiatement lors de la génération du lien
+        try {
+          console.log('🏗️ Création de la réservation ICS en base de données...');
+          
+          const checkInDate = new Date(reservationData.startDate).toISOString().split('T')[0];
+          const checkOutDate = new Date(reservationData.endDate).toISOString().split('T')[0];
+          
+          // Vérifier si une réservation existe déjà pour ce code Airbnb
+          const { data: existingBooking } = await server
+            .from('bookings')
+            .select('id, status')
+            .eq('property_id', propertyId)
+            .eq('booking_reference', reservationData.airbnbCode)
+            .maybeSingle();
+
+          let bookingId: string;
+          
+          if (existingBooking) {
+            // Mettre à jour la réservation existante
+            console.log('📝 Mise à jour réservation existante:', existingBooking.id);
+            bookingId = existingBooking.id;
+            
+            const { error: updateError } = await server
+              .from('bookings')
+              .update({
+                check_in_date: checkInDate,
+                check_out_date: checkOutDate,
+                guest_name: reservationData.guestName || 'Guest',
+                number_of_guests: reservationData.numberOfGuests || 1,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', bookingId);
+
+            if (updateError) {
+              console.error('❌ Erreur mise à jour réservation:', updateError);
+              throw new Error(`Erreur mise à jour réservation: ${updateError.message}`);
+            }
+          } else {
+            // Créer une nouvelle réservation
+            console.log('🆕 Création nouvelle réservation ICS');
+            const { data: newBooking, error: createError } = await server
+              .from('bookings')
+              .insert({
+                property_id: propertyId,
+                check_in_date: checkInDate,
+                check_out_date: checkOutDate,
+                guest_name: reservationData.guestName || 'Guest',
+                number_of_guests: reservationData.numberOfGuests || 1,
+                booking_reference: reservationData.airbnbCode,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .select('id')
+              .single();
+
+            if (createError) {
+              console.error('❌ Erreur création réservation:', createError);
+              throw new Error(`Erreur création réservation: ${createError.message}`);
+            }
+
+            bookingId = newBooking.id;
+          }
+          
+          console.log('✅ Réservation ICS créée/mise à jour avec ID:', bookingId);
+          
+          // Stocker l'ID de la réservation dans les métadonnées
+          reservation_metadata = {
+            type: 'ics_direct',
+            airbnbCode: reservationData.airbnbCode,
+            startDate: reservationData.startDate,
+            endDate: reservationData.endDate,
+            guestName: reservationData.guestName,
+            numberOfGuests: reservationData.numberOfGuests,
+            bookingId: bookingId // ✅ NOUVEAU : ID de la réservation créée
+          };
+          
+          console.log('✅ Données de réservation et ID stockés dans le token');
+        } catch (error) {
+          console.error('❌ Erreur lors de la création de la réservation ICS:', error);
+          throw new Error(`Impossible de créer la réservation ICS: ${error.message}`);
+        }
+      }
+    } else {
+      // Logique existante pour les liens avec validation de code
+      const candidate = normalizeCode(airbnbCode || finalBookingId || '');
+      if (isAirbnbCode(candidate)) {
+        requiresCode = true;
+        airbnb_confirmation_code = candidate;
+        try {
+          access_code_hash = await hashAccessCode(candidate);
+          console.log('✅ Code Airbnb détecté et hashé avec succès (code non loggé pour sécurité)');
+        } catch (error) {
+          console.error('❌ Failed to hash access code (not logging code for security)');
+          console.error('❌ Error details:', error.message);
+          console.error('❌ Vérifiez que ACCESS_CODE_PEPPER est configuré');
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'MISSING_ACCESS_CODE_PEPPER',
+            details: 'Le secret ACCESS_CODE_PEPPER n\'est pas configuré sur le serveur'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
       }
     }
 
@@ -284,15 +388,17 @@ serve(async (req) => {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         booking_id: finalBookingId || null,
-        metadata: { source: 'issue' }
+        metadata: { 
+          source: 'issue',
+          linkType: linkType,
+          reservationData: reservation_metadata
+        }
       };
 
       if (requiresCode && airbnb_confirmation_code && access_code_hash) {
         // Token sécurisé avec code Airbnb
-        Object.assign(tokenData, {
-          airbnb_confirmation_code,
-          access_code_hash
-        });
+        (tokenData as any).airbnb_confirmation_code = airbnb_confirmation_code;
+        (tokenData as any).access_code_hash = access_code_hash;
 
         // Upsert avec fallback si contrainte unique manquante (42P10)
         let tokenResult: any = null;

@@ -52,24 +52,26 @@ export class AirbnbSyncService {
   }
 
   static getBookingStatusColor(booking: any, matchedBookings: string[], conflicts: string[]): string {
-    // NOUVEAU SYSTÈME: 
-    // - Rouge pour conflits
+    // ✅ CORRIGÉ SYSTÈME: 
+    // - Rouge UNIQUEMENT pour conflits
     // - Vert pour réservations complétées (avec match Airbnb)
-    // - Gris par défaut
+    // - Bleu par défaut (au lieu de gris)
     if (conflicts.includes(booking.id)) {
       return BOOKING_COLORS.conflict.tailwind;
     }
     if (booking.status === 'completed' || matchedBookings.includes(booking.id)) {
       return BOOKING_COLORS.completed.tailwind;
     }
-    return BOOKING_COLORS.pending.tailwind;
+    // ✅ CORRIGÉ : Bleu par défaut au lieu de gris
+    return BOOKING_COLORS.default?.tailwind || BOOKING_COLORS.airbnb.tailwind;
   }
 
   static getAirbnbReservationColor(reservation: AirbnbReservation, matchedBookings: string[], conflicts: string[]): string {
-    // Les réservations Airbnb restent grises par défaut (sauf si conflit)
+    // ✅ CORRIGÉ : Les réservations Airbnb sont maintenant en bleu (pas gris), rouge uniquement pour conflits
     if (conflicts.includes(reservation.id)) {
       return BOOKING_COLORS.conflict.tailwind;
     }
-    return BOOKING_COLORS.pending.tailwind; // Gris par défaut pour Airbnb
+    // ✅ CORRIGÉ : Bleu par défaut pour Airbnb
+    return BOOKING_COLORS.default?.tailwind || BOOKING_COLORS.airbnb.tailwind;
   }
 }

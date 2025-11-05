@@ -53,7 +53,7 @@ serve(async (req) => {
       .from('bookings')
       .select('*')
       .eq('property_id', resolvedPropertyId)
-      .in('status', ['active', 'pending', 'confirmed'])
+      .in('status', ['pending', 'confirmed', 'completed']) // ✅ CORRECTION : Retirer 'active' qui n'existe pas
       .order('created_at', { ascending: false })
       .limit(1);
 

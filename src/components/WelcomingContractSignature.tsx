@@ -30,6 +30,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { getContractPdfUrl } from '@/services/contractService';
 import { ApiService } from '@/services/apiService';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 interface WelcomingContractSignatureProps {
   bookingData: any;
@@ -76,7 +77,54 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   onSignatureComplete,
   initialContractUrl
 }) => {
+  const isMountedRef = useRef(true);
   const [currentStep, setCurrentStep] = useState<'welcome' | 'review' | 'signature' | 'celebration'>('review');
+  
+  // ✅ CORRIGÉ : Cleanup pour éviter les erreurs Portal
+  useEffect(() => {
+    isMountedRef.current = true;
+    
+    return () => {
+      isMountedRef.current = false;
+      
+      // ✅ NOUVEAU : Nettoyage agressif des Portals Radix UI avant démontage
+      try {
+        // Attendre que les animations Framer Motion se terminent
+        setTimeout(() => {
+          try {
+            // Nettoyer tous les Portals Radix UI
+            const portals = document.querySelectorAll('[data-radix-portal], [data-radix-popper-content-wrapper]');
+            portals.forEach(portal => {
+              try {
+                if (portal.parentNode) {
+                  portal.parentNode.removeChild(portal);
+                }
+              } catch (e) {
+                // Ignorer les erreurs de Portal cleanup
+                console.debug('Portal cleanup (non-bloquant):', e);
+              }
+            });
+            
+            // Nettoyer les overlays de Dialog
+            const overlays = document.querySelectorAll('[data-radix-dialog-overlay]');
+            overlays.forEach(overlay => {
+              try {
+                if (overlay.parentNode) {
+                  overlay.parentNode.removeChild(overlay);
+                }
+              } catch (e) {
+                console.debug('Overlay cleanup (non-bloquant):', e);
+              }
+            });
+          } catch (e) {
+            console.debug('Portal cleanup global (non-bloquant):', e);
+          }
+        }, 100); // Délai pour laisser les animations se terminer
+      } catch (e) {
+        console.debug('Cleanup setup error (non-bloquant):', e);
+      }
+    };
+  }, []);
   
   // Debug: Log current step
   useEffect(() => {
@@ -333,7 +381,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       canvas.width = 600;
       canvas.height = 250;
       
-      const ctx = canvas.getContext('2d');
+      // ✅ CORRIGÉ : Utiliser willReadFrequently dans getContext, pas comme attribut
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) {
         console.error('❌ Cannot get canvas context');
         return;
@@ -355,7 +404,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   useEffect(() => {
     if (signature && canvasRef.current) {
       const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
+      // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de lecture
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
         const img = new Image();
         img.onload = () => {
@@ -395,7 +445,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     console.log('🖊️ Start drawing');
     setIsDrawing(true);
     
-    const ctx = canvas.getContext('2d');
+    // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de dessin/lecture
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     
     const pos = getMousePos(canvas, e.nativeEvent as MouseEvent | TouchEvent);
@@ -409,7 +460,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    const ctx = canvas.getContext('2d');
+    // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de dessin
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     
     const pos = getMousePos(canvas, e.nativeEvent as MouseEvent | TouchEvent);
@@ -433,7 +485,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     const dataURL = canvas.toDataURL('image/png');
     
     // Vérifier que la signature n'est pas vide
-    const ctx = canvas.getContext('2d');
+    // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de lecture
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (ctx) {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const hasSignature = imageData.data.some((pixel, index) => 
@@ -458,13 +511,13 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
     // Simple but effective clear
     canvas.width = canvas.width; // This resets the entire canvas
     
-    // Reconfigure drawing context
+    // Reconfigure drawing context avec willReadFrequently
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+    
     ctx.imageSmoothingEnabled = true;
     ctx.strokeStyle = '#1f2937';
     ctx.lineWidth = 3;
@@ -497,26 +550,64 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       return;
     }
 
-    // Vérifier que la signature n'est pas vide
-    const ctx = canvas.getContext('2d');
+    // ✅ CORRIGÉ : Validation robuste de la signature
+    // Vérifier que la signature contient réellement des pixels non-blancs
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (ctx) {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const hasSignature = imageData.data.some((pixel, index) => 
-        index % 4 === 3 && pixel > 0 // Vérifier les pixels alpha (transparence)
-      );
+      let nonWhitePixels = 0;
+      let nonTransparentPixels = 0;
+      
+      // Parcourir tous les pixels pour détecter une signature réelle
+      for (let i = 0; i < imageData.data.length; i += 4) {
+        const r = imageData.data[i];
+        const g = imageData.data[i + 1];
+        const b = imageData.data[i + 2];
+        const a = imageData.data[i + 3];
+        
+        // Vérifier si le pixel n'est pas transparent
+        if (a > 10) { // Seuil de transparence (pas complètement transparent)
+          nonTransparentPixels++;
+          
+          // Vérifier si le pixel n'est pas blanc (tolérance pour les pixels presque blancs)
+          const isWhite = r > 240 && g > 240 && b > 240;
+          if (!isWhite) {
+            nonWhitePixels++;
+          }
+        }
+      }
+      
+      // Une signature valide doit avoir au moins 100 pixels non-blancs
+      const hasSignature = nonWhitePixels > 100 && nonTransparentPixels > 100;
       
       if (!hasSignature) {
+        console.warn('⚠️ Signature invalide détectée:', {
+          nonWhitePixels,
+          nonTransparentPixels,
+          totalPixels: imageData.data.length / 4
+        });
         toast({
           title: 'Signature requise',
-          description: 'Veuillez dessiner votre signature avant de continuer.',
+          description: 'Veuillez dessiner votre signature avant de continuer. La signature doit être visible.',
           variant: 'destructive'
         });
         return;
       }
+      
+      console.log('✅ Signature valide détectée:', {
+        nonWhitePixels,
+        nonTransparentPixels
+      });
     }
 
-    console.log('🔄 Submitting signature...');
+      console.log('🔄 Submitting signature...');
     setIsSubmitting(true);
+    
+    // ✅ CORRIGÉ : Ajouter un timeout pour éviter les blocages
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Timeout: La sauvegarde de la signature a pris trop de temps')), 30000);
+    });
+    
     try {
       // ✅ CORRECTION : Utiliser l'ID existant ou échouer
       const bookingId = getBookingId();
@@ -533,6 +624,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           variant: 'destructive' 
         });
         
+        setIsSubmitting(false);
+        
         // ✅ NOUVEAU : Essayer de rediriger vers la page de vérification
         setTimeout(() => {
           const currentPath = window.location.pathname;
@@ -544,7 +637,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           }
         }, 3000);
         
-        throw new Error(errorMessage);
+        return; // Sortir sans throw pour éviter les erreurs Portal
       }
 
       console.log('✅ Utilisation de la réservation existante:', bookingId);
@@ -554,95 +647,122 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       const signerEmail = guestData?.email || null;
       const signerPhone = guestData?.phone || null;
       
-      const signatureResult = await ApiService.saveContractSignature({
-        bookingId: bookingId,
-        signerName: signerName,
-        signerEmail: signerEmail,
-        signerPhone: signerPhone,
-        signatureDataUrl: signature
+      console.log('📤 Sauvegarde de la signature avec:', {
+        bookingId,
+        signerName,
+        hasSignature: !!signature
       });
+      
+      // ✅ CORRIGÉ : Utiliser Promise.race pour éviter les blocages
+      const signatureResult = await Promise.race([
+        ApiService.saveContractSignature({
+          bookingId: bookingId,
+          signerName: signerName,
+          signerEmail: signerEmail,
+          signerPhone: signerPhone,
+          signatureDataUrl: signature
+        }),
+        timeoutPromise
+      ]) as any;
 
       console.log('✅ Contract signature saved successfully:', signatureResult);
 
-      // Generate signed PDF and get URL
-      try {
-        const { UnifiedDocumentService } = await import('@/services/unifiedDocumentService');
-        const signedAt = new Date().toISOString();
-        const contractResult = await UnifiedDocumentService.generateSignedContract({ id: bookingId } as any, signature, signedAt);
-        console.log('✅ Contrat signé généré avec succès:', contractResult);
-        
-        // Récupérer l'URL du contrat signé
-        if (contractResult && contractResult.documentUrl) {
-          setSignedContractUrl(contractResult.documentUrl);
-          console.log('📄 URL du contrat signé:', contractResult.documentUrl);
-        } else {
-          console.warn('⚠️ Aucune URL de contrat signé retournée');
+      // Generate signed PDF and get URL (non-blocking, ne pas attendre)
+      Promise.resolve().then(async () => {
+        try {
+          const { UnifiedDocumentService } = await import('@/services/unifiedDocumentService');
+          const signedAt = new Date().toISOString();
+          const contractResult = await UnifiedDocumentService.generateSignedContract({ id: bookingId } as any, signature, signedAt);
+          console.log('✅ Contrat signé généré avec succès:', contractResult);
+          
+          // Récupérer l'URL du contrat signé
+          if (contractResult && contractResult.documentUrl && isMountedRef.current) {
+            setSignedContractUrl(contractResult.documentUrl);
+            console.log('📄 URL du contrat signé:', contractResult.documentUrl);
+          } else {
+            console.warn('⚠️ Aucune URL de contrat signé retournée');
+          }
+        } catch (generateError) {
+          console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
         }
-      } catch (generateError) {
-        console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
-      }
+      });
   
       // Notify property owner (non-blocking)
-      try {
-        const ownerEmail = propertyData?.contact_info?.email;
-        if (ownerEmail) {
-          const dashboardUrl = `${window.location.origin}/dashboard/property/${propertyData?.id}`;
-          const guestName = guestData?.guests?.[0]?.fullName || bookingData?.guestName || 'Invité';
-          const checkIn = bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'N/A';
-          const checkOut = bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'N/A';
+      Promise.resolve().then(async () => {
+        try {
+          const ownerEmail = propertyData?.contact_info?.email;
+          if (ownerEmail) {
+            const dashboardUrl = `${window.location.origin}/dashboard/property/${propertyData?.id}`;
+            const guestName = guestData?.guests?.[0]?.fullName || bookingData?.guestName || 'Invité';
+            const checkIn = bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'N/A';
+            const checkOut = bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'N/A';
 
-          const { error: fnError } = await supabase.functions.invoke('send-owner-notification', {
-            body: { toEmail: ownerEmail, guestName, checkIn, checkOut, propertyId: propertyData?.id, propertyName: propertyData?.name, dashboardUrl },
-          });
-          if (fnError) console.error('⚠️ Erreur envoi email propriétaire:', fnError);
-        } else {
-          console.warn('⚠️ Aucune adresse email propriétaire trouvée (property.contact_info.email).');
-        }
-      } catch (notifyError) {
-        console.error('⚠️ Notification propriétaire échouée:', notifyError);
-      }
-
-      // Envoi d'email au guest si il a fourni son email
-      try {
-        const guestEmail = guestData?.guests?.[0]?.email;
-        if (guestEmail && guestEmail.trim() !== '') {
-          console.log('📧 Envoi email au guest:', guestEmail);
-          
-          const { error: guestEmailError } = await supabase.functions.invoke('send-guest-contract', {
-            body: {
-              guestEmail: guestEmail,
-              guestName: guestName,
-              checkIn: bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'N/A',
-              checkOut: bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'N/A',
-              propertyName: propertyData?.name || 'Votre hébergement',
-              propertyAddress: propertyData?.address || '',
-              numberOfGuests: bookingData?.numberOfGuests || 1,
-              contractUrl: null // TODO: Ajouter le lien du contrat signé si disponible
-            }
-          });
-          
-          if (guestEmailError) {
-            console.error('⚠️ Erreur envoi email guest:', guestEmailError);
+            const { error: fnError } = await supabase.functions.invoke('send-owner-notification', {
+              body: { toEmail: ownerEmail, guestName, checkIn, checkOut, propertyId: propertyData?.id, propertyName: propertyData?.name, dashboardUrl },
+            });
+            if (fnError) console.error('⚠️ Erreur envoi email propriétaire:', fnError);
           } else {
-            console.log('✅ Email envoyé au guest avec succès');
+            console.warn('⚠️ Aucune adresse email propriétaire trouvée (property.contact_info.email).');
           }
-        } else {
-          console.log('ℹ️ Aucun email guest fourni, pas d\'envoi d\'email');
+        } catch (notifyError) {
+          console.error('⚠️ Notification propriétaire échouée:', notifyError);
         }
-      } catch (guestNotifyError) {
-        console.error('⚠️ Notification guest échouée:', guestNotifyError);
-      }
+      });
 
-      setCurrentStep('celebration');
+      // Envoi d'email au guest si il a fourni son email (non-blocking)
+      Promise.resolve().then(async () => {
+        try {
+          const guestEmail = guestData?.guests?.[0]?.email;
+          if (guestEmail && guestEmail.trim() !== '') {
+            console.log('📧 Envoi email au guest:', guestEmail);
+            
+            const { error: guestEmailError } = await supabase.functions.invoke('send-guest-contract', {
+              body: {
+                guestEmail: guestEmail,
+                guestName: signerName,
+                checkIn: bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'N/A',
+                checkOut: bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'N/A',
+                propertyName: propertyData?.name || 'Votre hébergement',
+                propertyAddress: propertyData?.address || '',
+                numberOfGuests: bookingData?.numberOfGuests || 1,
+                contractUrl: null // TODO: Ajouter le lien du contrat signé si disponible
+              }
+            });
+            
+            if (guestEmailError) {
+              console.error('⚠️ Erreur envoi email guest:', guestEmailError);
+            } else {
+              console.log('✅ Email envoyé au guest avec succès');
+            }
+          } else {
+            console.log('ℹ️ Aucun email guest fourni, pas d\'envoi d\'email');
+          }
+        } catch (guestNotifyError) {
+          console.error('⚠️ Notification guest échouée:', guestNotifyError);
+        }
+      });
+
+      // ✅ CORRIGÉ : Marquer immédiatement comme terminé pour éviter les blocages
+      console.log('✅ Signature soumise avec succès, passage à l\'étape celebration');
+      
+      if (isMountedRef.current) {
+        setCurrentStep('celebration');
+      }
       
       toast({
         title: 'Contrat signé avec succès ! 🎉',
         description: 'Votre séjour est maintenant confirmé. Nous avons hâte de vous accueillir !',
       });
 
-      setTimeout(() => {
-        onSignatureComplete(signature);
-      }, 3000);
+      // ✅ CORRIGÉ : Appeler onSignatureComplete immédiatement sans setTimeout
+      // et vérifier que le composant est toujours monté
+      if (isMountedRef.current) {
+        try {
+          onSignatureComplete(signature);
+        } catch (error) {
+          console.error('❌ Erreur lors de l\'appel à onSignatureComplete:', error);
+        }
+      }
     } catch (error) {
       console.error('Error saving signature:', error);
       toast({ 
@@ -685,15 +805,16 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       </div>
 
       <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
-        <AnimatePresence mode="wait">
+        <ErrorBoundary>
+          <AnimatePresence mode="wait" initial={false}>
           {/* Étape 1: Accueil chaleureux */}
           {currentStep === 'welcome' && (
             <motion.div
               key="welcome"
-              variants={fadeInUp}
-              initial="initial"
-              animate="animate"
-              exit="exit"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
+              transition={{ duration: 0.3 }}
               className="text-center space-y-8"
             >
               <motion.div
@@ -784,10 +905,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           {currentStep === 'review' && (
             <motion.div
               key="review"
-              variants={fadeInUp}
-              initial="initial"
-              animate="animate"
-              exit="exit"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
+              transition={{ duration: 0.3 }}
               className="space-y-8"
             >
               <div className="text-center space-y-4">
@@ -883,10 +1004,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           {currentStep === 'signature' && (
             <motion.div
               key="signature"
-              variants={fadeInUp}
-              initial="initial"
-              animate="animate"
-              exit="exit"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
+              transition={{ duration: 0.3 }}
               className="space-y-8"
             >
               <div className="text-center space-y-4">
@@ -1006,7 +1127,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                   minHeight: '200px',
                                   backgroundColor: 'white'
                                 }}
-                                willreadfrequently={true}
+                                // ✅ CORRIGÉ : willReadFrequently est passé dans getContext, pas comme attribut HTML
                                 onContextMenu={(e) => e.preventDefault()}
                                 onMouseDown={startDrawing}
                                 onMouseMove={draw}
@@ -1208,7 +1329,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                   return;
                                 }
                                 
-                                const ctx = canvas.getContext('2d');
+                                // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de test
+                                const ctx = canvas.getContext('2d', { willReadFrequently: true });
                                 if (!ctx) {
                                   console.error('❌ Cannot get context');
                                   return;
@@ -1262,10 +1384,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           {currentStep === 'celebration' && (
             <motion.div
               key="celebration"
-              variants={fadeInUp}
-              initial="initial"
-              animate="animate"
-              exit="exit"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -30 }}
+              transition={{ duration: 0.3 }}
               className="text-center space-y-8 max-w-2xl mx-auto"
             >
               <motion.div
@@ -1371,7 +1493,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               </motion.div>
             </motion.div>
           )}
-        </AnimatePresence>
+          </AnimatePresence>
+        </ErrorBoundary>
       </div>
     </div>
   );

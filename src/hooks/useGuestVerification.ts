@@ -6,6 +6,50 @@ import { PropertyVerificationToken, GuestSubmission } from '@/types/guestVerific
 import { useAuth } from './useAuth';
 import { toast } from '@/hooks/use-toast';
 
+// ✅ NOUVEAU : Fonction pour nettoyer le nom du guest avant de l'inclure dans l'URL
+function cleanGuestNameForUrl(guestName: string): string {
+  if (!guestName || guestName.trim() === '') return '';
+  
+  // Nettoyer le nom des éléments indésirables
+  let cleanedName = guestName.trim();
+  
+  // Supprimer les patterns communs qui ne sont pas des noms
+  const unwantedPatterns = [
+    /phone\s*number/i,
+    /phone/i,
+    /address/i,
+    /adresse/i,
+    /email/i,
+    /tel/i,
+    /mobile/i,
+    /fax/i,
+    /^[A-Z0-9]{6,}$/, // Codes alphanumériques longs
+    /^\d+$/, // Que des chiffres
+    /^[A-Z]{2,}\d+$/, // Combinaisons lettres+chiffres comme "JBFDPhone"
+    /\n/, // Retours à la ligne
+    /\r/, // Retours chariot
+  ];
+  
+  for (const pattern of unwantedPatterns) {
+    if (pattern.test(cleanedName)) {
+      console.log('🧹 Nom nettoyé pour URL - pattern indésirable détecté:', cleanedName);
+      return ''; // Retourner vide si le nom contient des éléments indésirables
+    }
+  }
+  
+  // Vérifier que le nom contient au moins des lettres
+  if (!/[a-zA-Z]/.test(cleanedName)) {
+    console.log('🧹 Nom nettoyé pour URL - pas de lettres détectées:', cleanedName);
+    return '';
+  }
+  
+  // Nettoyer les espaces multiples et les retours à la ligne
+  cleanedName = cleanedName.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+  
+  console.log('✅ Nom nettoyé pour URL avec succès:', cleanedName);
+  return cleanedName;
+}
+
 export const useGuestVerification = () => {
   const { user } = useAuth();
   const [tokens, setTokens] = useState<PropertyVerificationToken[]>([]);
@@ -122,7 +166,20 @@ export const useGuestVerification = () => {
   };
 
   // Generate or get existing token for a property using the edge function
-  const generatePropertyVerificationUrl = async (propertyId: string, airbnbBookingId?: string): Promise<string | null> => {
+  const generatePropertyVerificationUrl = async (
+    propertyId: string, 
+    airbnbBookingId?: string, 
+    options?: {
+      linkType?: 'ics_direct' | 'ics_with_code' | 'independent';
+      reservationData?: {
+        airbnbCode: string;
+        startDate: Date;
+        endDate: Date;
+        guestName?: string;
+        numberOfGuests?: number;
+      };
+    }
+  ): Promise<string | null> => {
     if (!user) return null;
 
     try {
@@ -135,7 +192,9 @@ export const useGuestVerification = () => {
         body: { 
           action: 'issue', // Explicite
           propertyId, 
-          airbnbCode: airbnbBookingId // Utiliser airbnbCode au lieu de bookingId
+          airbnbCode: airbnbBookingId, // Utiliser airbnbCode au lieu de bookingId
+          linkType: options?.linkType || 'ics_with_code', // Nouveau paramètre
+          reservationData: options?.reservationData // Données de réservation pour liens directs
         }
       });
 
@@ -171,11 +230,40 @@ export const useGuestVerification = () => {
         return null;
       }
 
-      // ✅ CORRECTION : Distinction claire entre les deux logiques
+      // ✅ NOUVEAU : Distinction entre trois types de liens
       let clientUrl;
       
-      if (airbnbBookingId && airbnbBookingId !== 'INDEPENDENT_BOOKING') {
-        // LOGIQUE ICS : Le guest entre le code Airbnb, les dates sont pré-remplies
+      if (options?.linkType === 'ics_direct') {
+        // NOUVEAU : Lien ICS direct - pas de validation de code, dates pré-remplies
+        const reservationData = options.reservationData;
+        let startDate: string | undefined;
+        let endDate: string | undefined;
+        
+        if (reservationData) {
+          // ✅ NOUVEAU : Inclure les dates dans l'URL pour que le frontend puisse les récupérer
+          startDate = new Date(reservationData.startDate).toISOString().split('T')[0];
+          endDate = new Date(reservationData.endDate).toISOString().split('T')[0];
+          
+          // ✅ NOUVEAU : Nettoyer le nom du guest avant de l'inclure dans l'URL
+          const cleanGuestName = cleanGuestNameForUrl(reservationData.guestName || '');
+          const guestName = encodeURIComponent(cleanGuestName);
+          const numberOfGuests = reservationData.numberOfGuests || 1;
+          
+          clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?startDate=${startDate}&endDate=${endDate}&guestName=${guestName}&guests=${numberOfGuests}&airbnbCode=${reservationData.airbnbCode}`;
+        } else {
+          clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
+        }
+        
+        console.log('🔗 Lien ICS direct généré (sans validation de code):', { 
+          propertyId, 
+          token: data.token, 
+          airbnbCode: airbnbBookingId,
+          fullUrl: clientUrl,
+          dates: startDate && endDate ? `${startDate} → ${endDate}` : 'N/A',
+          workflow: 'Guest accès direct → Dates automatiquement remplies depuis ICS'
+        });
+      } else if (airbnbBookingId && airbnbBookingId !== 'INDEPENDENT_BOOKING') {
+        // LOGIQUE ICS AVEC CODE : Le guest entre le code Airbnb, les dates sont pré-remplies
         clientUrl = `${runtime.urls.app.base}/verify/${data.token}`;
         console.log('🔗 Lien ICS généré (code Airbnb requis):', { 
           propertyId, 

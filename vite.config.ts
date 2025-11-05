@@ -32,9 +32,33 @@ export default defineConfig(({ mode }) => ({
   build: {
     rollupOptions: {
       external: ['@rollup/rollup-linux-x64-gnu'],
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-toast'],
+          utils: ['date-fns', 'lucide-react'],
+          supabase: ['@supabase/supabase-js'],
+        },
+      },
     },
+    target: 'esnext',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: mode === 'production',
+        drop_debugger: mode === 'production',
+      },
+    },
+    chunkSizeWarningLimit: 1000,
   },
   optimizeDeps: {
     exclude: ['@rollup/rollup-linux-x64-gnu'],
+    include: [
+      'react',
+      'react-dom',
+      '@supabase/supabase-js',
+      'lucide-react',
+      'date-fns'
+    ],
   },
 }));

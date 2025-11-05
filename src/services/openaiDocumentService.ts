@@ -11,6 +11,48 @@ interface ExtractedGuestData {
   documentType?: 'passport' | 'national_id';
 }
 
+// ✅ NOUVEAU : Fonction pour nettoyer le nom extrait
+function cleanExtractedName(name: string): string {
+  if (!name || name.trim() === '') return '';
+  
+  // Nettoyer le nom des éléments indésirables
+  let cleanedName = name.trim();
+  
+  // Supprimer les patterns communs qui ne sont pas des noms
+  const unwantedPatterns = [
+    /phone\s*number/i,
+    /phone/i,
+    /address/i,
+    /adresse/i,
+    /email/i,
+    /tel/i,
+    /mobile/i,
+    /fax/i,
+    /^[A-Z0-9]{6,}$/, // Codes alphanumériques longs
+    /^\d+$/, // Que des chiffres
+    /^[A-Z]{2,}\d+$/, // Combinaisons lettres+chiffres comme "JBFDPhone"
+  ];
+  
+  for (const pattern of unwantedPatterns) {
+    if (pattern.test(cleanedName)) {
+      console.log('🧹 Nom nettoyé - pattern indésirable détecté:', cleanedName);
+      return ''; // Retourner vide si le nom contient des éléments indésirables
+    }
+  }
+  
+  // Vérifier que le nom contient au moins des lettres
+  if (!/[a-zA-Z]/.test(cleanedName)) {
+    console.log('🧹 Nom nettoyé - pas de lettres détectées:', cleanedName);
+    return '';
+  }
+  
+  // Nettoyer les espaces multiples
+  cleanedName = cleanedName.replace(/\s+/g, ' ').trim();
+  
+  console.log('✅ Nom nettoyé avec succès:', cleanedName);
+  return cleanedName;
+}
+
 export class OpenAIDocumentService {
   static async extractDocumentData(imageFile: File): Promise<ExtractedGuestData> {
     try {
@@ -41,7 +83,7 @@ export class OpenAIDocumentService {
 
       // Validate and clean the extracted data
       const cleanedData: ExtractedGuestData = {
-        fullName: extractedData.fullName || '',
+        fullName: cleanExtractedName(extractedData.fullName || ''),
         dateOfBirth: extractedData.dateOfBirth || '',
         documentNumber: extractedData.documentNumber || '',
         nationality: extractedData.nationality || '',

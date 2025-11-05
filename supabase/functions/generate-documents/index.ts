@@ -286,15 +286,8 @@ async function generateContractPDF(
       color: textColor
     });
     
-    // Zone de signature (rectangle)
-    page.drawRectangle({
-      x: 50,
-      y: yPosition - 50,
-      width: 200,
-      height: 40,
-      borderColor: rgb(0.7, 0.7, 0.7),
-      borderWidth: 1
-    });
+    // ✅ NOUVEAU : Suppression du cadre de signature
+    // Le rectangle de signature a été supprimé pour un contrat plus propre
     
     const pdfBytes = await pdfDoc.save();
     console.log('✅ Contract PDF generated successfully');

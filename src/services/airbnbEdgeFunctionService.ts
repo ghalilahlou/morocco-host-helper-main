@@ -5,6 +5,7 @@ export interface SyncResult {
   count?: number;
   error?: string;
   message?: string;
+  details?: string; // ✅ NOUVEAU : Détails supplémentaires pour les erreurs
 }
 
 export class AirbnbEdgeFunctionService {
@@ -35,19 +36,72 @@ export class AirbnbEdgeFunctionService {
 
       console.log('📊 Edge Function response:', { data, error });
 
+      // ✅ CORRIGÉ : Gérer les erreurs HTTP (non-2xx status codes)
       if (error) {
         console.error('❌ Edge Function error:', error);
+        console.error('❌ Error details:', {
+          message: error.message,
+          context: error.context,
+          status: error.context?.status,
+          body: error.context?.body
+        });
+        
+        // Try to extract error message from various possible locations
+        let errorMessage = error.message || 'Edge Function error';
+        let errorDetails: string | undefined;
+        
+        // Check error.context.body (most common location)
+        if (error.context?.body) {
+          try {
+            const errorBody = typeof error.context.body === 'string' 
+              ? JSON.parse(error.context.body) 
+              : error.context.body;
+            
+            errorMessage = errorBody.error || errorBody.message || errorMessage;
+            errorDetails = errorBody.details || errorBody.stack;
+          } catch (parseError) {
+            // If parsing fails, try to use the body as string
+            if (typeof error.context.body === 'string') {
+              errorMessage = error.context.body;
+            }
+          }
+        }
+        
+        // Check data field (sometimes errors are returned in data)
+        if (data && typeof data === 'object' && !data.success) {
+          errorMessage = data.error || data.message || errorMessage;
+          errorDetails = data.details || errorDetails;
+        }
+        
         return { 
           success: false, 
-          error: `Edge Function error: ${error.message}` 
+          error: errorMessage,
+          details: errorDetails
         };
       }
 
-      if (!data.success) {
+      // ✅ CORRIGÉ : Vérifier si data existe et si success est défini
+      if (!data) {
+        console.error('❌ No data returned from Edge Function');
         return { 
           success: false, 
-          error: data.error || 'Unknown error from Edge Function' 
+          error: 'No data returned from Edge Function' 
         };
+      }
+
+      // Si success est false ou non défini, traiter comme une erreur
+      if (data.success === false || (data.error && !data.success)) {
+        console.error('❌ Edge Function returned error:', data.error || data.message);
+        return { 
+          success: false, 
+          error: data.error || data.message || 'Unknown error from Edge Function',
+          details: data.details
+        };
+      }
+
+      // Si success est explicitement true, ou si skipped est true (cas de sync non nécessaire)
+      if (data.success === true || data.skipped === true) {
+        console.log('✅ Edge Function succeeded or skipped');
       }
 
       console.log('✅ Sync completed via Edge Function');
