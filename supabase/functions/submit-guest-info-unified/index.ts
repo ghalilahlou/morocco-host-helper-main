@@ -72,6 +72,7 @@ interface ResolvedBooking {
   numberOfGuests?: number;
   totalPrice?: number;
   currency?: string;
+  bookingId?: string; // ✅ NOUVEAU : ID de la réservation si elle existe déjà
 }
 
 interface ProcessingResult {
@@ -332,10 +333,12 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
       .eq('booking_reference', airbnbCode)
       .maybeSingle();
 
-    let airbnbReservation = null;
+    let airbnbReservation: any = null;
     
+    let existingBookingId: string | undefined = undefined;
     if (bookingReservation) {
       log('info', 'Réservation trouvée dans la table bookings', { bookingId: bookingReservation.id });
+      existingBookingId = bookingReservation.id; // ✅ NOUVEAU : Stocker l'ID pour éviter la double création
       // Convertir le format bookings vers le format airbnb_reservations
       airbnbReservation = {
         property_id: bookingReservation.property_id,
@@ -405,7 +408,8 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
       guestName: airbnbReservation.guest_name || undefined,
       numberOfGuests: airbnbReservation.number_of_guests || 1,
       totalPrice: airbnbReservation.total_price || undefined,
-      currency: airbnbReservation.currency || 'EUR'
+      currency: airbnbReservation.currency || 'EUR',
+      bookingId: existingBookingId // ✅ NOUVEAU : Inclure l'ID si la réservation existe déjà
     };
 
     log('info', 'Réservation résolue avec succès', {
@@ -417,6 +421,275 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
 
     return booking;
   }, 'Résolution de réservation');
+}
+
+// NOUVELLE FONCTION : Récupérer la réservation ICS existante créée lors de la génération du lien
+async function getExistingICSBooking(token: string, guestInfo: GuestInfo): Promise<ResolvedBooking> {
+  log('info', 'Récupération de la réservation ICS existante', {
+    tokenPrefix: token.substring(0, 8) + '...',
+    guest: `${guestInfo.firstName} ${guestInfo.lastName}`
+  });
+
+  return await withRetry(async () => {
+    const supabase = await getServerClient();
+
+    // 1. Récupérer le token avec ses métadonnées
+    const { data: tokenData, error: tokenError } = await supabase
+      .from('property_verification_tokens')
+      .select(`
+        id,
+        property_id,
+        token,
+        expires_at,
+        is_active,
+        metadata,
+        property:properties!inner(
+          id,
+          name,
+          address,
+          contact_info,
+          is_active
+        )
+      `)
+      .eq('token', token)
+      .eq('is_active', true)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+
+    if (tokenError || !tokenData) {
+      log('error', 'Token validation failed', { error: tokenError });
+      throw new Error(`Token invalide ou expiré: ${tokenError?.message || 'Token non trouvé'}`);
+    }
+
+    if (!tokenData.property.is_active) {
+      throw new Error('Propriété inactive');
+    }
+
+    // 2. Extraire l'ID de la réservation depuis les métadonnées
+    const metadata = tokenData.metadata || {};
+    const reservationData = metadata.reservationData;
+    const bookingId = reservationData?.bookingId;
+
+    log('info', 'Métadonnées du token récupérées', { 
+      metadataKeys: Object.keys(metadata),
+      hasReservationData: !!reservationData,
+      reservationDataKeys: reservationData ? Object.keys(reservationData) : [],
+      bookingId: bookingId
+    });
+
+    if (!bookingId) {
+      log('error', 'ID de réservation manquant dans le token', { 
+        metadata,
+        reservationData,
+        linkType: metadata.linkType
+      });
+      throw new Error('ID de réservation manquant pour ce lien ICS');
+    }
+
+    log('info', 'ID de réservation trouvé dans le token', { bookingId });
+
+    // 3. Récupérer la réservation existante
+    log('info', 'Recherche de la réservation dans la base de données', { bookingId });
+    
+    const { data: existingBooking, error: bookingError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', bookingId)
+      .single();
+
+    log('info', 'Résultat de la recherche de réservation', { 
+      found: !!existingBooking,
+      error: bookingError,
+      bookingData: existingBooking ? {
+        id: existingBooking.id,
+        property_id: existingBooking.property_id,
+        booking_reference: existingBooking.booking_reference,
+        guest_name: existingBooking.guest_name,
+        status: existingBooking.status
+      } : null
+    });
+
+    if (bookingError || !existingBooking) {
+      log('error', 'Réservation non trouvée', { 
+        bookingId, 
+        error: bookingError,
+        errorMessage: bookingError?.message,
+        errorCode: bookingError?.code
+      });
+      throw new Error(`Réservation non trouvée: ${bookingError?.message || 'Réservation introuvable'}`);
+    }
+
+    // 4. Créer l'objet ResolvedBooking à partir de la réservation existante
+    const booking: ResolvedBooking = {
+      propertyId: existingBooking.property_id,
+      airbnbCode: existingBooking.booking_reference,
+      checkIn: existingBooking.check_in_date,
+      checkOut: existingBooking.check_out_date,
+      propertyName: tokenData.property.name || 'Propriété',
+      propertyAddress: tokenData.property.address || '',
+      guestName: existingBooking.guest_name,
+      numberOfGuests: existingBooking.number_of_guests,
+      totalPrice: existingBooking.total_price,
+      currency: 'EUR',
+      bookingId: bookingId // ✅ NOUVEAU : Inclure l'ID pour éviter la double création
+    };
+
+    log('info', 'Réservation ICS existante récupérée avec succès', {
+      bookingId,
+      propertyId: booking.propertyId,
+      dates: `${booking.checkIn} → ${booking.checkOut}`,
+      propertyName: booking.propertyName,
+      guestsCount: booking.numberOfGuests
+    });
+
+    return booking;
+  }, 'Récupération réservation ICS existante');
+}
+
+// NOUVELLE FONCTION : Créer une réservation à partir des données ICS stockées dans le token
+async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Promise<ResolvedBooking> {
+  log('info', 'Création de réservation à partir des données ICS stockées', {
+    tokenPrefix: token.substring(0, 8) + '...',
+    guest: `${guestInfo.firstName} ${guestInfo.lastName}`
+  });
+
+  return await withRetry(async () => {
+    const supabase = await getServerClient();
+
+    // 1. Récupérer le token avec ses métadonnées
+    const { data: tokenData, error: tokenError } = await supabase
+      .from('property_verification_tokens')
+      .select(`
+        id,
+        property_id,
+        token,
+        expires_at,
+        is_active,
+        metadata,
+        property:properties!inner(
+          id,
+          name,
+          address,
+          contact_info,
+          is_active
+        )
+      `)
+      .eq('token', token)
+      .eq('is_active', true)
+      .gt('expires_at', new Date().toISOString())
+      .single();
+
+    if (tokenError || !tokenData) {
+      log('error', 'Token validation failed', { error: tokenError });
+      throw new Error(`Token invalide ou expiré: ${tokenError?.message || 'Token non trouvé'}`);
+    }
+
+    if (!tokenData.property.is_active) {
+      throw new Error('Propriété inactive');
+    }
+
+    // 2. Extraire les données de réservation des métadonnées
+    const metadata = tokenData.metadata || {};
+    const reservationData = metadata.reservationData;
+
+    if (!reservationData || metadata.linkType !== 'ics_direct') {
+      log('error', 'Données de réservation ICS manquantes dans le token', { metadata });
+      throw new Error('Données de réservation ICS manquantes pour ce lien');
+    }
+
+    log('info', 'Données ICS extraites du token', {
+      airbnbCode: reservationData.airbnbCode,
+      startDate: reservationData.startDate,
+      endDate: reservationData.endDate,
+      guestName: reservationData.guestName
+    });
+
+    // 3. Créer la réservation avec les données ICS ET l'enregistrer en base
+    const checkInDate = new Date(reservationData.startDate).toISOString().split('T')[0];
+    const checkOutDate = new Date(reservationData.endDate).toISOString().split('T')[0];
+    
+    // Vérifier si une réservation existe déjà pour ce code Airbnb
+    const { data: existingBooking } = await supabase
+      .from('bookings')
+      .select('id, status')
+      .eq('property_id', tokenData.property.id)
+      .eq('booking_reference', reservationData.airbnbCode)
+      .maybeSingle();
+
+    let bookingId: string;
+    
+    if (existingBooking) {
+      // Mettre à jour la réservation existante
+      log('info', 'Mise à jour réservation existante', { bookingId: existingBooking.id });
+      bookingId = existingBooking.id;
+      
+      const { error: updateError } = await supabase
+        .from('bookings')
+        .update({
+          check_in_date: checkInDate,
+          check_out_date: checkOutDate,
+          guest_name: reservationData.guestName || `${guestInfo.firstName} ${guestInfo.lastName}`,
+          number_of_guests: reservationData.numberOfGuests || 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', bookingId);
+
+      if (updateError) {
+        log('error', 'Erreur mise à jour réservation', { error: updateError });
+        throw new Error(`Erreur mise à jour réservation: ${updateError.message}`);
+      }
+    } else {
+      // Créer une nouvelle réservation
+      log('info', 'Création nouvelle réservation ICS');
+      const { data: newBooking, error: createError } = await supabase
+        .from('bookings')
+        .insert({
+          property_id: tokenData.property.id,
+          check_in_date: checkInDate,
+          check_out_date: checkOutDate,
+          guest_name: reservationData.guestName || `${guestInfo.firstName} ${guestInfo.lastName}`,
+          number_of_guests: reservationData.numberOfGuests || 1,
+          booking_reference: reservationData.airbnbCode,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+
+      if (createError) {
+        log('error', 'Erreur création réservation', { error: createError });
+        throw new Error(`Erreur création réservation: ${createError.message}`);
+      }
+
+      bookingId = newBooking.id;
+    }
+
+    // 4. Créer l'objet ResolvedBooking avec l'ID de la réservation créée
+    const booking: ResolvedBooking = {
+      propertyId: tokenData.property.id,
+      airbnbCode: reservationData.airbnbCode,
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      propertyName: tokenData.property.name || 'Propriété',
+      propertyAddress: tokenData.property.address || '',
+      guestName: reservationData.guestName || `${guestInfo.firstName} ${guestInfo.lastName}`,
+      numberOfGuests: reservationData.numberOfGuests || 1,
+      totalPrice: undefined,
+      currency: 'EUR',
+      bookingId: bookingId // ✅ NOUVEAU : Inclure l'ID de la réservation pour éviter la double création
+    };
+
+    log('info', 'Réservation ICS créée et enregistrée en base', {
+      bookingId,
+      propertyId: booking.propertyId,
+      dates: `${booking.checkIn} → ${booking.checkOut}`,
+      propertyName: booking.propertyName,
+      guestsCount: booking.numberOfGuests
+    });
+
+    return booking;
+  }, 'Création réservation à partir des données ICS');
 }
 
 // ÉTAPE 2: Sauvegarde exhaustive des données
@@ -438,13 +711,55 @@ async function saveGuestDataInternal(
     // 1. Création/mise à jour de la réservation avec toutes les données (approche robuste)
     log('info', 'Sauvegarde de la réservation');
     
-    // D'abord, chercher si une réservation existe déjà
-    const { data: existingBooking } = await supabase
-      .from('bookings')
-      .select('id')
-      .eq('property_id', booking.propertyId)
-      .eq('booking_reference', booking.airbnbCode)
-      .maybeSingle();
+    // ✅ NOUVEAU : Si booking.bookingId existe, utiliser directement cette réservation
+    let existingBooking = null;
+    if (booking.bookingId) {
+      log('info', 'Utilisation de la réservation existante via bookingId', { bookingId: booking.bookingId });
+      const { data } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('id', booking.bookingId)
+        .maybeSingle();
+      existingBooking = data;
+      
+      if (!existingBooking) {
+        log('warn', 'Réservation avec bookingId non trouvée, recherche par booking_reference', { bookingId: booking.bookingId });
+      }
+    }
+    
+    // Si pas trouvé par bookingId, chercher par booking_reference
+    if (!existingBooking) {
+      if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
+        // Pour les réservations indépendantes, chercher par property_id + guest_name + check_in_date
+        const fullGuestName = `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`;
+        const { data } = await supabase
+          .from('bookings')
+          .select('id')
+          .eq('property_id', booking.propertyId)
+          .eq('booking_reference', 'INDEPENDENT_BOOKING')
+          .eq('guest_name', fullGuestName)
+          .eq('check_in_date', booking.checkIn)
+          .maybeSingle();
+        existingBooking = data;
+        
+        if (existingBooking) {
+          log('info', 'Réservation indépendante existante trouvée par guest_name + check_in_date', { 
+            bookingId: existingBooking.id,
+            guestName: fullGuestName,
+            checkIn: booking.checkIn
+          });
+        }
+      } else {
+        // Pour les réservations Airbnb, utiliser property_id + booking_reference
+        const { data } = await supabase
+          .from('bookings')
+          .select('id')
+          .eq('property_id', booking.propertyId)
+          .eq('booking_reference', booking.airbnbCode)
+          .maybeSingle();
+        existingBooking = data;
+      }
+    }
 
     let savedBooking;
     const bookingData = {
@@ -461,21 +776,56 @@ async function saveGuestDataInternal(
       updated_at: new Date().toISOString()
     };
 
-    if (existingBooking) {
-      // Mettre à jour la réservation existante
-      log('info', 'Mise à jour réservation existante', { bookingId: existingBooking.id });
-      const { data, error: updateError } = await supabase
-        .from('bookings')
-        .update(bookingData)
-        .eq('id', existingBooking.id)
-        .select()
-        .single();
+      if (existingBooking) {
+        // Mettre à jour la réservation existante
+        log('info', 'Mise à jour réservation existante avec nom du guest', { 
+          bookingId: existingBooking.id,
+          oldGuestName: 'Réservation existante',
+          newGuestName: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`,
+          source: booking.bookingId ? 'bookingId' : 'booking_reference'
+        });
+        const { data, error: updateError } = await supabase
+          .from('bookings')
+          .update(bookingData)
+          .eq('id', existingBooking.id)
+          .select()
+          .single();
+        
+        if (updateError || !data) {
+          log('error', 'Échec mise à jour réservation', { error: updateError });
+          throw new Error(`Erreur lors de la mise à jour de la réservation: ${updateError?.message}`);
+        }
+        savedBooking = data;
       
-      if (updateError || !data) {
-        log('error', 'Échec mise à jour réservation', { error: updateError });
-        throw new Error(`Erreur lors de la mise à jour de la réservation: ${updateError?.message}`);
+      log('info', '✅ Réservation mise à jour avec le nom du guest', {
+        bookingId: existingBooking.id,
+        finalGuestName: data.guest_name,
+        guestEmail: data.guest_email
+      });
+
+      // ✅ NOUVEAU : Synchroniser avec la table airbnb_reservations pour le calendrier
+      if (booking.airbnbCode && booking.airbnbCode !== 'INDEPENDENT_BOOKING') {
+        log('info', '🔄 Synchronisation avec airbnb_reservations pour le calendrier', {
+          airbnbCode: booking.airbnbCode,
+          guestName: data.guest_name
+        });
+        
+        const { error: airbnbUpdateError } = await supabase
+          .from('airbnb_reservations')
+          .update({
+            guest_name: data.guest_name,
+            summary: `Airbnb – ${data.guest_name}`,
+            updated_at: new Date().toISOString()
+          })
+          .eq('airbnb_booking_id', booking.airbnbCode)
+          .eq('property_id', booking.propertyId);
+
+        if (airbnbUpdateError) {
+          log('error', '❌ Erreur synchronisation airbnb_reservations', { error: airbnbUpdateError });
+        } else {
+          log('info', '✅ Synchronisation airbnb_reservations réussie');
+        }
       }
-      savedBooking = data;
     } else {
       // Créer une nouvelle réservation
       log('info', 'Création nouvelle réservation');
@@ -495,6 +845,30 @@ async function saveGuestDataInternal(
         throw new Error(`Erreur lors de la création de la réservation: ${insertError?.message}`);
       }
       savedBooking = data;
+      
+      // ✅ NOUVEAU : Synchroniser avec la table airbnb_reservations pour le calendrier (nouvelle réservation)
+      if (booking.airbnbCode && booking.airbnbCode !== 'INDEPENDENT_BOOKING') {
+        log('info', '🔄 Synchronisation airbnb_reservations pour nouvelle réservation', {
+          airbnbCode: booking.airbnbCode,
+          guestName: data.guest_name
+        });
+        
+        const { error: airbnbUpdateError } = await supabase
+          .from('airbnb_reservations')
+          .update({
+            guest_name: data.guest_name,
+            summary: `Airbnb – ${data.guest_name}`,
+            updated_at: new Date().toISOString()
+          })
+          .eq('airbnb_booking_id', booking.airbnbCode)
+          .eq('property_id', booking.propertyId);
+
+        if (airbnbUpdateError) {
+          log('error', '❌ Erreur synchronisation airbnb_reservations (nouvelle réservation)', { error: airbnbUpdateError });
+        } else {
+          log('info', '✅ Synchronisation airbnb_reservations réussie (nouvelle réservation)');
+        }
+      }
     }
 
     const bookingId = savedBooking.id;
@@ -1616,27 +1990,64 @@ serve(async (req) => {
       }
     });
 
-    // 2. VALIDATION EXHAUSTIVE
+    // 2. VALIDATION CONDITIONNELLE selon l'action
     log('info', '✅ Validation des données');
-    const validation = validateRequest(requestBody);
     
-    if (!validation.isValid) {
-      log('error', 'Validation échouée', { errors: validation.errors });
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Données invalides',
-        details: validation.errors
-      }), {
-        status: 400,
-        headers: corsHeaders
-      });
-    }
+    // Pour resolve_booking_only, validation minimale
+    if (requestBody.action === 'resolve_booking_only') {
+      if (!requestBody.token || !requestBody.airbnbCode) {
+        log('error', 'Validation échouée pour resolve_booking_only', { 
+          hasToken: !!requestBody.token, 
+          hasAirbnbCode: !!requestBody.airbnbCode 
+        });
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Token et code Airbnb requis pour la résolution',
+          details: ['Token manquant', 'Code Airbnb manquant']
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+      log('info', '✅ Validation minimale réussie pour resolve_booking_only');
+    } else if (requestBody.action === 'create_ics_booking') {
+      // NOUVEAU : Action pour créer la réservation ICS dès l'accès au lien
+      if (!requestBody.token) {
+        log('error', 'Validation échouée pour create_ics_booking', { 
+          hasToken: !!requestBody.token
+        });
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Token requis pour créer la réservation ICS',
+          details: ['Token manquant']
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+      log('info', '✅ Validation réussie pour create_ics_booking');
+    } else {
+      // Validation complète pour les autres actions
+      const validation = validateRequest(requestBody);
+      
+      if (!validation.isValid) {
+        log('error', 'Validation échouée', { errors: validation.errors });
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Données invalides',
+          details: validation.errors
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
 
-    if (validation.warnings.length > 0) {
-      log('warn', 'Avertissements de validation', { warnings: validation.warnings });
-    }
+      if (validation.warnings.length > 0) {
+        log('warn', 'Avertissements de validation', { warnings: validation.warnings });
+      }
 
-    log('info', '✅ Validation réussie');
+      log('info', '✅ Validation complète réussie');
+    }
 
     // 3. TRAITEMENT PRINCIPAL
     let booking: ResolvedBooking;
@@ -1650,12 +2061,90 @@ serve(async (req) => {
       // ÉTAPE 1: Résolution de la réservation
       log('info', '🎯 ÉTAPE 1/5: Résolution de la réservation');
       
-      // ✅ CORRECTION : Distinction claire entre réservations normales et liens ICS
+      // ✅ NOUVEAU : Gestion de l'action create_ics_booking
+      if (requestBody.action === 'create_ics_booking') {
+        log('info', 'Action create_ics_booking détectée, récupération de la réservation ICS existante');
+        
+        // Récupérer le token avec ses métadonnées pour obtenir l'ID de la réservation
+        const supabase = await getServerClient();
+        const { data: tokenData, error: tokenError } = await supabase
+          .from('property_verification_tokens')
+          .select('metadata')
+          .eq('token', requestBody.token)
+          .single();
+
+        if (tokenError || !tokenData) {
+          throw new Error(`Token invalide: ${tokenError?.message || 'Token non trouvé'}`);
+        }
+
+        const metadata = tokenData.metadata || {};
+        const reservationData = metadata.reservationData;
+        const bookingId = reservationData?.bookingId;
+
+        if (!bookingId) {
+          throw new Error('ID de réservation manquant dans le token');
+        }
+
+        // Récupérer la réservation existante
+        const { data: existingBooking, error: bookingError } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('id', bookingId)
+          .single();
+
+        if (bookingError || !existingBooking) {
+          throw new Error(`Réservation non trouvée: ${bookingError?.message || 'Réservation introuvable'}`);
+        }
+
+        // Créer l'objet ResolvedBooking à partir de la réservation existante
+        booking = {
+          propertyId: existingBooking.property_id,
+          airbnbCode: existingBooking.booking_reference,
+          checkIn: existingBooking.check_in_date,
+          checkOut: existingBooking.check_out_date,
+          propertyName: 'Propriété', // Sera récupéré plus tard si nécessaire
+          propertyAddress: '',
+          guestName: existingBooking.guest_name,
+          numberOfGuests: existingBooking.number_of_guests,
+          totalPrice: existingBooking.total_price,
+          currency: 'EUR'
+        };
+        
+        log('info', 'Réservation ICS existante récupérée avec succès', {
+          bookingId,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          propertyName: booking.propertyName,
+          airbnbCode: booking.airbnbCode
+        });
+        
+        // Retourner directement la réservation existante
+        return new Response(JSON.stringify({
+          success: true,
+          data: {
+            bookingId: bookingId,
+            booking: booking,
+            message: 'Réservation ICS existante récupérée avec succès'
+          }
+        }), {
+          status: 200,
+          headers: corsHeaders
+        });
+      }
+      
+      // ✅ NOUVEAU : Distinction entre trois types de réservations
+      log('info', '🔍 Détection du type de réservation', {
+        airbnbCode: requestBody.airbnbCode,
+        hasAirbnbCode: !!requestBody.airbnbCode,
+        isIndependent: requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode,
+        isICS_DIRECT: requestBody.airbnbCode === 'ICS_DIRECT'
+      });
+
       if (requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode) {
         log('info', 'Réservation indépendante détectée (formulaire), création directe');
         booking = await createIndependentBooking(requestBody.token, requestBody.guestInfo, requestBody.bookingData);
       } else {
-        log('info', 'Réservation via lien ICS détectée, résolution avec dates prédéfinies');
+        log('info', 'Réservation via lien ICS avec code détectée, résolution avec dates prédéfinies');
         booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
         
         // ✅ CORRECTION : S'assurer que les dates sont bien définies pour les liens ICS
@@ -2853,23 +3342,8 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   const col2 = margin + signatureBoxWidth + colGap;
 
   // Boxes signatures
-  currentPage.drawRectangle({
-    x: col1,
-    y: y - signatureBoxHeight,
-    width: signatureBoxWidth,
-    height: signatureBoxHeight,
-    borderColor: rgb(0, 0, 0),
-    borderWidth: 1
-  });
-
-  currentPage.drawRectangle({
-    x: col2,
-    y: y - signatureBoxHeight,
-    width: signatureBoxWidth,
-    height: signatureBoxHeight,
-    borderColor: rgb(0, 0, 0),
-    borderWidth: 1
-  });
+  // ✅ NOUVEAU : Suppression des cadres de signature
+  // Les rectangles de signature ont été supprimés pour un contrat plus propre
 
   // ✅ SIGNATURE DU BAILLEUR - Dans le rectangle de gauche
   const hostSignature = ctx.host.signature;
@@ -3150,12 +3624,15 @@ async function generatePoliceFormsPDF(client: any, booking: any): Promise<string
     return hasArabic(text) ? arabicFont : font;
   }
 
-  // ✅ SOLUTION : Helper function to draw bilingual field avec support arabe
+  // ✅ SOLUTION AMÉLIORÉE : Helper function to draw bilingual field avec support arabe et multi-lignes pour longues adresses
   function drawBilingualField(page: any, frenchLabel: string, arabicLabel: string, value: string, x: number, y: number): number {
     const fontSize = 11; // Taille de police pour les champs
-    const fieldHeight = 20; // Hauteur d'un champ
+    const baseFieldHeight = 20; // Hauteur de base d'un champ
+    const labelSpacing = 15; // Espacement entre label et ligne
+    const lineSpacing = 14; // Espacement entre les lignes pour multi-ligne
     
     // Draw French label (left aligned)
+    const frenchLabelWidth = font.widthOfTextAtSize(frenchLabel, fontSize);
     page.drawText(frenchLabel, {
       x,
       y,
@@ -3165,12 +3642,13 @@ async function generatePoliceFormsPDF(client: any, booking: any): Promise<string
     
     // ✅ CORRECTION : Déclarer arabicX en dehors du try/catch
     let arabicX = pageWidth - margin; // Valeur par défaut
+    let arabicLabelWidth = 0;
     
     // ✅ Draw Arabic label (right aligned) avec la police arabe
     try {
       const arabicFontToUse = getFont(arabicLabel);
-      const arabicWidth = arabicFontToUse.widthOfTextAtSize(arabicLabel, fontSize);
-      arabicX = pageWidth - margin - arabicWidth;
+      arabicLabelWidth = arabicFontToUse.widthOfTextAtSize(arabicLabel, fontSize);
+      arabicX = pageWidth - margin - arabicLabelWidth;
       
       page.drawText(arabicLabel, {
         x: arabicX,
@@ -3180,39 +3658,132 @@ async function generatePoliceFormsPDF(client: any, booking: any): Promise<string
       });
     } catch (error) {
       log('warn', 'Failed to render Arabic label:', { error: String(error), label: arabicLabel });
-      // arabicX garde sa valeur par défaut
     }
     
-    // Draw underline for value (ligne continue entre les labels comme le modèle)
-    const lineY = y - 5;
-    const startX = x + font.widthOfTextAtSize(frenchLabel, fontSize) + 10;
-    const endX = arabicX - 10;
+    // ✅ Calculer l'espace disponible pour la valeur
+    const startX = x + frenchLabelWidth + labelSpacing;
+    const endX = Math.max(startX + 50, arabicX - labelSpacing);
+    const availableWidth = endX - startX - 4; // Largeur disponible moins marge
     
-    page.drawLine({
-      start: { x: startX, y: lineY },
-      end: { x: endX, y: lineY },
-      color: rgb(0, 0, 0),
-      thickness: 0.5
-    });
-    
-    // Draw value if provided (centré sur la ligne comme le modèle)
+    // ✅ NOUVEAU : Gérer les valeurs multi-lignes pour les longues adresses
     if (value && value.trim()) {
       try {
         const valueFont = getFont(value);
-        const valueWidth = valueFont.widthOfTextAtSize(value, fontSize - 1);
-        const valueX = startX + (endX - startX - valueWidth) / 2;
-        page.drawText(value, {
-          x: valueX,
-          y: y - 2,
-          size: fontSize - 1,
-          font: valueFont
-        });
+        let valueSize = fontSize - 1;
+        let valueWidth = valueFont.widthOfTextAtSize(value, valueSize);
+        
+        // ✅ OPTION 1 : Si la valeur est trop longue, essayer de réduire la taille
+        let finalValue = value;
+        while (valueWidth > availableWidth && valueSize > 6) {
+          valueSize -= 0.3;
+          valueWidth = valueFont.widthOfTextAtSize(value, valueSize);
+        }
+        
+        // ✅ OPTION 2 : Si toujours trop long même à taille minimale, découper en lignes
+        if (valueWidth > availableWidth && valueSize <= 6) {
+          log('info', `Splitting long value into multiple lines: ${value.substring(0, 50)}...`);
+          
+          // Fonction pour découper intelligemment le texte
+          const splitTextIntoLines = (text: string, maxWidth: number, font: any, size: number): string[] => {
+            const words = text.split(/[\s,]+/); // Découper par espaces et virgules
+            const lines: string[] = [];
+            let currentLine = '';
+            
+            for (const word of words) {
+              const testLine = currentLine ? `${currentLine} ${word}` : word;
+              const testWidth = font.widthOfTextAtSize(testLine, size);
+              
+              if (testWidth > maxWidth && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+              } else {
+                currentLine = testLine;
+              }
+            }
+            
+            if (currentLine) {
+              lines.push(currentLine);
+            }
+            
+            return lines;
+          };
+          
+          const lines = splitTextIntoLines(value, availableWidth, valueFont, valueSize);
+          
+          // Dessiner chaque ligne
+          lines.forEach((line, index) => {
+            const lineY = y - 2 - (index * lineSpacing);
+            const lineWidth = valueFont.widthOfTextAtSize(line, valueSize);
+            
+            // Positionner la ligne (légèrement à gauche pour la première ligne)
+            const lineX = startX + 2;
+            
+            // Dessiner la ligne
+            page.drawText(line, {
+              x: lineX,
+              y: lineY,
+              size: valueSize,
+              font: valueFont
+            });
+            
+            // Dessiner une ligne de soulignement pour chaque ligne de texte
+            if (index === 0) {
+              page.drawLine({
+                start: { x: startX, y: y - 5 },
+                end: { x: endX, y: y - 5 },
+                color: rgb(0, 0, 0),
+                thickness: 0.5
+              });
+            }
+          });
+          
+          // Retourner la nouvelle position Y en tenant compte de toutes les lignes
+          return y - baseFieldHeight - ((lines.length - 1) * lineSpacing);
+        } else {
+          // ✅ OPTION 3 : Valeur sur une seule ligne
+          page.drawLine({
+            start: { x: startX, y: y - 5 },
+            end: { x: endX, y: y - 5 },
+            color: rgb(0, 0, 0),
+            thickness: 0.5
+          });
+          
+          const valueX = Math.max(
+            startX + 2,
+            Math.min(
+              startX + (endX - startX - valueWidth) / 2,
+              endX - valueWidth - 2
+            )
+          );
+          
+          page.drawText(value, {
+            x: valueX,
+            y: y - 2,
+            size: valueSize,
+            font: valueFont
+          });
+        }
       } catch (error) {
         log('warn', 'Failed to render value:', { error: String(error), value });
+        // Dessiner juste la ligne de soulignement en cas d'erreur
+        page.drawLine({
+          start: { x: startX, y: y - 5 },
+          end: { x: endX, y: y - 5 },
+          color: rgb(0, 0, 0),
+          thickness: 0.5
+        });
       }
+    } else {
+      // Pas de valeur, juste la ligne
+      page.drawLine({
+        start: { x: startX, y: y - 5 },
+        end: { x: endX, y: y - 5 },
+        color: rgb(0, 0, 0),
+        thickness: 0.5
+      });
     }
     
-    return y - fieldHeight;
+    return y - baseFieldHeight;
   }
 
   // Helper function to format dates
@@ -3369,8 +3940,20 @@ async function generatePoliceFormsPDF(client: any, booking: any): Promise<string
     
     yPosition -= 50;
     
-    // ✅ SIGNATURE SECTION - Format EXACT du modèle
-    page.drawText('A ......, le ......', {
+    // ✅ SIGNATURE SECTION - Date dynamique avec lieu
+    const today = new Date();
+    const signatureDate = today.toLocaleDateString('fr-FR', { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric' 
+    });
+    // Récupérer la ville depuis la propriété (city ou extraire de l'adresse)
+    const signatureCity = property.city || 
+      (property.address ? property.address.split(',').pop()?.trim() : '') || 
+      'Casablanca'; // Valeur par défaut
+    
+    const signatureText = `A ${signatureCity}, le ${signatureDate}`;
+    page.drawText(signatureText, {
       x: margin,
       y: yPosition,
       size: fontSize,

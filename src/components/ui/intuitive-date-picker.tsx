@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion'; // ✅ AnimatePresence retiré
 import { Calendar, Clock, MapPin, Users, ArrowRight, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,25 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
   const [tempCheckOut, setTempCheckOut] = useState<Date | undefined>(checkOutDate);
   const [tempGuests, setTempGuests] = useState(numberOfGuests);
   const [showCalendar, setShowCalendar] = useState(true); // Toujours affiché maintenant
+
+  // ✅ NOUVEAU : Synchroniser les états internes avec les props quand elles changent
+  useEffect(() => {
+    if (checkInDate) {
+      console.log('📅 IntuitiveBookingPicker: checkInDate reçu:', checkInDate.toISOString());
+      setTempCheckIn(checkInDate);
+    }
+  }, [checkInDate]);
+
+  useEffect(() => {
+    if (checkOutDate) {
+      console.log('📅 IntuitiveBookingPicker: checkOutDate reçu:', checkOutDate.toISOString());
+      setTempCheckOut(checkOutDate);
+    }
+  }, [checkOutDate]);
+
+  useEffect(() => {
+    setTempGuests(numberOfGuests);
+  }, [numberOfGuests]);
 
   const nights = tempCheckIn && tempCheckOut ? differenceInDays(tempCheckOut, tempCheckIn) : 0;
 
@@ -112,14 +131,11 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
 
         {/* Contenu principal */}
         <div className="p-6">
-          <AnimatePresence mode="wait">
+          {/* ✅ CORRIGÉ : Retirer AnimatePresence qui cause des conflits */}
             {/* Étape 1: Sélection dates */}
             {step === 'dates' && (
-              <motion.div
+              <div
                 key="dates"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
                 <div className="text-center">
@@ -164,11 +180,7 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                   />
                   
                   {tempCheckIn && tempCheckOut && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex justify-center"
-                    >
+                    <div className="flex justify-center">
                       <Button 
                         onClick={() => setStep('guests')}
                         className="px-8 py-3 bg-brand-teal text-white rounded-xl font-medium hover:bg-brand-teal/90 transition-all duration-200"
@@ -176,19 +188,16 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                         Continuer
                         <ArrowRight className="w-4 h-4 ml-2" />
                       </Button>
-                    </motion.div>
+                    </div>
                   )}
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {/* Étape 2: Nombre d'invités */}
             {step === 'guests' && (
-              <motion.div
+              <div
                 key="guests"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
                 <div className="text-center">
@@ -202,11 +211,7 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
 
                 {/* Résumé des dates sélectionnées */}
                 {tempCheckIn && tempCheckOut && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-blue-50 p-4 rounded-xl border border-blue-200"
-                  >
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium text-blue-900">
@@ -225,7 +230,7 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                         Modifier
                       </Button>
                     </div>
-                  </motion.div>
+                  </div>
                 )}
 
                 {/* Sélecteur d'invités */}
@@ -271,16 +276,13 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                 >
                   Confirmer la réservation
                 </motion.button>
-              </motion.div>
+              </div>
             )}
 
             {/* Étape 3: Résumé */}
             {step === 'summary' && (
-              <motion.div
+              <div
                 key="summary"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
                 className="space-y-6"
               >
                 <div className="text-center">
@@ -329,9 +331,8 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                 >
                   Modifier les détails
                 </Button>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
         </div>
       </motion.div>
 

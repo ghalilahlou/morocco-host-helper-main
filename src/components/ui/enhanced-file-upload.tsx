@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Upload, FileText, X, CheckCircle, AlertTriangle, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -192,14 +192,13 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
       </motion.div>
 
       {/* Uploaded Files */}
-      <AnimatePresence>
-        {uploadedFiles.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="space-y-4"
-          >
+      {uploadedFiles.length > 0 && (
+        <motion.div
+          key="uploaded-files-container"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          className="space-y-4"
+        >
             <h4 className="font-semibold text-gray-900 flex items-center gap-2">
               <FileText className="w-5 h-5" />
               Documents téléchargés ({uploadedFiles.length})
@@ -211,7 +210,6 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
                   key={file.url}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
                   transition={{ delay: index * 0.1 }}
                   className={cn(
                     "flex items-center justify-between p-4 rounded-xl border-2 transition-all duration-300",
@@ -291,7 +289,6 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
     </div>
   );
 };

@@ -316,14 +316,21 @@ serve(async (req) => {
   } catch (parseError) {
     console.error('❌ Error parsing request body:', parseError);
     return new Response(
-      JSON.stringify({ error: 'Invalid request body' }),
+      JSON.stringify({ 
+        success: false,
+        error: 'Invalid request body',
+        details: parseError instanceof Error ? parseError.message : 'Unknown parsing error'
+      }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 
   if (!propertyId) {
     return new Response(
-      JSON.stringify({ error: 'Property ID is required' }),
+      JSON.stringify({ 
+        success: false,
+        error: 'Property ID is required'
+      }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -355,7 +362,11 @@ serve(async (req) => {
     if (propertyError || !property?.airbnb_ics_url) {
       console.log('❌ No ICS URL configured for property:', propertyId);
       return new Response(
-        JSON.stringify({ error: 'No ICS URL configured for this property' }),
+        JSON.stringify({ 
+          success: false,
+          error: 'No ICS URL configured for this property',
+          propertyId: propertyId
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -376,8 +387,10 @@ serve(async (req) => {
           console.log('⏭️ Sync skipped - last sync was recent and successful');
           return new Response(
             JSON.stringify({ 
+              success: true,
               message: 'Sync not needed - last sync was recent',
-              lastSyncAt: syncStatus.last_sync_at
+              lastSyncAt: syncStatus.last_sync_at,
+              skipped: true
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
@@ -401,7 +414,14 @@ serve(async (req) => {
     console.log(`📅 Found ${reservations.length} reservations`);
 
     // Store reservations in database
-    const reservationData = reservations
+  const toLocalYmd = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  };
+
+  const reservationData = reservations
       .filter(r => {
         const hasBookingId = !!r.airbnbBookingId;
         if (!hasBookingId) {
@@ -417,8 +437,9 @@ serve(async (req) => {
             property_id: propertyId,
             airbnb_booking_id: r.airbnbBookingId!,
             summary: r.summary,
-            start_date: r.startDate.toISOString().split('T')[0],
-            end_date: r.endDate.toISOString().split('T')[0],
+            // ✅ IMPORTANT: utiliser la date locale (éviter les décalages UTC)
+            start_date: toLocalYmd(r.startDate),
+            end_date: toLocalYmd(r.endDate),
             guest_name: r.guestName,
             number_of_guests: r.numberOfGuests,
             description: r.description,
@@ -430,22 +451,87 @@ serve(async (req) => {
         }
       });
 
-    let upsertResult = null;
+    // ✅ SOLUTION : Utiliser un seul upsert en batch pour éviter les duplications
+    let upsertResult: any[] = [];
     if (reservationData.length > 0) {
-      // Upsert reservations using the unique constraint on (property_id, airbnb_booking_id)
-      const { data, error: upsertError } = await supabaseClient
+      console.log('🔄 Synchronisation unifiée - mise à jour des dates depuis le fichier ICS uniquement');
+      
+      // 1. Récupérer toutes les données validées existantes en une seule requête
+      const airbnbCodes = reservationData.map(r => r.airbnb_booking_id).filter(Boolean);
+      const { data: validatedBookings } = await supabaseClient
+        .from('bookings')
+        .select('guest_name, booking_reference')
+        .eq('property_id', propertyId)
+        .in('booking_reference', airbnbCodes);
+      
+      const { data: existingReservations } = await supabaseClient
         .from('airbnb_reservations')
-        .upsert(reservationData, {
-          onConflict: 'property_id,airbnb_booking_id'
+        .select('airbnb_booking_id, guest_name')
+        .eq('property_id', propertyId)
+        .in('airbnb_booking_id', airbnbCodes);
+      
+      // Créer des maps pour accès rapide
+      const validatedBookingsMap = new Map(
+        validatedBookings?.map(b => [b.booking_reference, b.guest_name]) || []
+      );
+      const existingReservationsMap = new Map(
+        existingReservations?.map(r => [r.airbnb_booking_id, r.guest_name]) || []
+      );
+      
+      // 2. Préparer les données pour l'upsert en préservant les noms validés
+      const reservationsToUpsert = reservationData.map(reservation => {
+        // Priorité : bookings > airbnb_reservations existantes > nouveau ICS
+        const validatedGuestName: string | undefined = validatedBookingsMap.get(reservation.airbnb_booking_id) 
+          || existingReservationsMap.get(reservation.airbnb_booking_id);
+        
+        // Vérifier si le nom est valide (pas un code, pas "phone", etc.)
+        const isValidGuestName = validatedGuestName && 
+          typeof validatedGuestName === 'string' &&
+          validatedGuestName.trim() !== '' &&
+          validatedGuestName.split(' ').length >= 2 &&
+          !validatedGuestName.toLowerCase().includes('phone') &&
+          !validatedGuestName.match(/^[A-Z]{2,}\d+$/);
+        
+        // Préserver le nom validé si disponible, sinon utiliser celui du ICS
+        const finalGuestName = isValidGuestName ? validatedGuestName : reservation.guest_name;
+        const finalSummary = isValidGuestName 
+          ? `Airbnb – ${validatedGuestName}` 
+          : reservation.summary;
+        
+        return {
+          ...reservation,
+          guest_name: finalGuestName,
+          summary: finalSummary,
+          // ✅ IMPORTANT : Les dates proviennent uniquement du fichier ICS
+          start_date: reservation.start_date,
+          end_date: reservation.end_date,
+          updated_at: new Date().toISOString()
+        };
+      });
+      
+      // 3. Upsert en batch avec onConflict sur (property_id, airbnb_booking_id)
+      const { data: upsertedReservations, error: upsertError } = await supabaseClient
+        .from('airbnb_reservations')
+        .upsert(reservationsToUpsert, {
+          onConflict: 'property_id,airbnb_booking_id',
+          ignoreDuplicates: false
         })
         .select();
-
+      
       if (upsertError) {
+        console.error('❌ Erreur lors de l\'upsert batch:', upsertError);
         throw upsertError;
       }
       
-      upsertResult = data;
-      console.log(`✅ Upserted ${data?.length || 0} reservations for property ${propertyId}`);
+      const preservedCount = reservationsToUpsert.filter(r => 
+        validatedBookingsMap.has(r.airbnb_booking_id) || 
+        existingReservationsMap.has(r.airbnb_booking_id)
+      ).length;
+      
+      console.log(`✅ Synchronisation terminée: ${reservationsToUpsert.length} réservations, ${preservedCount} noms préservés`);
+      upsertResult = upsertedReservations || [];
+    } else {
+      upsertResult = [];
     }
 
     // ✅ NOUVEAU : Créer automatiquement les tokens sécurisés pour les codes Airbnb HM…
@@ -602,6 +688,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({ 
+        success: false,
         error: error.message || 'Unknown error occurred',
         propertyId: propertyId || 'unknown',
         details: error.stack || 'No stack trace available'

@@ -1,12 +1,18 @@
-import { useState, useEffect, useCallback, useMemo, memo } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
+import { AlertTriangle, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
+// ✅ CORRIGÉ : Imports supprimés - on n'utilise plus cleanGuestName/isValidGuestName ici
+// getUnifiedBookingDisplayText() gère toute la logique de nettoyage et validation
+import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { BookingDetailsModal } from './BookingDetailsModal';
 import { CalendarHeader } from './calendar/CalendarHeader';
 import { CalendarGrid } from './calendar/CalendarGrid';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 import { AirbnbReservationModal } from './AirbnbReservationModal';
 import { 
@@ -19,6 +25,7 @@ import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService'
 import { fetchAirbnbCalendarEvents, fetchAllCalendarEvents, CalendarEvent } from '@/services/calendarData';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { BOOKING_COLORS } from '@/constants/bookingColors';
 
 interface CalendarViewProps {
   bookings: EnrichedBooking[];
@@ -93,11 +100,18 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const [lastSyncDate, setLastSyncDate] = useState<Date | undefined>();
   const [matchedBookings, setMatchedBookings] = useState<string[]>([]);
-  const [syncConflicts, setSyncConflicts] = useState<string[]>([]);
   const [icsUrl, setIcsUrl] = useState<string | null>(null);
   const [hasIcs, setHasIcs] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const { toast } = useToast();
+  
+  // ✅ NOUVEAU : États pour le rafraîchissement automatique
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState(30000); // 30 secondes
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   // Check for debug mode from URL
   useEffect(() => {
@@ -105,7 +119,49 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
     setDebugMode(urlParams.get('debugCalendar') === '1');
   }, []);
 
-  
+  // ✅ NOUVEAU : Gestion de la connectivité
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // ✅ CORRIGÉ : Désactivé le rafraîchissement automatique qui cause la boucle infinie
+  // Le rafraîchissement se fera uniquement via les subscriptions en temps réel
+  /*
+  useEffect(() => {
+    if (!autoRefreshEnabled || !isOnline) return;
+
+    const scheduleRefresh = () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      
+      refreshTimeoutRef.current = setTimeout(async () => {
+        if (autoRefreshEnabled && isOnline) {
+          await handleAutoRefresh();
+          scheduleRefresh();
+        }
+      }, refreshInterval);
+    };
+
+    scheduleRefresh();
+
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+    };
+  }, [autoRefreshEnabled, isOnline, refreshInterval, propertyId, handleAutoRefresh]);
+  */
+
   // Optimized load function with caching and debug logging
   const loadAirbnbReservations = useCallback(async () => {
     if (!propertyId) return;
@@ -114,9 +170,7 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
     const cached = airbnbCache.get(propertyId);
     if (cached) {
       setAirbnbReservations(cached.data);
-      if (debugMode) {
-        console.debug('📅 Using cached Airbnb reservations:', cached.data);
-      }
+      // ✅ Cache hit - pas de rechargement nécessaire
       return;
     }
     
@@ -130,39 +184,85 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
       const startStr = startDate.toISOString().split('T')[0];
       const endStr = endDate.toISOString().split('T')[0];
       
-      if (debugMode) {
-        console.debug('📅 Fetching Airbnb events for range:', { startStr, endStr, propertyId });
-      }
-      
-      // Use the new calendarData service
+      // Fetch calendar events
       const calendarEvents = await fetchAirbnbCalendarEvents(propertyId, startStr, endStr);
       
-      if (debugMode) {
-        console.debug('📅 Raw calendar events from service:', calendarEvents);
-      }
+      // ✅ CORRIGÉ : Convertir les événements en réservations Airbnb avec enrichissement
+      // Le titre vient déjà formaté de calendarData.ts, mais on doit extraire le guestName correctement
+      const formattedReservations: AirbnbReservation[] = calendarEvents.map(event => {
+        // Le titre peut être soit un nom (ex: "Jean") soit "Réservation [CODE]"
+        let guestName: string | undefined = undefined;
+        
+        // Si le titre ne commence pas par "Réservation", c'est un nom valide
+        if (!event.title.toLowerCase().startsWith('réservation')) {
+          guestName = event.title;
+        } else {
+          // Si c'est "Réservation [CODE]", pas de guestName (sera enrichi plus tard)
+          guestName = undefined;
+        }
+        
+        return {
+          id: event.id,
+          summary: event.title.replace('Airbnb – ', ''),
+          startDate: new Date(event.start),
+          endDate: new Date(event.end),
+          description: '',
+          guestName: guestName,
+          numberOfGuests: undefined,
+          airbnbBookingId: event.id,
+          rawEvent: '',
+          source: 'airbnb' as any
+        };
+      });
       
-      // Convert calendar events back to AirbnbReservation format for compatibility
-      const formattedReservations: AirbnbReservation[] = calendarEvents.map(event => ({
-        id: event.id,
-        summary: event.title.replace('Airbnb – ', ''),
-        startDate: new Date(event.start),
-        endDate: new Date(event.end),
-        description: '',
-        guestName: event.title.includes('Airbnb – ') ? event.title.replace('Airbnb – ', '') : undefined,
-        numberOfGuests: undefined,
-        airbnbBookingId: event.id,
-        rawEvent: '',
-        source: 'airbnb' as any
+      // ✅ NOUVEAU : Enrichir les réservations Airbnb avec les données de bookings
+      // Cela permet d'avoir les noms validés même si calendarData.ts n'a pas pu les trouver
+      const enrichedReservations = await Promise.all(formattedReservations.map(async (reservation) => {
+        // Chercher une réservation correspondante dans bookings enrichis
+        const matchingBooking = bookings.find(b => {
+          const bookingStart = new Date(b.checkInDate);
+          const bookingEnd = new Date(b.checkOutDate);
+          const airbnbStart = reservation.startDate;
+          const airbnbEnd = reservation.endDate;
+          
+          const datesMatch = bookingStart.getTime() === airbnbStart.getTime() && 
+                            bookingEnd.getTime() === airbnbEnd.getTime();
+          
+          const refMatch = b.bookingReference && reservation.airbnbBookingId && 
+                          (b.bookingReference.includes(reservation.airbnbBookingId) || 
+                           reservation.airbnbBookingId.includes(b.bookingReference));
+          
+          return datesMatch || refMatch;
+        });
+        
+        // Si on trouve une réservation enrichie avec des noms réels, propager toutes les propriétés
+        // Laisser getUnifiedBookingDisplayText() choisir quel nom afficher selon sa logique de priorité
+        if (matchingBooking) {
+          const enrichedBooking = matchingBooking as EnrichedBooking;
+          // ✅ CORRIGÉ : Propager TOUTES les propriétés enrichies sans choisir manuellement le guestName
+          // getUnifiedBookingDisplayText() fera le choix selon sa logique de priorité
+          return {
+            ...reservation,
+            // Propager toutes les propriétés enrichies pour que getUnifiedBookingDisplayText fonctionne
+            hasRealSubmissions: enrichedBooking.hasRealSubmissions,
+            realGuestNames: enrichedBooking.realGuestNames || [],
+            realGuestCount: enrichedBooking.realGuestCount || 0,
+            // Ne PAS choisir manuellement le guestName - laisser getUnifiedBookingDisplayText() le faire
+            guest_name: (enrichedBooking as any).guest_name || reservation.guestName,
+            // Garder le guestName original de la réservation si pas de guest_name enrichi
+            guestName: reservation.guestName
+          } as any;
+        }
+        
+        return reservation;
       }));
       
+      const finalReservations = enrichedReservations;
+      
+      // ✅ CORRIGÉ : Utiliser les réservations enrichies au lieu des réservations formatées
       // Cache the data
-      airbnbCache.set(propertyId, formattedReservations);
-      
-      setAirbnbReservations(formattedReservations);
-      
-      if (debugMode) {
-        console.debug('📅 Formatted Airbnb reservations:', formattedReservations);
-      }
+      airbnbCache.set(propertyId, finalReservations);
+      setAirbnbReservations(finalReservations);
       
       // Get sync status
       const status = await AirbnbEdgeFunctionService.getSyncStatus(propertyId);
@@ -211,11 +311,76 @@ useEffect(() => {
   })();
 }, [propertyId]);
 
-// Debounced real-time update handler
+// ✅ NOUVEAU : Fonction de rafraîchissement automatique
+const handleAutoRefresh = useCallback(async () => {
+  if (isRefreshing || !isOnline) return;
+  
+  setIsRefreshing(true);
+  try {
+    await loadAirbnbReservations();
+    setLastRefresh(new Date());
+  } catch (error) {
+    console.error('❌ Auto-refresh failed:', error);
+  } finally {
+    setIsRefreshing(false);
+  }
+}, [isRefreshing, isOnline, loadAirbnbReservations]);
+
+// ✅ NOUVEAU : Fonction de rafraîchissement manuel
+const handleManualRefresh = useCallback(async () => {
+  if (isRefreshing) return;
+  
+  setIsRefreshing(true);
+  try {
+    // Nettoyer le cache pour forcer le rechargement
+    airbnbCache.clear();
+    await loadAirbnbReservations();
+    setLastRefresh(new Date());
+    toast({
+      title: "Calendrier mis à jour",
+      description: "Les données ont été rafraîchies avec succès",
+    });
+  } catch (error) {
+    console.error('❌ Manual refresh failed:', error);
+    toast({
+      title: "Erreur de rafraîchissement",
+      description: "Impossible de mettre à jour le calendrier",
+      variant: "destructive",
+    });
+  } finally {
+    setIsRefreshing(false);
+  }
+}, [isRefreshing, loadAirbnbReservations, toast]);
+
+// ✅ CORRIGÉ : Real-time subscription avec debounce et throttle pour éviter les rechargements excessifs
+  const reloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastReloadTime = useRef<number>(0);
+  const MIN_RELOAD_INTERVAL = 5000; // 5 secondes minimum entre les rechargements
+
   const debouncedReload = useCallback(() => {
-    // Clear cache and reload
-    airbnbCache.delete(propertyId || '');
-    loadAirbnbReservations();
+    // Clear any pending reload
+    if (reloadTimeoutRef.current) {
+      clearTimeout(reloadTimeoutRef.current);
+    }
+    
+    // Throttle: Check if we've reloaded recently
+    const now = Date.now();
+    const timeSinceLastReload = now - lastReloadTime.current;
+    
+    if (timeSinceLastReload < MIN_RELOAD_INTERVAL) {
+      // Schedule reload for later
+      const remainingTime = MIN_RELOAD_INTERVAL - timeSinceLastReload;
+      reloadTimeoutRef.current = setTimeout(() => {
+        airbnbCache.delete(propertyId || '');
+        loadAirbnbReservations();
+        lastReloadTime.current = Date.now();
+      }, remainingTime);
+    } else {
+      // Reload immediately
+      airbnbCache.delete(propertyId || '');
+      loadAirbnbReservations();
+      lastReloadTime.current = now;
+    }
   }, [loadAirbnbReservations, propertyId]);
 
   // Single optimized real-time subscription
@@ -238,6 +403,9 @@ useEffect(() => {
 
     return () => {
       supabase.removeChannel(channel);
+      if (reloadTimeoutRef.current) {
+        clearTimeout(reloadTimeoutRef.current);
+      }
     };
   }, [propertyId, debouncedReload]);
 
@@ -332,30 +500,42 @@ const handleOpenConfig = useCallback(() => {
   }
 }, [navigate, propertyId]);
 
-// Auto-sync à chaque accès au calendrier
+// ✅ CORRIGÉ : Auto-sync UNIQUEMENT au premier chargement, pas à chaque changement
+  const hasAutoSynced = useRef(false);
   useEffect(() => {
-    if (!propertyId) return;
+    if (!propertyId || hasAutoSynced.current) return;
+    hasAutoSynced.current = true;
     handleSyncFromCalendar();
-  }, [propertyId, handleSyncFromCalendar]);
+  }, [propertyId]); // ✅ Retiré handleSyncFromCalendar des dépendances
 
-  const getColorOverrides = useMemo(() => {
+  // ✅ CORRIGÉ : Détection des conflits AVANT le calcul des couleurs pour les inclure
+  const conflicts = useMemo(() => {
+    // Détecter tous les conflits entre toutes les réservations
+    const allReservationsForConflictDetection = [...bookings, ...airbnbReservations];
+    const detectedConflicts = detectBookingConflicts(bookings, allReservationsForConflictDetection);
+    
+    // ✅ AFFICHAGE : Logger les conflits pour l'utilisateur
+    if (detectedConflicts.length > 0) {
+      console.warn(`⚠️ ${detectedConflicts.length} conflit(s) de réservation détecté(s) dans le calendrier`);
+    }
+    
+    return detectedConflicts;
+  }, [bookings, airbnbReservations]);
+
+  // ✅ CORRIGÉ : Calcul des matchs et couleurs avec conflits inclus
+  const { colorOverrides: getColorOverrides, matchedBookingsIds } = useMemo(() => {
     const overrides: { [key: string]: string } = {};
+    const updatedMatchedBookings: string[] = [];
     
     // ÉTAPE 1: Détecter les matchs entre réservations manuelles et Airbnb
-    const updatedMatchedBookings: string[] = [];
-    const updatedSyncConflicts: string[] = [];
-    
-    // Parcourir chaque réservation manuelle
     bookings.forEach(booking => {
       const manualStart = new Date(booking.checkInDate);
       const manualEnd = new Date(booking.checkOutDate);
       
-      // Chercher si elle matche avec une réservation Airbnb
       const matchingAirbnb = airbnbReservations.find(airbnb => {
         const airbnbStart = airbnb.startDate;
         const airbnbEnd = airbnb.endDate;
         
-        // Dates exactement identiques OU référence qui matche
         const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
                           manualEnd.getTime() === airbnbEnd.getTime();
         const refsMatch = booking.bookingReference && airbnb.airbnbBookingId && 
@@ -367,21 +547,24 @@ const handleOpenConfig = useCallback(() => {
       
       if (matchingAirbnb) {
         updatedMatchedBookings.push(booking.id);
-        console.log(`✅ Match trouvé: Booking ${booking.id} <-> Airbnb ${matchingAirbnb.id}`);
       }
     });
     
-    // ÉTAPE 2: Appliquer les couleurs selon la nouvelle logique
+    // ÉTAPE 2: Appliquer les couleurs avec conflits inclus - ROUGE pour les conflits
     bookings.forEach(booking => {
+      // ✅ PRIORITÉ 1: Rouge si en conflit
+      if (conflicts.includes(booking.id)) {
+        overrides[booking.id] = BOOKING_COLORS.conflict.tailwind;
+      } else {
       overrides[booking.id] = AirbnbSyncService.getBookingStatusColor(
         booking,
         updatedMatchedBookings,
-        updatedSyncConflicts
+          conflicts // ✅ Inclure les conflits
       );
+      }
     });
 
-    // ÉTAPE 3: Les réservations Airbnb qui ont un match ne doivent PAS apparaître
-    // (elles sont remplacées par les réservations manuelles vertes)
+    // ÉTAPE 3: Couleurs pour les réservations Airbnb non matchées avec conflits
     airbnbReservations.forEach(reservation => {
       const hasManualMatch = bookings.some(booking => {
         const manualStart = new Date(booking.checkInDate);
@@ -398,43 +581,75 @@ const handleOpenConfig = useCallback(() => {
         return datesMatch || refsMatch;
       });
       
-      // Si pas de match manuel, afficher la réservation Airbnb en gris
       if (!hasManualMatch) {
+        // ✅ PRIORITÉ 1: Rouge si en conflit
+        if (conflicts.includes(reservation.id)) {
+          overrides[reservation.id] = BOOKING_COLORS.conflict.tailwind;
+        } else {
         overrides[reservation.id] = AirbnbSyncService.getAirbnbReservationColor(
           reservation,
           updatedMatchedBookings,
-          updatedSyncConflicts
+            conflicts // ✅ Inclure les conflits
         );
+        }
       }
     });
 
-    // Mettre à jour l'état
-    setMatchedBookings(updatedMatchedBookings);
-    setSyncConflicts(updatedSyncConflicts);
+    return {
+      colorOverrides: overrides,
+      matchedBookingsIds: updatedMatchedBookings
+    };
+  }, [bookings, airbnbReservations, conflicts]);
+  
+  const colorOverrides = getColorOverrides;
 
-    return overrides;
-  }, [bookings, airbnbReservations]);
+  // ✅ CORRIGÉ : Mise à jour des états APRÈS le useMemo, dans un useEffect séparé
+  useEffect(() => {
+    setMatchedBookings(matchedBookingsIds);
+  }, [matchedBookingsIds]);
 
-  const getStats = useMemo(() => {
-    const completed = bookings.filter(b => 
-      matchedBookings.includes(b.id) && b.status === 'completed'
-    ).length;
-    
-    const pending = bookings.filter(b => 
-      b.status !== 'completed'
-    ).length + airbnbReservations.filter(r => 
-      !matchedBookings.includes(r.id)
-    ).length;
-    
-    const conflicts = syncConflicts.length;
-
-    return { completed, pending, conflicts };
-  }, [bookings, airbnbReservations, matchedBookings, syncConflicts]);
-
-  // Combine bookings and Airbnb reservations, mais FILTRER les Airbnb qui ont un match
+  // ✅ CORRIGÉ : Combine bookings and Airbnb reservations avec enrichissement automatique
   const allReservations = useMemo(() => {
     // Filtrer les réservations Airbnb qui ont un match avec une réservation manuelle
-    const filteredAirbnb = airbnbReservations.filter(reservation => {
+    const filteredAirbnb = airbnbReservations.map(reservation => {
+      // Chercher une réservation correspondante dans bookings enrichis
+      const matchingBooking = bookings.find(booking => {
+        const manualStart = new Date(booking.checkInDate);
+        const manualEnd = new Date(booking.checkOutDate);
+        const airbnbStart = reservation.startDate;
+        const airbnbEnd = reservation.endDate;
+        
+        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
+                          manualEnd.getTime() === airbnbEnd.getTime();
+        const refsMatch = booking.bookingReference && reservation.airbnbBookingId && 
+                         (booking.bookingReference.includes(reservation.airbnbBookingId) || 
+                          reservation.airbnbBookingId.includes(booking.bookingReference));
+        
+        return datesMatch || refsMatch;
+      });
+      
+      // Si on trouve un match, enrichir la réservation Airbnb avec les données du booking
+      // Laisser getUnifiedBookingDisplayText() choisir quel nom afficher selon sa logique de priorité
+      if (matchingBooking) {
+        const enrichedBooking = matchingBooking as EnrichedBooking;
+        // ✅ CORRIGÉ : Propager TOUTES les propriétés enrichies sans choisir/nettoyer manuellement le guestName
+        // getUnifiedBookingDisplayText() fera le nettoyage et le choix selon sa logique de priorité
+        return {
+          ...reservation,
+          // Propager toutes les propriétés enrichies pour que getUnifiedBookingDisplayText fonctionne
+          hasRealSubmissions: enrichedBooking.hasRealSubmissions,
+          realGuestNames: enrichedBooking.realGuestNames || [],
+          realGuestCount: enrichedBooking.realGuestCount || 0,
+          // Ne PAS nettoyer ou choisir manuellement - laisser getUnifiedBookingDisplayText() le faire
+          guest_name: (enrichedBooking as any).guest_name || reservation.guestName,
+          // Garder le guestName original de la réservation
+          guestName: reservation.guestName
+        } as any;
+      }
+      
+      return reservation;
+    }).filter(reservation => {
+      // Filtrer seulement celles qui n'ont PAS de match (pour éviter les doublons)
       const hasManualMatch = bookings.some(booking => {
         const manualStart = new Date(booking.checkInDate);
         const manualEnd = new Date(booking.checkOutDate);
@@ -450,12 +665,11 @@ const handleOpenConfig = useCallback(() => {
         return datesMatch || refsMatch;
       });
       
-      return !hasManualMatch; // Garder seulement les Airbnb SANS match
+      return !hasManualMatch; // Garder seulement les Airbnb SANS match exact avec un booking
     });
     
     return [...bookings, ...filteredAirbnb];
   }, [bookings, airbnbReservations]);
-  const colorOverrides = getColorOverrides;
 
   // Generate calendar days
   const calendarDays = useMemo(() => generateCalendarDays(currentDate), [currentDate]);
@@ -464,8 +678,102 @@ const handleOpenConfig = useCallback(() => {
   const bookingLayout = useMemo(() => calculateBookingLayout(calendarDays, allReservations, colorOverrides), [calendarDays, allReservations, colorOverrides]);
 
 
-  // Detect booking conflicts (only for manual bookings)
-  const conflicts = useMemo(() => detectBookingConflicts(bookings).concat(syncConflicts), [bookings, syncConflicts]);
+  // ✅ CORRIGÉ : Utiliser les conflits déjà calculés plus haut (pas besoin de les recalculer)
+  // Les conflits sont utilisés dans colorOverrides et passés au CalendarGrid
+
+  // ✅ NOUVEAU : Calculer les détails des conflits (paires de réservations en conflit avec dates)
+  // Utiliser les conflits déjà détectés pour construire les détails
+  const conflictDetails = useMemo(() => {
+    const conflictsList: Array<{
+      id1: string;
+      id2: string;
+      name1: string;
+      name2: string;
+      start1: string;
+      end1: string;
+      start2: string;
+      end2: string;
+    }> = [];
+
+    // Trouver toutes les paires de réservations qui se chevauchent
+    for (let i = 0; i < allReservations.length; i++) {
+      for (let j = i + 1; j < allReservations.length; j++) {
+        const res1 = allReservations[i];
+        const res2 = allReservations[j];
+        
+        const isAirbnb1 = 'source' in res1 && res1.source === 'airbnb';
+        const isAirbnb2 = 'source' in res2 && res2.source === 'airbnb';
+        
+        const start1 = isAirbnb1 
+          ? new Date((res1 as any).startDate)
+          : new Date((res1 as Booking).checkInDate);
+        const end1 = isAirbnb1
+          ? new Date((res1 as any).endDate)
+          : new Date((res1 as Booking).checkOutDate);
+        const start2 = isAirbnb2
+          ? new Date((res2 as any).startDate)
+          : new Date((res2 as Booking).checkInDate);
+        const end2 = isAirbnb2
+          ? new Date((res2 as any).endDate)
+          : new Date((res2 as Booking).checkOutDate);
+        
+        // Normaliser les dates (midnight local)
+        const normStart1 = new Date(start1.getFullYear(), start1.getMonth(), start1.getDate());
+        const normEnd1 = new Date(end1.getFullYear(), end1.getMonth(), end1.getDate());
+        const normStart2 = new Date(start2.getFullYear(), start2.getMonth(), start2.getDate());
+        const normEnd2 = new Date(end2.getFullYear(), end2.getMonth(), end2.getDate());
+        
+        // Vérifier si les dates se chevauchent
+        const overlaps = normStart1 < normEnd2 && normStart2 < normEnd1;
+        
+        if (overlaps) {
+          // Formater les dates pour l'affichage
+          const formatDate = (date: Date) => {
+            return date.toLocaleDateString('fr-FR', { 
+              day: '2-digit', 
+              month: '2-digit', 
+              year: 'numeric' 
+            });
+          };
+          
+          // Utiliser getUnifiedBookingDisplayText pour obtenir le nom d'affichage
+          const name1 = getUnifiedBookingDisplayText(res1, true);
+          const name2 = getUnifiedBookingDisplayText(res2, true);
+          
+          conflictsList.push({
+            id1: res1.id,
+            id2: res2.id,
+            name1: name1 || 'Réservation',
+            name2: name2 || 'Réservation',
+            start1: formatDate(normStart1),
+            end1: formatDate(normEnd1),
+            start2: formatDate(normStart2),
+            end2: formatDate(normEnd2)
+          });
+        }
+      }
+    }
+    
+    return conflictsList;
+  }, [allReservations]);
+
+  // ✅ CORRIGÉ : Stats avec conflits détectés dynamiquement
+  const getStats = useMemo(() => {
+    const completed = bookings.filter(b => 
+      matchedBookings.includes(b.id) && b.status === 'completed'
+    ).length;
+    
+    const pending = bookings.filter(b => 
+      b.status !== 'completed'
+    ).length + airbnbReservations.filter(r => 
+      !matchedBookings.includes(r.id)
+    ).length;
+    
+    // ✅ CORRIGÉ : Utiliser les conflits détectés dynamiquement
+    const conflictsCount = conflicts.length;
+
+    return { completed, pending, conflicts: conflictsCount };
+  }, [bookings, airbnbReservations, matchedBookings, conflicts]);
 
   // Auto-mark matched manual bookings as completed
   useEffect(() => {
@@ -489,29 +797,128 @@ const handleOpenConfig = useCallback(() => {
         </Alert>
       )}
 
-      {/* Calendar Header */}
-      <CalendarHeader 
-        currentDate={currentDate}
-        onDateChange={setCurrentDate}
-        bookingCount={allReservations.length}
-        onAirbnbSync={handleSyncFromCalendar}
-        isSyncing={isSyncing}
-        lastSyncDate={lastSyncDate}
-        isConnected={syncStatus === 'success'}
-        hasIcs={hasIcs}
-        onOpenConfig={handleOpenConfig}
-        stats={getStats}
-      />
+      {/* ✅ NOUVEAU : Barre de rafraîchissement et statut */}
+      <motion.div 
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-4 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-950/20 dark:to-teal-950/20 p-3 rounded-lg border border-cyan-200 dark:border-cyan-800"
+      >
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
+            {isOnline ? (
+              <Wifi className="h-4 w-4 text-green-600" />
+            ) : (
+              <WifiOff className="h-4 w-4 text-red-600" />
+            )}
+            <span className="text-sm text-muted-foreground">
+              {isOnline ? 'Connecté' : 'Hors ligne'}
+            </span>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <div className={`h-2 w-2 rounded-full ${isRefreshing ? 'bg-cyan-500 animate-pulse' : 'bg-green-500'}`} />
+            <span className="text-sm text-muted-foreground">
+              {isRefreshing ? 'Mise à jour...' : `Dernière MAJ: ${lastRefresh.toLocaleTimeString()}`}
+            </span>
+          </div>
+        </div>
 
-      {/* Calendar Grid - Fully responsive */}
-      <div className="w-full">
-        <CalendarGrid 
-          calendarDays={calendarDays}
-          bookingLayout={bookingLayout}
-          conflicts={conflicts}
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing || !isOnline}
+            className="flex items-center space-x-2"
+          >
+            <motion.div
+              animate={{ rotate: isRefreshing ? 360 : 0 }}
+              transition={{ duration: 0.5, repeat: isRefreshing ? Infinity : 0 }}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </motion.div>
+            <span>Actualiser</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+            className={`flex items-center space-x-2 ${autoRefreshEnabled ? 'text-green-600' : 'text-gray-500'}`}
+          >
+            <div className={`h-2 w-2 rounded-full ${autoRefreshEnabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+            <span className="text-sm">
+              Auto-refresh {autoRefreshEnabled ? 'ON' : 'OFF'}
+            </span>
+          </Button>
+        </div>
+      </motion.div>
+
+      {/* Calendar Header */}
+      <ErrorBoundary>
+        <CalendarHeader 
+          currentDate={currentDate}
+          onDateChange={setCurrentDate}
+          bookingCount={allReservations.length}
+          onAirbnbSync={handleSyncFromCalendar}
+          isSyncing={isSyncing}
+          lastSyncDate={lastSyncDate}
+          isConnected={syncStatus === 'success'}
+          hasIcs={hasIcs}
+          onOpenConfig={handleOpenConfig}
+          stats={getStats}
+          conflictDetails={conflictDetails}
+          allReservations={allReservations}
           onBookingClick={handleBookingClick}
         />
-      </div>
+      </ErrorBoundary>
+
+      {/* ✅ NOUVEAU : Calendrier optimisé avec effets visuels avancés */}
+      <motion.div 
+        className="w-full relative"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      >
+        {/* ✅ NOUVEAU : Overlay de chargement avec animation */}
+        {isRefreshing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl"
+          >
+            <div className="flex items-center space-x-3 bg-card p-4 rounded-lg shadow-lg border">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                className="h-5 w-5 border-2 border-primary border-t-transparent rounded-full"
+              />
+              <span className="text-sm font-medium">Mise à jour du calendrier...</span>
+            </div>
+          </motion.div>
+        )}
+        
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentDate.getMonth()}
+            initial={{ opacity: 0, x: 30, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -30, scale: 0.95 }}
+            transition={{ duration: 0.4, ease: "easeInOut" }}
+            className="relative"
+          >
+            <CalendarGrid 
+              calendarDays={calendarDays}
+              bookingLayout={bookingLayout}
+              conflicts={conflicts}
+              onBookingClick={handleBookingClick}
+            />
+            
+            {/* ✅ SUPPRIMÉ : Indicateur qui causait des chevauchements avec le header */}
+          </motion.div>
+        </AnimatePresence>
+      </motion.div>
 
       {/* Booking Details Modal */}
       {selectedBooking && (

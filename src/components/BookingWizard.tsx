@@ -129,6 +129,31 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           guests: formData.numberOfGuests
         });
 
+        // ✅ NOUVEAU : Vérifier les conflits avant d'insérer
+        console.log('🔍 Vérification des conflits de réservation...');
+        const { data: conflictingBookings, error: conflictError } = await supabase
+          .rpc('check_booking_conflicts', {
+            p_property_id: propertyId,
+            p_check_in_date: formData.checkInDate,
+            p_check_out_date: formData.checkOutDate,
+            p_exclude_booking_id: null
+          });
+
+        if (conflictError) {
+          console.warn('⚠️ Erreur lors de la vérification des conflits:', conflictError);
+          // Continue quand même si la fonction RPC n'existe pas encore
+        } else if (conflictingBookings && conflictingBookings.length > 0) {
+          console.error('❌ Conflit détecté avec réservations existantes:', conflictingBookings);
+          toast({
+            title: "Conflit de réservation",
+            description: `Une ou plusieurs réservations existent déjà pour ces dates (${conflictingBookings.length} conflit(s) détecté(s)). Veuillez choisir d'autres dates.`,
+            variant: "destructive"
+          });
+          return;
+        }
+
+        console.log('✅ Aucun conflit détecté, création de la réservation...');
+
         // 1. Insert booking
         const { data: bookingData, error: bookingError } = await supabase
           .from('bookings')
