@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { getUnifiedBookingDisplayText, isValidGuestName } from '@/utils/bookingDisplay';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
+import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
 
 export interface CalendarEvent {
   id: string;
@@ -74,11 +75,12 @@ export async function fetchAirbnbCalendarEvents(
     // Match par dates ou booking_reference
     const data = (airbnbData || []).map(ar => {
       // Chercher une réservation correspondante dans bookings
-      const matchingBooking = bookingsData?.find(b => {
-        const bookingStart = new Date(b.check_in_date);
-        const bookingEnd = new Date(b.check_out_date);
-        const airbnbStart = new Date(ar.start_date);
-        const airbnbEnd = new Date(ar.end_date);
+      const matchingBooking = bookingsData?.find((b: any) => {
+        // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
+        const bookingStart = parseLocalDate(b.check_in_date);
+        const bookingEnd = parseLocalDate(b.check_out_date);
+        const airbnbStart = parseLocalDate(ar.start_date);
+        const airbnbEnd = parseLocalDate(ar.end_date);
         
         // Match par dates exactes
         const datesMatch = bookingStart.getTime() === airbnbStart.getTime() && 
@@ -95,8 +97,8 @@ export async function fetchAirbnbCalendarEvents(
       // ✅ CORRIGÉ : Utiliser isValidGuestName importé de bookingDisplay
       // Utiliser le guest_name de bookings s'il est valide, sinon celui d'airbnb_reservations
       let finalGuestName = ar.guest_name;
-      if (matchingBooking?.guest_name && isValidGuestName(matchingBooking.guest_name)) {
-        finalGuestName = matchingBooking.guest_name;
+      if (matchingBooking && (matchingBooking as any).guest_name && isValidGuestName((matchingBooking as any).guest_name)) {
+        finalGuestName = (matchingBooking as any).guest_name;
       } else if (ar.guest_name && isValidGuestName(ar.guest_name)) {
         finalGuestName = ar.guest_name;
       }
@@ -106,7 +108,7 @@ export async function fetchAirbnbCalendarEvents(
         guest_name: finalGuestName,
         start_date: ar.start_date,
         end_date: ar.end_date,
-        is_validated: !!matchingBooking?.guest_name && isValidGuestName(matchingBooking.guest_name)
+        is_validated: !!(matchingBooking && (matchingBooking as any).guest_name && isValidGuestName((matchingBooking as any).guest_name))
       };
     });
 
@@ -114,12 +116,17 @@ export async function fetchAirbnbCalendarEvents(
 
     // Map each row to the calendar event shape
     const events: CalendarEvent[] = (data || []).map(row => {
+      // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone lors de la conversion
+      const startDateObj = parseLocalDate(row.start_date);
+      const endDateObj = parseLocalDate(row.end_date);
+      
       // Calculate end date + 1 day BUT keep local midnight to avoid timezone shifts
-      const endDate = new Date(row.end_date);
-      endDate.setDate(endDate.getDate() + 1);
-      const yyyy = endDate.getFullYear();
-      const mm = String(endDate.getMonth() + 1).padStart(2, '0');
-      const dd = String(endDate.getDate()).padStart(2, '0');
+      // ⚠️ IMPORTANT : On ajoute +1 jour pour FullCalendar (qui utilise des dates exclusives)
+      const endDateForCalendar = new Date(endDateObj);
+      endDateForCalendar.setDate(endDateForCalendar.getDate() + 1);
+      const yyyy = endDateForCalendar.getFullYear();
+      const mm = String(endDateForCalendar.getMonth() + 1).padStart(2, '0');
+      const dd = String(endDateForCalendar.getDate()).padStart(2, '0');
       const endStr = `${yyyy}-${mm}-${dd}`;
       
       // ✅ CORRIGÉ : Utilise la logique unifiée getUnifiedBookingDisplayText() pour éviter les doubles logiques
@@ -127,23 +134,25 @@ export async function fetchAirbnbCalendarEvents(
       const tempReservation: AirbnbReservation = {
         id: row.airbnb_booking_id,
         summary: '',
-        startDate: new Date(row.start_date),
-        endDate: new Date(row.end_date),
+        startDate: startDateObj, // ✅ CORRIGÉ : Utiliser parseLocalDate
+        endDate: endDateObj, // ✅ CORRIGÉ : Utiliser parseLocalDate
         description: '',
         guestName: row.guest_name || undefined,
         numberOfGuests: undefined,
         airbnbBookingId: row.airbnb_booking_id,
-        rawEvent: '',
-        source: 'airbnb' as any
+        rawEvent: ''
       };
       
       // Utiliser la fonction unifiée qui gère déjà toute la logique de nettoyage et de formatage
       const displayTitle = getUnifiedBookingDisplayText(tempReservation, true);
       
+      // ✅ CORRIGÉ : Utiliser les dates parsées en heure locale pour éviter le décalage
+      const startStr = formatLocalDate(startDateObj);
+      
       return {
         id: row.airbnb_booking_id,
         title: displayTitle,
-        start: `${row.start_date}T00:00:00`,
+        start: `${startStr}T00:00:00`, // ✅ CORRIGÉ : Utiliser date parsée en heure locale
         // Use local-midnight string to avoid off-by-one due to toISOString (UTC)
         end: `${endStr}T00:00:00`,
         allDay: true,
