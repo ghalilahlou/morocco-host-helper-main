@@ -103,12 +103,25 @@ export const ContractSigning: React.FC = () => {
             address: 'Adresse'
           });
           
+          // ✅ CORRIGÉ : S'assurer que booking_data existe, sinon le créer depuis bookingData
+          const bookingData = navigationState.bookingData || navigationState.booking_data;
+          if (!bookingData && navigationState.bookingId) {
+            // Créer un booking_data minimal si absent
+            console.warn('⚠️ booking_data absent, création d\'un booking_data minimal');
+          }
+          
           setSubmissionData({
             bookingId: navigationState.bookingId,
             contractUrl: navigationState.contractUrl,
             policeUrl: navigationState.policeUrl,
             guestData: navigationState.guestData,
-            booking_data: navigationState.bookingData || navigationState.booking_data, // ✅ CORRIGÉ : Accepter les deux formats
+            guest_data: navigationState.guestData, // ✅ AJOUT : Format alternatif
+            booking_data: bookingData || {
+              id: navigationState.bookingId,
+              checkInDate: navigationState.bookingData?.checkInDate || navigationState.bookingData?.checkIn,
+              checkOutDate: navigationState.bookingData?.checkOutDate || navigationState.bookingData?.checkOut,
+              numberOfGuests: navigationState.bookingData?.numberOfGuests || 1
+            },
             document_urls: navigationState.documentUrls || [] // ✅ AJOUT : URLs des documents
           });
           
@@ -117,9 +130,11 @@ export const ContractSigning: React.FC = () => {
             hasContractUrl: !!navigationState.contractUrl,
             hasPoliceUrl: !!navigationState.policeUrl,
             hasGuestData: !!navigationState.guestData,
-            hasBookingData: !!navigationState.bookingData || !!navigationState.booking_data
+            hasBookingData: !!bookingData,
+            bookingDataKeys: bookingData ? Object.keys(bookingData) : []
           });
           
+          console.log('✅ États mis à jour, setIsLoading(false)...');
           setIsLoading(false);
           return;
         }
@@ -448,7 +463,45 @@ export const ContractSigning: React.FC = () => {
     );
   }
 
+  // ✅ CORRIGÉ : Vérifier submissionData avec logs de debug
+  console.log('🔍 DEBUG ContractSigning render:', {
+    hasSubmissionData: !!submissionData,
+    hasBookingData: !!submissionData?.booking_data,
+    submissionDataKeys: submissionData ? Object.keys(submissionData) : [],
+    bookingDataKeys: submissionData?.booking_data ? Object.keys(submissionData.booking_data) : [],
+    isLoading,
+    hasError: !!error
+  });
+
   if (!submissionData || !submissionData.booking_data) {
+    // ✅ AJOUT : Si on est en train de charger, ne pas afficher l'erreur immédiatement
+    if (isLoading) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 flex items-center justify-center">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center space-y-6"
+          >
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              className="w-16 h-16 mx-auto border-4 border-blue-500 border-t-transparent rounded-full"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="space-y-2"
+            >
+              <h3 className="text-2xl font-semibold text-gray-900">Chargement du contrat...</h3>
+              <p className="text-lg text-gray-600">Récupération de vos informations...</p>
+            </motion.div>
+          </motion.div>
+        </div>
+      );
+    }
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-orange-50 flex items-center justify-center">
         <motion.div
@@ -470,6 +523,9 @@ export const ContractSigning: React.FC = () => {
                 <h2 className="text-2xl font-bold text-yellow-800">Quelques informations manquent</h2>
                 <p className="text-yellow-700">
                   Nous avons besoin de vos informations de réservation pour générer le contrat.
+                </p>
+                <p className="text-sm text-yellow-600 mt-2">
+                  {!submissionData ? 'Aucune donnée de soumission' : 'Données de réservation manquantes'}
                 </p>
               </div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -514,12 +570,21 @@ export const ContractSigning: React.FC = () => {
     return undefined;
   };
 
+  // ✅ AJOUT : Logs de debug avant rendu final
+  console.log('✅ ContractSigning - Rendu WelcomingContractSignature:', {
+    hasBookingData: !!submissionData.booking_data,
+    hasPropertyData: !!propertyData,
+    hasGuestData: !!submissionData.guest_data || !!submissionData.guestData,
+    hasContractUrl: !!getContractUrl(),
+    contractUrl: getContractUrl()
+  });
+
   return (
     <WelcomingContractSignature
       bookingData={submissionData.booking_data}
       propertyData={propertyData}
-      guestData={submissionData.guest_data}
-      documentUrls={submissionData.document_urls}
+      guestData={submissionData.guest_data || submissionData.guestData}
+      documentUrls={submissionData.document_urls || []}
       initialContractUrl={getContractUrl()}
       onBack={() => navigate(`/guest-verification/${propertyId}/${token}`)}
       onSignatureComplete={handleSignatureComplete}
