@@ -158,17 +158,17 @@ class SyncService {
   // Méthodes de synchronisation (à implémenter selon vos besoins)
   private async createResource(data: any): Promise<void> {
     // Implémenter la création
-    console.log('Creating resource:', data);
+    // Logs supprimés pour éviter la surcharge de la console
   }
 
   private async updateResource(data: any): Promise<void> {
     // Implémenter la mise à jour
-    console.log('Updating resource:', data);
+    // Logs supprimés pour éviter la surcharge de la console
   }
 
   private async deleteResource(data: any): Promise<void> {
     // Implémenter la suppression
-    console.log('Deleting resource:', data);
+    // Logs supprimés pour éviter la surcharge de la console
   }
 
   // Traiter la file de synchronisation
@@ -300,6 +300,7 @@ export const useSync = () => {
 
 // Import nécessaire
 import React from 'react';
+
 
 
 

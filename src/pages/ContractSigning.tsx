@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { WelcomingContractSignature } from '@/components/WelcomingContractSignature';
@@ -22,8 +22,15 @@ export const ContractSigning: React.FC = () => {
   const [submissionData, setSubmissionData] = useState<any>(null);
   const [isContractSigned, setIsContractSigned] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // ✅ CORRIGÉ : Ref pour éviter les re-exécutions multiples
+  const hasLoadedRef = useRef(false);
+  const locationStateRef = useRef(location.state);
 
   useEffect(() => {
+    // ✅ CORRIGÉ : Garde pour éviter les re-exécutions multiples
+    if (hasLoadedRef.current) return;
+    
     const loadContractData = async () => {
       if (!propertyId || !token) {
         setError(t('guest.invalidLink.desc'));
@@ -31,14 +38,16 @@ export const ContractSigning: React.FC = () => {
         return;
       }
 
+      // ✅ CORRIGÉ : Marquer comme chargé immédiatement pour éviter les re-exécutions
+      hasLoadedRef.current = true;
+
       try {
         // ✅ CORRIGÉ : Vérifier IMMÉDIATEMENT localStorage en premier (Vercel perd location.state)
         // ⚠️ IMPORTANT : Sur Vercel, location.state est souvent perdu dès le chargement
-        let navigationState = location.state;
+        let navigationState = locationStateRef.current || location.state;
         
         // ✅ PRIORITÉ 1 : Vérifier localStorage immédiatement (même si location.state existe)
         // Car location.state peut être perdu sur Vercel même s'il était présent initialement
-        console.log('🔍 DEBUG: Vérification localStorage en priorité...');
         try {
           const storedBookingId = localStorage.getItem('currentBookingId');
           const storedBookingData = localStorage.getItem('currentBookingData');
@@ -47,7 +56,6 @@ export const ContractSigning: React.FC = () => {
           const storedPoliceUrl = localStorage.getItem('policeUrl');
           
           if (storedBookingId && storedContractUrl) {
-            console.log('✅ Données trouvées dans localStorage, utilisation prioritaire');
             navigationState = {
               bookingId: storedBookingId,
               bookingData: storedBookingData ? JSON.parse(storedBookingData) : null,
@@ -58,30 +66,20 @@ export const ContractSigning: React.FC = () => {
               token: token,
               timestamp: Date.now()
             };
-            console.log('✅ Navigation state récupéré depuis localStorage:', navigationState);
           } else if (location.state && location.state.bookingId) {
             // ✅ FALLBACK : Utiliser location.state si localStorage n'a pas les données
-            console.log('✅ Utilisation location.state comme fallback');
             navigationState = location.state;
-          } else {
-            console.log('⚠️ Aucune donnée trouvée dans localStorage ni location.state');
+            locationStateRef.current = location.state;
           }
         } catch (localStorageError) {
-          console.warn('⚠️ Erreur lors de la récupération depuis localStorage:', localStorageError);
           // Fallback vers location.state si localStorage échoue
           if (location.state && location.state.bookingId) {
             navigationState = location.state;
+            locationStateRef.current = location.state;
           }
         }
         
-        console.log('🔍 DEBUG: Navigation state reçu:', navigationState);
-        console.log('🔍 DEBUG: Location:', location);
-        console.log('🔍 DEBUG: PropertyId:', propertyId);
-        console.log('🔍 DEBUG: Token:', token);
-        
         if (navigationState && navigationState.bookingId && navigationState.contractUrl) {
-          console.log('✅ Utilisation des données de navigation state:', navigationState);
-          
           setTokenData({
             ok: true,
             propertyId: navigationState.propertyId,
@@ -121,10 +119,8 @@ export const ContractSigning: React.FC = () => {
               ...(rawBookingData.airbnbCode && { airbnbCode: rawBookingData.airbnbCode }),
               ...(rawBookingData.propertyName && { propertyName: rawBookingData.propertyName })
             };
-            console.log('✅ booking_data normalisé depuis bookingData:', booking_data);
           } else {
             // Créer un booking_data minimal si absent
-            console.warn('⚠️ booking_data absent, création d\'un booking_data minimal');
             booking_data = {
               id: navigationState.bookingId,
               checkInDate: null,
@@ -146,23 +142,11 @@ export const ContractSigning: React.FC = () => {
             document_urls: navigationState.documentUrls || [] // ✅ AJOUT : URLs des documents
           });
           
-          console.log('✅ Submission data configuré depuis navigation state:', {
-            bookingId: navigationState.bookingId,
-            hasContractUrl: !!navigationState.contractUrl,
-            hasPoliceUrl: !!navigationState.policeUrl,
-            hasGuestData: !!navigationState.guestData,
-            hasBookingData: !!bookingData,
-            bookingDataKeys: bookingData ? Object.keys(bookingData) : []
-          });
-          
-          console.log('✅ États mis à jour, setIsLoading(false)...');
           setIsLoading(false);
           return;
         }
 
         // Si pas de navigation state, essayer la validation du token
-        console.log('⚠️ Pas de navigation state, validation du token...');
-        console.log('🔍 DEBUG: Paramètres URL disponibles:', { propertyId, token, airbnbBookingId });
         
         // Tentative d'appel à la fonction Edge
         let tokenVerification;
@@ -183,8 +167,6 @@ export const ContractSigning: React.FC = () => {
             tokenError = response.error;
           }
         } catch (edgeFunctionError) {
-          console.log('⚠️ Edge Function non disponible (quota dépassé), utilisation du contournement...');
-          
           // CONTOURNEMENT : Récupération directe des données
           try {
             const { data: propertyData, error: propertyError } = await supabase
@@ -205,9 +187,6 @@ export const ContractSigning: React.FC = () => {
               id: propertyId, // Pour la compatibilité
               tokenId: propertyId // Pour la compatibilité
             };
-            
-            console.log('✅ Contournement réussi, données récupérées directement');
-            
           } catch (fallbackError) {
             console.error('❌ Échec du contournement:', fallbackError);
             tokenError = fallbackError;
@@ -252,17 +231,10 @@ export const ContractSigning: React.FC = () => {
           body: { propertyId: propertyId }
         });
 
-        console.log('📍 Guest docs query result:', { guestDocs, submissionError });
-        console.log('🔍 TOKEN VERIFICATION ID:', tokenData.id);
-
         // Find the most recent submission for this property
         const latestSubmission = guestDocs && Array.isArray(guestDocs) && guestDocs.length > 0 
           ? guestDocs[0] // Already sorted by created_at desc in edge function
           : null;
-
-        console.log('📍 Submission query result:', { latestSubmission, submissionError });
-        console.log('🔍 TOKEN VERIFICATION ID:', tokenData.id);
-        console.log('🔍 SUBMISSION DATA:', latestSubmission);
 
         
         // ✅ CORRECTION : Gestion robuste des données de soumission
@@ -303,19 +275,14 @@ export const ContractSigning: React.FC = () => {
               p_submission_id: latestSubmission.id
             });
 
-            console.log('📍 Signature check result:', { signature, signatureError });
-
             if (signature && signature.length > 0 && signature[0].signature_data) {
               setIsContractSigned(true);
             }
           } catch (signatureCheckError) {
-            console.warn('⚠️ Erreur lors de la vérification de signature:', signatureCheckError);
             // Ne pas faire échouer pour cette erreur non-critique
           }
         } else {
           // ✅ CORRECTION : Créer des données minimales plus robustes
-          console.log('📍 No submission found, using token verification data for contract signing');
-          
           const mockSubmissionData = {
             id: 'temp-contract-signing',
             token_id: tokenData.id,
@@ -340,7 +307,6 @@ export const ContractSigning: React.FC = () => {
             status: 'completed'
           };
           
-          console.log('📍 Using minimal mock submission data for contract signing:', mockSubmissionData);
           setSubmissionData(mockSubmissionData);
         }
 
@@ -353,7 +319,9 @@ export const ContractSigning: React.FC = () => {
     };
 
     loadContractData();
-  }, [propertyId, token, location.state, t]); // ✅ AJOUT : location.state et t dans les dépendances
+    // ✅ CORRIGÉ : Retirer location.state des dépendances pour éviter les re-renders infinis
+    // On utilise locationStateRef pour capturer la valeur initiale
+  }, [propertyId, token, t]);
 
   const handleSignatureComplete = async (signatureData: string) => {
     try {
@@ -484,16 +452,6 @@ export const ContractSigning: React.FC = () => {
     );
   }
 
-  // ✅ CORRIGÉ : Vérifier submissionData avec logs de debug
-  console.log('🔍 DEBUG ContractSigning render:', {
-    hasSubmissionData: !!submissionData,
-    hasBookingData: !!submissionData?.booking_data,
-    submissionDataKeys: submissionData ? Object.keys(submissionData) : [],
-    bookingDataKeys: submissionData?.booking_data ? Object.keys(submissionData.booking_data) : [],
-    isLoading,
-    hasError: !!error
-  });
-
   if (!submissionData || !submissionData.booking_data) {
     // ✅ AJOUT : Si on est en train de charger, ne pas afficher l'erreur immédiatement
     if (isLoading) {
@@ -565,8 +523,8 @@ export const ContractSigning: React.FC = () => {
     );
   }
 
-  // ✅ CORRIGÉ : Récupérer contractUrl depuis navigation state ou localStorage (fallback Vercel)
-  const getContractUrl = () => {
+  // ✅ CORRIGÉ : Mémoriser getContractUrl pour éviter les recalculs à chaque render
+  const contractUrl = useMemo(() => {
     // 1. Essayer location.state
     if ((location as any)?.state?.contractUrl) {
       return (location as any).state.contractUrl;
@@ -576,11 +534,10 @@ export const ContractSigning: React.FC = () => {
     try {
       const storedContractUrl = localStorage.getItem('contractUrl');
       if (storedContractUrl) {
-        console.log('✅ ContractUrl récupéré depuis localStorage (fallback Vercel):', storedContractUrl);
         return storedContractUrl;
       }
     } catch (e) {
-      console.warn('⚠️ Erreur lors de la récupération de contractUrl depuis localStorage:', e);
+      // Ignorer les erreurs localStorage silencieusement
     }
     
     // 3. Essayer submissionData
@@ -589,16 +546,7 @@ export const ContractSigning: React.FC = () => {
     }
     
     return undefined;
-  };
-
-  // ✅ AJOUT : Logs de debug avant rendu final
-  console.log('✅ ContractSigning - Rendu WelcomingContractSignature:', {
-    hasBookingData: !!submissionData.booking_data,
-    hasPropertyData: !!propertyData,
-    hasGuestData: !!submissionData.guest_data || !!submissionData.guestData,
-    hasContractUrl: !!getContractUrl(),
-    contractUrl: getContractUrl()
-  });
+  }, [location.state, submissionData]);
 
   return (
     <WelcomingContractSignature
@@ -606,7 +554,7 @@ export const ContractSigning: React.FC = () => {
       propertyData={propertyData}
       guestData={submissionData.guest_data || submissionData.guestData}
       documentUrls={submissionData.document_urls || []}
-      initialContractUrl={getContractUrl()}
+      initialContractUrl={contractUrl}
       onBack={() => navigate(`/guest-verification/${propertyId}/${token}`)}
       onSignatureComplete={handleSignatureComplete}
     />
