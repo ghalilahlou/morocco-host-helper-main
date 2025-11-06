@@ -279,6 +279,22 @@ export const GuestVerification = () => {
   const isCheckingICSRef = useRef(false); // ✅ Réf pour éviter les vérifications ICS multiples parallèles
   const isVerifyingTokenRef = useRef(false); // ✅ Réf pour éviter les vérifications token multiples parallèles
   const isSubmittingRef = useRef(false); // ✅ NOUVEAU : Réf pour éviter les soumissions multiples
+  
+  // ✅ CRITIQUE : Gardes globaux pour éviter les doubles exécutions sur Vercel (Strict Mode / Hydratation SSR)
+  const hasInitializedICSRef = useRef(false); // ✅ Garde pour l'initialisation ICS
+  const hasInitializedTokenRef = useRef(false); // ✅ Garde pour la vérification token
+  const hasInitializedBookingRef = useRef(false); // ✅ Garde pour le matching booking
+  
+  // ✅ CRITIQUE : Utiliser sessionStorage pour persister entre les navigations (Vercel)
+  const getSessionKey = (key: string) => `guest_verification_${key}_${propertyId}_${token}`;
+  const hasInitializedInSession = (key: string) => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem(getSessionKey(key)) === 'true';
+  };
+  const markInitializedInSession = (key: string) => {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(getSessionKey(key), 'true');
+  };
 
   // ✅ SUPPRIMÉ : Intercepteur d'erreurs redondant - l'intercepteur global dans main.tsx gère déjà les erreurs Portal
 
@@ -316,18 +332,37 @@ export const GuestVerification = () => {
   useEffect(() => {
     if (!token || !propertyId) return;
     
+    // ✅ CRITIQUE : Garde global pour éviter les doubles exécutions (Strict Mode / Hydratation SSR)
+    if (hasInitializedICSRef.current) {
+      console.log('✅ [ICS] Déjà initialisé (useRef), ignoré');
+      return;
+    }
+    
+    // ✅ CRITIQUE : Vérifier aussi dans sessionStorage (persiste entre navigations)
+    if (hasInitializedInSession('ics')) {
+      console.log('✅ [ICS] Déjà initialisé (sessionStorage), ignoré');
+      hasInitializedICSRef.current = true; // Synchroniser le ref
+      return;
+    }
+    
     // ✅ CORRIGÉ : Vérifier si déjà traité pour ce token/propertyId
     if (lastProcessedTokenRef.current === token && 
         lastProcessedPropertyIdRef.current === propertyId) {
-      console.log('✅ ICS déjà vérifié pour ce token/propertyId, ignoré');
+      console.log('✅ [ICS] Déjà vérifié pour ce token/propertyId, ignoré');
+      hasInitializedICSRef.current = true;
+      markInitializedInSession('ics');
       return;
     }
     
     // ✅ PROTECTION : Éviter les exécutions parallèles de checkICSData
     if (isCheckingICSRef.current) {
-      console.warn('⚠️ Vérification ICS déjà en cours, appel ignoré');
+      console.warn('⚠️ [ICS] Vérification déjà en cours, appel ignoré');
       return;
     }
+    
+    // ✅ CRITIQUE : Marquer comme initialisé IMMÉDIATEMENT (avant toute opération async)
+    hasInitializedICSRef.current = true;
+    markInitializedInSession('ics');
     
     // ✅ Marquer comme traité
     lastProcessedTokenRef.current = token;
@@ -573,11 +608,32 @@ export const GuestVerification = () => {
         return;
       }
       
-      // ✅ PROTECTION : Éviter les vérifications parallèles de verifyToken
-      if (isVerifyingTokenRef.current) {
-        console.warn('⚠️ Vérification token déjà en cours, appel ignoré');
+      // ✅ CRITIQUE : Garde global pour éviter les doubles exécutions (Strict Mode / Hydratation SSR)
+      if (hasInitializedTokenRef.current) {
+        console.log('✅ [Token] Déjà initialisé (useRef), ignoré');
         return;
       }
+      
+      // ✅ CRITIQUE : Vérifier aussi dans sessionStorage (persiste entre navigations)
+      if (hasInitializedInSession('token')) {
+        console.log('✅ [Token] Déjà initialisé (sessionStorage), ignoré');
+        hasInitializedTokenRef.current = true; // Synchroniser le ref
+        // ✅ CRITIQUE : Si déjà validé, ne pas re-vérifier mais mettre à jour l'état
+        if (isValidToken) {
+          setCheckingToken(false);
+        }
+        return;
+      }
+      
+      // ✅ PROTECTION : Éviter les vérifications parallèles de verifyToken
+      if (isVerifyingTokenRef.current) {
+        console.warn('⚠️ [Token] Vérification déjà en cours, appel ignoré');
+        return;
+      }
+      
+      // ✅ CRITIQUE : Marquer comme initialisé IMMÉDIATEMENT (avant toute opération async)
+      hasInitializedTokenRef.current = true;
+      markInitializedInSession('token');
       
       isVerifyingTokenRef.current = true;
 
@@ -637,6 +693,24 @@ export const GuestVerification = () => {
       if (!isValidToken || !propertyId || !airbnbBookingId) {
         return;
       }
+      
+      // ✅ CRITIQUE : Garde global pour éviter les doubles exécutions (Strict Mode / Hydratation SSR)
+      if (hasInitializedBookingRef.current) {
+        console.log('✅ [Booking] Déjà initialisé (useRef), ignoré');
+        return;
+      }
+      
+      // ✅ CRITIQUE : Vérifier aussi dans sessionStorage (persiste entre navigations)
+      const bookingSessionKey = `booking_${airbnbBookingId}`;
+      if (hasInitializedInSession(bookingSessionKey)) {
+        console.log('✅ [Booking] Déjà initialisé (sessionStorage), ignoré');
+        hasInitializedBookingRef.current = true; // Synchroniser le ref
+        return;
+      }
+      
+      // ✅ CRITIQUE : Marquer comme initialisé IMMÉDIATEMENT (avant toute opération async)
+      hasInitializedBookingRef.current = true;
+      markInitializedInSession(bookingSessionKey);
       
       try {
         const { data: searchResult, error: searchError } = await supabase.functions.invoke('get-airbnb-reservation', {
