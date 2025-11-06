@@ -22,8 +22,9 @@ import './index.css'
     const isChunkFile = sourceStr.includes('chunk-') || sourceStr.includes('.js?v=');
     const isFailedToExecute = messageStr.includes('Failed to execute') || errorMessage.includes('Failed to execute');
     
-    // Intercepter les erreurs Portal et les ignorer silencieusement
-    if (
+    // ✅ CRITIQUE : Détecter aussi les erreurs dans les chunk files minifiés
+    const isMinifiedError = sourceStr.includes('index-') && sourceStr.includes('.js');
+    const isInsertBeforeError = 
       messageStr.includes('insertBefore') ||
       messageStr.includes('removeChild') ||
       messageStr.includes('not a child of this node') ||
@@ -39,10 +40,20 @@ import './index.css'
       (error && error.name === 'NotFoundError') ||
       stack.includes('insertBefore') ||
       stack.includes('removeChild') ||
-      (isChunkFile && isFailedToExecute)
-    ) {
+      (isChunkFile && isFailedToExecute) ||
+      (isMinifiedError && (messageStr.includes('Failed to execute') || errorMessage.includes('Failed to execute')));
+    
+    // Intercepter les erreurs Portal et les ignorer silencieusement
+    if (isInsertBeforeError) {
       // Erreur Portal interceptée et ignorée silencieusement
       // ✅ CRITIQUE : Empêcher complètement la propagation pour éviter que React bloque
+      // Ne pas logger en production pour éviter le spam
+      if (import.meta.env.DEV) {
+        console.debug('🔇 [PortalErrorInterceptor] Erreur Portal interceptée et ignorée:', {
+          message: messageStr.substring(0, 100),
+          source: sourceStr.substring(0, 50)
+        });
+      }
       return true; // Empêche la propagation de l'erreur
     }
 
