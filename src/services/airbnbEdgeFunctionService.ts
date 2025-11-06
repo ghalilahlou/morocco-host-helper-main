@@ -9,12 +9,24 @@ export interface SyncResult {
 }
 
 export class AirbnbEdgeFunctionService {
+  // ✅ PROTECTION : Garder une trace des synchronisations en cours pour éviter les appels multiples
+  private static syncInProgress = new Map<string, Promise<SyncResult>>();
+  
   static async syncReservations(propertyId: string, icsUrl: string): Promise<SyncResult> {
-    try {
-      console.log('🚀 AirbnbEdgeFunctionService: Starting sync', { propertyId, icsUrl });
-      
-      // Get current session
-      const { data: { session } } = await supabase.auth.getSession();
+    // ✅ PROTECTION : Vérifier si une synchronisation est déjà en cours pour cette propriété
+    const existingSync = this.syncInProgress.get(propertyId);
+    if (existingSync) {
+      console.log('⏳ Synchronisation déjà en cours pour cette propriété, réutilisation de la promesse existante');
+      return existingSync;
+    }
+    
+    // Créer une nouvelle promesse de synchronisation
+    const syncPromise = (async () => {
+      try {
+        console.log('🚀 AirbnbEdgeFunctionService: Starting sync', { propertyId, icsUrl });
+        
+        // Get current session
+        const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
         console.error('❌ No active session');
@@ -105,22 +117,48 @@ export class AirbnbEdgeFunctionService {
       }
 
       console.log('✅ Sync completed via Edge Function');
+      
+      // ✅ CORRIGÉ : Invalider le cache des réservations après une synchronisation
+      this.invalidateReservationsCache(propertyId);
+      
       return {
         success: true,
         count: data?.count ?? data?.reservations_count ?? 0,
         message: data.message
       };
 
-    } catch (error) {
-      console.error('❌ AirbnbEdgeFunctionService error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
+      } catch (error) {
+        console.error('❌ AirbnbEdgeFunctionService error:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      } finally {
+        // ✅ IMPORTANT : Retirer la promesse du Map après la fin de la synchronisation
+        this.syncInProgress.delete(propertyId);
+      }
+    })();
+    
+    // Stocker la promesse dans le Map
+    this.syncInProgress.set(propertyId, syncPromise);
+    
+    return syncPromise;
   }
 
+  // ✅ PROTECTION : Cache pour les réservations pour éviter les appels multiples
+  private static reservationsCache = new Map<string, { data: any[], timestamp: number }>();
+  private static readonly CACHE_TTL = 5000; // 5 secondes de cache
+  
   static async getReservations(propertyId: string) {
+    // ✅ PROTECTION : Vérifier le cache d'abord
+    const cached = this.reservationsCache.get(propertyId);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
+      console.log('📋 Using cached reservations for property:', propertyId, `(${cached.data.length} reservations)`);
+      return cached.data;
+    }
+    
     console.log('📋 Getting reservations for property:', propertyId);
     
     const { data, error } = await supabase
@@ -134,8 +172,22 @@ export class AirbnbEdgeFunctionService {
       return [];
     }
 
-    console.log('📋 Found reservations:', data?.length || 0);
-    return data || [];
+    const reservations = data || [];
+    console.log('📋 Found reservations:', reservations.length);
+    
+    // ✅ Mettre en cache
+    this.reservationsCache.set(propertyId, { data: reservations, timestamp: now });
+    
+    return reservations;
+  }
+  
+  // ✅ NOUVEAU : Méthode pour invalider le cache (appelée après une synchronisation)
+  static invalidateReservationsCache(propertyId?: string) {
+    if (propertyId) {
+      this.reservationsCache.delete(propertyId);
+    } else {
+      this.reservationsCache.clear();
+    }
   }
 
   static async getSyncStatus(propertyId: string) {

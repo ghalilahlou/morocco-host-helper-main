@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useState, useEffect, startTransition, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 // ✅ NOUVEAU : Fonction pour nettoyer le nom du guest récupéré depuis l'URL
 function cleanGuestNameFromUrl(guestName: string): string {
@@ -48,7 +48,7 @@ import { motion } from 'framer-motion';
 // ✅ CORRIGÉ : flushSync retiré car il cause des erreurs Portal
 // import { flushSync } from 'react-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+// ✅ ErrorBoundary retiré - l'intercepteur global window.onerror gère les erreurs Portal
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -184,37 +184,16 @@ export const GuestVerification = () => {
     return guestsArray.map(g => getGuestHash(g)).join('|');
   };
   
-  // ✅ PROTECTION ULTIME : Nettoyer les doublons AVANT le render
-  useEffect(() => {
+  // ✅ CORRIGÉ : Utiliser useMemo pour la déduplication au lieu de useEffect pour éviter les boucles infinies
+  // ✅ CRUCIAL : Sauvegarder la dernière référence pour éviter les re-renders inutiles
+  const lastDeduplicatedGuestsRef = useRef<Guest[]>(guests);
+  
+  const deduplicatedGuests = useMemo(() => {
     const currentHash = getGuestsArrayHash(guests);
     
-    console.log('🔥 GUESTS STATE CHANGED:', {
-      count: guests.length,
-      lastCount: lastGuestsCountRef.current,
-      currentHash: currentHash.substring(0, 50) + '...',
-      guests: guests.map((g, i) => ({
-        index: i,
-        fullName: g.fullName,
-        docNumber: g.documentNumber,
-        nationality: g.nationality,
-        hash: getGuestHash(g)
-      }))
-    });
-    
-    // ✅ Si le hash n'a pas changé, ne rien faire
-    if (currentHash === lastGuestsHashRef.current && !guestsProcessedRef.current) {
-      console.log('✅ Hash identique, pas de traitement nécessaire');
-      lastGuestsCountRef.current = guests.length;
-      return;
-    }
-    
-    // ✅ RÉACTIVÉ : Détection et suppression automatique des doublons
-    if (guestsProcessedRef.current) {
-      console.log('🔄 Skipping duplicate check (already processed)');
-      guestsProcessedRef.current = false;
-      lastGuestsHashRef.current = currentHash;
-      lastGuestsCountRef.current = guests.length;
-      return;
+    // ✅ Si le hash n'a pas changé, retourner LA MÊME RÉFÉRENCE (pas guests, mais lastDeduplicatedGuestsRef)
+    if (currentHash === lastGuestsHashRef.current) {
+      return lastDeduplicatedGuestsRef.current;
     }
     
     // ✅ NOUVEAU : Éviter de traiter si on a plus de 10 guests (probablement un bug)
@@ -223,18 +202,17 @@ export const GuestVerification = () => {
         count: guests.length,
         guests: guests.map(g => ({ fullName: g.fullName, docNumber: g.documentNumber }))
       });
-      setGuests([{
+      return [{
         fullName: '',
         dateOfBirth: undefined,
         nationality: '',
         documentNumber: '',
-        documentType: 'passport',
+        documentType: 'passport' as const,
         profession: '',
-        motifSejour: 'TOURISME',
+        motifSejour: 'TOURISME' as const,
         adressePersonnelle: '',
         email: ''
-      }]);
-      return;
+      }] as Guest[];
     }
     
     // ✅ ALGORITHME DE DÉDUPLICATION ROBUSTE
@@ -272,35 +250,95 @@ export const GuestVerification = () => {
       return acc;
     }, []);
     
-    // ✅ Si des doublons ont été trouvés, nettoyer le state
+    // ✅ Mettre à jour les références seulement si des doublons ont été trouvés
     if (uniqueGuests.length !== guests.length) {
-      console.error('⚠️⚠️⚠️ DOUBLONS DÉTECTÉS ET SUPPRIMÉS ⚠️⚠️⚠️', { 
+      console.error('⚠️⚠️⚠️ DOUBLONS DÉTECTÉS ⚠️⚠️⚠️', { 
         avant: guests.length, 
         après: uniqueGuests.length,
         doublonsSupprimes: guests.length - uniqueGuests.length
       });
-      
-      guestsProcessedRef.current = true;
-      setGuests(uniqueGuests);
+      lastGuestsHashRef.current = getGuestsArrayHash(uniqueGuests);
+      lastGuestsCountRef.current = uniqueGuests.length;
     } else {
-      console.log('✅ Aucun doublon détecté');
+      lastGuestsHashRef.current = currentHash;
+      lastGuestsCountRef.current = guests.length;
     }
     
-    // Mettre à jour les références
-    lastGuestsHashRef.current = getGuestsArrayHash(uniqueGuests.length > 0 ? uniqueGuests : guests);
-    lastGuestsCountRef.current = uniqueGuests.length > 0 ? uniqueGuests.length : guests.length;
+    // ✅ CRUCIAL : Sauvegarder la référence pour les prochains appels
+    lastDeduplicatedGuestsRef.current = uniqueGuests;
+    
+    return uniqueGuests;
   }, [guests]);
   
-  // ✅ DÉSACTIVÉ : selectsKey n'est plus utilisé car les clés sont maintenant basées sur documentNumber
-  // const [selectsKey, setSelectsKey] = useState(0);
+  // ✅ Refs pour la gestion de l'état et des flags
   const isMountedRef = useRef(true); // ✅ Réf pour suivre si le composant est monté
   const navigationInProgressRef = useRef(false); // ✅ Réf pour éviter les navigations multiples
   const processingFilesRef = useRef<Set<string>>(new Set()); // ✅ Réf pour éviter les traitements multiples du même fichier
   const isProcessingRef = useRef(false); // ✅ Réf pour éviter les appels multiples simultanés
   const isCheckingICSRef = useRef(false); // ✅ Réf pour éviter les vérifications ICS multiples parallèles
   const isVerifyingTokenRef = useRef(false); // ✅ Réf pour éviter les vérifications token multiples parallèles
+  const isSubmittingRef = useRef(false); // ✅ NOUVEAU : Réf pour éviter les soumissions multiples
 
-  // ✅ CORRIGÉ : Cleanup lors du démontage pour éviter les erreurs DOM
+  // ✅ FONCTION UTILITAIRE : Nettoyage agressif et robuste des Portals Radix UI
+  // ✅ forceCloseAllPortals supprimée - Plus de Select Radix UI = plus besoin de fermeture de Portals
+
+  // ✅ NOUVEAU : Intercepteur d'erreurs global pour les erreurs Portal
+  useEffect(() => {
+    // Sauvegarder les handlers originaux
+    const originalOnError = window.onerror;
+    const originalOnUnhandledRejection = window.onunhandledrejection;
+
+    // Handler pour les erreurs synchrones
+    window.onerror = function(message, source, lineno, colno, error) {
+      // Intercepter les erreurs Portal et les ignorer silencieusement
+      if (
+        error &&
+        (error.message?.includes('removeChild') ||
+         error.message?.includes('insertBefore') ||
+         error.message?.includes('not a child of this node') ||
+         error.message?.includes('The node to be removed') ||
+         error.name === 'NotFoundError')
+      ) {
+        console.debug('🛡️ Erreur Portal interceptée et ignorée:', error.message);
+        return true; // Empêche la propagation de l'erreur
+      }
+
+      // Laisser passer les autres erreurs
+      if (originalOnError) {
+        return originalOnError(message, source, lineno, colno, error);
+            }
+      return false;
+    };
+
+    // Handler pour les erreurs asynchrones
+    window.onunhandledrejection = function(event) {
+      const error = event.reason;
+      if (
+        error &&
+        typeof error.message === 'string' &&
+        (error.message.includes('removeChild') ||
+         error.message.includes('insertBefore') ||
+         error.message.includes('not a child of this node'))
+      ) {
+        console.debug('🛡️ Erreur Portal async interceptée et ignorée');
+        event.preventDefault(); // Empêche la propagation
+        return;
+      }
+
+      // Laisser passer les autres erreurs
+      if (originalOnUnhandledRejection) {
+        originalOnUnhandledRejection.call(window, event);
+          }
+    };
+
+    return () => {
+      // Restaurer les handlers originaux lors du démontage
+      window.onerror = originalOnError;
+      window.onunhandledrejection = originalOnUnhandledRejection;
+    };
+  }, []);
+
+  // ✅ CORRIGÉ : Cleanup immédiat au montage ET au démontage
   useEffect(() => {
     isMountedRef.current = true;
     
@@ -308,42 +346,10 @@ export const GuestVerification = () => {
       // Cleanup lors du démontage
       isMountedRef.current = false;
       navigationInProgressRef.current = false;
-      
-      // Nettoyer tous les Portals Radix UI qui pourraient être en cours
-      // En forçant un re-render final, React nettoiera automatiquement les Portals
-      try {
-        const portals = document.querySelectorAll('[data-radix-portal]');
-        portals.forEach(portal => {
-          try {
-            if (portal.parentNode) {
-              portal.parentNode.removeChild(portal);
-            }
-          } catch (e) {
-            // Ignorer les erreurs de Portal cleanup - elles sont normales lors du démontage
-            console.debug('Portal cleanup (non-bloquant):', e);
-          }
-        });
-      } catch (e) {
-        // Ignorer les erreurs de cleanup Portal
-        console.debug('Portal cleanup global (non-bloquant):', e);
-      }
     };
   }, []);
 
-  // ✅ DEBUG: Log de l'état des invités à chaque changement
-  useEffect(() => {
-    if (!isMountedRef.current) return;
-    
-    console.log('🔍 DEBUG - État des invités mis à jour:', {
-      totalGuests: guests.length,
-      guests: guests.map((g, i) => ({
-        index: i,
-        fullName: g.fullName,
-        hasDateOfBirth: !!g.dateOfBirth,
-        dateOfBirth: g.dateOfBirth
-      }))
-    });
-  }, [guests]);
+  // ✅ Log de debug supprimé pour éviter le spam dans la console
 
   // ✅ CORRIGÉ : Désactiver la mise à jour automatique de selectsKey pour éviter les conflits
   // Les clés basées sur documentNumber sont maintenant stables et ne nécessitent plus cette mise à jour
@@ -358,9 +364,20 @@ export const GuestVerification = () => {
   //   return () => clearTimeout(timeoutId);
   // }, [guests.length]);
 
+  // ✅ NOUVEAU : Refs pour tracker les derniers paramètres traités
+  const lastProcessedTokenRef = useRef<string | null>(null);
+  const lastProcessedPropertyIdRef = useRef<string | null>(null);
+
   // ✅ NOUVEAU : Vérifier si c'est un lien ICS direct et pré-remplir les données
   useEffect(() => {
     if (!token || !propertyId) return;
+    
+    // ✅ CORRIGÉ : Vérifier si déjà traité pour ce token/propertyId
+    if (lastProcessedTokenRef.current === token && 
+        lastProcessedPropertyIdRef.current === propertyId) {
+      console.log('✅ ICS déjà vérifié pour ce token/propertyId, ignoré');
+      return;
+    }
     
     // ✅ PROTECTION : Éviter les exécutions parallèles de checkICSData
     if (isCheckingICSRef.current) {
@@ -368,6 +385,9 @@ export const GuestVerification = () => {
       return;
     }
     
+    // ✅ Marquer comme traité
+    lastProcessedTokenRef.current = token;
+    lastProcessedPropertyIdRef.current = propertyId;
     isCheckingICSRef.current = true;
 
     const checkICSData = async () => {
@@ -420,6 +440,7 @@ export const GuestVerification = () => {
             
             // Si le nombre est déjà bon ET qu'on n'a pas de nom à ajouter, ne rien faire
             if (prevGuests.length === guestsCount) {
+              // ✅ RÉACTIVÉ : Le pré-remplissage fonctionne maintenant avec des select natifs (pas de Portals)
               // Vérifier si on a un nom à ajouter
               if (guestNameParam && guestNameParam.trim()) {
                 const cleanGuestName = cleanGuestNameFromUrl(decodeURIComponent(guestNameParam));
@@ -709,18 +730,55 @@ export const GuestVerification = () => {
   };
 
   const updateGuest = (index: number, field: keyof Guest, value: any) => {
+    // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour trouver le bon guest
+    // car le rendu utilise deduplicatedGuests, donc l'index correspond à deduplicatedGuests
+    const targetGuest = deduplicatedGuests[index];
+    if (!targetGuest) return;
+    
+    // Trouver l'index dans guests en utilisant documentNumber ou fullName comme identifiant
+    const guestId = targetGuest.documentNumber || targetGuest.fullName;
+    const actualIndex = guests.findIndex(g => 
+      (g.documentNumber && g.documentNumber === guestId) || 
+      (g.fullName && g.fullName === guestId && !g.documentNumber)
+    );
+    
+    if (actualIndex === -1) {
+      // Si pas trouvé, utiliser l'index directement (fallback)
     const updatedGuests = [...guests];
+      if (updatedGuests[index]) {
     updatedGuests[index] = { ...updatedGuests[index], [field]: value };
     setGuests(updatedGuests);
-  };
-
-  const removeGuest = (index: number) => {
-    if (guests.length > 1) {
-      setGuests(guests.filter((_, i) => i !== index));
+      }
+    } else {
+      const updatedGuests = [...guests];
+      updatedGuests[actualIndex] = { ...updatedGuests[actualIndex], [field]: value };
+      setGuests(updatedGuests);
     }
   };
 
-  // ✅ CORRIGÉ : Mémoriser handleFileUpload avec useCallback pour éviter les duplications
+  const removeGuest = (index: number) => {
+    // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour trouver le bon guest
+    const targetGuest = deduplicatedGuests[index];
+    if (!targetGuest) return;
+    
+    if (deduplicatedGuests.length > 1) {
+      // Trouver l'index dans guests en utilisant documentNumber ou fullName comme identifiant
+      const guestId = targetGuest.documentNumber || targetGuest.fullName;
+      const actualIndex = guests.findIndex(g => 
+        (g.documentNumber && g.documentNumber === guestId) || 
+        (g.fullName && g.fullName === guestId && !g.documentNumber)
+      );
+      
+      if (actualIndex !== -1) {
+        setGuests(guests.filter((_, i) => i !== actualIndex));
+      } else {
+        // Fallback : utiliser l'index directement
+      setGuests(guests.filter((_, i) => i !== index));
+      }
+    }
+  };
+
+  // ✅ SOLUTION FINALE : handleFileUpload simplifié sans manipulation manuelle des Portals
   const handleFileUpload = useCallback(async (files: FileList) => {
     console.log('🚨 ALERTE - handleFileUpload appelé avec', files.length, 'fichier(s)');
     
@@ -733,6 +791,13 @@ export const GuestVerification = () => {
     if (!files || files.length === 0) return;
 
     isProcessingRef.current = true;
+    
+    // ✅ CORRIGÉ : Logger pour debug
+    console.log('🔍 DEBUG: handleFileUpload - Début traitement', {
+      filesCount: files.length,
+      fileNames: Array.from(files).map(f => f.name),
+      isProcessingBefore: isProcessingRef.current
+    });
 
     try {
       // ✅ CORRIGÉ : Traiter tous les fichiers de manière séquentielle pour éviter les conflits
@@ -760,7 +825,7 @@ export const GuestVerification = () => {
       const url = URL.createObjectURL(file);
       
       try {
-        // ✅ CORRIGÉ : Une seule mise à jour pour ajouter le document en processing
+        // ✅ SIMPLIFIÉ : Ajouter le document en processing (SANS manipulation de Portals)
         const newDoc: UploadedDocument = {
           file,
           url,
@@ -769,6 +834,7 @@ export const GuestVerification = () => {
         };
 
         setUploadedDocuments(prev => [...prev, newDoc]);
+        
         // ✅ CORRIGÉ : Extraire les données une seule fois
         const extractedData = await OpenAIDocumentService.extractDocumentData(file);
         console.log('🚨 ALERTE - Données extraites:', {
@@ -777,7 +843,7 @@ export const GuestVerification = () => {
           fullName: extractedData.fullName
         });
 
-        // ✅ CORRIGÉ : Mise à jour unique des documents avec les données extraites
+        // ✅ SIMPLIFIÉ : Mettre à jour les documents (SANS manipulation de Portals)
         setUploadedDocuments(prev => 
           prev.map(doc => 
             doc.url === url 
@@ -800,6 +866,7 @@ export const GuestVerification = () => {
               variant: "destructive",
             });
             
+            // ✅ SIMPLIFIÉ : Marquer comme invalide (SANS startTransition)
             setUploadedDocuments(prev => 
               prev.map(doc => 
                 doc.url === url 
@@ -811,8 +878,7 @@ export const GuestVerification = () => {
             throw new Error('INVALID_DOCUMENT'); // Utiliser throw pour sortir du try
           }
 
-          // ✅ CORRIGÉ : Mise à jour directe des guests avec protection contre les doublons
-          // pour éviter les conflits et la double logique
+          // ✅ RÉACTIVÉ : La mise à jour automatique fonctionne maintenant avec des select natifs (pas de Portals)
           setGuests(prevGuests => {
             const updatedGuests = [...prevGuests];
             
@@ -913,9 +979,6 @@ export const GuestVerification = () => {
             
             return updatedGuests;
           });
-          
-          // ✅ CORRIGÉ : selectsKey n'est plus nécessaire car les clés sont maintenant basées sur documentNumber
-          // qui est stable et ne change pas lors des mises à jour
 
           toast({
             title: "Document traité",
@@ -935,6 +998,7 @@ export const GuestVerification = () => {
           console.log('⚠️ Document invalide ignoré');
         } else {
           console.error('Document processing failed:', error);
+          // ✅ SIMPLIFIÉ : Marquer comme échec (SANS startTransition)
           setUploadedDocuments(prev => 
             prev.map(doc => 
               doc.url === url 
@@ -953,12 +1017,12 @@ export const GuestVerification = () => {
         // ✅ PROTECTION : Retirer le fichier de la liste des fichiers en cours
         processingFilesRef.current.delete(fileKey);
       }
-    }
+      } // Fin de la boucle for
     } finally {
       // ✅ PROTECTION : Réinitialiser le flag de traitement
       isProcessingRef.current = false;
     }
-  }, [toast, t]); // ✅ Dépendances pour useCallback
+  }, [toast, t]); // ✅ Dépendances simplifiées (plus de manipulation de Portals)
 
   const removeDocument = (url: string) => {
     console.log('🗑️ Removing document:', url);
@@ -1002,16 +1066,31 @@ export const GuestVerification = () => {
   };
 
   const handleSubmit = async () => {
-    // ✅ PROTECTION : Empêcher les soumissions multiples
-    if (isLoading || navigationInProgressRef.current) {
-      console.warn('⚠️ Soumission déjà en cours, appel ignoré');
+    // ✅ CORRIGÉ : Protection renforcée contre les soumissions multiples
+    if (isSubmittingRef.current || isProcessingRef.current || isLoading || navigationInProgressRef.current) {
+      console.warn('⚠️ Soumission déjà en cours, appel ignoré', {
+        isSubmitting: isSubmittingRef.current,
+        isProcessing: isProcessingRef.current,
+        isLoading,
+        navigationInProgress: navigationInProgressRef.current
+      });
+      toast({
+        title: "Soumission en cours",
+        description: "Veuillez patienter, la soumission est déjà en cours...",
+        variant: "default"
+      });
       return;
     }
+    
+    // ✅ Marquer immédiatement comme en cours
+    isSubmittingRef.current = true;
+    isProcessingRef.current = true;
     
     console.log('🔍 Validation - Upload check:', {
       uploadedDocuments: uploadedDocuments.length,
       numberOfGuests: numberOfGuests,
-      guestsArray: guests.length
+      guestsArray: guests.length,
+      deduplicatedGuests: deduplicatedGuests.length
     });
 
     if (!checkInDate || !checkOutDate) {
@@ -1037,14 +1116,21 @@ export const GuestVerification = () => {
       return;
     }
 
-    if (uploadedDocuments.length !== numberOfGuests) {
+    // ✅ CORRIGÉ : Utiliser deduplicatedGuests.length au lieu de numberOfGuests pour la validation
+    // car deduplicatedGuests est la source de vérité pour le rendu (évite les doubles formulaires)
+    const actualGuestCount = deduplicatedGuests.length;
+    
+    // ✅ VALIDATION : Vérifier que le nombre de documents correspond au nombre de guests dédupliqués
+    if (uploadedDocuments.length !== actualGuestCount) {
       console.log('❌ Document validation failed:', {
         uploadedCount: uploadedDocuments.length,
-        expectedCount: numberOfGuests
+        expectedCount: actualGuestCount,
+        numberOfGuests,
+        guestsRaw: guests.length
       });
       toast({
         title: t('validation.error.title'),
-        description: t('validation.exactDocs.desc', { count: numberOfGuests, s: numberOfGuests > 1 ? 's' : '' }),
+        description: t('validation.exactDocs.desc', { count: actualGuestCount, s: actualGuestCount > 1 ? 's' : '' }),
         variant: "destructive"
       });
       return;
@@ -1052,7 +1138,8 @@ export const GuestVerification = () => {
 
     console.log('✅ Document validation passed');
 
-    const incompleteGuests = guests.filter(guest => 
+    // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour la validation (évite les doubles formulaires)
+    const incompleteGuests = deduplicatedGuests.filter(guest => 
       !guest.fullName || !guest.dateOfBirth || !guest.nationality || !guest.documentNumber
     );
 
@@ -1067,8 +1154,9 @@ export const GuestVerification = () => {
 
     setIsLoading(true);
     try {
+      // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour éviter les doublons dans la soumission
       const guestData = {
-        guests: guests.map(guest => ({
+        guests: deduplicatedGuests.map(guest => ({
           ...guest,
           dateOfBirth: guest.dateOfBirth ? format(guest.dateOfBirth, 'yyyy-MM-dd') : null
         }))
@@ -1077,7 +1165,7 @@ export const GuestVerification = () => {
       const bookingData = {
         checkInDate: format(checkInDate, 'yyyy-MM-dd'),
         checkOutDate: format(checkOutDate, 'yyyy-MM-dd'),
-        numberOfGuests
+        numberOfGuests: deduplicatedGuests.length // ✅ CORRIGÉ : Utiliser le nombre réel de guests dédupliqués
       };
 
       // ✅ CORRIGÉ : SUPPRESSION DE L'UPLOAD MANUEL DUPLIQUÉ
@@ -1087,28 +1175,31 @@ export const GuestVerification = () => {
       console.log('🚀 Utilisation du workflow unifié (sans upload manuel préalable):', {
         token: token ? 'Présent' : 'Manquant',
         airbnbCode: airbnbBookingId,
-        guestCount: guests.length,
+        guestCount: deduplicatedGuests.length,
+        guestsRaw: guests.length,
         documentsCount: uploadedDocuments.length
       });
 
       // Convertir les données vers le format unifié
       // ✅ DEBUG: Log des données avant envoi
+      // ✅ CORRIGÉ : Utiliser deduplicatedGuests[0] au lieu de guests[0] pour éviter les doublons
+      const firstGuest = deduplicatedGuests[0];
       console.log('🔍 DEBUG - Données guest avant envoi:', {
-        guest: guests[0],
-        hasDateOfBirth: !!guests[0]?.dateOfBirth,
-        dateOfBirth: guests[0]?.dateOfBirth,
-        formattedDateOfBirth: guests[0]?.dateOfBirth ? format(guests[0].dateOfBirth, 'yyyy-MM-dd') : undefined
+        guest: firstGuest,
+        hasDateOfBirth: !!firstGuest?.dateOfBirth,
+        dateOfBirth: firstGuest?.dateOfBirth,
+        formattedDateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined
       });
 
       const guestInfo = {
-        firstName: guests[0]?.fullName?.split(' ')[0] || '',
-        lastName: guests[0]?.fullName?.split(' ').slice(1).join(' ') || '',
-        email: guests[0]?.email || '',
-        // phone: guests[0]?.phone || '', // ✅ CORRIGÉ : Retiré car non présent dans le type Guest
-        nationality: guests[0]?.nationality || '',
-        idType: guests[0]?.documentType || 'passport',
-        idNumber: guests[0]?.documentNumber || '',
-        dateOfBirth: guests[0]?.dateOfBirth ? format(guests[0].dateOfBirth, 'yyyy-MM-dd') : undefined
+        firstName: firstGuest?.fullName?.split(' ')[0] || '',
+        lastName: firstGuest?.fullName?.split(' ').slice(1).join(' ') || '',
+        email: firstGuest?.email || '',
+        // phone: firstGuest?.phone || '', // ✅ CORRIGÉ : Retiré car non présent dans le type Guest
+        nationality: firstGuest?.nationality || '',
+        idType: firstGuest?.documentType || 'passport',
+        idNumber: firstGuest?.documentNumber || '',
+        dateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined
       };
 
       // ✅ DEBUG: Log des données finales
@@ -1143,7 +1234,7 @@ export const GuestVerification = () => {
       // Utiliser le service unifié
       const { submitDocumentsUnified } = await import('@/services/documentServiceUnified');
       
-      // ✅ CORRIGÉ : Détecter si c'est un lien ICS direct avec paramètres d'URL
+      // ✅ CORRIGÉ : Utiliser le vrai airbnbCode pour les liens ICS directs afin de trouver la réservation existante
       let finalAirbnbCode = airbnbBookingId || 'INDEPENDENT_BOOKING';
       
       // Vérifier les paramètres d'URL pour détecter un lien ICS direct
@@ -1152,14 +1243,14 @@ export const GuestVerification = () => {
       const endDateParam = urlParams.get('endDate');
       const airbnbCodeParam = urlParams.get('airbnbCode');
       
-      // ✅ CORRIGÉ : Pour les liens ICS directs avec paramètres d'URL, utiliser INDEPENDENT_BOOKING
-      // pour que le serveur crée une nouvelle réservation au lieu de chercher une existante
+      // ✅ CORRIGÉ : Pour les liens ICS directs avec code Airbnb, utiliser le VRAI code
+      // pour que le serveur trouve la réservation ICS existante créée lors de la génération du lien
       if (startDateParam && endDateParam) {
         if (airbnbCodeParam) {
-          // Lien ICS direct avec code Airbnb dans l'URL - utiliser INDEPENDENT_BOOKING
-          // Le serveur créera une nouvelle réservation avec les dates et le code fournis
-          console.log('🔍 Lien ICS direct détecté via paramètres d\'URL, création de réservation indépendante');
-          finalAirbnbCode = 'INDEPENDENT_BOOKING';
+          // ✅ CORRIGÉ : Utiliser le vrai code Airbnb pour trouver la réservation ICS existante
+          // La réservation a été créée avec booking_reference = airbnbCode lors de la génération du lien
+          console.log('🔍 Lien ICS direct détecté via paramètres d\'URL, utilisation du code Airbnb réel:', airbnbCodeParam);
+          finalAirbnbCode = airbnbCodeParam; // ✅ Utiliser le vrai code au lieu de INDEPENDENT_BOOKING
         } else {
           // Lien ICS direct sans code - réservation indépendante
           console.log('🔍 Lien ICS direct détecté (sans code), création de réservation indépendante');
@@ -1167,7 +1258,8 @@ export const GuestVerification = () => {
         }
       } else if (!airbnbBookingId && checkInDate && checkOutDate) {
         // Si pas d'airbnbBookingId mais que les dates sont déjà définies, c'est probablement un lien ICS direct
-        console.log('🔍 Lien ICS direct détecté via dates pré-remplies, création de réservation indépendante');
+        // Mais sans code, on ne peut pas trouver la réservation existante
+        console.log('🔍 Lien ICS direct détecté via dates pré-remplies (sans code), création de réservation indépendante');
         finalAirbnbCode = 'INDEPENDENT_BOOKING';
       }
 
@@ -1263,90 +1355,23 @@ export const GuestVerification = () => {
       navigationInProgressRef.current = true;
       
       try {
-        // ✅ CORRIGÉ : Nettoyer agressivement TOUS les Portals avant la navigation
-        console.log('🧹 Nettoyage des Portals avant navigation...');
-        try {
-          // Nettoyer tous les Portals Radix UI
-          const portals = document.querySelectorAll('[data-radix-portal], [data-radix-popper-content-wrapper], [data-radix-select-content], [data-radix-popover-content]');
-          portals.forEach(portal => {
-            try {
-              if (portal.parentNode) {
-                portal.parentNode.removeChild(portal);
-              }
-            } catch (e) {
-              // Ignorer les erreurs de nettoyage
-            }
-          });
-          
-          // Nettoyer tous les overlays
-          const overlays = document.querySelectorAll('[data-radix-dialog-overlay], [data-radix-select-viewport]');
-          overlays.forEach(overlay => {
-            try {
-              if (overlay.parentNode) {
-                overlay.parentNode.removeChild(overlay);
-              }
-            } catch (e) {
-              // Ignorer les erreurs de nettoyage
-            }
-          });
-        } catch (e) {
-          console.debug('Erreur nettoyage Portals (non-bloquant):', e);
-        }
-        
-        // Vérifier que le composant est toujours monté
-        if (!isMountedRef.current) {
-          console.warn('⚠️ Composant démonté, navigation annulée');
-          return;
-        }
-        
-        // ✅ Attendre que les Portals soient complètement nettoyés
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        // Vérifier à nouveau que le composant est monté
-        if (!isMountedRef.current) {
-          console.warn('⚠️ Composant démonté pendant l\'attente, navigation annulée');
-          return;
-        }
-        
-        // ✅ CORRIGÉ : Retirer flushSync qui cause des erreurs Portal
-        // Au lieu de forcer la réconciliation, on attend simplement que React termine naturellement
-        // setIsLoading(false) sera appelé dans le finally block
+        // ✅ Navigation immédiate - Plus de Select Radix UI = plus besoin de fermeture de Portals
         setIsLoading(false);
         
-        // Attendre un tick supplémentaire pour que les Portals soient complètement nettoyés
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Vérifier une dernière fois avant la navigation
-        if (!isMountedRef.current) {
-          console.warn('⚠️ Composant démonté juste avant la navigation, annulée');
-          return;
-        }
-        
-        // Navigation sécurisée avec gestion d'erreur
+        // Navigation directe
         try {
           navigate(url, { 
             state: navigationState,
             replace: false // Permettre le retour en arrière
           });
+          console.log('✅ Navigation lancée avec succès');
         } catch (navError) {
-          // Si la navigation échoue, logger mais ne pas bloquer l'utilisateur
-          console.error('⚠️ Erreur lors de la navigation (non-bloquante):', navError);
-          // Réessayer la navigation après un court délai
-          setTimeout(() => {
-            if (isMountedRef.current && !navigationInProgressRef.current) {
-              try {
-                navigate(url, { state: navigationState });
-              } catch (retryError) {
-                console.error('❌ Erreur lors de la navigation de secours:', retryError);
-                // Afficher un message à l'utilisateur
+          console.error('❌ Erreur lors de la navigation:', navError);
                 toast({
-                  title: "Navigation",
-                  description: "Veuillez cliquer sur le bouton pour continuer vers la signature.",
-                  variant: "default"
+            title: "Erreur de navigation",
+            description: "Impossible d'accéder à la page de signature. Veuillez réessayer.",
+            variant: "destructive"
                 });
-              }
-            }
-          }, 200);
         }
       } catch (error) {
         // Erreur générale lors de la préparation de la navigation
@@ -1372,6 +1397,10 @@ export const GuestVerification = () => {
       // Réinitialiser le flag de navigation en cas d'erreur
       navigationInProgressRef.current = false;
     } finally {
+      // ✅ CORRIGÉ : Réinitialiser tous les flags de soumission
+      isSubmittingRef.current = false;
+      isProcessingRef.current = false;
+      
       // ✅ CORRIGÉ : setIsLoading(false) seulement si la navigation n'a pas réussi
       // (si navigation réussie, on ne sera plus dans ce composant)
       if (!navigationInProgressRef.current) {
@@ -1627,7 +1656,8 @@ export const GuestVerification = () => {
             </CardHeader>
             
             <CardContent className="p-8">
-              <ErrorBoundary>
+              {/* ✅ CORRIGÉ : Retirer ErrorBoundary car il causait des doubles rendus visuels */}
+              {/* L'intercepteur global d'erreurs window.onerror gère déjà les erreurs Portal */}
                 {/* ✅ CORRIGÉ : Retirer AnimatePresence pour éviter les conflits avec les Portals Radix UI */}
                 {/* Utiliser simplement des div conditionnelles avec des clés stables */}
                 {currentStep === 'booking' && (
@@ -1761,9 +1791,9 @@ export const GuestVerification = () => {
                         </div>
 
                         <div className="space-y-6">
-                          {guests.map((guest, index) => (
+                          {deduplicatedGuests.map((guest, index) => (
                             <div
-                              key={`guest-${index}-${guest.documentNumber || guest.fullName || index}`}
+                              key={`guest-form-${index}`}
                             >
                               <Card className="p-6 border-2 border-gray-100 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-xl bg-gradient-to-r from-white to-gray-50/50">
                                 <div className="flex items-center justify-between mb-6">
@@ -1773,7 +1803,7 @@ export const GuestVerification = () => {
                                     </div>
                                     {t('guest.clients.clientNumber', { number: index + 1 })}
                                   </h4>
-                                  {guests.length > 1 && (
+                                  {deduplicatedGuests.length > 1 && (
                                     <Button 
                                       onClick={() => removeGuest(index)} 
                                       variant="destructive" 
@@ -1829,58 +1859,32 @@ export const GuestVerification = () => {
                                     <Label className="text-sm font-medium text-gray-700">
                                       {t('guest.clients.nationality')} *
                                     </Label>
-                                    {uploadedDocuments.length > 0 && !guest.nationality ? (
-                                    <Select 
-                                      value={guest.nationality || ''} 
-                                      onValueChange={(value) => updateGuest(index, 'nationality', value)}
-                                      key={`nationality-${index}-${guest.documentNumber || index}`}
-                                    >
-                                      <SelectTrigger className="h-12 border-2 hover:border-primary/50">
-                                        <SelectValue placeholder="Sélectionner la nationalité" />
-                                      </SelectTrigger>
-                                      <SelectContent 
-                                        className="bg-card border border-border shadow-lg z-[100] max-h-60 overflow-y-auto" 
-                                        onCloseAutoFocus={(e) => e.preventDefault()}
-                                      >
-                                          {NATIONALITIES.map((nationality, idx) => (
-                                            nationality === '---' ? (
-                                              <div key={`divider-${idx}`} className="mx-2 my-1 border-t border-border"></div>
-                                            ) : (
-                                              <SelectItem key={`nationality-${nationality}-${idx}`} value={nationality}>
-                                                {nationality}
-                                              </SelectItem>
-                                            )
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    ) : (
                                       <EnhancedInput
                                         value={guest.nationality}
                                         onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
-                                        placeholder={uploadedDocuments.length === 0 ? "Uploadez d'abord votre document" : "Nationalité"}
-                                        disabled={uploadedDocuments.length === 0}
+                                      placeholder="Nationalité"
                                         validation={{ required: true }}
-                                      />
-                                    )}
+                                      list={`nationalities-list-${index}`}
+                                    />
+                                    <datalist id={`nationalities-list-${index}`}>
+                                      {NATIONALITIES.filter(n => n !== '---').map((nationality) => (
+                                        <option key={nationality} value={nationality} />
+                                      ))}
+                                    </datalist>
                                   </div>
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-medium text-gray-700">
                                       {t('guest.clients.documentType')} *
                                     </Label>
-                                    <Select 
+                                    <select
                                       value={guest.documentType} 
-                                      onValueChange={(value) => updateGuest(index, 'documentType', value)}
-                                      key={`document-type-${index}-${guest.documentNumber || index}`}
+                                      onChange={(e) => updateGuest(index, 'documentType', e.target.value)}
+                                      className="h-12 w-full border-2 rounded-md px-3 hover:border-primary/50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                                     >
-                                      <SelectTrigger className="h-12 border-2 hover:border-primary/50">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent className="z-[100]" onCloseAutoFocus={(e) => e.preventDefault()}>
-                                        <SelectItem value="passport">{t('guest.clients.passport')}</SelectItem>
-                                        <SelectItem value="national_id">{t('guest.clients.nationalId')}</SelectItem>
-                                      </SelectContent>
-                                    </Select>
+                                      <option value="passport">{t('guest.clients.passport')}</option>
+                                      <option value="national_id">{t('guest.clients.nationalId')}</option>
+                                    </select>
                                   </div>
                                   
                                   <EnhancedInput
@@ -1912,23 +1916,18 @@ export const GuestVerification = () => {
                                     <Label className="text-sm font-medium text-gray-700">
                                       Motif du séjour *
                                     </Label>
-                                    <Select 
+                                    <select
                                       value={guest.motifSejour || 'TOURISME'} 
-                                      onValueChange={(value) => updateGuest(index, 'motifSejour', value)}
-                                      key={`motif-sejour-${index}-${guest.documentNumber || index}`}
+                                      onChange={(e) => updateGuest(index, 'motifSejour', e.target.value)}
+                                      className="h-12 w-full border-2 rounded-md px-3 hover:border-primary/50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                                     >
-                                      <SelectTrigger className="h-12 border-2 hover:border-primary/50">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent className="z-[100]" onCloseAutoFocus={(e) => e.preventDefault()}>
-                                        <SelectItem value="TOURISME">Tourisme</SelectItem>
-                                        <SelectItem value="AFFAIRES">Affaires</SelectItem>
-                                        <SelectItem value="FAMILLE">Famille</SelectItem>
-                                        <SelectItem value="ÉTUDES">Études</SelectItem>
-                                        <SelectItem value="MÉDICAL">Médical</SelectItem>
-                                        <SelectItem value="AUTRE">Autre</SelectItem>
-                                      </SelectContent>
-                                    </Select>
+                                      <option value="TOURISME">Tourisme</option>
+                                      <option value="AFFAIRES">Affaires</option>
+                                      <option value="FAMILLE">Famille</option>
+                                      <option value="ÉTUDES">Études</option>
+                                      <option value="MÉDICAL">Médical</option>
+                                      <option value="AUTRE">Autre</option>
+                                    </select>
                                   </div>
                                   
                                   <EnhancedInput
@@ -1988,7 +1987,7 @@ export const GuestVerification = () => {
                       >
                         {isLoading ? (
                           <>
-                            <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                            <div className="w-5 h-5 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
                             {t('guest.cta.processing')}
                           </>
                         ) : (
@@ -2001,7 +2000,6 @@ export const GuestVerification = () => {
                     </div>
                   </div>
                 )}
-              </ErrorBoundary>
             </CardContent>
           </Card>
         </motion.div>

@@ -274,6 +274,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
               bookings={filteredBookings}
               onEditBooking={onEditBooking}
               propertyId={selectedProperty.id}
+              onRefreshBookings={refreshBookings}
             />
           )}
         </>

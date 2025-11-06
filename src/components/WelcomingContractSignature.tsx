@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -381,19 +381,15 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       canvas.width = 600;
       canvas.height = 250;
       
-      // ✅ CORRIGÉ : Utiliser willReadFrequently dans getContext, pas comme attribut
+      // ✅ CORRIGÉ : Utiliser willReadFrequently dans getContext
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) {
         console.error('❌ Cannot get canvas context');
         return;
       }
 
-      // Style de dessin
-      ctx.strokeStyle = '#1f2937';
-      ctx.lineWidth = 3;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.imageSmoothingEnabled = true;
+      // ✅ Utiliser la fonction centralisée pour configurer le contexte
+      configureCanvasContext(ctx);
       
       setCanvasInitialized(true);
       console.log('✅ Canvas ready via callback ref');
@@ -417,6 +413,15 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       }
     }
   }, [signature, currentStep]);
+
+  // ✅ NOUVEAU : Fonction pour configurer le contexte du canvas avec les bons styles
+  const configureCanvasContext = (ctx: CanvasRenderingContext2D) => {
+    ctx.strokeStyle = '#0891b2'; // Cyan moderne
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.imageSmoothingEnabled = true;
+  };
 
   const getMousePos = (canvas: HTMLCanvasElement, e: MouseEvent | TouchEvent) => {
     const rect = canvas.getBoundingClientRect();
@@ -445,9 +450,12 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     console.log('🖊️ Start drawing');
     setIsDrawing(true);
     
-    // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de dessin/lecture
+    // ✅ CORRIGÉ : Configurer le contexte À CHAQUE FOIS
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
+    
+    // ✅ CRITIQUE : Toujours reconfigurer le contexte pour éviter que les styles se perdent
+    configureCanvasContext(ctx);
     
     const pos = getMousePos(canvas, e.nativeEvent as MouseEvent | TouchEvent);
     ctx.beginPath();
@@ -460,9 +468,12 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de dessin
+    // ✅ CORRIGÉ : Configurer le contexte À CHAQUE FOIS pour éviter que la signature s'efface
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
+    
+    // ✅ CRITIQUE : Toujours reconfigurer le contexte
+    configureCanvasContext(ctx);
     
     const pos = getMousePos(canvas, e.nativeEvent as MouseEvent | TouchEvent);
     ctx.lineTo(pos.x, pos.y);
@@ -511,18 +522,15 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    // Simple but effective clear
-    canvas.width = canvas.width; // This resets the entire canvas
-    
-    // Reconfigure drawing context avec willReadFrequently
+    // ✅ CORRIGÉ : Effacer proprement sans réinitialiser tout le canvas
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     
-    ctx.imageSmoothingEnabled = true;
-    ctx.strokeStyle = '#1f2937';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    // Effacer le contenu sans réinitialiser les dimensions
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Reconfigurer le contexte avec les bons styles
+    configureCanvasContext(ctx);
     
     setSignature(null);
     console.log('✅ Signature cleared completely');
@@ -667,20 +675,33 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
       console.log('✅ Contract signature saved successfully:', signatureResult);
 
-      // Generate signed PDF and get URL (non-blocking, ne pas attendre)
+      // ✅ CORRIGÉ : Générer le contrat signé via Edge Function (non-blocking)
       Promise.resolve().then(async () => {
         try {
-          const { UnifiedDocumentService } = await import('@/services/unifiedDocumentService');
-          const signedAt = new Date().toISOString();
-          const contractResult = await UnifiedDocumentService.generateSignedContract({ id: bookingId } as any, signature, signedAt);
-          console.log('✅ Contrat signé généré avec succès:', contractResult);
+          console.log('📄 Génération du contrat signé pour booking:', bookingId);
           
-          // Récupérer l'URL du contrat signé
-          if (contractResult && contractResult.documentUrl && isMountedRef.current) {
-            setSignedContractUrl(contractResult.documentUrl);
-            console.log('📄 URL du contrat signé:', contractResult.documentUrl);
+          // Utiliser l'Edge Function directement pour générer le contrat signé
+          const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+            body: {
+              bookingId: bookingId,
+              action: 'generate_contract_only',
+              signature: {
+                data: signature,
+                timestamp: new Date().toISOString()
+              }
+            }
+          });
+
+          if (error) {
+            console.warn('⚠️ Erreur lors de la génération du contrat signé:', error);
+            return;
+          }
+
+          if (data?.success && data?.contractUrl && isMountedRef.current) {
+            setSignedContractUrl(data.contractUrl);
+            console.log('✅ Contrat signé généré avec succès:', data.contractUrl);
           } else {
-            console.warn('⚠️ Aucune URL de contrat signé retournée');
+            console.warn('⚠️ Aucune URL de contrat signé retournée dans la réponse');
           }
         } catch (generateError) {
           console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
@@ -806,16 +827,12 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
       <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
         <ErrorBoundary>
-          <AnimatePresence mode="wait" initial={false}>
+          {/* ✅ CORRIGÉ : Retirer AnimatePresence pour éviter les conflits avec Portals */}
           {/* Étape 1: Accueil chaleureux */}
           {currentStep === 'welcome' && (
-            <motion.div
+            <div
               key="welcome"
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -30 }}
-              transition={{ duration: 0.3 }}
-              className="text-center space-y-8"
+              className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300"
             >
               <motion.div
                 initial={{ scale: 0 }}
@@ -898,18 +915,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                   </Button>
                 </motion.div>
               </motion.div>
-            </motion.div>
+            </div>
           )}
 
           {/* Étape 2: Révision du contrat */}
           {currentStep === 'review' && (
-            <motion.div
+            <div
               key="review"
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -30 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-8"
+              className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300"
             >
               <div className="text-center space-y-4">
                 <div className="inline-flex items-center gap-3 px-6 py-3 bg-blue-100 rounded-full text-blue-800 font-medium">
@@ -997,18 +1010,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                   <Pen className="w-5 h-5 ml-2" />
                 </Button>
               </motion.div>
-            </motion.div>
+            </div>
           )}
 
           {/* Étape 3: Signature */}
           {currentStep === 'signature' && (
-            <motion.div
+            <div
               key="signature"
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -30 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-8"
+              className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300"
             >
               <div className="text-center space-y-4">
                 <div className="inline-flex items-center gap-3 px-6 py-3 bg-green-100 rounded-full text-green-800 font-medium">
@@ -1106,18 +1115,61 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                             </p>
                           </div>
 
-                          {/* Canvas container amélioré */}
+                          {/* ✨ Canvas container ultra-moderne avec animations */}
                           <div className="relative group">
+                            {/* Glow effect animé */}
                             <div className={`
-                              relative bg-gradient-to-br from-white to-gray-50 rounded-2xl 
-                              border-3 transition-all duration-300 shadow-inner
-                              ${signature ? 'border-green-300 shadow-green-100' : 'border-gray-300 group-hover:border-blue-400'}
+                              absolute inset-0 rounded-3xl transition-all duration-500
+                              ${signature ? 'bg-gradient-to-r from-green-400/20 via-emerald-400/20 to-teal-400/20 animate-pulse' : 'bg-gradient-to-r from-cyan-400/20 via-blue-400/20 to-indigo-400/20 group-hover:from-cyan-500/30 group-hover:via-blue-500/30 group-hover:to-indigo-500/30'}
+                              blur-xl
+                            `} />
+                            
+                            <div className={`
+                              relative bg-gradient-to-br from-white via-white to-cyan-50/30 rounded-3xl 
+                              border-3 transition-all duration-500 shadow-2xl
+                              ${signature 
+                                ? 'border-gradient-to-r border-green-400 shadow-green-200/50 ring-4 ring-green-100' 
+                                : 'border-gradient-to-r border-cyan-300 group-hover:border-cyan-400 group-hover:shadow-cyan-200/50 group-hover:ring-4 group-hover:ring-cyan-100/50'
+                              }
                             `}>
+                              {/* Badge "En cours de signature" animé */}
+                              {isDrawing && (
+                                <motion.div
+                                  initial={{ opacity: 0, scale: 0.8, y: -10 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  exit={{ opacity: 0, scale: 0.8 }}
+                                  className="absolute -top-4 right-4 z-10 bg-gradient-to-r from-cyan-500 to-blue-500 text-white px-4 py-1 rounded-full text-xs font-semibold shadow-lg flex items-center gap-2"
+                                >
+                                  <motion.div
+                                    animate={{ scale: [1, 1.2, 1] }}
+                                    transition={{ duration: 1, repeat: Infinity }}
+                                    className="w-2 h-2 bg-white rounded-full"
+                                  />
+                                  En cours de signature...
+                                </motion.div>
+                              )}
+                              
+                              {/* Badge "Signature complétée" */}
+                              {signature && !isDrawing && (
+                                <motion.div
+                                  initial={{ opacity: 0, scale: 0, y: -10 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                                  className="absolute -top-4 left-4 z-10 bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-1 rounded-full text-xs font-semibold shadow-lg flex items-center gap-2"
+                                >
+                                  <CheckCircle className="w-4 h-4" />
+                                  Signature validée !
+                                </motion.div>
+                              )}
+                              
                               <canvas
                                 ref={canvasCallbackRef}
                                 width={600}
                                 height={250}
-                                className="w-full h-full cursor-crosshair touch-none select-none rounded-2xl border border-blue-200"
+                                className={`
+                                  w-full h-full touch-none select-none rounded-3xl
+                                  transition-all duration-300
+                                  ${isDrawing ? 'cursor-grabbing' : 'cursor-crosshair'}
+                                `}
                                 style={{ 
                                   touchAction: 'none',
                                   WebkitTouchCallout: 'none',
@@ -1127,7 +1179,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                   minHeight: '200px',
                                   backgroundColor: 'white'
                                 }}
-                                // ✅ CORRIGÉ : willReadFrequently est passé dans getContext, pas comme attribut HTML
                                 onContextMenu={(e) => e.preventDefault()}
                                 onMouseDown={startDrawing}
                                 onMouseMove={draw}
@@ -1138,41 +1189,36 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                 onTouchEnd={stopDrawing}
                               />
                               
-                              {/* Guide lines for signature */}
-                              <div className="absolute inset-0 pointer-events-none rounded-2xl overflow-hidden">
-                                <div className="absolute bottom-1/3 left-4 right-4 h-px bg-gray-200"></div>
-                                <div className="absolute top-2 right-2 text-xs text-gray-400">Signature</div>
+                              {/* Guide lines élégantes pour signature */}
+                              <div className="absolute inset-0 pointer-events-none rounded-3xl overflow-hidden">
+                                <div className="absolute bottom-1/3 left-6 right-6 h-[2px] bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent"></div>
+                                <div className="absolute top-3 right-4 text-xs font-semibold text-cyan-600/70 flex items-center gap-1">
+                                  <Pen className="w-3 h-3" />
+                                  Signez ici
+                                </div>
                               </div>
 
                               {/* Indication interactive quand pas de signature */}
-                              {!signature && (
+                              {!signature && !isDrawing && (
                                 <motion.div 
-                                  initial={{ opacity: 0.7 }}
-                                  animate={{ opacity: [0.7, 1, 0.7] }}
+                                  initial={{ opacity: 0.6 }}
+                                  animate={{ opacity: [0.6, 1, 0.6] }}
                                   transition={{ duration: 3, repeat: Infinity }}
                                   className="absolute inset-0 flex items-center justify-center pointer-events-none"
                                 >
-                                  <div className="text-center text-gray-400">
+                                  <div className="text-center">
                                     <motion.div
-                                      animate={{ y: [0, -5, 0] }}
-                                      transition={{ duration: 2, repeat: Infinity }}
+                                      animate={{ 
+                                        y: [0, -8, 0],
+                                        rotate: [0, -5, 5, 0]
+                                      }}
+                                      transition={{ duration: 2.5, repeat: Infinity }}
                                     >
-                                      <Pen className="w-12 h-12 mx-auto mb-3 opacity-60" />
+                                      <Pen className="w-14 h-14 mx-auto mb-4 text-cyan-500/60" />
                                     </motion.div>
-                                    <p className="text-lg font-medium mb-1">Signez ici</p>
-                                    <p className="text-sm opacity-75">Cliquez et dessinez votre signature</p>
+                                    <p className="text-xl font-semibold text-cyan-600/80 mb-2">✨ Signez ici</p>
+                                    <p className="text-sm text-gray-500">Cliquez et dessinez votre signature</p>
                                   </div>
-                                </motion.div>
-                              )}
-
-                              {/* Feedback visuel pour signature présente */}
-                              {signature && (
-                                <motion.div
-                                  initial={{ opacity: 0, scale: 0.8 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  className="absolute top-3 right-3 bg-green-500 text-white rounded-full p-2 shadow-lg"
-                                >
-                                  <Check className="w-4 h-4" />
                                 </motion.div>
                               )}
                             </div>
@@ -1241,28 +1287,48 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                           
                           {signature && (
                             <motion.div 
-                              initial={{ opacity: 0, scale: 0.8 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              whileHover={{ scale: 1.02 }} 
-                              whileTap={{ scale: 0.98 }}
+                              initial={{ opacity: 0, scale: 0.8, x: -20 }}
+                              animate={{ opacity: 1, scale: 1, x: 0 }}
+                              exit={{ opacity: 0, scale: 0.8, x: -20 }}
+                              whileHover={{ scale: 1.05, rotate: -2 }} 
+                              whileTap={{ scale: 0.95 }}
+                              transition={{ type: "spring", stiffness: 400, damping: 17 }}
                             >
                               <Button 
                                 onClick={clearSignature}
                                 variant="outline"
                                 size="lg"
-                                className="px-6 py-4 rounded-xl border-2 border-orange-300 text-orange-700 hover:border-orange-400 hover:bg-orange-50 transition-all"
+                                className="
+                                  px-6 py-4 rounded-xl border-2 
+                                  bg-gradient-to-r from-orange-50 to-red-50
+                                  border-orange-400 text-orange-700 
+                                  hover:border-red-500 hover:from-orange-100 hover:to-red-100
+                                  hover:text-red-700 hover:shadow-lg hover:shadow-orange-200/50
+                                  transition-all duration-300
+                                  group relative overflow-hidden
+                                "
+                              >
+                                {/* Effet de brillance au survol */}
+                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
+                                
+                                <motion.div
+                                  animate={{ rotate: [0, -10, 10, 0] }}
+                                  transition={{ duration: 0.5, repeat: 0 }}
+                                  className="inline-block"
                               >
                                 <X className="w-5 h-5 mr-2" />
+                                </motion.div>
                                 Effacer
                               </Button>
                             </motion.div>
                           )}
                         </div>
 
-                        {/* Bouton principal */}
+                        {/* 🌟 Bouton principal ultra-moderne */}
                         <motion.div 
-                          whileHover={{ scale: 1.02 }} 
-                          whileTap={{ scale: 0.98 }}
+                          whileHover={signature && !isSubmitting ? { scale: 1.03, y: -2 } : {}} 
+                          whileTap={signature && !isSubmitting ? { scale: 0.97 } : {}}
+                          transition={{ type: "spring", stiffness: 400, damping: 17 }}
                           className="w-full"
                         >
                           <Button 
@@ -1270,13 +1336,62 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                             disabled={!signature || isSubmitting}
                             size="lg"
                             className={`
-                              w-full py-6 rounded-xl text-lg font-semibold transition-all duration-300 shadow-lg
+                              w-full py-6 rounded-2xl text-lg font-bold transition-all duration-300 
+                              relative overflow-hidden group
                               ${signature && !isSubmitting
-                                ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-green-200 hover:shadow-green-300'
-                                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                ? 'bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 hover:from-green-600 hover:via-emerald-600 hover:to-teal-600 text-white shadow-2xl shadow-green-300/50 hover:shadow-green-400/60 ring-4 ring-green-100 hover:ring-green-200'
+                                : 'bg-gray-200 text-gray-500 cursor-not-allowed opacity-60'
                               }
                             `}
                           >
+                            {/* Effet de brillance animé */}
+                            {signature && !isSubmitting && (
+                              <motion.div 
+                                animate={{ 
+                                  x: ['-200%', '200%'],
+                                }}
+                                transition={{ 
+                                  duration: 2, 
+                                  repeat: Infinity,
+                                  repeatDelay: 1
+                                }}
+                                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                              />
+                            )}
+                            
+                            {/* Particules flottantes */}
+                            {signature && !isSubmitting && (
+                              <>
+                                <motion.div
+                                  animate={{ 
+                                    y: [0, -100, 0],
+                                    opacity: [0, 1, 0],
+                                    scale: [0, 1, 0]
+                                  }}
+                                  transition={{ 
+                                    duration: 3, 
+                                    repeat: Infinity,
+                                    delay: 0
+                                  }}
+                                  className="absolute left-1/4 top-1/2 w-2 h-2 bg-white/50 rounded-full"
+                                />
+                                <motion.div
+                                  animate={{ 
+                                    y: [0, -100, 0],
+                                    opacity: [0, 1, 0],
+                                    scale: [0, 1, 0]
+                                  }}
+                                  transition={{ 
+                                    duration: 3, 
+                                    repeat: Infinity,
+                                    delay: 1
+                                  }}
+                                  className="absolute right-1/4 top-1/2 w-2 h-2 bg-white/50 rounded-full"
+                                />
+                              </>
+                            )}
+                            
+                            <span className="relative z-10 flex items-center justify-center gap-3">
                             {isSubmitting ? (
                               <>
                                 <motion.div
@@ -1292,19 +1407,26 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                               <>
                                 <motion.div
                                   initial={{ scale: 0 }}
-                                  animate={{ scale: 1 }}
-                                  className="mr-3"
+                                  animate={{ scale: [1, 1.2, 1] }}
+                                  transition={{ duration: 0.5 }}
                                 >
                                   <CheckCircle className="w-6 h-6" />
                                 </motion.div>
-                                Signer le contrat maintenant
+                                ✨ Signer le contrat maintenant
+                                <motion.div
+                                  animate={{ x: [0, 5, 0] }}
+                                  transition={{ duration: 1.5, repeat: Infinity }}
+                                >
+                                  <ArrowRight className="w-6 h-6 ml-2" />
+                                </motion.div>
                               </>
                             ) : (
                               <>
-                                <Pen className="w-6 h-6 mr-3 opacity-50" />
+                                <Pen className="w-6 h-6 opacity-50" />
                                 Dessinez votre signature d'abord
                               </>
                             )}
+                            </span>
                           </Button>
                         </motion.div>
 
@@ -1377,7 +1499,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                   )}
                 </CardContent>
               </Card>
-            </motion.div>
+            </div>
           )}
 
           {/* Étape 4: Célébration */}
@@ -1459,7 +1581,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                             onClick={() => {
                               const link = document.createElement('a');
                               link.href = signedContractUrl;
-                              link.download = `contrat-signe-${bookingId}.pdf`;
+                              const bookingId = getBookingId();
+                              link.download = `contrat-signe-${bookingId || 'contrat'}.pdf`;
                               link.click();
                             }}
                             variant="outline"
@@ -1491,9 +1614,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 <motion.span animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>❤️</motion.span>
                 <motion.span animate={{ rotate: [0, -10, 10, 0] }} transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}>🏠</motion.span>
               </motion.div>
-            </motion.div>
+              </motion.div>
           )}
-          </AnimatePresence>
         </ErrorBoundary>
       </div>
     </div>

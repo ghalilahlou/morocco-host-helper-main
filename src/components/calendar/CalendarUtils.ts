@@ -369,14 +369,25 @@ export const detectBookingConflicts = (
   airbnbReservations?: (Booking | AirbnbReservation)[]
 ): string[] => {
   const conflicts: string[] = [];
-  const allReservations: Array<{id: string, start: Date, end: Date}> = [];
+  // ✅ CORRIGÉ : Ajouter bookingReference et status pour détecter les réservations ICS non validées
+  const allReservations: Array<{
+    id: string, 
+    start: Date, 
+    end: Date, 
+    bookingReference?: string,
+    status?: string,
+    hasGuests?: boolean
+  }> = [];
   
   // Ajouter toutes les réservations manuelles
   bookings.forEach(booking => {
     allReservations.push({
       id: booking.id,
       start: new Date(booking.checkInDate),
-      end: new Date(booking.checkOutDate)
+      end: new Date(booking.checkOutDate),
+      bookingReference: booking.bookingReference,
+      status: booking.status,
+      hasGuests: booking.guests && booking.guests.length > 0 && booking.guests.some(g => g.fullName && g.fullName.trim() !== '')
     });
   });
   
@@ -389,7 +400,21 @@ export const detectBookingConflicts = (
         allReservations.push({
           id: reservation.id,
           start: new Date(airbnb.startDate),
-          end: new Date(airbnb.endDate)
+          end: new Date(airbnb.endDate),
+          bookingReference: airbnb.airbnbBookingId,
+          status: 'pending', // Les réservations Airbnb sont toujours pending
+          hasGuests: false // Les réservations Airbnb n'ont pas de guests
+        });
+      } else {
+        // C'est un Booking transformé
+        const booking = reservation as Booking;
+        allReservations.push({
+          id: booking.id,
+          start: new Date(booking.checkInDate),
+          end: new Date(booking.checkOutDate),
+          bookingReference: booking.bookingReference,
+          status: booking.status,
+          hasGuests: booking.guests && booking.guests.length > 0 && booking.guests.some(g => g.fullName && g.fullName.trim() !== '')
         });
       }
     });
@@ -402,6 +427,19 @@ export const detectBookingConflicts = (
       const res1 = allReservations[i];
       const res2 = allReservations[j];
       
+      // ✅ CORRIGÉ : Ignorer les conflits entre réservations avec le même booking_reference
+      // C'est la même réservation ICS (une dans airbnb_reservations, une dans bookings)
+      const sameReference = res1.bookingReference && 
+                            res2.bookingReference && 
+                            res1.bookingReference === res2.bookingReference &&
+                            res1.bookingReference !== 'INDEPENDENT_BOOKING';
+      
+      if (sameReference) {
+        // ✅ C'est la même réservation ICS : une dans airbnb_reservations (pending) et une dans bookings (validée)
+        // Ignorer ce conflit car c'est la même réservation à différents stades
+        continue; // Ignorer ce conflit, c'est la même réservation
+      }
+      
       // Normaliser les dates (midnight local pour éviter les problèmes de timezone)
       const start1 = new Date(res1.start.getFullYear(), res1.start.getMonth(), res1.start.getDate());
       const end1 = new Date(res1.end.getFullYear(), res1.end.getMonth(), res1.end.getDate());
@@ -412,9 +450,47 @@ export const detectBookingConflicts = (
       const overlaps = start1 < end2 && start2 < end1;
       
       if (overlaps) {
-        console.log('⚠️ CONFLIT DÉTECTÉ:', {
-          res1: { id: res1.id, start: start1.toISOString().split('T')[0], end: end1.toISOString().split('T')[0] },
-          res2: { id: res2.id, start: start2.toISOString().split('T')[0], end: end2.toISOString().split('T')[0] }
+        // ✅ NOUVEAU : Un conflit n'est valide QUE SI les DEUX réservations sont "enregistrées"
+        // Une réservation est "enregistrée" si elle a des guests (documents d'identité + contrat + police)
+        const res1IsValidated = res1.hasGuests === true;
+        const res2IsValidated = res2.hasGuests === true;
+        
+        // ✅ CRITIQUE : Ignorer les conflits si au moins UNE des réservations n'est pas validée
+        // Cela empêche les réservations ICS (pending, sans guests) d'être marquées en rouge
+        if (!res1IsValidated || !res2IsValidated) {
+          console.log('ℹ️ Chevauchement ignoré (réservation(s) non validée(s)):', {
+            res1: { 
+              id: res1.id, 
+              reference: res1.bookingReference,
+              validated: res1IsValidated
+            },
+            res2: { 
+              id: res2.id, 
+              reference: res2.bookingReference,
+              validated: res2IsValidated
+            }
+          });
+          continue; // Ignorer ce conflit, au moins une réservation n'est pas validée
+        }
+        
+        // ✅ Si on arrive ici, les DEUX réservations sont validées ET se chevauchent = VRAI CONFLIT
+        console.log('🚨 VRAI CONFLIT (2 réservations validées qui se chevauchent):', {
+          res1: { 
+            id: res1.id, 
+            start: start1.toISOString().split('T')[0], 
+            end: end1.toISOString().split('T')[0],
+            reference: res1.bookingReference,
+            status: res1.status,
+            validated: res1IsValidated
+          },
+          res2: { 
+            id: res2.id, 
+            start: start2.toISOString().split('T')[0], 
+            end: end2.toISOString().split('T')[0],
+            reference: res2.bookingReference,
+            status: res2.status,
+            validated: res2IsValidated
+          }
         });
         
         if (!conflicts.includes(res1.id)) {
@@ -427,9 +503,22 @@ export const detectBookingConflicts = (
     }
   }
   
+  // ✅ CORRIGÉ : Logger seulement si c'est un nouveau conflit ou si le nombre a changé
+  // (Utiliser un Set pour éviter les doublons dans les logs)
   if (conflicts.length > 0) {
+    // Logger seulement une fois par session pour éviter le spam
+    const conflictKey = conflicts.sort().join(',');
+    if (!(window as any).__lastConflictKey || (window as any).__lastConflictKey !== conflictKey) {
     console.log('✅ Total conflits détectés:', conflicts.length, conflicts);
+      (window as any).__lastConflictKey = conflictKey;
+    }
+  } else {
+    // Réinitialiser si plus de conflits
+    if ((window as any).__lastConflictKey) {
+      delete (window as any).__lastConflictKey;
+    }
   }
+  
   return conflicts;
 };
 

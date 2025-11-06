@@ -224,7 +224,79 @@ serve(async (req) => {
       }
     }
 
+    // ✅ NOUVEAU : Vérifier d'abord si un token actif récent existe déjà (idempotence)
+    // Cela évite de créer des tokens en double si la fonction est appelée deux fois
+    console.log('🔍 Vérification d\'un token existant récent...');
+    let existingActiveToken = null;
+    let hasAirbnbCode = false;
+    try {
+      // Préparer la vérification du code Airbnb
+      const candidate = normalizeCode(airbnbCode || '');
+      hasAirbnbCode = isAirbnbCode(candidate);
+      
+      // Si un code Airbnb est fourni, vérifier par code (priorité)
+      if (hasAirbnbCode) {
+        const { data: tokenWithCode } = await server
+          .from('property_verification_tokens')
+          .select('id, token, expires_at, created_at, metadata')
+          .eq('property_id', propertyId)
+          .eq('is_active', true)
+          .eq('airbnb_confirmation_code', candidate)
+          .gte('expires_at', new Date().toISOString())
+          .maybeSingle();
+        
+        if (tokenWithCode) {
+          existingActiveToken = tokenWithCode;
+        }
+      } else {
+        // Sinon, vérifier par booking_id ou property_id seul
+        const tokenQuery = server
+          .from('property_verification_tokens')
+          .select('id, token, expires_at, created_at, metadata')
+          .eq('property_id', propertyId)
+          .eq('is_active', true)
+          .gte('expires_at', new Date().toISOString()); // Seulement les tokens non expirés
+        
+        // Si un bookingId est fourni, vérifier aussi par booking_id
+        if (finalBookingId) {
+          tokenQuery.eq('booking_id', finalBookingId);
+        }
+        
+        const { data: tokenResult } = await tokenQuery.maybeSingle();
+        if (tokenResult) {
+          existingActiveToken = tokenResult;
+        }
+      }
+      
+      // Si un token actif existe et a été créé il y a moins de 5 secondes, le réutiliser (idempotence)
+      if (existingActiveToken) {
+        const tokenAge = Date.now() - new Date(existingActiveToken.created_at).getTime();
+        if (tokenAge < 5000) { // 5 secondes
+          console.log('✅ Token actif récent trouvé (idempotence), réutilisation:', existingActiveToken.id);
+          const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'http://localhost:3000';
+          const guestLink = `${baseUrl}/verify/${existingActiveToken.token}`;
+          
+          return new Response(JSON.stringify({
+            success: true,
+            token: existingActiveToken.token,
+            url: guestLink,
+            expiresAt: existingActiveToken.expires_at,
+            propertyId,
+            bookingId: finalBookingId,
+            requiresCode: hasAirbnbCode
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+      }
+    } catch (idempotencyCheckError) {
+      console.warn('⚠️ Erreur lors de la vérification d\'idempotence (continuera):', idempotencyCheckError);
+      // Continue avec la création d'un nouveau token
+    }
+
     // ✅ CORRECTION : Désactiver tous les tokens actifs existants pour cette propriété
+    // (sauf si on vient de trouver un token récent à réutiliser)
     console.log('🔄 Désactivation des tokens existants pour cette propriété...');
     try {
       const { error: deactivateError } = await server
@@ -309,28 +381,61 @@ serve(async (req) => {
           } else {
             // Créer une nouvelle réservation
             console.log('🆕 Création nouvelle réservation ICS');
-            const { data: newBooking, error: createError } = await server
+            
+            // ✅ PROTECTION : Dernière vérification avant insertion pour éviter les doublons
+            const { data: lastCheckBooking } = await server
               .from('bookings')
-              .insert({
-                property_id: propertyId,
-                check_in_date: checkInDate,
-                check_out_date: checkOutDate,
-                guest_name: reservationData.guestName || 'Guest',
-                number_of_guests: reservationData.numberOfGuests || 1,
-                booking_reference: reservationData.airbnbCode,
-                status: 'pending',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              })
-              .select('id')
-              .single();
+              .select('id, status')
+              .eq('property_id', propertyId)
+              .eq('booking_reference', reservationData.airbnbCode)
+              .maybeSingle();
+            
+            if (lastCheckBooking) {
+              // Une réservation a été créée entre-temps (race condition), la réutiliser
+              console.log('⚠️ Réservation trouvée lors de la dernière vérification (race condition évitée):', lastCheckBooking.id);
+              bookingId = lastCheckBooking.id;
+            } else {
+              const { data: newBooking, error: createError } = await server
+                .from('bookings')
+                .insert({
+                  property_id: propertyId,
+                  check_in_date: checkInDate,
+                  check_out_date: checkOutDate,
+                  guest_name: reservationData.guestName || 'Guest',
+                  number_of_guests: reservationData.numberOfGuests || 1,
+                  booking_reference: reservationData.airbnbCode,
+                  status: 'pending',
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                })
+                .select('id')
+                .single();
 
-            if (createError) {
-              console.error('❌ Erreur création réservation:', createError);
-              throw new Error(`Erreur création réservation: ${createError.message}`);
+              if (createError) {
+                // Si c'est une erreur de contrainte unique (doublon), récupérer la réservation existante
+                if (createError.code === '23505' || createError.message?.includes('unique') || createError.message?.includes('duplicate')) {
+                  console.log('⚠️ Contrainte unique violée, récupération de la réservation existante...');
+                  const { data: existingBookingAfterError } = await server
+                    .from('bookings')
+                    .select('id')
+                    .eq('property_id', propertyId)
+                    .eq('booking_reference', reservationData.airbnbCode)
+                    .maybeSingle();
+                  
+                  if (existingBookingAfterError) {
+                    bookingId = existingBookingAfterError.id;
+                    console.log('✅ Réservation existante récupérée:', bookingId);
+                  } else {
+                    throw new Error(`Erreur création réservation: ${createError.message}`);
+                  }
+                } else {
+                  console.error('❌ Erreur création réservation:', createError);
+                  throw new Error(`Erreur création réservation: ${createError.message}`);
+                }
+              } else {
+                bookingId = newBooking.id;
+              }
             }
-
-            bookingId = newBooking.id;
           }
           
           console.log('✅ Réservation ICS créée/mise à jour avec ID:', bookingId);
@@ -507,20 +612,30 @@ serve(async (req) => {
       });
     }
 
-    // ✅ NOUVEAU : Incrémenter le compteur de réservations
+    // ✅ NOUVEAU : Incrémenter le compteur de réservations (seulement si la fonction existe)
     console.log('📊 Incrémentation du compteur de réservations...');
     try {
       const { error: incrementError } = await server.rpc('increment_reservation_count', {
         property_uuid: propertyId
       });
       if (incrementError) {
-        console.error('⚠️ Erreur lors de l\'incrémentation du compteur:', incrementError);
+        // Vérifier si c'est une erreur PGRST202 (fonction non trouvée) - ignorer silencieusement
+        if (incrementError.code === 'PGRST202' || incrementError.message?.includes('not found')) {
+          console.log('ℹ️ Fonction increment_reservation_count non disponible (ignoré)');
+        } else {
+          console.error('⚠️ Erreur lors de l\'incrémentation du compteur:', incrementError);
+        }
         // Don't fail token creation for this error
       } else {
         console.log('✅ Compteur de réservations incrémenté');
       }
     } catch (incrementError) {
-      console.error('❌ Unexpected error during counter increment:', incrementError);
+      // Ignorer silencieusement si la fonction n'existe pas
+      if (incrementError?.code === 'PGRST202' || incrementError?.message?.includes('not found')) {
+        console.log('ℹ️ Fonction increment_reservation_count non disponible (ignoré)');
+      } else {
+        console.error('❌ Unexpected error during counter increment:', incrementError);
+      }
       // Don't fail token creation for this error
     }
 

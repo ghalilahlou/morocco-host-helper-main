@@ -31,6 +31,7 @@ interface CalendarViewProps {
   bookings: EnrichedBooking[];
   onEditBooking: (booking: Booking) => void;
   propertyId?: string; // Added to fetch Airbnb reservations
+  onRefreshBookings?: () => void; // ✅ NOUVEAU : Callback pour rafraîchir les bookings
 }
 
 // 🚀 OPTIMISATION: Cache intelligent avec TTL et limite de taille
@@ -90,8 +91,16 @@ class AirbnbCache {
 
 const airbnbCache = new AirbnbCache();
 
-export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: CalendarViewProps) => {
+export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefreshBookings }: CalendarViewProps) => {
   const navigate = useNavigate();
+  
+  // ✅ CORRIGÉ : Utiliser useRef pour capturer bookings sans causer de re-renders
+  const bookingsRef = useRef(bookings);
+  
+  // Mettre à jour la référence à chaque fois que bookings change
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedBooking, setSelectedBooking] = useState<EnrichedBooking | null>(null);
   const [selectedAirbnbReservation, setSelectedAirbnbReservation] = useState<AirbnbReservation | null>(null);
@@ -162,9 +171,18 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
   }, [autoRefreshEnabled, isOnline, refreshInterval, propertyId, handleAutoRefresh]);
   */
 
+  // ✅ PROTECTION : Garder une trace des chargements en cours
+  const isLoadingRef = useRef(false);
+
   // Optimized load function with caching and debug logging
   const loadAirbnbReservations = useCallback(async () => {
     if (!propertyId) return;
+    
+    // ✅ PROTECTION : Empêcher les appels multiples simultanés
+    if (isLoadingRef.current) {
+      console.log('⏳ loadAirbnbReservations déjà en cours, appel ignoré');
+      return;
+    }
     
     // Check cache first
     const cached = airbnbCache.get(propertyId);
@@ -173,6 +191,8 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
       // ✅ Cache hit - pas de rechargement nécessaire
       return;
     }
+    
+    isLoadingRef.current = true;
     
     try {
       // Get current month range for calendar events
@@ -217,9 +237,11 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
       
       // ✅ NOUVEAU : Enrichir les réservations Airbnb avec les données de bookings
       // Cela permet d'avoir les noms validés même si calendarData.ts n'a pas pu les trouver
+      // ✅ CORRIGÉ : Utiliser bookingsRef pour éviter les dépendances dans useCallback
+      const currentBookings = bookingsRef.current; // Utiliser la référence actuelle
       const enrichedReservations = await Promise.all(formattedReservations.map(async (reservation) => {
         // Chercher une réservation correspondante dans bookings enrichis
-        const matchingBooking = bookings.find(b => {
+        const matchingBooking = currentBookings.find(b => {
           const bookingStart = new Date(b.checkInDate);
           const bookingEnd = new Date(b.checkOutDate);
           const airbnbStart = reservation.startDate;
@@ -284,8 +306,11 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId }: Calen
       }
     } catch (error) {
       console.error('Error loading Airbnb reservations:', error);
+    } finally {
+      // ✅ IMPORTANT : Réinitialiser le flag après le chargement
+      isLoadingRef.current = false;
     }
-  }, [propertyId, currentDate, debugMode]);
+  }, [propertyId, currentDate, debugMode]); // ✅ Ne pas inclure bookings pour éviter les re-renders, on utilise bookingsRef
 
   // Charger les réservations et le statut au chargement
   useEffect(() => {
@@ -326,16 +351,27 @@ const handleAutoRefresh = useCallback(async () => {
   }
 }, [isRefreshing, isOnline, loadAirbnbReservations]);
 
-// ✅ NOUVEAU : Fonction de rafraîchissement manuel
+// ✅ CORRIGÉ : Fonction de rafraîchissement manuel - UNIFIÉE avec la logique de sync
+// Rafraîchit à la fois les bookings ET les airbnbReservations pour éviter les faux conflits
 const handleManualRefresh = useCallback(async () => {
   if (isRefreshing) return;
   
   setIsRefreshing(true);
   try {
-    // Nettoyer le cache pour forcer le rechargement
+    // ✅ ÉTAPE 1 : Rafraîchir les bookings D'ABORD (si callback fourni)
+    // Cela garantit que les bookings sont à jour avant de détecter les conflits
+    if (onRefreshBookings) {
+      console.log('🔄 Rafraîchissement des bookings...');
+      await onRefreshBookings();
+      // Attendre un court instant pour que les subscriptions se mettent à jour
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    // ✅ ÉTAPE 2 : Nettoyer le cache et recharger les réservations Airbnb
     airbnbCache.clear();
     await loadAirbnbReservations();
     setLastRefresh(new Date());
+    
     toast({
       title: "Calendrier mis à jour",
       description: "Les données ont été rafraîchies avec succès",
@@ -350,7 +386,7 @@ const handleManualRefresh = useCallback(async () => {
   } finally {
     setIsRefreshing(false);
   }
-}, [isRefreshing, loadAirbnbReservations, toast]);
+}, [isRefreshing, loadAirbnbReservations, onRefreshBookings, toast]);
 
 // ✅ CORRIGÉ : Real-time subscription avec debounce et throttle pour éviter les rechargements excessifs
   const reloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -458,21 +494,19 @@ const handleManualRefresh = useCallback(async () => {
           });
         }
         
-        // Reload reservations
-        const updatedReservations = await AirbnbEdgeFunctionService.getReservations(propertyId);
-        const formattedReservations = updatedReservations.map(r => ({
-          id: r.id,
-          summary: r.summary,
-          startDate: new Date(r.start_date),
-          endDate: new Date(r.end_date),
-          description: r.description || '',
-          guestName: r.guest_name || undefined,
-          numberOfGuests: r.number_of_guests || undefined,
-          airbnbBookingId: r.airbnb_booking_id,
-          rawEvent: (r.raw_event_data as any)?.rawEvent || '',
-          source: 'airbnb' as any
-        }));
-        setAirbnbReservations(formattedReservations);
+        // ✅ CORRIGÉ : Rafraîchir les bookings D'ABORD (comme dans handleManualRefresh)
+        // Cela garantit que les bookings sont synchronisés avec les nouvelles réservations ICS
+        if (onRefreshBookings) {
+          console.log('🔄 Rafraîchissement des bookings après sync...');
+          await onRefreshBookings();
+          // Attendre un court instant pour que les subscriptions se mettent à jour
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        // ✅ ÉTAPE 2 : Recharger les réservations Airbnb (utiliser loadAirbnbReservations pour la cohérence)
+        airbnbCache.clear();
+        await loadAirbnbReservations();
+        
         setSyncStatus('success');
         setLastSyncDate(new Date());
       } else {
@@ -514,9 +548,17 @@ const handleOpenConfig = useCallback(() => {
     const allReservationsForConflictDetection = [...bookings, ...airbnbReservations];
     const detectedConflicts = detectBookingConflicts(bookings, allReservationsForConflictDetection);
     
-    // ✅ AFFICHAGE : Logger les conflits pour l'utilisateur
+    // ✅ CORRIGÉ : Logger les conflits seulement si le nombre a changé (éviter le spam)
+    const conflictKey = `${detectedConflicts.length}-${detectedConflicts.sort().join(',')}`;
     if (detectedConflicts.length > 0) {
+      if (!(window as any).__lastConflictLogKey || (window as any).__lastConflictLogKey !== conflictKey) {
       console.warn(`⚠️ ${detectedConflicts.length} conflit(s) de réservation détecté(s) dans le calendrier`);
+        (window as any).__lastConflictLogKey = conflictKey;
+      }
+    } else {
+      if ((window as any).__lastConflictLogKey) {
+        delete (window as any).__lastConflictLogKey;
+      }
     }
     
     return detectedConflicts;

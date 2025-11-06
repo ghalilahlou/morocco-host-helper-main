@@ -38,6 +38,8 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // ✅ CORRIGÉ : Protection contre les appels multiples
+  const isProcessingRef = useRef(false);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -56,16 +58,52 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
     e.stopPropagation();
     setIsDragOver(false);
     
+    // ✅ CORRIGÉ : Protection contre les appels multiples
+    if (isProcessingRef.current) {
+      console.warn('⚠️ Upload déjà en cours, drop ignoré');
+      return;
+    }
+    
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      onFilesUploaded(files);
+      isProcessingRef.current = true;
+      setIsProcessing(true);
+      try {
+        onFilesUploaded(files);
+      } finally {
+        // Réinitialiser après un court délai pour permettre le traitement
+        setTimeout(() => {
+          isProcessingRef.current = false;
+          setIsProcessing(false);
+        }, 1000);
+      }
     }
   }, [onFilesUploaded]);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    // ✅ CORRIGÉ : Protection contre les appels multiples
+    if (isProcessingRef.current) {
+      console.warn('⚠️ Upload déjà en cours, sélection ignorée');
+      // Reset input quand même
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      return;
+    }
+    
     const files = e.target.files;
     if (files && files.length > 0) {
-      onFilesUploaded(files);
+      isProcessingRef.current = true;
+      setIsProcessing(true);
+      try {
+        onFilesUploaded(files);
+      } finally {
+        // Réinitialiser après un court délai pour permettre le traitement
+        setTimeout(() => {
+          isProcessingRef.current = false;
+          setIsProcessing(false);
+        }, 1000);
+      }
     }
     // Reset input
     if (fileInputRef.current) {

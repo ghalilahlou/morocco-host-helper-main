@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { Loader2, Key, CheckCircle, XCircle } from 'lucide-react';
 
 interface BookingPasswordModalProps {
@@ -27,6 +27,7 @@ export const BookingPasswordModal = ({
   propertyId,
   onSuccess
 }: BookingPasswordModalProps) => {
+  const { toast } = useToast(); // ✅ Utiliser le hook
   const [password, setPassword] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<{

@@ -247,11 +247,20 @@ export const useGuestVerification = () => {
           endDate = new Date(reservationData.endDate).toISOString().split('T')[0];
           
           // ✅ NOUVEAU : Nettoyer le nom du guest avant de l'inclure dans l'URL
+          // ⚠️ IMPORTANT : Ne pas inclure guestName dans l'URL si vide pour éviter le double formulaire
           const cleanGuestName = cleanGuestNameForUrl(reservationData.guestName || '');
-          const guestName = encodeURIComponent(cleanGuestName);
           const numberOfGuests = reservationData.numberOfGuests || 1;
           
-          clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?startDate=${startDate}&endDate=${endDate}&guestName=${guestName}&guests=${numberOfGuests}&airbnbCode=${reservationData.airbnbCode}`;
+          // Construire l'URL avec ou sans guestName selon s'il est valide
+          let urlParams = `startDate=${startDate}&endDate=${endDate}&guests=${numberOfGuests}&airbnbCode=${reservationData.airbnbCode}`;
+          
+          // ✅ CORRIGÉ : Ne pas ajouter guestName si vide pour éviter les problèmes de double formulaire
+          if (cleanGuestName && cleanGuestName.trim() !== '') {
+            const guestName = encodeURIComponent(cleanGuestName);
+            urlParams += `&guestName=${guestName}`;
+          }
+          
+          clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?${urlParams}`;
         } else {
           clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
         }

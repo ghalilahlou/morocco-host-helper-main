@@ -376,6 +376,18 @@ export const useBookings = () => {
     try {
       console.log('🗑️ Starting deletion of booking:', id);
       
+      // Step 0: Récupérer les informations de la réservation avant suppression
+      // (notamment booking_reference pour nettoyer airbnb_reservations)
+      const { data: bookingData, error: fetchError } = await supabase
+        .from('bookings')
+        .select('id, property_id, booking_reference')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.warn('⚠️ Warning: Could not fetch booking data:', fetchError);
+      }
+
       // Step 1: Delete related guest submissions first
       const { error: guestSubmissionsError } = await supabase
         .from('guest_submissions')
@@ -413,7 +425,32 @@ export const useBookings = () => {
         console.log('✅ Uploaded documents deleted successfully');
       }
 
-      // Step 4: Now delete the booking
+      // Step 4: Nettoyer le guest_name dans airbnb_reservations si la réservation a un booking_reference
+      if (bookingData?.booking_reference && bookingData.booking_reference !== 'INDEPENDENT_BOOKING' && bookingData.property_id) {
+        console.log('🔄 Nettoyage du guest_name dans airbnb_reservations...', {
+          propertyId: bookingData.property_id,
+          bookingReference: bookingData.booking_reference
+        });
+        
+        const { error: airbnbUpdateError } = await supabase
+          .from('airbnb_reservations')
+          .update({
+            guest_name: null,
+            summary: bookingData.booking_reference, // Réinitialiser le summary sans le nom
+            updated_at: new Date().toISOString()
+          })
+          .eq('property_id', bookingData.property_id)
+          .eq('airbnb_booking_id', bookingData.booking_reference);
+
+        if (airbnbUpdateError) {
+          console.warn('⚠️ Warning: Could not clean guest_name in airbnb_reservations:', airbnbUpdateError);
+          // Continue with deletion even if airbnb_reservations update fails
+        } else {
+          console.log('✅ guest_name nettoyé dans airbnb_reservations');
+        }
+      }
+
+      // Step 5: Now delete the booking
       const { error } = await supabase
         .from('bookings')
         .delete()
@@ -425,6 +462,46 @@ export const useBookings = () => {
       }
 
       console.log('✅ Booking deleted successfully');
+      
+      // ✅ CORRIGÉ : Fermer tous les Portals Radix UI avant de recharger les bookings
+      // Cela évite les erreurs Portal lors du re-render
+      const closeAllRadixPortals = () => {
+        // Méthode 1: Fermer via les attributs data-state
+        const openElements = document.querySelectorAll('[data-state="open"]');
+        openElements.forEach(element => {
+          if (element instanceof HTMLElement) {
+            element.setAttribute('data-state', 'closed');
+          }
+        });
+        
+        // Méthode 2: Simuler un clic sur document.body pour fermer les Portals
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+        document.body.dispatchEvent(clickEvent);
+        
+        // Méthode 3: Fermer les Portals directement via querySelector
+        const portals = document.querySelectorAll('[data-radix-portal]');
+        portals.forEach(portal => {
+          if (portal.parentNode) {
+            try {
+              portal.parentNode.removeChild(portal);
+            } catch (e) {
+              // Ignorer les erreurs de suppression
+            }
+          }
+        });
+      };
+      
+      closeAllRadixPortals();
+      
+      // Attendre que React nettoie les Portals avant de recharger
+      await new Promise(resolve => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve(undefined);
+          });
+        });
+      });
+      
       await loadBookings();
     } catch (error) {
       console.error('❌ Error in deleteBooking:', error);

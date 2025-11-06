@@ -68,7 +68,16 @@ export const ContractSigning: React.FC = () => {
             contractUrl: navigationState.contractUrl,
             policeUrl: navigationState.policeUrl,
             guestData: navigationState.guestData,
-            booking_data: navigationState.bookingData // ✅ CORRECTION : booking_data au lieu de bookingData
+            booking_data: navigationState.bookingData || navigationState.booking_data, // ✅ CORRIGÉ : Accepter les deux formats
+            document_urls: navigationState.documentUrls || [] // ✅ AJOUT : URLs des documents
+          });
+          
+          console.log('✅ Submission data configuré depuis navigation state:', {
+            bookingId: navigationState.bookingId,
+            hasContractUrl: !!navigationState.contractUrl,
+            hasPoliceUrl: !!navigationState.policeUrl,
+            hasGuestData: !!navigationState.guestData,
+            hasBookingData: !!navigationState.bookingData || !!navigationState.booking_data
           });
           
           setIsLoading(false);

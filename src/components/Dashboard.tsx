@@ -193,6 +193,7 @@ export const Dashboard = memo(({
             bookings={bookings}
             onEditBooking={onEditBooking}
             propertyId={propertyId}
+            onRefreshBookings={handleRefreshBookings}
           />
         </div>
       )}

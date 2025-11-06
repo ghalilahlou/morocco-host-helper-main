@@ -306,7 +306,9 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
       .eq('token', token)
       .eq('is_active', true)
       .gt('expires_at', new Date().toISOString())
-      .single();
+      .order('created_at', { ascending: false }) // ✅ Prendre le plus récent si plusieurs
+      .limit(1)
+      .maybeSingle(); // ✅ maybeSingle() au lieu de single()
 
     if (tokenError || !tokenData) {
       log('error', 'Token validation failed', { error: tokenError });
@@ -454,7 +456,9 @@ async function getExistingICSBooking(token: string, guestInfo: GuestInfo): Promi
       .eq('token', token)
       .eq('is_active', true)
       .gt('expires_at', new Date().toISOString())
-      .single();
+      .order('created_at', { ascending: false}) // ✅ Prendre le plus récent si plusieurs
+      .limit(1)
+      .maybeSingle(); // ✅ maybeSingle() au lieu de single()
 
     if (tokenError || !tokenData) {
       log('error', 'Token validation failed', { error: tokenError });
@@ -577,7 +581,9 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
       .eq('token', token)
       .eq('is_active', true)
       .gt('expires_at', new Date().toISOString())
-      .single();
+      .order('created_at', { ascending: false}) // ✅ Prendre le plus récent si plusieurs
+      .limit(1)
+      .maybeSingle(); // ✅ maybeSingle() au lieu de single()
 
     if (tokenError || !tokenData) {
       log('error', 'Token validation failed', { error: tokenError });
@@ -776,6 +782,8 @@ async function saveGuestDataInternal(
       updated_at: new Date().toISOString()
     };
 
+    // ✅ CORRIGÉ : Utiliser une approche atomique pour éviter les race conditions
+    // Au lieu de vérifier puis créer/mettre à jour, utiliser un upsert avec gestion des erreurs
       if (existingBooking) {
         // Mettre à jour la réservation existante
         log('info', 'Mise à jour réservation existante avec nom du guest', { 
@@ -827,37 +835,105 @@ async function saveGuestDataInternal(
         }
       }
     } else {
-      // Créer une nouvelle réservation
+      // ✅ CORRIGÉ : Créer une nouvelle réservation avec gestion des doublons
+      // Utiliser une approche atomique pour éviter les race conditions
       log('info', 'Création nouvelle réservation');
       const newBookingData = {
         ...bookingData,
         created_at: new Date().toISOString()
       };
       
+      // ✅ CORRIGÉ : Vérifier à nouveau juste avant l'insertion pour éviter les doublons
+      // (protection contre les race conditions entre la vérification et l'insertion)
+      const lastCheck = await supabase
+        .from('bookings')
+        .select('id, status')
+        .eq('property_id', booking.propertyId)
+        .eq('booking_reference', booking.airbnbCode)
+        .maybeSingle();
+      
+      if (lastCheck.data) {
+        // Une réservation a été créée entre-temps, utiliser celle-ci
+        log('warn', 'Réservation créée entre-temps (race condition évitée)', { 
+          bookingId: lastCheck.data.id,
+          status: lastCheck.data.status
+        });
+        const foundBooking = lastCheck.data;
+        // Revenir à la logique de mise à jour
+        const { data: updateData, error: updateError } = await supabase
+          .from('bookings')
+          .update(bookingData)
+          .eq('id', foundBooking.id)
+          .select()
+          .single();
+        
+        if (updateError || !updateData) {
+          log('error', 'Échec mise à jour réservation (après détection race condition)', { error: updateError });
+          throw new Error(`Erreur lors de la mise à jour de la réservation: ${updateError?.message}`);
+        }
+        savedBooking = updateData;
+      } else {
+        // Pas de doublon, créer la réservation
       const { data, error: insertError } = await supabase
         .from('bookings')
         .insert(newBookingData)
         .select()
         .single();
       
-      if (insertError || !data) {
+        if (insertError) {
+          // ✅ CORRIGÉ : Si erreur de contrainte unique (doublon), récupérer la réservation existante
+          if (insertError.code === '23505') { // Unique constraint violation
+            log('warn', 'Violation contrainte unique détectée (doublon évité)', { error: insertError });
+            
+            // Récupérer la réservation existante
+            const { data: existingData } = await supabase
+              .from('bookings')
+              .select('id')
+              .eq('property_id', booking.propertyId)
+              .eq('booking_reference', booking.airbnbCode)
+              .maybeSingle();
+            
+            if (existingData) {
+              // Mettre à jour la réservation existante
+              const { data: updateData, error: updateError } = await supabase
+                .from('bookings')
+                .update(bookingData)
+                .eq('id', existingData.id)
+                .select()
+                .single();
+              
+              if (updateError || !updateData) {
+                log('error', 'Échec mise à jour après détection doublon', { error: updateError });
+                throw new Error(`Erreur lors de la mise à jour de la réservation: ${updateError?.message}`);
+              }
+              savedBooking = updateData;
+              log('info', '✅ Réservation existante mise à jour après détection doublon', { bookingId: existingData.id });
+            } else {
+              throw new Error(`Erreur lors de la création de la réservation: ${insertError.message}`);
+            }
+          } else {
         log('error', 'Échec création réservation', { error: insertError });
-        throw new Error(`Erreur lors de la création de la réservation: ${insertError?.message}`);
+            throw new Error(`Erreur lors de la création de la réservation: ${insertError.message}`);
       }
+        } else if (!data) {
+          throw new Error('Erreur lors de la création de la réservation: Aucune donnée retournée');
+        } else {
       savedBooking = data;
+        }
+      }
       
       // ✅ NOUVEAU : Synchroniser avec la table airbnb_reservations pour le calendrier (nouvelle réservation)
-      if (booking.airbnbCode && booking.airbnbCode !== 'INDEPENDENT_BOOKING') {
+      if (booking.airbnbCode && booking.airbnbCode !== 'INDEPENDENT_BOOKING' && savedBooking) {
         log('info', '🔄 Synchronisation airbnb_reservations pour nouvelle réservation', {
           airbnbCode: booking.airbnbCode,
-          guestName: data.guest_name
+          guestName: savedBooking.guest_name
         });
         
         const { error: airbnbUpdateError } = await supabase
           .from('airbnb_reservations')
           .update({
-            guest_name: data.guest_name,
-            summary: `Airbnb – ${data.guest_name}`,
+            guest_name: savedBooking.guest_name,
+            summary: `Airbnb – ${savedBooking.guest_name}`,
             updated_at: new Date().toISOString()
           })
           .eq('airbnb_booking_id', booking.airbnbCode)
@@ -1084,39 +1160,119 @@ async function saveGuestDataInternal(
             log('info', `Document ${index + 1} already has HTTP URL:`, doc.url);
           }
           
-          // ✅ CORRECTION : Vérifier si le document existe déjà avant de l'insérer
-          const { data: existingDoc } = await supabase
+          // ✅ CORRIGÉ : Vérification robuste pour éviter les doublons
+          // Vérifier par file_name ET document_url pour être plus précis
+          const fileNameToCheck = `identity-scan-${bookingId}-${index + 1}`;
+          
+          // Vérifier si un document existe déjà pour ce booking avec le même nom OU la même URL
+          const { data: existingDocs } = await supabase
+            .from('uploaded_documents')
+            .select('id, file_name, document_url')
+            .eq('booking_id', bookingId)
+            .eq('document_type', 'identity')
+            .or(`file_name.eq.${fileNameToCheck},document_url.eq.${documentUrl}`);
+
+          // ✅ CORRIGÉ : Vérifier si un document similaire existe déjà
+          // (même nom de fichier OU même URL)
+          const existingDoc = existingDocs && existingDocs.length > 0 
+            ? existingDocs.find(doc => 
+                doc.file_name === fileNameToCheck || 
+                doc.document_url === documentUrl
+              )
+            : null;
+
+          if (existingDoc) {
+            log('info', `Document d'identité déjà existant, pas de doublon créé`, {
+              existingDocId: existingDoc.id,
+              existingFileName: existingDoc.file_name,
+              existingUrl: existingDoc.document_url?.substring(0, 50) + '...'
+            });
+            
+            // ✅ Mettre à jour l'URL si elle a changé (par exemple, data: URL → Storage URL)
+            if (existingDoc.document_url !== documentUrl && documentUrl && !documentUrl.startsWith('data:')) {
+              log('info', 'Mise à jour de l\'URL du document existant');
+              const { error: updateError } = await supabase
+                .from('uploaded_documents')
+                .update({
+                  document_url: documentUrl,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingDoc.id);
+              
+              if (updateError) {
+                log('warn', 'Erreur lors de la mise à jour de l\'URL du document', { error: updateError });
+              }
+            }
+          } else {
+            // ✅ CORRIGÉ : Vérifier aussi par file_path si disponible (pour les documents uploadés via Storage)
+            const storagePathMatch = documentUrl.match(/identity\/([^\/]+)\/(.+)$/);
+            if (storagePathMatch) {
+              const [, bookingIdFromUrl, fileNameFromPath] = storagePathMatch;
+              const { data: existingByPath } = await supabase
             .from('uploaded_documents')
             .select('id')
             .eq('booking_id', bookingId)
             .eq('document_type', 'identity')
-            .eq('document_url', documentUrl)
+                .eq('file_path', `identity/${bookingIdFromUrl}/${fileNameFromPath}`)
             .maybeSingle();
 
-          if (existingDoc) {
-            log('info', `Document d'identité déjà existant, pas de doublon créé`);
+              if (existingByPath) {
+                log('info', `Document d'identité déjà existant par file_path, pas de doublon créé`);
           } else {
-            // ✅ CORRECTION : Sauvegarder les scans dans uploaded_documents
-            // pour que l'interface puisse les trouver
+                // ✅ Sauvegarder le document seulement s'il n'existe pas
             const { error: uploadDocError } = await supabase
               .from('uploaded_documents')
               .insert({
                 booking_id: bookingId,
                 document_type: 'identity',
                 document_url: documentUrl,
-                file_name: `identity-scan-${bookingId}-${index + 1}`,
+                    file_name: fileNameToCheck,
+                    file_path: storagePathMatch ? `identity/${bookingIdFromUrl}/${fileNameFromPath}` : null,
                 processing_status: 'completed',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
               });
             
             if (uploadDocError) {
+                  // ✅ CORRIGÉ : Si erreur de contrainte unique, c'est probablement un doublon
+                  if (uploadDocError.code === '23505' || uploadDocError.message.includes('duplicate') || uploadDocError.message.includes('unique')) {
+                    log('warn', `Document d'identité déjà existant (contrainte unique), ignoré`);
+                  } else {
               log('error', `Failed to save identity document to uploaded_documents:`, uploadDocError);
               throw new Error(`Database save failed: ${uploadDocError.message}`);
             }
-          }
-          
+                } else {
+                  log('info', `✅ Document ${index + 1} saved to uploaded_documents successfully`);
+                }
+              }
+            } else {
+              // ✅ Sauvegarder le document seulement s'il n'existe pas
+              const { error: uploadDocError } = await supabase
+                .from('uploaded_documents')
+                .insert({
+                  booking_id: bookingId,
+                  document_type: 'identity',
+                  document_url: documentUrl,
+                  file_name: fileNameToCheck,
+                  file_path: null,
+                  processing_status: 'completed',
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString()
+                });
+              
+              if (uploadDocError) {
+                // ✅ CORRIGÉ : Si erreur de contrainte unique, c'est probablement un doublon
+                if (uploadDocError.code === '23505' || uploadDocError.message.includes('duplicate') || uploadDocError.message.includes('unique')) {
+                  log('warn', `Document d'identité déjà existant (contrainte unique), ignoré`);
+                } else {
+                  log('error', `Failed to save identity document to uploaded_documents:`, uploadDocError);
+                  throw new Error(`Database save failed: ${uploadDocError.message}`);
+                }
+              } else {
           log('info', `✅ Document ${index + 1} saved to uploaded_documents successfully`);
+              }
+            }
+          }
           
           return { index: index + 1, name: doc.name, success: true };
         } catch (error) {
@@ -2140,7 +2296,41 @@ serve(async (req) => {
         isICS_DIRECT: requestBody.airbnbCode === 'ICS_DIRECT'
       });
 
-      if (requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode) {
+      // ✅ CORRIGÉ : Vérifier d'abord le bookingId dans les métadonnées du token pour les liens ICS directs
+      const supabaseClient = await getServerClient();
+      let tokenDataWithMetadata = null;
+      
+      try {
+        const { data: tokenData } = await supabaseClient
+          .from('property_verification_tokens')
+          .select('metadata')
+          .eq('token', requestBody.token)
+          .eq('is_active', true)
+          .maybeSingle();
+        
+        tokenDataWithMetadata = tokenData;
+      } catch (tokenError) {
+        log('warn', 'Erreur lors de la récupération des métadonnées du token', { error: tokenError });
+      }
+      
+      const metadata = tokenDataWithMetadata?.metadata || {};
+      const reservationData = metadata?.reservationData;
+      const existingBookingIdFromToken = reservationData?.bookingId;
+      const linkType = metadata?.linkType;
+      
+      // ✅ CORRIGÉ : Utiliser le bookingId du token si disponible (réservation ICS créée lors de la génération du lien)
+      if (existingBookingIdFromToken && linkType === 'ics_direct') {
+        log('info', 'Utilisation de la réservation ICS existante depuis le token', { 
+          bookingId: existingBookingIdFromToken,
+          linkType 
+        });
+        booking = await getExistingICSBooking(requestBody.token, requestBody.guestInfo);
+        log('info', 'Réservation ICS existante récupérée avec succès', {
+          bookingId: booking.bookingId,
+          airbnbCode: booking.airbnbCode,
+          dates: `${booking.checkIn} → ${booking.checkOut}`
+        });
+      } else if (requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode) {
         log('info', 'Réservation indépendante détectée (formulaire), création directe');
         booking = await createIndependentBooking(requestBody.token, requestBody.guestInfo, requestBody.bookingData);
       } else {
@@ -2164,11 +2354,21 @@ serve(async (req) => {
         });
       }
       
-      // ✅ CORRECTION : Vérifier si le booking a déjà été traité
-      const supabaseClient = await getServerClient();
+      // ✅ CORRIGÉ : Vérifier si le booking a déjà été traité (incluant 'pending')
+      // Note: supabaseClient a déjà été déclaré ci-dessus
+      // ✅ IMPORTANT : Si booking.bookingId existe déjà, on l'utilise directement
       let existingBooking;
       
-      if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
+      if (booking.bookingId) {
+        // ✅ PRIORITÉ 1 : Utiliser le bookingId si disponible (réservation ICS créée lors de la génération du lien)
+        log('info', 'Booking ID disponible depuis la résolution', { bookingId: booking.bookingId });
+        const { data } = await supabaseClient
+          .from('bookings')
+          .select('id, status')
+          .eq('id', booking.bookingId)
+          .maybeSingle();
+        existingBooking = data;
+      } else if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
         // Pour les réservations indépendantes, vérifier par property_id + guest_name + check_in_date
         const { data } = await supabaseClient
           .from('bookings')
@@ -2190,24 +2390,75 @@ serve(async (req) => {
         existingBooking = data;
       }
         
-      if (existingBooking && (existingBooking.status === 'confirmed' || existingBooking.status === 'completed')) {
-        log('warn', `Booking ${existingBooking.id} already processed, skipping duplicate processing`);
-        return new Response(JSON.stringify({
-          success: true,
+      // ✅ CORRIGÉ : Vérifier TOUS les statuts actifs, pas seulement 'confirmed' et 'completed'
+      if (existingBooking) {
+        log('info', 'Booking existant trouvé', {
           bookingId: existingBooking.id,
-          message: 'Booking already processed',
-          isDuplicate: true
-        }), {
-          status: 200,
+          status: existingBooking.status,
+          source: booking.bookingId ? 'bookingId' : 'booking_reference'
+        });
+        
+        // ✅ Si le booking est en statut actif, on le réutilise
+        if (existingBooking.status === 'pending' || 
+            existingBooking.status === 'confirmed' || 
+            existingBooking.status === 'completed') {
+          log('warn', `Booking ${existingBooking.id} already exists (${existingBooking.status}), skipping duplicate processing`);
+          
+          // ✅ CORRIGÉ : Passer le bookingId existant à saveGuestDataInternal pour synchronisation
+          booking.bookingId = existingBooking.id;
+          
+          // ✅ CORRIGÉ : Continuer quand même pour mettre à jour les données (documents, guests, etc.)
+          // mais utiliser le bookingId existant pour éviter les doublons
+          log('info', 'Continuer avec la mise à jour des données pour le booking existant', { bookingId: existingBooking.id });
+        }
+        
+        // ✅ Si le booking est 'cancelled' ou 'rejected', on peut en créer un nouveau
+        if (existingBooking.status === 'cancelled' || existingBooking.status === 'rejected') {
+          log('info', 'Booking existant annulé/rejeté, création d\'un nouveau');
+          existingBooking = null; // Réinitialiser pour permettre la création
+        }
+      }
+      
+      // ✅ NOUVEAU : Vérifier les conflits de dates AVANT de créer le booking
+      try {
+        const { data: conflicts } = await supabaseClient
+          .rpc('check_booking_conflicts', {
+            p_property_id: booking.propertyId,
+            p_check_in_date: booking.checkIn,
+            p_check_out_date: booking.checkOut,
+            p_exclude_booking_id: existingBooking?.id || null
+          });
+        
+        if (conflicts && conflicts.length > 0) {
+          log('warn', 'Conflit de dates détecté', { conflicts });
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'CONFLICT',
+            message: 'Une réservation existe déjà pour ces dates',
+            conflicts: conflicts
+          }), {
+            status: 409, // Conflict
           headers: corsHeaders
         });
+        }
+      } catch (conflictError) {
+        // Log l'erreur mais continue si la fonction RPC n'existe pas encore
+        log('warn', 'Erreur lors de la vérification des conflits (ignoré)', { error: conflictError });
       }
 
       // ÉTAPE 2: Sauvegarde des données
       log('info', '🎯 ÉTAPE 2/5: Sauvegarde des données invité');
+      
+      // ✅ CORRIGÉ : S'assurer que booking.bookingId est défini si une réservation existe
+      // Cela permet à saveGuestDataInternal d'utiliser directement la réservation existante
+      if (existingBooking && existingBooking.status !== 'cancelled' && existingBooking.status !== 'rejected') {
+        booking.bookingId = existingBooking.id;
+        log('info', 'Booking ID existant passé à saveGuestDataInternal', { bookingId: existingBooking.id });
+      }
+      
       bookingId = await saveGuestDataInternal(booking, requestBody.guestInfo, requestBody.idDocuments);
       
-      log('info', 'Booking ID créé avec succès', { bookingId });
+      log('info', 'Booking ID sauvegardé avec succès', { bookingId });
 
       // ÉTAPE 3, 4 & 5: Génération des documents en parallèle
       log('info', '🎯 ÉTAPE 3-5/5: Génération des documents en parallèle');

@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 3000,
+    // https: true, // Désactivé - cause des problèmes avec IP locale
     proxy: {
       '/functions': {
         target: process.env.VITE_SUPABASE_URL,

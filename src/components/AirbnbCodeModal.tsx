@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { Loader2, Key, Info } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -27,8 +27,9 @@ export const AirbnbCodeModal = ({
   onClose, 
   onCodeSubmit, 
   isValidating = false,
-  error 
+  error
 }: AirbnbCodeModalProps) => {
+  const { toast } = useToast(); // ✅ Utiliser le hook
   const [code, setCode] = useState('');
 
   const handleSubmit = () => {

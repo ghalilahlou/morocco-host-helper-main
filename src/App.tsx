@@ -8,7 +8,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import { PropertyDetail } from "@/components/PropertyDetail";
-import { GuestVerification } from "@/pages/GuestVerification";
+import { GuestVerificationPage } from "@/components/guest/GuestVerificationPage";
 import { GuestWelcome } from "@/pages/GuestWelcome";
 import { ContractSigning } from "@/pages/ContractSigning";
 import { VerifyToken } from "@/pages/VerifyToken";
@@ -21,6 +21,7 @@ import { Profile } from "@/pages/Profile";
 import { AccountSettings } from "@/pages/AccountSettings";
 import { ChangePassword } from "@/pages/ChangePassword";
 import { AuthCallback } from "@/pages/AuthCallback";
+import { TestVerification } from "@/pages/TestVerification";
 import { GuestLocaleProvider } from '@/i18n/GuestLocaleProvider';
 import GuestLayout from '@/components/guest/GuestLayout';
 import { AdminRoute } from '@/components/admin/AdminRoute';
@@ -61,13 +62,7 @@ const App = () => (
               </GuestLayout>
             </GuestLocaleProvider>
           } />
-          <Route path="/guest-verification/:propertyId/:token" element={
-            <GuestLocaleProvider>
-              <GuestLayout>
-                <GuestVerification />
-              </GuestLayout>
-            </GuestLocaleProvider>
-          } />
+          <Route path="/guest-verification/:propertyId/:token" element={<GuestVerificationPage />} />
           <Route path="/verify/:token" element={
             <GuestLocaleProvider>
               <GuestLayout>
@@ -75,13 +70,7 @@ const App = () => (
               </GuestLayout>
             </GuestLocaleProvider>
           } />
-          <Route path="/guest-verification/:propertyId/:token/:airbnbBookingId" element={
-            <GuestLocaleProvider>
-              <GuestLayout>
-                <GuestVerification />
-              </GuestLayout>
-            </GuestLocaleProvider>
-          } />
+          <Route path="/guest-verification/:propertyId/:token/:airbnbBookingId" element={<GuestVerificationPage />} />
           <Route path="/contract-signing/:propertyId/:token" element={
             <GuestLocaleProvider>
               <GuestLayout>
@@ -101,6 +90,7 @@ const App = () => (
           <Route path="/dashboard" element={<Layout />}>
             <Route index element={<Index />} />
             <Route path="property/:propertyId" element={<PropertyDetail />} />
+            <Route path="test-verification" element={<TestVerification />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Route>
