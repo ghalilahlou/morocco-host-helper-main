@@ -59,6 +59,7 @@ import { CalendarIcon, Upload, FileText, X, CheckCircle, Users, Calendar as Cale
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
 import { OpenAIDocumentService } from '@/services/openaiDocumentService';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { EnhancedInput } from '@/components/ui/enhanced-input';
@@ -411,15 +412,18 @@ export const GuestVerification = () => {
             airbnbCode: airbnbCodeParam
           });
 
-          // Pré-remplir directement depuis l'URL
-          const startDate = new Date(startDateParam);
-          const endDate = new Date(endDateParam);
+          // ✅ CORRIGÉ : Pré-remplir directement depuis l'URL en utilisant parseLocalDate
+          // pour éviter le décalage d'un jour causé par l'interprétation UTC de new Date()
+          const startDate = parseLocalDate(startDateParam);
+          const endDate = parseLocalDate(endDateParam);
           
-          console.log('📅 Dates récupérées depuis l\'URL:', {
+          console.log('📅 Dates récupérées depuis l\'URL (sans décalage timezone):', {
             startDateParam,
             endDateParam,
             startDate: startDate.toISOString(),
             endDate: endDate.toISOString(),
+            startDateLocal: startDate.toLocaleDateString('fr-FR'),
+            endDateLocal: endDate.toLocaleDateString('fr-FR'),
             isValidStart: startDate.getTime() > 0,
             isValidEnd: endDate.getTime() > 0
           });
@@ -512,8 +516,9 @@ export const GuestVerification = () => {
             console.log('✅ Données ICS détectées via token, pré-remplissage des dates:', reservationData);
             
             // Pré-remplir les dates depuis les métadonnées du token
-            setCheckInDate(new Date(reservationData.startDate));
-            setCheckOutDate(new Date(reservationData.endDate));
+            // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
+            setCheckInDate(parseLocalDate(reservationData.startDate));
+            setCheckOutDate(parseLocalDate(reservationData.endDate));
             setNumberOfGuests(reservationData.numberOfGuests || 1);
             
             // Pré-remplir le nom du guest si disponible
@@ -1163,8 +1168,8 @@ export const GuestVerification = () => {
       };
 
       const bookingData = {
-        checkInDate: format(checkInDate, 'yyyy-MM-dd'),
-        checkOutDate: format(checkOutDate, 'yyyy-MM-dd'),
+        checkInDate: formatLocalDate(checkInDate),
+        checkOutDate: formatLocalDate(checkOutDate),
         numberOfGuests: deduplicatedGuests.length // ✅ CORRIGÉ : Utiliser le nombre réel de guests dédupliqués
       };
 

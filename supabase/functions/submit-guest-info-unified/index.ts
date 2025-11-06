@@ -611,8 +611,14 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
     });
 
     // 3. Créer la réservation avec les données ICS ET l'enregistrer en base
-    const checkInDate = new Date(reservationData.startDate).toISOString().split('T')[0];
-    const checkOutDate = new Date(reservationData.endDate).toISOString().split('T')[0];
+    // ✅ CORRIGÉ : Extraire directement la date YYYY-MM-DD sans conversion timezone
+    // Les dates ICS sont déjà au format YYYY-MM-DD, pas besoin de conversion
+    const checkInDate = typeof reservationData.startDate === 'string' 
+      ? reservationData.startDate.split('T')[0] 
+      : new Date(reservationData.startDate).toISOString().split('T')[0];
+    const checkOutDate = typeof reservationData.endDate === 'string'
+      ? reservationData.endDate.split('T')[0]
+      : new Date(reservationData.endDate).toISOString().split('T')[0];
     
     // Vérifier si une réservation existe déjà pour ce code Airbnb
     const { data: existingBooking } = await supabase
