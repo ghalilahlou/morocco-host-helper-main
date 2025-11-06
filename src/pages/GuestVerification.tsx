@@ -1306,12 +1306,19 @@ export const GuestVerification = () => {
       console.log('✅ Documents déjà synchronisés par le workflow unifié');
 
       // ✅ CORRECTION : Sauvegarder les données enrichies du workflow unifié
-      localStorage.setItem('currentBookingId', bookingId);
-      localStorage.setItem('currentBookingData', JSON.stringify(bookingData));
-      localStorage.setItem('currentGuestData', JSON.stringify(guestInfo));
-      localStorage.setItem('contractUrl', result.contractUrl);
-      if (result.policeUrl) {
-        localStorage.setItem('policeUrl', result.policeUrl);
+      // ⚠️ IMPORTANT : Sauvegarder dans localStorage AVANT la navigation (fallback pour Vercel)
+      try {
+        localStorage.setItem('currentBookingId', bookingId);
+        localStorage.setItem('currentBookingData', JSON.stringify(bookingData));
+        localStorage.setItem('currentGuestData', JSON.stringify(guestInfo));
+        localStorage.setItem('contractUrl', result.contractUrl);
+        if (result.policeUrl) {
+          localStorage.setItem('policeUrl', result.policeUrl);
+        }
+        console.log('✅ Données sauvegardées dans localStorage pour fallback Vercel');
+      } catch (storageError) {
+        console.warn('⚠️ Erreur lors de la sauvegarde dans localStorage:', storageError);
+        // Ne pas bloquer la navigation si localStorage échoue
       }
 
       toast({
@@ -1358,6 +1365,9 @@ export const GuestVerification = () => {
         // ✅ Navigation immédiate - Plus de Select Radix UI = plus besoin de fermeture de Portals
         setIsLoading(false);
         
+        // ✅ CORRIGÉ : Petit délai pour s'assurer que localStorage est bien écrit (important pour Vercel)
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
         // Navigation directe
         try {
           navigate(url, { 
@@ -1367,11 +1377,9 @@ export const GuestVerification = () => {
           console.log('✅ Navigation lancée avec succès');
         } catch (navError) {
           console.error('❌ Erreur lors de la navigation:', navError);
-                toast({
-            title: "Erreur de navigation",
-            description: "Impossible d'accéder à la page de signature. Veuillez réessayer.",
-            variant: "destructive"
-                });
+          // ✅ FALLBACK : Si navigation échoue, utiliser window.location (fonctionne toujours)
+          console.log('⚠️ Tentative de navigation via window.location...');
+          window.location.href = url;
         }
       } catch (error) {
         // Erreur générale lors de la préparation de la navigation

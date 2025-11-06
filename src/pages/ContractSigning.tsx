@@ -33,7 +33,37 @@ export const ContractSigning: React.FC = () => {
 
       try {
         // ✅ CORRECTION : Vérifier d'abord les données de navigation state
-        const navigationState = location.state;
+        // ⚠️ IMPORTANT : Sur Vercel, location.state peut être perdu, utiliser localStorage en fallback
+        let navigationState = location.state;
+        
+        // ✅ FALLBACK : Si location.state est perdu (problème Vercel), récupérer depuis localStorage
+        if (!navigationState || !navigationState.bookingId) {
+          console.log('⚠️ Navigation state perdu, tentative de récupération depuis localStorage...');
+          try {
+            const storedBookingId = localStorage.getItem('currentBookingId');
+            const storedBookingData = localStorage.getItem('currentBookingData');
+            const storedGuestData = localStorage.getItem('currentGuestData');
+            const storedContractUrl = localStorage.getItem('contractUrl');
+            const storedPoliceUrl = localStorage.getItem('policeUrl');
+            
+            if (storedBookingId && storedContractUrl) {
+              navigationState = {
+                bookingId: storedBookingId,
+                bookingData: storedBookingData ? JSON.parse(storedBookingData) : null,
+                guestData: storedGuestData ? JSON.parse(storedGuestData) : null,
+                contractUrl: storedContractUrl,
+                policeUrl: storedPoliceUrl || null,
+                propertyId: propertyId,
+                token: token,
+                timestamp: Date.now()
+              };
+              console.log('✅ Navigation state récupéré depuis localStorage:', navigationState);
+            }
+          } catch (localStorageError) {
+            console.warn('⚠️ Erreur lors de la récupération depuis localStorage:', localStorageError);
+          }
+        }
+        
         console.log('🔍 DEBUG: Navigation state reçu:', navigationState);
         console.log('🔍 DEBUG: Location:', location);
         console.log('🔍 DEBUG: PropertyId:', propertyId);
@@ -277,7 +307,7 @@ export const ContractSigning: React.FC = () => {
     };
 
     loadContractData();
-  }, [propertyId, token]);
+  }, [propertyId, token, location.state, t]); // ✅ AJOUT : location.state et t dans les dépendances
 
   const handleSignatureComplete = async (signatureData: string) => {
     try {
@@ -448,13 +478,39 @@ export const ContractSigning: React.FC = () => {
     );
   }
 
+  // ✅ CORRIGÉ : Récupérer contractUrl depuis navigation state ou localStorage (fallback Vercel)
+  const getContractUrl = () => {
+    // 1. Essayer location.state
+    if ((location as any)?.state?.contractUrl) {
+      return (location as any).state.contractUrl;
+    }
+    
+    // 2. Essayer localStorage (fallback pour Vercel où location.state peut être perdu)
+    try {
+      const storedContractUrl = localStorage.getItem('contractUrl');
+      if (storedContractUrl) {
+        console.log('✅ ContractUrl récupéré depuis localStorage (fallback Vercel):', storedContractUrl);
+        return storedContractUrl;
+      }
+    } catch (e) {
+      console.warn('⚠️ Erreur lors de la récupération de contractUrl depuis localStorage:', e);
+    }
+    
+    // 3. Essayer submissionData
+    if ((submissionData as any)?.contractUrl) {
+      return (submissionData as any).contractUrl;
+    }
+    
+    return undefined;
+  };
+
   return (
     <WelcomingContractSignature
       bookingData={submissionData.booking_data}
       propertyData={propertyData}
       guestData={submissionData.guest_data}
       documentUrls={submissionData.document_urls}
-      initialContractUrl={(location as any)?.state?.contractUrl || (submissionData as any)?.contractUrl}
+      initialContractUrl={getContractUrl()}
       onBack={() => navigate(`/guest-verification/${propertyId}/${token}`)}
       onSignatureComplete={handleSignatureComplete}
     />

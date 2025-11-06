@@ -194,6 +194,14 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   }, [location.state, bookingData?.id]);
 
   const [contractUrl, setContractUrl] = useState<string | null>(initialContractUrl || null);
+  
+  // ✅ CORRIGÉ : Mettre à jour contractUrl si initialContractUrl change (important pour Vercel)
+  useEffect(() => {
+    if (initialContractUrl && initialContractUrl !== contractUrl) {
+      console.log('✅ [WelcomingContractSignature] Mise à jour contractUrl depuis initialContractUrl:', initialContractUrl);
+      setContractUrl(initialContractUrl);
+    }
+  }, [initialContractUrl]); // ✅ Seulement initialContractUrl dans les dépendances
   const [loadingContract, setLoadingContract] = useState<boolean>(false);
   const [contractError, setContractError] = useState<string | null>(null);
 
