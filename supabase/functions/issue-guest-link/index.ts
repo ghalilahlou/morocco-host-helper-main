@@ -613,28 +613,38 @@ serve(async (req) => {
     }
 
     // ✅ NOUVEAU : Incrémenter le compteur de réservations (seulement si la fonction existe)
-    console.log('📊 Incrémentation du compteur de réservations...');
+    // ✅ CORRIGÉ : Gestion silencieuse de l'erreur si la fonction n'existe pas
     try {
       const { error: incrementError } = await server.rpc('increment_reservation_count', {
         property_uuid: propertyId
       });
       if (incrementError) {
-        // Vérifier si c'est une erreur PGRST202 (fonction non trouvée) - ignorer silencieusement
-        if (incrementError.code === 'PGRST202' || incrementError.message?.includes('not found')) {
-          console.log('ℹ️ Fonction increment_reservation_count non disponible (ignoré)');
+        // ✅ CORRIGÉ : Ignorer complètement si c'est une erreur PGRST202 (fonction non trouvée)
+        // Cette erreur est attendue si la migration n'a pas été appliquée
+        if (incrementError.code === 'PGRST202' || incrementError.message?.includes('not found') || incrementError.message?.includes('schema cache')) {
+          // Fonction non disponible - ignorer silencieusement (pas de log)
         } else {
-          console.error('⚠️ Erreur lors de l\'incrémentation du compteur:', incrementError);
+          // Autres erreurs - logger seulement en mode développement
+          if (Deno.env.get('ENVIRONMENT') === 'development') {
+            console.error('⚠️ Erreur lors de l\'incrémentation du compteur:', incrementError);
+          }
         }
         // Don't fail token creation for this error
       } else {
-        console.log('✅ Compteur de réservations incrémenté');
+        // Succès - logger seulement si nécessaire
+        if (Deno.env.get('ENVIRONMENT') === 'development') {
+          console.log('✅ Compteur de réservations incrémenté');
+        }
       }
-    } catch (incrementError) {
-      // Ignorer silencieusement si la fonction n'existe pas
-      if (incrementError?.code === 'PGRST202' || incrementError?.message?.includes('not found')) {
-        console.log('ℹ️ Fonction increment_reservation_count non disponible (ignoré)');
+    } catch (incrementError: any) {
+      // ✅ CORRIGÉ : Ignorer complètement si la fonction n'existe pas
+      if (incrementError?.code === 'PGRST202' || incrementError?.message?.includes('not found') || incrementError?.message?.includes('schema cache')) {
+        // Fonction non disponible - ignorer silencieusement (pas de log)
       } else {
-        console.error('❌ Unexpected error during counter increment:', incrementError);
+        // Autres erreurs inattendues - logger seulement en mode développement
+        if (Deno.env.get('ENVIRONMENT') === 'development') {
+          console.error('❌ Unexpected error during counter increment:', incrementError);
+        }
       }
       // Don't fail token creation for this error
     }

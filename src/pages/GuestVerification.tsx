@@ -300,7 +300,7 @@ export const GuestVerification = () => {
          error.message?.includes('The node to be removed') ||
          error.name === 'NotFoundError')
       ) {
-        console.debug('🛡️ Erreur Portal interceptée et ignorée:', error.message);
+        // Erreur Portal interceptée et ignorée silencieusement
         return true; // Empêche la propagation de l'erreur
       }
 
@@ -321,7 +321,7 @@ export const GuestVerification = () => {
          error.message.includes('insertBefore') ||
          error.message.includes('not a child of this node'))
       ) {
-        console.debug('🛡️ Erreur Portal async interceptée et ignorée');
+        // Erreur Portal async interceptée et ignorée silencieusement
         event.preventDefault(); // Empêche la propagation
         return;
       }

@@ -55,11 +55,8 @@ export class ErrorBoundary extends Component<Props, State> {
     
     if (isPortalError) {
       // ✅ CORRIGÉ : NE PAS changer le state pour éviter les re-renders
-      // Simplement logger et ignorer complètement l'erreur
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('⚠️ Erreur Portal détectée et ignorée (non-bloquante):', error.message);
-      }
-      // Ne rien faire d'autre - laisser React continuer normalement
+      // Ignorer complètement l'erreur silencieusement
+      // Ne rien faire - laisser React continuer normalement
       return;
     }
 

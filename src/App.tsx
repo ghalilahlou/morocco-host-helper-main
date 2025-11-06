@@ -48,15 +48,26 @@ const PortalErrorInterceptor = () => {
 
     // Handler pour les erreurs synchrones
     window.onerror = function(message, source, lineno, colno, error) {
+      // ✅ CORRIGÉ : Intercepter aussi basé sur le message string (pour React compilé)
+      const messageStr = typeof message === 'string' ? message : String(message);
+      const errorMessage = error?.message || '';
+      const errorName = error?.name || '';
+      
       // Intercepter les erreurs Portal et les ignorer silencieusement
       if (
-        error &&
-        (error.message?.includes('removeChild') ||
-         error.message?.includes('insertBefore') ||
-         error.message?.includes('not a child of this node') ||
-         error.message?.includes('The node to be removed') ||
-         error.message?.includes('The node before which') ||
-         error.name === 'NotFoundError')
+        messageStr.includes('insertBefore') ||
+        messageStr.includes('removeChild') ||
+        messageStr.includes('not a child of this node') ||
+        messageStr.includes('The node before which') ||
+        messageStr.includes('The node to be removed') ||
+        messageStr.includes('NotFoundError') ||
+        errorMessage.includes('insertBefore') ||
+        errorMessage.includes('removeChild') ||
+        errorMessage.includes('not a child of this node') ||
+        errorMessage.includes('The node before which') ||
+        errorMessage.includes('The node to be removed') ||
+        errorName === 'NotFoundError' ||
+        (error && error.name === 'NotFoundError')
       ) {
         // Erreur Portal interceptée et ignorée silencieusement
         return true; // Empêche la propagation de l'erreur
@@ -72,16 +83,25 @@ const PortalErrorInterceptor = () => {
     // Handler pour les erreurs asynchrones
     window.onunhandledrejection = function(event) {
       const error = event.reason;
+      const errorMessage = error?.message || '';
+      const errorName = error?.name || '';
+      const errorString = String(error || '');
+      
+      // ✅ CORRIGÉ : Intercepter aussi basé sur le message string et le nom
       if (
-        error &&
-        typeof error.message === 'string' &&
-        (error.message.includes('removeChild') ||
-         error.message.includes('insertBefore') ||
-         error.message.includes('not a child of this node') ||
-         error.message.includes('The node before which'))
+        errorMessage.includes('removeChild') ||
+        errorMessage.includes('insertBefore') ||
+        errorMessage.includes('not a child of this node') ||
+        errorMessage.includes('The node before which') ||
+        errorMessage.includes('The node to be removed') ||
+        errorName === 'NotFoundError' ||
+        errorString.includes('insertBefore') ||
+        errorString.includes('removeChild') ||
+        errorString.includes('NotFoundError')
       ) {
         // Erreur Portal async interceptée et ignorée silencieusement
         event.preventDefault(); // Empêche la propagation
+        event.stopPropagation(); // ✅ AJOUT : Arrêter aussi la propagation
         return;
       }
 

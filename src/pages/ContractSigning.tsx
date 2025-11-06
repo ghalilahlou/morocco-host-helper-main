@@ -226,15 +226,45 @@ export const ContractSigning: React.FC = () => {
           return;
         }
 
+        // ✅ CORRIGÉ : Essayer de récupérer les données depuis l'API même si localStorage est vide
         // Get the guest submission data using edge function (safer with RLS)
-        const { data: guestDocs, error: submissionError } = await supabase.functions.invoke('get-guest-documents-unified', {
-          body: { propertyId: propertyId }
-        });
+        let guestDocs = null;
+        let submissionError = null;
+        
+        // ✅ NOUVEAU : Essayer de récupérer depuis localStorage d'abord (bookingId si disponible)
+        const storedBookingId = localStorage.getItem('currentBookingId');
+        const storedContractUrl = localStorage.getItem('contractUrl');
+        
+        try {
+          const response = await supabase.functions.invoke('get-guest-documents-unified', {
+            body: { 
+              propertyId: propertyId,
+              // ✅ Si on a un bookingId dans localStorage, l'utiliser pour une recherche plus précise
+              bookingId: storedBookingId || undefined
+            }
+          });
+          
+          if (response.data) {
+            guestDocs = response.data;
+          } else {
+            submissionError = response.error;
+          }
+        } catch (apiError) {
+          submissionError = apiError;
+        }
 
         // Find the most recent submission for this property
-        const latestSubmission = guestDocs && Array.isArray(guestDocs) && guestDocs.length > 0 
-          ? guestDocs[0] // Already sorted by created_at desc in edge function
-          : null;
+        // ✅ CORRIGÉ : Prioriser le bookingId stocké si disponible
+        let latestSubmission = null;
+        if (guestDocs && Array.isArray(guestDocs)) {
+          if (storedBookingId) {
+            // Chercher d'abord par bookingId
+            latestSubmission = guestDocs.find((doc: any) => doc.bookingId === storedBookingId) || guestDocs[0];
+          } else {
+            // Sinon prendre le plus récent
+            latestSubmission = guestDocs[0];
+          }
+        }
 
         
         // ✅ CORRECTION : Gestion robuste des données de soumission
@@ -267,6 +297,13 @@ export const ContractSigning: React.FC = () => {
             status: 'completed'
           };
           
+          // ✅ CORRIGÉ : Utiliser contractUrl depuis localStorage si disponible
+          if (storedContractUrl && !transformedSubmission.document_urls?.includes(storedContractUrl)) {
+            (transformedSubmission as any).contractUrl = storedContractUrl;
+            transformedSubmission.document_urls = transformedSubmission.document_urls || [];
+            transformedSubmission.document_urls.push(storedContractUrl);
+          }
+          
           setSubmissionData(transformedSubmission);
           
           // ✅ CORRECTION : Vérifier la signature avec gestion d'erreurs
@@ -283,27 +320,49 @@ export const ContractSigning: React.FC = () => {
           }
         } else {
           // ✅ CORRECTION : Créer des données minimales plus robustes
+          // ✅ NOUVEAU : Essayer d'utiliser les données depuis localStorage si disponibles
+          const storedBookingData = localStorage.getItem('currentBookingData');
+          const storedGuestData = localStorage.getItem('currentGuestData');
+          
+          let bookingDataFromStorage = null;
+          let guestDataFromStorage = null;
+          
+          try {
+            if (storedBookingData) {
+              bookingDataFromStorage = JSON.parse(storedBookingData);
+            }
+            if (storedGuestData) {
+              guestDataFromStorage = JSON.parse(storedGuestData);
+            }
+          } catch (parseError) {
+            // Ignorer les erreurs de parsing
+          }
+          
           const mockSubmissionData = {
-            id: 'temp-contract-signing',
+            id: storedBookingId || 'temp-contract-signing',
             token_id: tokenData.id,
             booking_data: {
-              id: tokenVerification.bookingId || `temp-${propertyId}-${Date.now()}`,
-              checkInDate: new Date().toISOString().split('T')[0],
-              checkOutDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-              numberOfGuests: 1,
+              id: storedBookingId || tokenVerification.bookingId || `temp-${propertyId}-${Date.now()}`,
+              checkInDate: bookingDataFromStorage?.checkInDate || bookingDataFromStorage?.checkIn || new Date().toISOString().split('T')[0],
+              checkOutDate: bookingDataFromStorage?.checkOutDate || bookingDataFromStorage?.checkOut || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+              numberOfGuests: bookingDataFromStorage?.numberOfGuests || 1,
+              guests: bookingDataFromStorage?.guests || guestDataFromStorage?.guests || [{
+                fullName: guestDataFromStorage?.firstName && guestDataFromStorage?.lastName 
+                  ? `${guestDataFromStorage.firstName} ${guestDataFromStorage.lastName}`
+                  : 'Guest User',
+                documentType: guestDataFromStorage?.idType || 'passport',
+                documentNumber: guestDataFromStorage?.documentNumber || 'TBD'
+              }]
+            },
+            guest_data: guestDataFromStorage || {
               guests: [{
                 fullName: 'Guest User',
                 documentType: 'passport',
                 documentNumber: 'TBD'
               }]
             },
-            guest_data: {
-              guests: [{
-                fullName: 'Guest User',
-                documentType: 'passport',
-                documentNumber: 'TBD'
-              }]
-            },
+            contractUrl: storedContractUrl || null,
+            document_urls: storedContractUrl ? [storedContractUrl] : [],
             status: 'completed'
           };
           
