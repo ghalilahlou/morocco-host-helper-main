@@ -489,6 +489,23 @@ export const GuestVerification = () => {
             console.log('✅ Nouveau tableau guests créé:', newGuests.length);
             return newGuests;
           });
+          } catch (dateError) {
+            console.error('❌ Erreur lors du parsing des dates depuis l\'URL:', dateError);
+            // ✅ FALLBACK : Utiliser new Date() si parseLocalDate échoue
+            try {
+              const startDate = new Date(startDateParam);
+              const endDate = new Date(endDateParam);
+              if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+                const guestsCount = parseInt(guestsParam || '1');
+                setCheckInDate(startDate);
+                setCheckOutDate(endDate);
+                setNumberOfGuests(guestsCount);
+                console.warn('⚠️ Utilisation fallback new Date() pour les dates');
+              }
+            } catch (fallbackError) {
+              console.error('❌ Erreur même avec fallback new Date():', fallbackError);
+            }
+          }
 
           toast({
             title: "Dates de réservation chargées",
