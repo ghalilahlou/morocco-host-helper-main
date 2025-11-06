@@ -7,11 +7,10 @@ import { Separator } from '@/components/ui/separator';
 import { Calendar, Users, MapPin, Building, Clock, Link as LinkIcon, Mail, X, Copy, Trash2 } from 'lucide-react';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { supabase } from '@/integrations/supabase/client';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { copyToClipboard } from '@/lib/clipboardUtils';
 interface AirbnbReservationModalProps {
   reservation: AirbnbReservation | null;
   isOpen: boolean;
@@ -28,11 +27,22 @@ export const AirbnbReservationModal = ({
     generatePropertyVerificationUrl,
     isLoading: isGeneratingLink
   } = useGuestVerification();
+  const { toast } = useToast(); // ✅ Utiliser le hook
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isGeneratingLocal, setIsGeneratingLocal] = useState(false); // ✅ State local pour bloquer immédiatement
 
   // Function to generate guest verification link with Airbnb booking ID (sans validation de code)
-  const handleGenerateGuestLink = async () => {
+  const handleGenerateGuestLink = async (event?: React.MouseEvent) => {
+    console.log('🔵 handleGenerateGuestLink appelé', { propertyId, airbnbBookingId: reservation?.airbnbBookingId, hasEvent: !!event });
+    
+    // ✅ PROTECTION IMMÉDIATE : Bloquer si déjà en cours
+    if (isGeneratingLocal || isGeneratingLink) {
+      console.warn('⚠️ Génération déjà en cours, clic ignoré', { isGeneratingLocal, isGeneratingLink });
+      return;
+    }
+
     if (!propertyId || !reservation?.airbnbBookingId) {
+      console.error('❌ Informations manquantes', { propertyId, airbnbBookingId: reservation?.airbnbBookingId });
       toast({
         title: "Erreur",
         description: "Informations manquantes pour générer le lien",
@@ -40,6 +50,13 @@ export const AirbnbReservationModal = ({
       });
       return;
     }
+
+    // ✅ BLOQUER IMMÉDIATEMENT (avant même l'appel API)
+    setIsGeneratingLocal(true);
+    console.log('🟡 Génération de lien démarrée...');
+    
+    // ✅ PRÉSERVER L'ÉVÉNEMENT UTILISATEUR pour la copie
+    const userEvent = event?.nativeEvent || undefined;
 
     // Extract the actual booking code from raw event if needed
     const rawEvent = reservation.rawEvent || '';
@@ -58,31 +75,41 @@ export const AirbnbReservationModal = ({
       }
     }
 
-    // ✅ NOUVEAU : Générer un lien sans validation de code, avec données ICS pré-remplies
-    const url = await generatePropertyVerificationUrl(propertyId, bookingCode, {
-      linkType: 'ics_direct',
-      reservationData: {
-        airbnbCode: bookingCode,
-        startDate: reservation.startDate,
-        endDate: reservation.endDate,
-        guestName: reservation.guestName,
-        numberOfGuests: reservation.numberOfGuests
-      }
+    console.log('🔵 Paramètres de génération:', {
+      propertyId,
+      bookingCode,
+      startDate: reservation.startDate,
+      endDate: reservation.endDate
     });
-    
-    if (url) {
-      const success = await copyToClipboard(url);
-      if (success) {
-        toast({
-          title: "Lien généré et copié",
-          description: `Lien direct avec dates pré-remplies (${bookingCode}) copié dans le presse-papiers`
-        });
-      } else {
-        toast({
-          title: "Lien généré",
-          description: `URL: ${url}`
-        });
-      }
+
+    try {
+      // ✅ SIMPLIFIÉ : Le lien est automatiquement copié dans le hook
+      // ✅ IMPORTANT : Passer l'événement utilisateur pour préserver le contexte
+      const url = await generatePropertyVerificationUrl(propertyId, bookingCode, {
+        linkType: 'ics_direct',
+        reservationData: {
+          airbnbCode: bookingCode,
+          startDate: reservation.startDate,
+          endDate: reservation.endDate,
+          guestName: reservation.guestName,
+          numberOfGuests: reservation.numberOfGuests
+        },
+        userEvent: userEvent // ✅ Passer l'événement pour préserver le contexte
+      });
+      
+      console.log('✅ Lien généré avec succès:', url);
+      // Le toast de succès est déjà affiché dans le hook
+    } catch (error) {
+      console.error('❌ Erreur lors de la génération du lien:', error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de générer le lien. Veuillez réessayer.",
+        variant: "destructive"
+      });
+    } finally {
+      // ✅ TOUJOURS réinitialiser le flag local
+      setIsGeneratingLocal(false);
+      console.log('🟢 Génération terminée, flag réinitialisé');
     }
   };
   const confirmDeleteReservation = async () => {
@@ -218,14 +245,30 @@ export const AirbnbReservationModal = ({
                 <CardTitle className="text-lg">Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button onClick={handleGenerateGuestLink} disabled={isGeneratingLink} className="w-full">
-                  <Copy className="w-4 h-4 mr-2" />
-                  {isGeneratingLink ? 'Génération...' : 'Générer lien'}
+                <Button 
+                  onClick={(e) => handleGenerateGuestLink(e)} 
+                  disabled={isGeneratingLocal || isGeneratingLink} 
+                  className="w-full flex items-center justify-center"
+                >
+                  {/* ✅ Conteneur stable pour éviter NotFoundError */}
+                  <span className="flex items-center">
+                    {isGeneratingLocal || isGeneratingLink ? (
+                      <>
+                        <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                        <span>Génération...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4 mr-2" />
+                        <span>Copier le lien</span>
+                      </>
+                    )}
+                  </span>
                 </Button>
                 
 
                 <p className="text-xs text-muted-foreground mt-2">
-                  Génère un lien de vérification client avec les dates de cette réservation Airbnb pré-remplies
+                  Génère et copie automatiquement le lien de vérification client avec les dates de cette réservation Airbnb pré-remplies
                 </p>
               </CardContent>
             </Card>}

@@ -21,7 +21,6 @@ import { AirbnbSyncManager } from './AirbnbSyncManager';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { PropertyTutorial } from './PropertyTutorial';
-import { copyToClipboard } from '@/lib/clipboardUtils';
 
 
 
@@ -42,6 +41,7 @@ export const PropertyDetail = () => {
   const [airbnbSyncCompleted, setAirbnbSyncCompleted] = useState(false);
   const [clientLinkShared, setClientLinkShared] = useState(false);
   const [showRemainingActions, setShowRemainingActions] = useState(true);
+  const [isGeneratingLocal, setIsGeneratingLocal] = useState(false); // ✅ State local pour bloquer immédiatement
   const [airbnbReservationsCount, setAirbnbReservationsCount] = useState(0);
   const [showTutorial, setShowTutorial] = useState(false);
 
@@ -76,25 +76,38 @@ export const PropertyDetail = () => {
     loadAirbnbCount(); // Recharger aussi le compte Airbnb
   }, [refreshBookings, loadAirbnbCount]);
 
-  const handleGenerateGuestLink = useCallback(async () => {
+  const handleGenerateGuestLink = useCallback(async (event?: React.MouseEvent) => {
+    // ✅ PROTECTION IMMÉDIATE : Bloquer si déjà en cours
+    if (isGeneratingLocal || isGeneratingLink) {
+      console.warn('⚠️ Génération déjà en cours, clic ignoré');
+      return;
+    }
+
     if (!property?.id) return;
     
-    const url = await generatePropertyVerificationUrl(property.id);
-    if (url) {
-      const success = await copyToClipboard(url);
-      if (success) {
-        toast({
-          title: "Lien généré et copié",
-          description: "Lien de vérification permanent copié dans le presse-papiers",
-        });
-      } else {
-        toast({
-          title: "Lien généré",
-          description: `URL: ${url}`,
-        });
-      }
+    // ✅ BLOQUER IMMÉDIATEMENT (avant même l'appel API)
+    setIsGeneratingLocal(true);
+
+    try {
+      // ✅ SIMPLIFIÉ : Le lien est automatiquement copié dans le hook
+      // ✅ PRÉSERVER L'ÉVÉNEMENT UTILISATEUR pour la copie
+      const userEvent = event?.nativeEvent || undefined;
+      await generatePropertyVerificationUrl(property.id, undefined, {
+        userEvent: userEvent
+      });
+      // Le toast de succès est déjà affiché dans le hook
+    } catch (error) {
+      console.error('❌ Erreur lors de la génération du lien:', error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de générer le lien. Veuillez réessayer.",
+        variant: "destructive"
+      });
+    } finally {
+      // ✅ TOUJOURS réinitialiser le flag local
+      setIsGeneratingLocal(false);
     }
-  }, [property?.id, generatePropertyVerificationUrl, toast]);
+  }, [property?.id, generatePropertyVerificationUrl, toast, isGeneratingLocal, isGeneratingLink]);
 
   // All useEffect hooks
   useEffect(() => {
@@ -320,14 +333,23 @@ export const PropertyDetail = () => {
                 </Button>
                 <Button 
                   size="sm"
-                  onClick={handleGenerateGuestLink}
-                  disabled={isGeneratingLink}
+                  onClick={(e) => handleGenerateGuestLink(e)}
+                  disabled={isGeneratingLocal || isGeneratingLink}
                   className="gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white bg-white"
                   data-tutorial="generate-link"
                   variant="outline"
                 >
-                  <LinkIcon className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="text-xs sm:text-sm">{isGeneratingLink ? 'Génération...' : 'Générer lien client'}</span>
+                  {isGeneratingLocal || isGeneratingLink ? (
+                    <>
+                      <div className="h-3 w-3 sm:h-4 sm:w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      <span className="text-xs sm:text-sm">Génération...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LinkIcon className="h-3 w-3 sm:h-4 sm:w-4" />
+                      <span className="text-xs sm:text-sm">Copier le lien</span>
+                    </>
+                  )}
                 </Button>
                 {/* Help dropdown inline - single trigger to keep position correct */}
                 <DropdownMenu>

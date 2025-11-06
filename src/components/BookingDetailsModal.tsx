@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Users, FileCheck, Download, Edit, Link, X, Shield, FileText, Trash2, Pen } from 'lucide-react';
+import { Calendar, Users, FileCheck, Download, Edit, Link, X, Shield, FileText, Trash2, Pen, Copy } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,6 @@ import { DocumentsViewer } from './DocumentsViewer';
 import { HostSignatureCapture } from './HostSignatureCapture';
 import { ContractDebugPanel } from './ContractDebugPanel';
 import { supabase } from '@/integrations/supabase/client';
-import { copyToClipboard } from '@/lib/clipboardUtils';
 import { ApiService } from '@/services/apiService';
 
 interface BookingDetailsModalProps {
@@ -46,6 +45,7 @@ export const BookingDetailsModal = ({
   const [showHostSignature, setShowHostSignature] = useState(false);
   const [isSubmittingHostSignature, setIsSubmittingHostSignature] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [isGeneratingLocal, setIsGeneratingLocal] = useState(false); // ✅ State local pour bloquer immédiatement
 
   // Enhanced fallback: fetch guest name from multiple sources
   const [fallbackGuestName, setFallbackGuestName] = useState<string | null>(null);
@@ -370,7 +370,13 @@ export const BookingDetailsModal = ({
     }
   };
 
-  const handleGenerateGuestLink = async () => {
+  const handleGenerateGuestLink = async (event?: React.MouseEvent) => {
+    // ✅ PROTECTION IMMÉDIATE : Bloquer si déjà en cours
+    if (isGeneratingLocal || isGeneratingLink) {
+      console.warn('⚠️ Génération déjà en cours, clic ignoré');
+      return;
+    }
+
     if (!booking.propertyId) {
       toast({
         title: "Erreur",
@@ -380,21 +386,29 @@ export const BookingDetailsModal = ({
       return;
     }
     
-    // Pass the booking ID to the verification URL generation
-    const url = await generatePropertyVerificationUrl(booking.propertyId, booking.id);
-    if (url) {
-      const success = await copyToClipboard(url);
-      if (success) {
-        toast({
-          title: "Lien généré et copié",
-          description: "Lien de vérification copié dans le presse-papiers"
-        });
-      } else {
-        toast({
-          title: "Lien généré",
-          description: `URL: ${url}`
-        });
-      }
+    // ✅ BLOQUER IMMÉDIATEMENT (avant même l'appel API)
+    setIsGeneratingLocal(true);
+    
+    // ✅ PRÉSERVER L'ÉVÉNEMENT UTILISATEUR pour la copie
+    const userEvent = event?.nativeEvent || undefined;
+
+    try {
+      // ✅ SIMPLIFIÉ : Le lien est automatiquement copié dans le hook
+      // ✅ IMPORTANT : Passer l'événement utilisateur pour préserver le contexte
+      await generatePropertyVerificationUrl(booking.propertyId, booking.id, {
+        userEvent: userEvent
+      });
+      // Le toast de succès est déjà affiché dans le hook
+    } catch (error) {
+      console.error('❌ Erreur lors de la génération du lien:', error);
+      toast({
+        title: "Erreur",
+        description: "Impossible de générer le lien. Veuillez réessayer.",
+        variant: "destructive"
+      });
+    } finally {
+      // ✅ TOUJOURS réinitialiser le flag local
+      setIsGeneratingLocal(false);
     }
   };
 
@@ -509,6 +523,26 @@ export const BookingDetailsModal = ({
 
           {/* Actions */}
           <div className="flex flex-col gap-3">
+            {/* Bouton Copier le lien */}
+            <Button 
+              variant="outline" 
+              onClick={(e) => handleGenerateGuestLink(e)}
+              disabled={isGeneratingLocal || isGeneratingLink}
+              className="w-full flex items-center justify-center"
+            >
+              {isGeneratingLocal || isGeneratingLink ? (
+                <>
+                  <div className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <span>Génération...</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 mr-2" />
+                  <span>Copier le lien</span>
+                </>
+              )}
+            </Button>
+            
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => {
                 onEdit(booking);

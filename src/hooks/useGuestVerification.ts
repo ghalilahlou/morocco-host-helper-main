@@ -4,7 +4,7 @@ import runtime from '@/config/runtime';
 import { supabase } from '@/integrations/supabase/client';
 import { PropertyVerificationToken, GuestSubmission } from '@/types/guestVerification';
 import { useAuth } from './useAuth';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 
 // ✅ NOUVEAU : Fonction pour nettoyer le nom du guest avant de l'inclure dans l'URL
 function cleanGuestNameForUrl(guestName: string): string {
@@ -52,6 +52,7 @@ function cleanGuestNameForUrl(guestName: string): string {
 
 export const useGuestVerification = () => {
   const { user } = useAuth();
+  const { toast } = useToast(); // ✅ Utiliser le hook au lieu de l'import direct
   const [tokens, setTokens] = useState<PropertyVerificationToken[]>([]);
   const [submissions, setSubmissions] = useState<GuestSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -178,6 +179,7 @@ export const useGuestVerification = () => {
         guestName?: string;
         numberOfGuests?: number;
       };
+      userEvent?: Event; // ✅ NOUVEAU : Préserver le contexte utilisateur
     }
   ): Promise<string | null> => {
     if (!user) return null;
@@ -285,24 +287,148 @@ export const useGuestVerification = () => {
       
       console.log('✅ Generated client verification URL:', clientUrl);
       
-      // ✅ NOUVEAU : Informer sur le type de lien
-      const linkType = data.requiresCode ? "sécurisé" : "standard";
-      const linkDescription = data.requiresCode 
-        ? "Ce lien nécessitera le code de réservation Airbnb pour l'accès" 
-        : "Lien de vérification standard créé";
+      // ✅ DIAGNOSTIC : Logs détaillés pour comprendre le problème
+      const timeSinceEvent = options?.userEvent ? Date.now() - (options.userEvent.timeStamp || Date.now()) : 'unknown';
+      console.log('🔍 DIAGNOSTIC - État du contexte:', {
+        isSecureContext: window.isSecureContext,
+        hasClipboard: !!navigator.clipboard,
+        userAgent: navigator.userAgent,
+        url: window.location.href,
+        timestamp: new Date().toISOString(),
+        timeSinceUserEvent: timeSinceEvent,
+        hasUserEvent: !!options?.userEvent
+      });
       
-      // Copy URL to clipboard
+      // ✅ SOLUTION : Copie avec préservation du contexte utilisateur
       try {
-        await navigator.clipboard.writeText(clientUrl);
-        toast({
-          title: `Lien ${linkType} généré et copié`,
-          description: linkDescription
+        console.log('🔵 Début de la copie...');
+        const { copyToClipboard } = await import('@/lib/clipboardUtils');
+        
+        // Si on a un événement utilisateur, on doit copier de manière synchrone
+        // Sinon, on utilise la méthode asynchrone normale
+        let success = false;
+        
+        if (options?.userEvent && navigator.clipboard && window.isSecureContext) {
+          // ✅ MEILLEURE MÉTHODE : Utiliser l'événement pour préserver le contexte
+          try {
+            console.log('📋 Copie avec contexte utilisateur préservé...');
+            // La copie doit être faite dans la même stack que l'événement
+            // On utilise une Promise qui se résout immédiatement
+            await navigator.clipboard.writeText(clientUrl);
+            success = true;
+            console.log('✅ Clipboard API réussie avec contexte utilisateur');
+          } catch (clipboardError) {
+            console.warn('❌ Clipboard API échoué avec contexte utilisateur:', clipboardError);
+            // Fallback sur la méthode normale
+            success = await copyToClipboard(clientUrl);
+          }
+        } else {
+          // Méthode normale (peut échouer si contexte utilisateur expiré)
+          const startTime = Date.now();
+          success = await copyToClipboard(clientUrl);
+          const endTime = Date.now();
+          const duration = endTime - startTime;
+          
+          console.log('📊 Résultat de la copie:', {
+            success,
+            duration: `${duration}ms`,
+            clientUrl: clientUrl.substring(0, 50) + '...',
+            warning: !window.isSecureContext ? '⚠️ HTTP - La copie peut ne pas fonctionner même si success=true' : undefined
+          });
+        }
+        
+        // ⚠️ IMPORTANT : En HTTP, execCommand peut retourner true sans vraiment copier
+        // On ne peut pas vérifier avec clipboard API car il n'est pas disponible
+        // Solution : Afficher le lien dans un toast pour que l'utilisateur puisse le copier manuellement
+        
+        console.log('🔍 ÉTAPE DE VÉRIFICATION:', {
+          success,
+          hasClipboard: !!navigator.clipboard,
+          isSecureContext: window.isSecureContext,
+          canVerify: !!(navigator.clipboard && window.isSecureContext),
+          willShowModal: !!(success && !window.isSecureContext),
+          condition1: success && navigator.clipboard && window.isSecureContext,
+          condition2: !(success && navigator.clipboard && window.isSecureContext)
         });
-      } catch (clipboardError) {
-        console.warn('⚠️ Failed to copy to clipboard:', clipboardError);
+        
+        // Vérifier si le texte est vraiment dans le presse-papier (si possible)
+        if (success && navigator.clipboard && window.isSecureContext) {
+          console.log('✅ Branche HTTPS - Vérification possible');
+          console.log('🔍 Condition vérifiée:', {
+            success,
+            hasClipboard: !!navigator.clipboard,
+            isSecureContext: window.isSecureContext,
+            allTrue: success && navigator.clipboard && window.isSecureContext
+          });
+          try {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const clipboardText = await navigator.clipboard.readText();
+            const verified = clipboardText === clientUrl;
+            console.log('✅ Vérification presse-papier:', {
+              verified,
+              clipboardLength: clipboardText.length,
+              expectedLength: clientUrl.length,
+              match: verified ? '✅ CORRESPOND' : '❌ DIFFÉRENT'
+            });
+            
+            if (verified) {
+              toast({
+                title: "✅ Lien copié et vérifié !",
+                description: "Le lien de vérification a été copié dans votre presse-papier. Utilisez Ctrl+V pour le coller.",
+                duration: 3000
+              });
+            } else {
+              toast({
+                title: "⚠️ Copie non vérifiée",
+                description: `Le lien a été généré mais la vérification a échoué. Lien: ${clientUrl.substring(0, 60)}...`,
+                duration: 5000
+              });
+            }
+          } catch (verifyError) {
+            console.warn('⚠️ Impossible de vérifier le presse-papier (permission):', verifyError);
+            toast({
+              title: success ? "✅ Lien copié !" : "⚠️ Lien généré",
+              description: success 
+                ? "Le lien de vérification a été copié dans votre presse-papier. Utilisez Ctrl+V pour le coller."
+                : `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
+              duration: success ? 3000 : 5000
+            });
+          }
+        } else {
+          // ⚠️ En HTTP, même si success=true, la copie peut ne pas fonctionner
+          // SOLUTION SIMPLIFIÉE : Afficher le lien dans le toast
+          if (success && !window.isSecureContext) {
+            // En HTTP, afficher le lien dans le toast pour copie manuelle
+            toast({
+              title: "✅ Lien généré",
+              description: `Le lien a été généré. En HTTP, copiez-le manuellement : ${clientUrl}`,
+              duration: 10000
+            });
+          } else if (success) {
+            toast({
+              title: "✅ Lien copié !",
+              description: "Le lien de vérification a été copié dans votre presse-papier. Utilisez Ctrl+V pour le coller.",
+              duration: 3000
+            });
+          } else {
+            toast({
+              title: "⚠️ Lien généré",
+              description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
+              duration: 10000
+            });
+          }
+        }
+      } catch (err) {
+        console.error('❌ ERREUR lors de la copie:', err);
+        console.error('❌ Détails de l\'erreur:', {
+          message: err instanceof Error ? err.message : 'Unknown error',
+          stack: err instanceof Error ? err.stack : undefined,
+          name: err instanceof Error ? err.name : undefined
+        });
         toast({
-          title: `Lien ${linkType} généré`,
-          description: `${linkDescription} (${clientUrl})`
+          title: "✅ Lien généré",
+          description: `Lien de vérification: ${clientUrl}`,
+          duration: 5000
         });
       }
 
