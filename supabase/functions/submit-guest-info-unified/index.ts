@@ -811,27 +811,80 @@ async function saveGuestDataInternal(
         guestEmail: data.guest_email
       });
 
-      // ✅ NOUVEAU : Synchroniser avec la table airbnb_reservations pour le calendrier
+      // ✅ CORRIGÉ : Synchroniser avec la table airbnb_reservations pour le calendrier
+      // ⚠️ IMPORTANT : Toujours mettre à jour le guest_name, même si la réservation existait déjà
+      // Cela évite que les anciens noms de guests persistent après suppression
       if (booking.airbnbCode && booking.airbnbCode !== 'INDEPENDENT_BOOKING') {
         log('info', '🔄 Synchronisation avec airbnb_reservations pour le calendrier', {
           airbnbCode: booking.airbnbCode,
-          guestName: data.guest_name
+          guestName: data.guest_name,
+          propertyId: booking.propertyId
         });
         
-        const { error: airbnbUpdateError } = await supabase
+        // ✅ NOUVEAU : Vérifier d'abord si la réservation existe dans airbnb_reservations
+        const { data: existingAirbnbReservation, error: checkError } = await supabase
           .from('airbnb_reservations')
-          .update({
-            guest_name: data.guest_name,
-            summary: `Airbnb – ${data.guest_name}`,
-            updated_at: new Date().toISOString()
-          })
+          .select('id, guest_name')
           .eq('airbnb_booking_id', booking.airbnbCode)
-          .eq('property_id', booking.propertyId);
-
-        if (airbnbUpdateError) {
-          log('error', '❌ Erreur synchronisation airbnb_reservations', { error: airbnbUpdateError });
+          .eq('property_id', booking.propertyId)
+          .maybeSingle();
+        
+        if (checkError) {
+          log('warn', '⚠️ Erreur lors de la vérification airbnb_reservations', { error: checkError });
+        }
+        
+        // ✅ CORRIGÉ : Mettre à jour ou créer la réservation dans airbnb_reservations
+        const updateData = {
+          guest_name: data.guest_name, // ✅ TOUJOURS mettre à jour le nom, même si ancien nom existait
+          summary: `Airbnb – ${data.guest_name}`,
+          updated_at: new Date().toISOString()
+        };
+        
+        if (existingAirbnbReservation) {
+          // Mise à jour de la réservation existante
+          const { error: airbnbUpdateError } = await supabase
+            .from('airbnb_reservations')
+            .update(updateData)
+            .eq('id', existingAirbnbReservation.id);
+          
+          if (airbnbUpdateError) {
+            log('error', '❌ Erreur synchronisation airbnb_reservations (mise à jour)', { 
+              error: airbnbUpdateError,
+              oldGuestName: existingAirbnbReservation.guest_name,
+              newGuestName: data.guest_name
+            });
+          } else {
+            log('info', '✅ Synchronisation airbnb_reservations réussie (mise à jour)', {
+              oldGuestName: existingAirbnbReservation.guest_name,
+              newGuestName: data.guest_name
+            });
+          }
         } else {
-          log('info', '✅ Synchronisation airbnb_reservations réussie');
+          // Créer une nouvelle réservation dans airbnb_reservations si elle n'existe pas
+          // (peut arriver si la réservation a été supprimée puis recréée)
+          log('info', '⚠️ Réservation non trouvée dans airbnb_reservations, création...', {
+            airbnbCode: booking.airbnbCode,
+            propertyId: booking.propertyId
+          });
+          
+          const { error: airbnbInsertError } = await supabase
+            .from('airbnb_reservations')
+            .insert({
+              airbnb_booking_id: booking.airbnbCode,
+              property_id: booking.propertyId,
+              guest_name: data.guest_name,
+              summary: `Airbnb – ${data.guest_name}`,
+              start_date: booking.checkInDate || new Date().toISOString(),
+              end_date: booking.checkOutDate || new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+          
+          if (airbnbInsertError) {
+            log('error', '❌ Erreur création airbnb_reservations', { error: airbnbInsertError });
+          } else {
+            log('info', '✅ Réservation créée dans airbnb_reservations');
+          }
         }
       }
     } else {
@@ -922,27 +975,74 @@ async function saveGuestDataInternal(
         }
       }
       
-      // ✅ NOUVEAU : Synchroniser avec la table airbnb_reservations pour le calendrier (nouvelle réservation)
+      // ✅ CORRIGÉ : Synchroniser avec la table airbnb_reservations pour le calendrier (nouvelle réservation)
+      // ⚠️ IMPORTANT : Toujours mettre à jour le guest_name, même si la réservation existait déjà
+      // Cela évite que les anciens noms de guests persistent après suppression
       if (booking.airbnbCode && booking.airbnbCode !== 'INDEPENDENT_BOOKING' && savedBooking) {
         log('info', '🔄 Synchronisation airbnb_reservations pour nouvelle réservation', {
           airbnbCode: booking.airbnbCode,
-          guestName: savedBooking.guest_name
+          guestName: savedBooking.guest_name,
+          propertyId: booking.propertyId
         });
         
-        const { error: airbnbUpdateError } = await supabase
+        // ✅ NOUVEAU : Vérifier d'abord si la réservation existe dans airbnb_reservations
+        const { data: existingAirbnbReservation, error: checkError } = await supabase
           .from('airbnb_reservations')
-          .update({
-            guest_name: savedBooking.guest_name,
-            summary: `Airbnb – ${savedBooking.guest_name}`,
-            updated_at: new Date().toISOString()
-          })
+          .select('id, guest_name')
           .eq('airbnb_booking_id', booking.airbnbCode)
-          .eq('property_id', booking.propertyId);
-
-        if (airbnbUpdateError) {
-          log('error', '❌ Erreur synchronisation airbnb_reservations (nouvelle réservation)', { error: airbnbUpdateError });
+          .eq('property_id', booking.propertyId)
+          .maybeSingle();
+        
+        if (checkError) {
+          log('warn', '⚠️ Erreur lors de la vérification airbnb_reservations', { error: checkError });
+        }
+        
+        // ✅ CORRIGÉ : Mettre à jour ou créer la réservation dans airbnb_reservations
+        const updateData = {
+          guest_name: savedBooking.guest_name, // ✅ TOUJOURS mettre à jour le nom, même si ancien nom existait
+          summary: `Airbnb – ${savedBooking.guest_name}`,
+          updated_at: new Date().toISOString()
+        };
+        
+        if (existingAirbnbReservation) {
+          // Mise à jour de la réservation existante (peut arriver si réservation supprimée puis recréée)
+          const { error: airbnbUpdateError } = await supabase
+            .from('airbnb_reservations')
+            .update(updateData)
+            .eq('id', existingAirbnbReservation.id);
+          
+          if (airbnbUpdateError) {
+            log('error', '❌ Erreur synchronisation airbnb_reservations (mise à jour nouvelle réservation)', { 
+              error: airbnbUpdateError,
+              oldGuestName: existingAirbnbReservation.guest_name,
+              newGuestName: savedBooking.guest_name
+            });
+          } else {
+            log('info', '✅ Synchronisation airbnb_reservations réussie (mise à jour nouvelle réservation)', {
+              oldGuestName: existingAirbnbReservation.guest_name,
+              newGuestName: savedBooking.guest_name
+            });
+          }
         } else {
-          log('info', '✅ Synchronisation airbnb_reservations réussie (nouvelle réservation)');
+          // Créer une nouvelle réservation dans airbnb_reservations
+          const { error: airbnbInsertError } = await supabase
+            .from('airbnb_reservations')
+            .insert({
+              airbnb_booking_id: booking.airbnbCode,
+              property_id: booking.propertyId,
+              guest_name: savedBooking.guest_name,
+              summary: `Airbnb – ${savedBooking.guest_name}`,
+              start_date: booking.checkInDate || new Date().toISOString(),
+              end_date: booking.checkOutDate || new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+          
+          if (airbnbInsertError) {
+            log('error', '❌ Erreur création airbnb_reservations (nouvelle réservation)', { error: airbnbInsertError });
+          } else {
+            log('info', '✅ Réservation créée dans airbnb_reservations (nouvelle réservation)');
+          }
         }
       }
     }

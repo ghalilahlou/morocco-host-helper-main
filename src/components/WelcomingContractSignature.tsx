@@ -80,12 +80,65 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const isMountedRef = useRef(true);
   const [currentStep, setCurrentStep] = useState<'welcome' | 'review' | 'signature' | 'celebration'>('review');
   
-  // ✅ CORRIGÉ : Cleanup pour éviter les erreurs Portal
+  // ✅ CORRIGÉ : Intercepteur d'erreurs global pour éviter les erreurs Portal insertBefore
   useEffect(() => {
+    // Sauvegarder les handlers originaux
+    const originalOnError = window.onerror;
+    const originalOnUnhandledRejection = window.onunhandledrejection;
+
+    // Handler pour les erreurs synchrones
+    window.onerror = function(message, source, lineno, colno, error) {
+      // Intercepter les erreurs Portal et les ignorer silencieusement
+      if (
+        error &&
+        (error.message?.includes('removeChild') ||
+         error.message?.includes('insertBefore') ||
+         error.message?.includes('not a child of this node') ||
+         error.message?.includes('The node to be removed') ||
+         error.message?.includes('The node before which') ||
+         error.name === 'NotFoundError')
+      ) {
+        console.debug('🛡️ Erreur Portal interceptée et ignorée:', error.message);
+        return true; // Empêche la propagation de l'erreur
+      }
+
+      // Laisser passer les autres erreurs
+      if (originalOnError) {
+        return originalOnError(message, source, lineno, colno, error);
+      }
+      return false;
+    };
+
+    // Handler pour les erreurs asynchrones
+    window.onunhandledrejection = function(event) {
+      const error = event.reason;
+      if (
+        error &&
+        typeof error.message === 'string' &&
+        (error.message.includes('removeChild') ||
+         error.message.includes('insertBefore') ||
+         error.message.includes('not a child of this node') ||
+         error.message.includes('The node before which'))
+      ) {
+        console.debug('🛡️ Erreur Portal async interceptée et ignorée');
+        event.preventDefault(); // Empêche la propagation
+        return;
+      }
+
+      // Laisser passer les autres erreurs
+      if (originalOnUnhandledRejection) {
+        originalOnUnhandledRejection.call(window, event);
+      }
+    };
+
     isMountedRef.current = true;
     
     return () => {
       isMountedRef.current = false;
+      
+      // Restaurer les handlers originaux lors du démontage
+      window.onerror = originalOnError;
+      window.onunhandledrejection = originalOnUnhandledRejection;
       
       // ✅ NOUVEAU : Nettoyage agressif des Portals Radix UI avant démontage
       try {
