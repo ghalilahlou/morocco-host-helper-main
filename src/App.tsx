@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -39,8 +39,71 @@ const LoadingSpinner = () => (
 );
 const queryClient = new QueryClient();
 
+// ✅ Intercepteur Portal global pour éviter les erreurs insertBefore/removeChild
+const PortalErrorInterceptor = () => {
+  useEffect(() => {
+    // Sauvegarder les handlers originaux
+    const originalOnError = window.onerror;
+    const originalOnUnhandledRejection = window.onunhandledrejection;
+
+    // Handler pour les erreurs synchrones
+    window.onerror = function(message, source, lineno, colno, error) {
+      // Intercepter les erreurs Portal et les ignorer silencieusement
+      if (
+        error &&
+        (error.message?.includes('removeChild') ||
+         error.message?.includes('insertBefore') ||
+         error.message?.includes('not a child of this node') ||
+         error.message?.includes('The node to be removed') ||
+         error.message?.includes('The node before which') ||
+         error.name === 'NotFoundError')
+      ) {
+        // Erreur Portal interceptée et ignorée silencieusement
+        return true; // Empêche la propagation de l'erreur
+      }
+
+      // Laisser passer les autres erreurs
+      if (originalOnError) {
+        return originalOnError(message, source, lineno, colno, error);
+      }
+      return false;
+    };
+
+    // Handler pour les erreurs asynchrones
+    window.onunhandledrejection = function(event) {
+      const error = event.reason;
+      if (
+        error &&
+        typeof error.message === 'string' &&
+        (error.message.includes('removeChild') ||
+         error.message.includes('insertBefore') ||
+         error.message.includes('not a child of this node') ||
+         error.message.includes('The node before which'))
+      ) {
+        // Erreur Portal async interceptée et ignorée silencieusement
+        event.preventDefault(); // Empêche la propagation
+        return;
+      }
+
+      // Laisser passer les autres erreurs
+      if (originalOnUnhandledRejection) {
+        originalOnUnhandledRejection.call(window, event);
+      }
+    };
+
+    return () => {
+      // Restaurer les handlers originaux lors du démontage
+      window.onerror = originalOnError;
+      window.onunhandledrejection = originalOnUnhandledRejection;
+    };
+  }, []);
+
+  return null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <PortalErrorInterceptor />
     <TooltipProvider>
       <AdminProvider>
         <Toaster />

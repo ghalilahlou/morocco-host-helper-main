@@ -98,7 +98,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
          error.message?.includes('The node before which') ||
          error.name === 'NotFoundError')
       ) {
-        console.debug('🛡️ Erreur Portal interceptée et ignorée:', error.message);
+        // Erreur Portal interceptée et ignorée silencieusement
         return true; // Empêche la propagation de l'erreur
       }
 
@@ -120,7 +120,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
          error.message.includes('not a child of this node') ||
          error.message.includes('The node before which'))
       ) {
-        console.debug('🛡️ Erreur Portal async interceptée et ignorée');
+        // Erreur Portal async interceptée et ignorée silencieusement
         event.preventDefault(); // Empêche la propagation
         return;
       }
@@ -154,7 +154,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
                 }
               } catch (e) {
                 // Ignorer les erreurs de Portal cleanup
-                console.debug('Portal cleanup (non-bloquant):', e);
+                // Portal cleanup error (non-bloquant, ignoré silencieusement)
               }
             });
             
@@ -166,23 +166,21 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
                   overlay.parentNode.removeChild(overlay);
                 }
               } catch (e) {
-                console.debug('Overlay cleanup (non-bloquant):', e);
+                // Overlay cleanup error (non-bloquant, ignoré silencieusement)
               }
             });
           } catch (e) {
-            console.debug('Portal cleanup global (non-bloquant):', e);
+            // Portal cleanup global error (non-bloquant, ignoré silencieusement)
           }
         }, 100); // Délai pour laisser les animations se terminer
       } catch (e) {
-        console.debug('Cleanup setup error (non-bloquant):', e);
+        // Cleanup setup error (non-bloquant, ignoré silencieusement)
       }
     };
   }, []);
   
-  // Debug: Log current step
+  // Réinitialiser l'état du canvas quand on change d'étape
   useEffect(() => {
-    console.log('🔍 Current step:', currentStep);
-    // Réinitialiser l'état du canvas quand on change d'étape
     if (currentStep !== 'signature') {
       setCanvasInitialized(false);
     }
@@ -202,13 +200,11 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
     // 1. Vérifier location.state (navigation depuis GuestVerification)
     const stateBookingId = (location as any)?.state?.bookingId;
     if (stateBookingId) {
-      console.log('✅ Booking ID trouvé dans location.state:', stateBookingId);
       return stateBookingId;
     }
 
     // 2. Vérifier les props bookingData
     if (bookingData?.id) {
-      console.log('✅ Booking ID trouvé dans bookingData:', bookingData.id);
       return bookingData.id;
     }
 
@@ -216,21 +212,19 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
     const urlParams = new URLSearchParams(window.location.search);
     const urlBookingId = urlParams.get('bookingId');
     if (urlBookingId) {
-      console.log('✅ Booking ID trouvé dans URL:', urlBookingId);
       return urlBookingId;
     }
 
     // 4. Vérifier localStorage
     const storedBookingId = localStorage.getItem('currentBookingId');
     if (storedBookingId) {
-      console.log('✅ Booking ID trouvé dans localStorage:', storedBookingId);
       return storedBookingId;
     }
 
     // 5. ✅ NOUVEAU : Essayer de créer un ID temporaire basé sur les données disponibles
     if (propertyData?.id && guestData?.guests?.[0]?.fullName) {
       const tempId = `temp-${propertyData.id}-${Date.now()}`;
-      console.log("⚠️ Création d'un ID temporaire:", tempId);
+      // Création d'un ID temporaire
       return tempId;
     }
 
@@ -251,7 +245,6 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   // ✅ CORRIGÉ : Mettre à jour contractUrl si initialContractUrl change (important pour Vercel)
   useEffect(() => {
     if (initialContractUrl && initialContractUrl !== contractUrl) {
-      console.log('✅ [WelcomingContractSignature] Mise à jour contractUrl depuis initialContractUrl:', initialContractUrl);
       setContractUrl(initialContractUrl);
     }
   }, [initialContractUrl]); // ✅ Seulement initialContractUrl dans les dépendances
@@ -330,25 +323,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
   // Contract PDF fetching
   const loadContract = async () => {
-    console.log('🔍 [WelcomingContractSignature] loadContract called');
     try {
       setLoadingContract(true);
       setContractError(null);
-      console.log('🔍 [WelcomingContractSignature] Loading contract...');
 
       const bookingIdFromState = (location as any)?.state?.bookingId as string | undefined;
       const hasGuests = Array.isArray(guestData?.guests) && guestData.guests.length > 0;
       const hasBookingGuests = Array.isArray(bookingData?.guests) && bookingData.guests.length > 0;
       const shouldUsePreview = hasGuests || hasBookingGuests;
-      
-      console.log('🔍 [WelcomingContractSignature] Debug data:', {
-        bookingIdFromState,
-        hasGuests,
-        hasBookingGuests,
-        shouldUsePreview,
-        guestData,
-        bookingData
-      });
       let url: string;
 
       if (shouldUsePreview) {
@@ -404,7 +386,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       }
 
       setContractUrl(`${url}${sep}t=${bust}`);
-      console.log('✅ [WelcomingContractSignature] Contract URL set:', `${url}${sep}t=${bust}`);
     } catch (e: any) {
       console.error('❌ [WelcomingContractSignature] Erreur génération du contrat:', e);
       setContractError(e?.message || 'Erreur lors de la génération du contrat');
@@ -417,7 +398,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   // ✅ CORRIGÉ : Mettre à jour contractUrl quand initialContractUrl change (problème Vercel)
   useEffect(() => {
     if (initialContractUrl && initialContractUrl !== contractUrl) {
-      console.log('✅ [WelcomingContractSignature] Mise à jour contractUrl depuis initialContractUrl:', initialContractUrl);
       setContractUrl(initialContractUrl);
       setLoadingContract(false);
       setContractError(null);
@@ -443,8 +423,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   // Configuration du canvas avec un callback ref (une seule fois)
   const canvasCallbackRef = useCallback((canvas: HTMLCanvasElement | null) => {
     if (canvas && currentStep === 'signature' && !canvasInitialized) {
-      console.log('🎨 Setting up canvas via callback ref...');
-      
       // Mettre à jour la ref pour les autres fonctions
       canvasRef.current = canvas;
       
@@ -463,7 +441,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       configureCanvasContext(ctx);
       
       setCanvasInitialized(true);
-      console.log('✅ Canvas ready via callback ref');
     }
   }, [currentStep, canvasInitialized]);
 
@@ -478,7 +455,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         img.onload = () => {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          console.log('🔄 Signature restaurée sur le canvas');
         };
         img.src = signature;
       }
@@ -518,7 +494,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    console.log('🖊️ Start drawing');
     setIsDrawing(true);
     
     // ✅ CORRIGÉ : Configurer le contexte À CHAQUE FOIS
@@ -554,7 +529,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   const stopDrawing = () => {
     if (!isDrawing) return;
     
-    console.log('🖊️ Stop drawing');
     setIsDrawing(false);
     
     const canvas = canvasRef.current;
@@ -577,19 +551,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       
       if (hasSignature) {
         setSignature(dataURL);
-        console.log('✅ Signature saved with content');
-      } else {
-        console.log('⚠️ No signature content detected');
       }
     } else {
       // Fallback si on ne peut pas vérifier le contenu
       setSignature(dataURL);
-      console.log('✅ Signature saved (verification skipped)');
     }
   };
 
   const clearSignature = () => {
-    console.log('🧹 Clearing signature...');
     const canvas = canvasRef.current;
     if (!canvas) return;
     
@@ -604,7 +573,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     configureCanvasContext(ctx);
     
     setSignature(null);
-    console.log('✅ Signature cleared completely');
   };
 
   const handleSubmitSignature = async () => {
@@ -673,13 +641,9 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         return;
       }
       
-      console.log('✅ Signature valide détectée:', {
-        nonWhitePixels,
-        nonTransparentPixels
-      });
+      // Signature valide détectée
     }
 
-      console.log('🔄 Submitting signature...');
     setIsSubmitting(true);
     
     // ✅ CORRIGÉ : Ajouter un timeout pour éviter les blocages
@@ -719,18 +683,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         return; // Sortir sans throw pour éviter les erreurs Portal
       }
 
-      console.log('✅ Utilisation de la réservation existante:', bookingId);
-
       const allGuests = (bookingData?.guests && Array.isArray(bookingData.guests) ? bookingData.guests : (guestData?.guests || [])) as any[];
       const signerName = allGuests?.[0]?.fullName || 'Guest';
       const signerEmail = guestData?.email || null;
       const signerPhone = guestData?.phone || null;
-      
-      console.log('📤 Sauvegarde de la signature avec:', {
-        bookingId,
-        signerName,
-        hasSignature: !!signature
-      });
       
       // ✅ CORRIGÉ : Utiliser Promise.race pour éviter les blocages
       const signatureResult = await Promise.race([
@@ -744,12 +700,9 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         timeoutPromise
       ]) as any;
 
-      console.log('✅ Contract signature saved successfully:', signatureResult);
-
       // ✅ CORRIGÉ : Générer le contrat signé via Edge Function (non-blocking)
       Promise.resolve().then(async () => {
         try {
-          console.log('📄 Génération du contrat signé pour booking:', bookingId);
           
           // Utiliser l'Edge Function directement pour générer le contrat signé
           const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
@@ -770,9 +723,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
           if (data?.success && data?.contractUrl && isMountedRef.current) {
             setSignedContractUrl(data.contractUrl);
-            console.log('✅ Contrat signé généré avec succès:', data.contractUrl);
-          } else {
-            console.warn('⚠️ Aucune URL de contrat signé retournée dans la réponse');
           }
         } catch (generateError) {
           console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
@@ -806,8 +756,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         try {
           const guestEmail = guestData?.guests?.[0]?.email;
           if (guestEmail && guestEmail.trim() !== '') {
-            console.log('📧 Envoi email au guest:', guestEmail);
-            
             const { error: guestEmailError } = await supabase.functions.invoke('send-guest-contract', {
               body: {
                 guestEmail: guestEmail,
@@ -822,12 +770,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
             });
             
             if (guestEmailError) {
-              console.error('⚠️ Erreur envoi email guest:', guestEmailError);
-            } else {
-              console.log('✅ Email envoyé au guest avec succès');
+              // Erreur envoi email guest (non-bloquant)
             }
-          } else {
-            console.log('ℹ️ Aucun email guest fourni, pas d\'envoi d\'email');
           }
         } catch (guestNotifyError) {
           console.error('⚠️ Notification guest échouée:', guestNotifyError);
@@ -835,8 +779,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       });
 
       // ✅ CORRIGÉ : Marquer immédiatement comme terminé pour éviter les blocages
-      console.log('✅ Signature soumise avec succès, passage à l\'étape celebration');
-      
       if (isMountedRef.current) {
         setCurrentStep('celebration');
       }
@@ -1515,7 +1457,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                               variant="outline"
                               size="sm"
                               onClick={() => {
-                                console.log('🧪 Testing canvas...');
                                 const canvas = canvasRef.current;
                                 if (!canvas) {
                                   console.error('❌ Canvas not found');
@@ -1548,7 +1489,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                 ctx.stroke();
                                 
                                 setSignature(canvas.toDataURL());
-                                console.log('✅ Test signature créée');
                               }}
                               className="mx-auto bg-red-100 hover:bg-red-200 text-red-700"
                             >
