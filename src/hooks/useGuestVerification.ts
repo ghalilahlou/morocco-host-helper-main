@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { PropertyVerificationToken, GuestSubmission } from '@/types/guestVerification';
 import { useAuth } from './useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { formatLocalDate } from '@/utils/dateUtils';
 
 // ✅ NOUVEAU : Fonction pour nettoyer le nom du guest avant de l'inclure dans l'URL
 function cleanGuestNameForUrl(guestName: string): string {
@@ -242,9 +243,18 @@ export const useGuestVerification = () => {
         let endDate: string | undefined;
         
         if (reservationData) {
-          // ✅ NOUVEAU : Inclure les dates dans l'URL pour que le frontend puisse les récupérer
-          startDate = new Date(reservationData.startDate).toISOString().split('T')[0];
-          endDate = new Date(reservationData.endDate).toISOString().split('T')[0];
+          // ✅ CORRIGÉ : Inclure les dates dans l'URL en utilisant formatLocalDate pour éviter décalage timezone
+          // ⚠️ IMPORTANT : DTEND dans ICS est exclusif, donc endDate est déjà la date de départ réelle
+          const startDateObj = reservationData.startDate instanceof Date 
+            ? reservationData.startDate 
+            : new Date(reservationData.startDate);
+          const endDateObj = reservationData.endDate instanceof Date 
+            ? reservationData.endDate 
+            : new Date(reservationData.endDate);
+          
+          // Utiliser formatLocalDate pour éviter le décalage timezone (format YYYY-MM-DD en heure locale)
+          startDate = formatLocalDate(startDateObj);
+          endDate = formatLocalDate(endDateObj);
           
           // ✅ NOUVEAU : Nettoyer le nom du guest avant de l'inclure dans l'URL
           // ⚠️ IMPORTANT : Ne pas inclure guestName dans l'URL si vide pour éviter le double formulaire

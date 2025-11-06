@@ -676,8 +676,9 @@ export const GuestVerification = () => {
         if (searchResult?.reservation) {
           const matchedReservation = searchResult.reservation;
           
-          const foundCheckInDate = new Date(matchedReservation.start_date);
-          const foundCheckOutDate = new Date(matchedReservation.end_date);
+          // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
+          const foundCheckInDate = parseLocalDate(matchedReservation.start_date);
+          const foundCheckOutDate = parseLocalDate(matchedReservation.end_date);
           
           setCheckInDate(foundCheckInDate);
           setCheckOutDate(foundCheckOutDate);
