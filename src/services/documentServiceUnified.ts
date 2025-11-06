@@ -57,6 +57,10 @@ export interface GeneratedDocuments {
   expiresAt: string;
 }
 
+// ✅ CRITIQUE : Garde global pour éviter les appels multiples simultanés
+let isUnifiedWorkflowRunning = false;
+let currentWorkflowRequestId: string | null = null;
+
 /**
  * NOUVELLE FONCTION UNIFIÉE - Un seul appel pour tout faire
  * Remplace submitDocumentsAndSign() avec une logique simplifiée
@@ -65,7 +69,26 @@ export async function submitDocumentsUnified(
   request: DocumentGenerationRequest
 ): Promise<GeneratedDocuments> {
   
-  console.log('🚀 [DocumentServiceUnified] Starting unified submission...');
+  // ✅ CRITIQUE : Générer un ID unique pour cette requête
+  const requestId = `${request.token}-${request.airbnbCode}-${Date.now()}`;
+  
+  // ✅ CRITIQUE : Vérifier si un workflow est déjà en cours
+  if (isUnifiedWorkflowRunning) {
+    console.warn('⚠️ [DocumentServiceUnified] Workflow déjà en cours, appel ignoré', {
+      currentRequestId: currentWorkflowRequestId,
+      newRequestId: requestId
+    });
+    throw new Error('Un workflow est déjà en cours. Veuillez patienter.');
+  }
+  
+  // ✅ CRITIQUE : Marquer comme en cours immédiatement
+  isUnifiedWorkflowRunning = true;
+  currentWorkflowRequestId = requestId;
+  
+  console.log('🚀 [DocumentServiceUnified] Starting unified submission...', {
+    requestId,
+    timestamp: new Date().toISOString()
+  });
   console.log('📋 [DocumentServiceUnified] Request:', {
     guestName: `${request.guestInfo.firstName} ${request.guestInfo.lastName}`,
     documentsCount: request.idDocuments.length,
@@ -137,7 +160,7 @@ export async function submitDocumentsUnified(
       throw new Error('ID de réservation manquant dans la réponse');
     }
 
-    return {
+    const result = {
       bookingId: response.data.bookingId,
       contractUrl: response.data.contractUrl,
       policeUrl: response.data.policeUrl,
@@ -145,6 +168,15 @@ export async function submitDocumentsUnified(
       booking: response.data.booking,
       expiresAt: response.data.expiresAt
     };
+    
+    // ✅ CRITIQUE : Log de confirmation d'exécution unique
+    console.log('✅ [DocumentServiceUnified] Unified workflow triggered once only', {
+      requestId,
+      bookingId: result.bookingId,
+      timestamp: new Date().toISOString()
+    });
+    
+    return result;
 
   } catch (error) {
     console.error('❌ [DocumentServiceUnified] Error:', error);
@@ -157,6 +189,14 @@ export async function submitDocumentsUnified(
     });
     
     throw error;
+  } finally {
+    // ✅ CRITIQUE : Toujours réinitialiser le flag, même en cas d'erreur
+    isUnifiedWorkflowRunning = false;
+    currentWorkflowRequestId = null;
+    console.log('🔄 [DocumentServiceUnified] Workflow flag reset', {
+      requestId,
+      timestamp: new Date().toISOString()
+    });
   }
 }
 

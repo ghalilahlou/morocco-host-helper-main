@@ -1059,13 +1059,14 @@ export const GuestVerification = () => {
   };
 
   const handleSubmit = async () => {
-    // ✅ CORRIGÉ : Protection renforcée contre les soumissions multiples
+    // ✅ CRITIQUE : Protection renforcée contre les soumissions multiples
     if (isSubmittingRef.current || isProcessingRef.current || isLoading || navigationInProgressRef.current) {
-      console.warn('⚠️ Soumission déjà en cours, appel ignoré', {
+      console.warn('⚠️ [GuestVerification] Soumission déjà en cours, appel ignoré', {
         isSubmitting: isSubmittingRef.current,
         isProcessing: isProcessingRef.current,
         isLoading,
-        navigationInProgress: navigationInProgressRef.current
+        navigationInProgress: navigationInProgressRef.current,
+        timestamp: new Date().toISOString()
       });
       toast({
         title: "Soumission en cours",
@@ -1075,9 +1076,15 @@ export const GuestVerification = () => {
       return;
     }
     
-    // ✅ Marquer immédiatement comme en cours
+    // ✅ CRITIQUE : Marquer immédiatement comme en cours AVANT toute opération
     isSubmittingRef.current = true;
     isProcessingRef.current = true;
+    
+    console.log('🚀 [GuestVerification] Unified workflow triggered once only', {
+      timestamp: new Date().toISOString(),
+      token: token?.substring(0, 8) + '...',
+      airbnbCode: airbnbBookingId
+    });
     
     console.log('🔍 Validation - Upload check:', {
       uploadedDocuments: uploadedDocuments.length,
@@ -1087,6 +1094,9 @@ export const GuestVerification = () => {
     });
 
     if (!checkInDate || !checkOutDate) {
+      // ✅ CRITIQUE : Réinitialiser les flags si validation échoue
+      isSubmittingRef.current = false;
+      isProcessingRef.current = false;
       toast({
         title: t('validation.error.title'),
         description: t('validation.selectDates.desc'),
@@ -1101,6 +1111,9 @@ export const GuestVerification = () => {
     checkInDateStartOfDay.setHours(0, 0, 0, 0);
     
     if (checkInDateStartOfDay < today) {
+      // ✅ CRITIQUE : Réinitialiser les flags si validation échoue
+      isSubmittingRef.current = false;
+      isProcessingRef.current = false;
       toast({
         title: t('validation.error.title'),
         description: t('validation.dateFuture.desc'),
@@ -1121,6 +1134,9 @@ export const GuestVerification = () => {
         numberOfGuests,
         guestsRaw: guests.length
       });
+      // ✅ CRITIQUE : Réinitialiser les flags si validation échoue
+      isSubmittingRef.current = false;
+      isProcessingRef.current = false;
       toast({
         title: t('validation.error.title'),
         description: t('validation.exactDocs.desc', { count: actualGuestCount, s: actualGuestCount > 1 ? 's' : '' }),
@@ -1137,6 +1153,9 @@ export const GuestVerification = () => {
     );
 
     if (incompleteGuests.length > 0) {
+      // ✅ CRITIQUE : Réinitialiser les flags si validation échoue
+      isSubmittingRef.current = false;
+      isProcessingRef.current = false;
       toast({
         title: t('validation.error.title'),
         description: t('validation.completeGuests.desc'),
@@ -1165,12 +1184,15 @@ export const GuestVerification = () => {
       // Le workflow unifié (submitDocumentsUnified) gère maintenant TOUS les uploads
       // Plus besoin d'uploader manuellement vers Supabase storage - évite la duplication
       
-      console.log('🚀 Utilisation du workflow unifié (sans upload manuel préalable):', {
+      console.log('🚀 [GuestVerification] Utilisation du workflow unifié (sans upload manuel préalable):', {
         token: token ? 'Présent' : 'Manquant',
         airbnbCode: airbnbBookingId,
         guestCount: deduplicatedGuests.length,
         guestsRaw: guests.length,
-        documentsCount: uploadedDocuments.length
+        documentsCount: uploadedDocuments.length,
+        timestamp: new Date().toISOString(),
+        isSubmitting: isSubmittingRef.current,
+        isProcessing: isProcessingRef.current
       });
 
       // Convertir les données vers le format unifié
@@ -1270,6 +1292,18 @@ export const GuestVerification = () => {
         checkOut: bookingData.checkOutDate
       });
       
+      // ✅ CRITIQUE : Vérifier une dernière fois avant l'appel au workflow
+      if (isSubmittingRef.current === false || isProcessingRef.current === false) {
+        console.error('❌ [GuestVerification] Flags réinitialisés avant l\'appel workflow, annulation');
+        throw new Error('Soumission annulée - flags réinitialisés');
+      }
+      
+      console.log('📤 [GuestVerification] Appel au workflow unifié...', {
+        timestamp: new Date().toISOString(),
+        finalAirbnbCode,
+        guestCount: deduplicatedGuests.length
+      });
+      
       const result = await submitDocumentsUnified({
         token: token!,
         airbnbCode: finalAirbnbCode,
@@ -1284,7 +1318,12 @@ export const GuestVerification = () => {
         }
       });
 
-      console.log('✅ Workflow unifié réussi:', result);
+      console.log('✅ [GuestVerification] Workflow unifié réussi:', {
+        bookingId: result.bookingId,
+        hasContractUrl: !!result.contractUrl,
+        hasPoliceUrl: !!result.policeUrl,
+        timestamp: new Date().toISOString()
+      });
       const bookingId = result.bookingId;
       
       // ✅ CORRECTION : Vérifier que l'ID est valide
@@ -1346,13 +1385,20 @@ export const GuestVerification = () => {
       // 4. Attendre un tick pour que les Portals Radix UI soient nettoyés
       // 5. Naviguer avec try-catch pour gérer les erreurs
       
-      // Éviter les navigations multiples
+      // ✅ CRITIQUE : Éviter les navigations multiples
       if (navigationInProgressRef.current) {
-        console.warn('⚠️ Navigation déjà en cours, ignorée');
+        console.warn('⚠️ [GuestVerification] Navigation déjà en cours, ignorée', {
+          timestamp: new Date().toISOString()
+        });
         return;
       }
       
       navigationInProgressRef.current = true;
+      console.log('🧭 [GuestVerification] Navigation vers signature déclenchée une seule fois', {
+        bookingId,
+        url,
+        timestamp: new Date().toISOString()
+      });
       
       try {
         // ✅ Navigation immédiate - Plus de Select Radix UI = plus besoin de fermeture de Portals
@@ -1371,7 +1417,11 @@ export const GuestVerification = () => {
             state: navigationState,
             replace: false // Permettre le retour en arrière
           });
-          console.log('✅ Navigation lancée avec succès');
+          console.log('✅ [GuestVerification] Navigation lancée avec succès - UNE SEULE FOIS', {
+            bookingId,
+            url,
+            timestamp: new Date().toISOString()
+          });
         } catch (navError) {
           console.error('❌ Erreur lors de la navigation:', navError);
           // ✅ FALLBACK : Si navigation échoue, utiliser window.location (fonctionne toujours)
@@ -1984,9 +2034,21 @@ export const GuestVerification = () => {
                       </Button>
                       
                       {/* ✅ CORRIGÉ : Retirer motion.div pour éviter les conflits lors de la navigation */}
+                      {/* ✅ CRITIQUE : Protection contre les doubles clics */}
                       <Button 
-                        onClick={handleSubmit} 
-                        disabled={isLoading}
+                        onClick={(e) => {
+                          // ✅ CRITIQUE : Empêcher les doubles clics
+                          if (isSubmittingRef.current || isProcessingRef.current || isLoading || navigationInProgressRef.current) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.warn('⚠️ [GuestVerification] Double clic détecté et bloqué', {
+                              timestamp: new Date().toISOString()
+                            });
+                            return;
+                          }
+                          handleSubmit();
+                        }}
+                        disabled={isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current}
                         size="lg"
                         className="px-8 py-3 bg-brand-teal hover:bg-brand-teal/90 transition-transform hover:scale-105 active:scale-95"
                       >
