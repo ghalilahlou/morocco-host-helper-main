@@ -104,24 +104,45 @@ export const ContractSigning: React.FC = () => {
           });
           
           // ✅ CORRIGÉ : S'assurer que booking_data existe, sinon le créer depuis bookingData
-          const bookingData = navigationState.bookingData || navigationState.booking_data;
-          if (!bookingData && navigationState.bookingId) {
+          // ⚠️ IMPORTANT : bookingData peut avoir checkIn/checkOut (strings) ou checkInDate/checkOutDate
+          const rawBookingData = navigationState.bookingData || navigationState.booking_data;
+          
+          // ✅ CORRIGÉ : Normaliser la structure booking_data
+          let booking_data: any;
+          if (rawBookingData) {
+            // Si bookingData existe, le convertir au format attendu
+            booking_data = {
+              id: navigationState.bookingId,
+              checkInDate: rawBookingData.checkInDate || rawBookingData.checkIn || null,
+              checkOutDate: rawBookingData.checkOutDate || rawBookingData.checkOut || null,
+              numberOfGuests: rawBookingData.numberOfGuests || rawBookingData.guests?.length || 1,
+              // ✅ AJOUT : Préserver les autres propriétés
+              ...(rawBookingData.guests && { guests: rawBookingData.guests }),
+              ...(rawBookingData.airbnbCode && { airbnbCode: rawBookingData.airbnbCode }),
+              ...(rawBookingData.propertyName && { propertyName: rawBookingData.propertyName })
+            };
+            console.log('✅ booking_data normalisé depuis bookingData:', booking_data);
+          } else {
             // Créer un booking_data minimal si absent
             console.warn('⚠️ booking_data absent, création d\'un booking_data minimal');
+            booking_data = {
+              id: navigationState.bookingId,
+              checkInDate: null,
+              checkOutDate: null,
+              numberOfGuests: 1
+            };
           }
+          
+          // ✅ CORRIGÉ : Normaliser guestData aussi
+          const guestData = navigationState.guestData || navigationState.guest_data;
           
           setSubmissionData({
             bookingId: navigationState.bookingId,
             contractUrl: navigationState.contractUrl,
             policeUrl: navigationState.policeUrl,
-            guestData: navigationState.guestData,
-            guest_data: navigationState.guestData, // ✅ AJOUT : Format alternatif
-            booking_data: bookingData || {
-              id: navigationState.bookingId,
-              checkInDate: navigationState.bookingData?.checkInDate || navigationState.bookingData?.checkIn,
-              checkOutDate: navigationState.bookingData?.checkOutDate || navigationState.bookingData?.checkOut,
-              numberOfGuests: navigationState.bookingData?.numberOfGuests || 1
-            },
+            guestData: guestData,
+            guest_data: guestData, // ✅ AJOUT : Format alternatif
+            booking_data: booking_data, // ✅ CORRIGÉ : Utiliser booking_data normalisé
             document_urls: navigationState.documentUrls || [] // ✅ AJOUT : URLs des documents
           });
           
