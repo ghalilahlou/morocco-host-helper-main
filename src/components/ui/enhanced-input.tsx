@@ -191,9 +191,11 @@ const EnhancedInput = React.forwardRef<HTMLInputElement, EnhancedInputProps>(
         </div>
         
         {/* Error/Success Messages */}
-        <AnimatePresence mode="wait">
+        {/* ✅ CORRIGÉ : AnimatePresence avec mode="wait" - un seul enfant conditionnel */}
+        <AnimatePresence mode="wait" initial={false}>
           {(error || validationState.message || success) && (
             <motion.div
+              key={error || validationState.message || success || 'message'}
               initial={{ opacity: 0, y: -10, height: 0 }}
               animate={{ opacity: 1, y: 0, height: "auto" }}
               exit={{ opacity: 0, y: -10, height: 0 }}

@@ -27,6 +27,7 @@ import GuestLayout from '@/components/guest/GuestLayout';
 import { AdminRoute } from '@/components/admin/AdminRoute';
 import { ErrorMonitorPanel } from '@/components/dev/ErrorMonitorPanel';
 import { AdminProvider } from '@/contexts/AdminContext';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // 🚀 LAZY LOADING: Composants admin lourds chargés à la demande
 const AdminDashboard = lazy(() => import('@/components/admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
@@ -37,7 +38,64 @@ const LoadingSpinner = () => (
     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
   </div>
 );
-const queryClient = new QueryClient();
+
+// ✅ Composant de fallback global pour ErrorBoundary
+const GlobalErrorFallback = ({ error, resetError }: { error: Error; resetError: () => void }) => {
+  console.error('🔴 [GlobalErrorBoundary] Erreur capturée:', error);
+  
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center p-4">
+      <div className="max-w-md mx-auto p-8 bg-white rounded-lg shadow-lg border-2 border-red-200">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+            <span className="text-3xl">⚠️</span>
+          </div>
+          <h2 className="text-2xl font-bold text-red-800 mb-2">Une erreur s'est produite</h2>
+          <p className="text-red-600 mb-4">
+            L'application a rencontré une erreur inattendue. Veuillez rafraîchir la page.
+          </p>
+        </div>
+        
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mb-4 p-4 bg-gray-100 rounded-lg text-xs font-mono overflow-auto max-h-40">
+            <p className="font-semibold mb-2">Détails de l'erreur (dev seulement):</p>
+            <p className="text-red-600">{error.message}</p>
+            {error.stack && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-gray-600">Stack trace</summary>
+                <pre className="mt-2 text-xs overflow-auto">{error.stack}</pre>
+              </details>
+            )}
+          </div>
+        )}
+        
+        <div className="flex gap-3">
+          <button
+            onClick={() => window.location.reload()}
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+          >
+            Rafraîchir la page
+          </button>
+          <button
+            onClick={resetError}
+            className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg transition-colors"
+          >
+            Réessayer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 // ✅ Intercepteur Portal global pour éviter les erreurs insertBefore/removeChild
 const PortalErrorInterceptor = () => {
@@ -122,14 +180,20 @@ const PortalErrorInterceptor = () => {
 };
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <PortalErrorInterceptor />
-    <TooltipProvider>
-      <AdminProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-        <Routes>
+  <ErrorBoundary
+    fallback={(error, resetError) => <GlobalErrorFallback error={error} resetError={resetError} />}
+    onError={(error, errorInfo) => {
+      console.error('🔴 [App] Erreur capturée par ErrorBoundary global:', error, errorInfo);
+    }}
+  >
+    <QueryClientProvider client={queryClient}>
+      <PortalErrorInterceptor />
+      <TooltipProvider>
+        <AdminProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+          <Routes>
           {/* Guest verification routes - no layout needed for external users */}
           <Route path="/welcome/:propertyId/:token" element={
             <GuestLocaleProvider>
@@ -209,6 +273,7 @@ const App = () => (
       </AdminProvider>
     </TooltipProvider>
   </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

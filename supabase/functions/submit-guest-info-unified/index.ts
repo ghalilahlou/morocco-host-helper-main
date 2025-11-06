@@ -2508,7 +2508,7 @@ serve(async (req) => {
         if (existingBooking.status === 'pending' || 
             existingBooking.status === 'confirmed' || 
             existingBooking.status === 'completed') {
-          log('warn', `Booking ${existingBooking.id} already exists (${existingBooking.status}), skipping duplicate processing`);
+          log('info', `Booking ${existingBooking.id} already exists (${existingBooking.status}), réutilisation et mise à jour des données`);
           
           // ✅ CORRIGÉ : Passer le bookingId existant à saveGuestDataInternal pour synchronisation
           booking.bookingId = existingBooking.id;

@@ -280,64 +280,7 @@ export const GuestVerification = () => {
   const isVerifyingTokenRef = useRef(false); // ✅ Réf pour éviter les vérifications token multiples parallèles
   const isSubmittingRef = useRef(false); // ✅ NOUVEAU : Réf pour éviter les soumissions multiples
 
-  // ✅ FONCTION UTILITAIRE : Nettoyage agressif et robuste des Portals Radix UI
-  // ✅ forceCloseAllPortals supprimée - Plus de Select Radix UI = plus besoin de fermeture de Portals
-
-  // ✅ NOUVEAU : Intercepteur d'erreurs global pour les erreurs Portal
-  useEffect(() => {
-    // Sauvegarder les handlers originaux
-    const originalOnError = window.onerror;
-    const originalOnUnhandledRejection = window.onunhandledrejection;
-
-    // Handler pour les erreurs synchrones
-    window.onerror = function(message, source, lineno, colno, error) {
-      // Intercepter les erreurs Portal et les ignorer silencieusement
-      if (
-        error &&
-        (error.message?.includes('removeChild') ||
-         error.message?.includes('insertBefore') ||
-         error.message?.includes('not a child of this node') ||
-         error.message?.includes('The node to be removed') ||
-         error.name === 'NotFoundError')
-      ) {
-        // Erreur Portal interceptée et ignorée silencieusement
-        return true; // Empêche la propagation de l'erreur
-      }
-
-      // Laisser passer les autres erreurs
-      if (originalOnError) {
-        return originalOnError(message, source, lineno, colno, error);
-            }
-      return false;
-    };
-
-    // Handler pour les erreurs asynchrones
-    window.onunhandledrejection = function(event) {
-      const error = event.reason;
-      if (
-        error &&
-        typeof error.message === 'string' &&
-        (error.message.includes('removeChild') ||
-         error.message.includes('insertBefore') ||
-         error.message.includes('not a child of this node'))
-      ) {
-        // Erreur Portal async interceptée et ignorée silencieusement
-        event.preventDefault(); // Empêche la propagation
-        return;
-      }
-
-      // Laisser passer les autres erreurs
-      if (originalOnUnhandledRejection) {
-        originalOnUnhandledRejection.call(window, event);
-          }
-    };
-
-    return () => {
-      // Restaurer les handlers originaux lors du démontage
-      window.onerror = originalOnError;
-      window.onunhandledrejection = originalOnUnhandledRejection;
-    };
-  }, []);
+  // ✅ SUPPRIMÉ : Intercepteur d'erreurs redondant - l'intercepteur global dans main.tsx gère déjà les erreurs Portal
 
   // ✅ CORRIGÉ : Cleanup immédiat au montage ET au démontage
   useEffect(() => {
@@ -1417,6 +1360,10 @@ export const GuestVerification = () => {
         
         // ✅ CORRIGÉ : Petit délai pour s'assurer que localStorage est bien écrit (important pour Vercel)
         await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // ✅ CRITIQUE : Délai supplémentaire pour laisser les Portals Radix UI se nettoyer
+        // Les Popover et Calendar utilisent des Portals qui peuvent causer des erreurs insertBefore
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         // Navigation directe
         try {

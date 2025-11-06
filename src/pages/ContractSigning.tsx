@@ -396,6 +396,36 @@ export const ContractSigning: React.FC = () => {
     }
   };
 
+  // ✅ CRITIQUE : Tous les hooks doivent être appelés AVANT tous les returns conditionnels
+  // ✅ CORRIGÉ : Mémoriser getContractUrl pour éviter les recalculs à chaque render
+  // ✅ CRITIQUE : Extraire contractUrl de location.state pour éviter les changements d'objet
+  const locationContractUrl = (location as any)?.state?.contractUrl;
+  const submissionContractUrl = (submissionData as any)?.contractUrl;
+  
+  const contractUrl = useMemo(() => {
+    // 1. Essayer location.state
+    if (locationContractUrl) {
+      return locationContractUrl;
+    }
+    
+    // 2. Essayer localStorage (fallback pour Vercel où location.state peut être perdu)
+    try {
+      const storedContractUrl = localStorage.getItem('contractUrl');
+      if (storedContractUrl) {
+        return storedContractUrl;
+      }
+    } catch (e) {
+      // Ignorer les erreurs localStorage silencieusement
+    }
+    
+    // 3. Essayer submissionData
+    if (submissionContractUrl) {
+      return submissionContractUrl;
+    }
+    
+    return undefined;
+  }, [locationContractUrl, submissionContractUrl]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 flex items-center justify-center">
@@ -581,31 +611,6 @@ export const ContractSigning: React.FC = () => {
       </div>
     );
   }
-
-  // ✅ CORRIGÉ : Mémoriser getContractUrl pour éviter les recalculs à chaque render
-  const contractUrl = useMemo(() => {
-    // 1. Essayer location.state
-    if ((location as any)?.state?.contractUrl) {
-      return (location as any).state.contractUrl;
-    }
-    
-    // 2. Essayer localStorage (fallback pour Vercel où location.state peut être perdu)
-    try {
-      const storedContractUrl = localStorage.getItem('contractUrl');
-      if (storedContractUrl) {
-        return storedContractUrl;
-      }
-    } catch (e) {
-      // Ignorer les erreurs localStorage silencieusement
-    }
-    
-    // 3. Essayer submissionData
-    if ((submissionData as any)?.contractUrl) {
-      return (submissionData as any).contractUrl;
-    }
-    
-    return undefined;
-  }, [location.state, submissionData]);
 
   return (
     <WelcomingContractSignature

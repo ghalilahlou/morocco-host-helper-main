@@ -948,7 +948,8 @@ const handleOpenConfig = useCallback(() => {
           </motion.div>
         )}
         
-        <AnimatePresence mode="wait">
+        {/* ✅ CORRIGÉ : AnimatePresence avec mode="wait" - un seul enfant avec clé stable */}
+        <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={currentDate.getMonth()}
             initial={{ opacity: 0, x: 30, scale: 0.95 }}

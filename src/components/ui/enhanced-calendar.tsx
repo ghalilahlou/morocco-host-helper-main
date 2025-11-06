@@ -271,7 +271,9 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        <AnimatePresence mode="wait">
+        {/* ✅ CORRIGÉ : Retirer mode="wait" car il y a plusieurs enfants (map) */}
+        {/* mode="wait" ne fonctionne qu'avec un seul enfant à la fois */}
+        <AnimatePresence>
           {calendarDays.map((date, index) => (
             <motion.div
               key={date.getTime()}

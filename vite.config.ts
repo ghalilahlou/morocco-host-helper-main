@@ -9,6 +9,9 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 3000,
     // https: true, // Désactivé - cause des problèmes avec IP locale
+    // ✅ CRITIQUE : Configuration pour le routing SPA (évite les 404 après refresh)
+    // Vite gère automatiquement le historyApiFallback en dev, mais on le configure explicitement
+    historyApiFallback: true,
     proxy: {
       '/functions': {
         target: process.env.VITE_SUPABASE_URL,

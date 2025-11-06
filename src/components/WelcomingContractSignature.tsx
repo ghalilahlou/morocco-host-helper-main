@@ -80,106 +80,20 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const isMountedRef = useRef(true);
   const [currentStep, setCurrentStep] = useState<'welcome' | 'review' | 'signature' | 'celebration'>('review');
   
-  // ✅ CORRIGÉ : Intercepteur d'erreurs global pour éviter les erreurs Portal insertBefore
+  // ✅ SUPPRIMÉ : Intercepteur d'erreurs redondant - l'intercepteur global dans main.tsx gère déjà les erreurs Portal
+  
+  // ✅ CORRIGÉ : Cleanup simple au montage et démontage
   useEffect(() => {
-    // Sauvegarder les handlers originaux
-    const originalOnError = window.onerror;
-    const originalOnUnhandledRejection = window.onunhandledrejection;
-
-    // Handler pour les erreurs synchrones
-    window.onerror = function(message, source, lineno, colno, error) {
-      // Intercepter les erreurs Portal et les ignorer silencieusement
-      if (
-        error &&
-        (error.message?.includes('removeChild') ||
-         error.message?.includes('insertBefore') ||
-         error.message?.includes('not a child of this node') ||
-         error.message?.includes('The node to be removed') ||
-         error.message?.includes('The node before which') ||
-         error.name === 'NotFoundError')
-      ) {
-        // Erreur Portal interceptée et ignorée silencieusement
-        return true; // Empêche la propagation de l'erreur
-      }
-
-      // Laisser passer les autres erreurs
-      if (originalOnError) {
-        return originalOnError(message, source, lineno, colno, error);
-      }
-      return false;
-    };
-
-    // Handler pour les erreurs asynchrones
-    window.onunhandledrejection = function(event) {
-      const error = event.reason;
-      if (
-        error &&
-        typeof error.message === 'string' &&
-        (error.message.includes('removeChild') ||
-         error.message.includes('insertBefore') ||
-         error.message.includes('not a child of this node') ||
-         error.message.includes('The node before which'))
-      ) {
-        // Erreur Portal async interceptée et ignorée silencieusement
-        event.preventDefault(); // Empêche la propagation
-        return;
-      }
-
-      // Laisser passer les autres erreurs
-      if (originalOnUnhandledRejection) {
-        originalOnUnhandledRejection.call(window, event);
-      }
-    };
-
     isMountedRef.current = true;
     
     return () => {
       isMountedRef.current = false;
-      
-      // Restaurer les handlers originaux lors du démontage
-      window.onerror = originalOnError;
-      window.onunhandledrejection = originalOnUnhandledRejection;
-      
-      // ✅ NOUVEAU : Nettoyage agressif des Portals Radix UI avant démontage
-      try {
-        // Attendre que les animations Framer Motion se terminent
-        setTimeout(() => {
-          try {
-            // Nettoyer tous les Portals Radix UI
-            const portals = document.querySelectorAll('[data-radix-portal], [data-radix-popper-content-wrapper]');
-            portals.forEach(portal => {
-              try {
-                if (portal.parentNode) {
-                  portal.parentNode.removeChild(portal);
-                }
-              } catch (e) {
-                // Ignorer les erreurs de Portal cleanup
-                // Portal cleanup error (non-bloquant, ignoré silencieusement)
-              }
-            });
-            
-            // Nettoyer les overlays de Dialog
-            const overlays = document.querySelectorAll('[data-radix-dialog-overlay]');
-            overlays.forEach(overlay => {
-              try {
-                if (overlay.parentNode) {
-                  overlay.parentNode.removeChild(overlay);
-                }
-              } catch (e) {
-                // Overlay cleanup error (non-bloquant, ignoré silencieusement)
-              }
-            });
-          } catch (e) {
-            // Portal cleanup global error (non-bloquant, ignoré silencieusement)
-          }
-        }, 100); // Délai pour laisser les animations se terminer
-      } catch (e) {
-        // Cleanup setup error (non-bloquant, ignoré silencieusement)
-      }
+      // ✅ SUPPRIMÉ : Nettoyage manuel des Portals - l'intercepteur global gère les erreurs
+      // Le nettoyage manuel causait des erreurs removeChild non interceptées
     };
   }, []);
   
-  // Réinitialiser l'état du canvas quand on change d'étape
+    // Réinitialiser l'état du canvas quand on change d'étape
   useEffect(() => {
     if (currentStep !== 'signature') {
       setCanvasInitialized(false);
@@ -321,20 +235,33 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     `.trim();
   };
 
+  // ✅ CORRIGÉ : Extraire les valeurs primitives pour éviter les boucles infinies dans useCallback
+  const bookingIdForContract = bookingData?.id;
+  const bookingCheckInForContract = bookingData?.checkInDate;
+  const bookingCheckOutForContract = bookingData?.checkOutDate;
+  const bookingNumberOfGuests = bookingData?.numberOfGuests;
+  const bookingGuestsForContract = bookingData?.guests;
+  const guestGuestsForContract = guestData?.guests;
+  const propertyIdForContract = propertyData?.id;
+  const propertyNameForContract = propertyData?.name;
+  const propertyAddressForContract = propertyData?.address;
+  const locationBookingId = (location as any)?.state?.bookingId;
+
   // Contract PDF fetching
-  const loadContract = async () => {
+  // ✅ CORRIGÉ : Mémoriser loadContract avec useCallback pour éviter les boucles infinies
+  const loadContract = useCallback(async () => {
     try {
       setLoadingContract(true);
       setContractError(null);
 
-      const bookingIdFromState = (location as any)?.state?.bookingId as string | undefined;
-      const hasGuests = Array.isArray(guestData?.guests) && guestData.guests.length > 0;
-      const hasBookingGuests = Array.isArray(bookingData?.guests) && bookingData.guests.length > 0;
+      const bookingIdFromState = locationBookingId as string | undefined;
+      const hasGuests = Array.isArray(guestGuestsForContract) && guestGuestsForContract.length > 0;
+      const hasBookingGuests = Array.isArray(bookingGuestsForContract) && bookingGuestsForContract.length > 0;
       const shouldUsePreview = hasGuests || hasBookingGuests;
       let url: string;
 
       if (shouldUsePreview) {
-        const allGuests: any[] = (guestData?.guests && Array.isArray(guestData.guests) ? guestData.guests : (bookingData?.guests || []));
+        const allGuests: any[] = (guestGuestsForContract && Array.isArray(guestGuestsForContract) ? guestGuestsForContract : (bookingGuestsForContract || []));
         const guestsPayload = (allGuests || []).map((g: any) => ({
           fullName: g.fullName,
           dateOfBirth: g.dateOfBirth,
@@ -343,23 +270,23 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           documentType: g.documentType,
         }));
         const bookingLike = {
-          id: bookingData?.id || bookingIdFromState, // ← AJOUT DE L'ID !
+          id: bookingIdForContract || bookingIdFromState,
           property: {
-            id: propertyData?.id,
-            name: propertyData?.name,
-            address: propertyData?.address,
+            id: propertyIdForContract,
+            name: propertyNameForContract,
+            address: propertyAddressForContract,
             contract_template: propertyData?.contract_template,
             contact_info: propertyData?.contact_info,
             house_rules: propertyData?.house_rules,
           },
-          checkInDate: bookingData?.checkInDate ? new Date(bookingData.checkInDate).toISOString() : null,
-          checkOutDate: bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toISOString() : null,
-          numberOfGuests: bookingData?.numberOfGuests ?? guestsPayload.length ?? 1,
+          checkInDate: bookingCheckInForContract ? new Date(bookingCheckInForContract).toISOString() : null,
+          checkOutDate: bookingCheckOutForContract ? new Date(bookingCheckOutForContract).toISOString() : null,
+          numberOfGuests: bookingNumberOfGuests ?? guestsPayload.length ?? 1,
           guests: guestsPayload,
         };
         url = await getContractPdfUrl({ supabase, bookingLike, isPreview: true });
-      } else if (bookingIdFromState || bookingData?.id) {
-        const bookingId: string = bookingIdFromState ?? bookingData?.id;
+      } else if (bookingIdFromState || bookingIdForContract) {
+        const bookingId: string = bookingIdFromState ?? bookingIdForContract;
         url = await getContractPdfUrl({ supabase, bookingId, isPreview: false });
       } else {
         throw new Error('Données de réservation insuffisantes');
@@ -393,7 +320,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     } finally {
       setLoadingContract(false);
     }
-  };
+    // ✅ CORRIGÉ : Utiliser seulement les valeurs primitives comme dépendances
+    // Note: propertyData?.contract_template, contact_info, house_rules sont des objets complexes
+    // mais ils sont utilisés directement dans la fonction, donc on les garde pour la cohérence
+  }, [bookingIdForContract, bookingCheckInForContract, bookingCheckOutForContract, bookingNumberOfGuests, locationBookingId, propertyIdForContract, propertyNameForContract, propertyAddressForContract, propertyData, guestGuestsForContract, bookingGuestsForContract]);
 
   // ✅ CORRIGÉ : Mettre à jour contractUrl quand initialContractUrl change (problème Vercel)
   useEffect(() => {
@@ -404,16 +334,25 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     }
   }, [initialContractUrl]);
 
+  // ✅ CORRIGÉ : Extraire les valeurs primitives pour éviter les boucles infinies
+  const bookingId = bookingData?.id;
+  const bookingCheckIn = bookingData?.checkInDate;
+  const bookingCheckOut = bookingData?.checkOutDate;
+  const bookingGuests = bookingData?.guests;
+  const guestGuests = guestData?.guests;
+  const propertyId = propertyData?.id;
+
   useEffect(() => {
     if (!propertyData) return;
-    const hasBookingId = !!bookingData?.id;
-    const anyGuests = (Array.isArray(guestData?.guests) && guestData.guests.length > 0) || (Array.isArray(bookingData?.guests) && bookingData.guests.length > 0);
-    const hasBookingLike = !!(propertyData?.id && (bookingData?.checkInDate || bookingData?.checkOutDate) && anyGuests);
+    const hasBookingId = !!bookingId;
+    const anyGuests = (Array.isArray(guestGuests) && guestGuests.length > 0) || (Array.isArray(bookingGuests) && bookingGuests.length > 0);
+    const hasBookingLike = !!(propertyId && (bookingCheckIn || bookingCheckOut) && anyGuests);
     if (contractUrl) return; // si déjà fourni via navigation state
     if (hasBookingId || hasBookingLike) {
       loadContract();
     }
-  }, [propertyData, bookingData, guestData, contractUrl]);
+    // ✅ CORRIGÉ : Utiliser seulement les valeurs primitives comme dépendances + loadContract mémorisé
+  }, [propertyId, bookingId, bookingCheckIn, bookingCheckOut, contractUrl, guestGuests?.length, bookingGuests?.length, loadContract]);
 
   // État pour la signature
   const [isDrawing, setIsDrawing] = useState(false);

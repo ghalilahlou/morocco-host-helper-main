@@ -157,7 +157,8 @@ export const MobileDashboard = memo(({
         )}
 
         {/* Content */}
-        <AnimatePresence mode="wait">
+        {/* ✅ CORRIGÉ : AnimatePresence avec mode="wait" - un seul enfant à la fois */}
+        <AnimatePresence mode="wait" initial={false}>
           {viewMode === 'cards' ? (
             <motion.div
               key="cards"
