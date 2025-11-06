@@ -208,7 +208,8 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
       const calendarEvents = await fetchAirbnbCalendarEvents(propertyId, startStr, endStr);
       
       // ✅ CORRIGÉ : Convertir les événements en réservations Airbnb avec enrichissement
-      // Le titre vient déjà formaté de calendarData.ts, mais on doit extraire le guestName correctement
+      // ⚠️ IMPORTANT : event.end est +1 jour pour l'affichage FullCalendar (date exclusive)
+      // Mais endDate dans AirbnbReservation doit être la date réelle de départ (sans +1 jour)
       const formattedReservations: AirbnbReservation[] = calendarEvents.map(event => {
         // Le titre peut être soit un nom (ex: "Jean") soit "Réservation [CODE]"
         let guestName: string | undefined = undefined;
@@ -221,11 +222,17 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
           guestName = undefined;
         }
         
+        // ✅ CORRIGÉ : event.end est +1 jour pour FullCalendar, donc on soustrait 1 jour pour obtenir la date réelle
+        const startDate = new Date(event.start);
+        const endDateForCalendar = new Date(event.end);
+        const realEndDate = new Date(endDateForCalendar);
+        realEndDate.setDate(realEndDate.getDate() - 1); // Soustraire 1 jour pour obtenir la date réelle de départ
+        
         return {
           id: event.id,
           summary: event.title.replace('Airbnb – ', ''),
-          startDate: new Date(event.start),
-          endDate: new Date(event.end),
+          startDate: startDate,
+          endDate: realEndDate, // ✅ CORRIGÉ : Utiliser la date réelle (sans +1 jour)
           description: '',
           guestName: guestName,
           numberOfGuests: undefined,
