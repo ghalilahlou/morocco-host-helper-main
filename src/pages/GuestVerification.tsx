@@ -414,36 +414,38 @@ export const GuestVerification = () => {
 
           // ✅ CORRIGÉ : Pré-remplir directement depuis l'URL en utilisant parseLocalDate
           // pour éviter le décalage d'un jour causé par l'interprétation UTC de new Date()
-          const startDate = parseLocalDate(startDateParam);
-          const endDate = parseLocalDate(endDateParam);
-          
-          console.log('📅 Dates récupérées depuis l\'URL (sans décalage timezone):', {
-            startDateParam,
-            endDateParam,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            startDateLocal: startDate.toLocaleDateString('fr-FR'),
-            endDateLocal: endDate.toLocaleDateString('fr-FR'),
-            isValidStart: startDate.getTime() > 0,
-            isValidEnd: endDate.getTime() > 0
-          });
-          
-          setCheckInDate(startDate);
-          setCheckOutDate(endDate);
-          const guestsCount = parseInt(guestsParam || '1');
-          setNumberOfGuests(guestsCount);
-
-          // ✅ CORRIGÉ CRITIQUE : NE PAS recréer le tableau guests si déjà initialisé
-          // Cela évite de créer des doublons lors des re-renders
-          setGuests(prevGuests => {
-            console.log('📊 Synchronisation guests depuis URL:', {
-              guestsCount,
-              prevGuestsCount: prevGuests.length,
-              guestNameParam: guestNameParam || '(vide)'
+          // ✅ AJOUT : Gestion d'erreurs robuste pour éviter page blanche
+          try {
+            const startDate = parseLocalDate(startDateParam);
+            const endDate = parseLocalDate(endDateParam);
+            
+            console.log('📅 Dates récupérées depuis l\'URL (sans décalage timezone):', {
+              startDateParam,
+              endDateParam,
+              startDate: startDate.toISOString(),
+              endDate: endDate.toISOString(),
+              startDateLocal: startDate.toLocaleDateString('fr-FR'),
+              endDateLocal: endDate.toLocaleDateString('fr-FR'),
+              isValidStart: startDate.getTime() > 0,
+              isValidEnd: endDate.getTime() > 0
             });
             
-            // Si le nombre est déjà bon ET qu'on n'a pas de nom à ajouter, ne rien faire
-            if (prevGuests.length === guestsCount) {
+            setCheckInDate(startDate);
+            setCheckOutDate(endDate);
+            const guestsCount = parseInt(guestsParam || '1');
+            setNumberOfGuests(guestsCount);
+            
+            // ✅ CORRIGÉ CRITIQUE : NE PAS recréer le tableau guests si déjà initialisé
+            // Cela évite de créer des doublons lors des re-renders
+            setGuests(prevGuests => {
+              console.log('📊 Synchronisation guests depuis URL:', {
+                guestsCount,
+                prevGuestsCount: prevGuests.length,
+                guestNameParam: guestNameParam || '(vide)'
+              });
+              
+              // Si le nombre est déjà bon ET qu'on n'a pas de nom à ajouter, ne rien faire
+              if (prevGuests.length === guestsCount) {
               // ✅ RÉACTIVÉ : Le pré-remplissage fonctionne maintenant avec des select natifs (pas de Portals)
               // Vérifier si on a un nom à ajouter
               if (guestNameParam && guestNameParam.trim()) {
@@ -517,9 +519,22 @@ export const GuestVerification = () => {
             
             // Pré-remplir les dates depuis les métadonnées du token
             // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
-            setCheckInDate(parseLocalDate(reservationData.startDate));
-            setCheckOutDate(parseLocalDate(reservationData.endDate));
-            setNumberOfGuests(reservationData.numberOfGuests || 1);
+            // ✅ AJOUT : Gestion d'erreurs robuste
+            try {
+              setCheckInDate(parseLocalDate(reservationData.startDate));
+              setCheckOutDate(parseLocalDate(reservationData.endDate));
+              setNumberOfGuests(reservationData.numberOfGuests || 1);
+            } catch (dateError) {
+              console.error('❌ Erreur lors du parsing des dates depuis les métadonnées:', dateError);
+              // Fallback
+              try {
+                setCheckInDate(new Date(reservationData.startDate));
+                setCheckOutDate(new Date(reservationData.endDate));
+                setNumberOfGuests(reservationData.numberOfGuests || 1);
+              } catch (fallbackError) {
+                console.error('❌ Erreur même avec fallback:', fallbackError);
+              }
+            }
             
             // Pré-remplir le nom du guest si disponible
             if (reservationData.guestName) {
@@ -677,11 +692,23 @@ export const GuestVerification = () => {
           const matchedReservation = searchResult.reservation;
           
           // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
-          const foundCheckInDate = parseLocalDate(matchedReservation.start_date);
-          const foundCheckOutDate = parseLocalDate(matchedReservation.end_date);
-          
-          setCheckInDate(foundCheckInDate);
-          setCheckOutDate(foundCheckOutDate);
+          // ✅ AJOUT : Gestion d'erreurs robuste
+          try {
+            const foundCheckInDate = parseLocalDate(matchedReservation.start_date);
+            const foundCheckOutDate = parseLocalDate(matchedReservation.end_date);
+            
+            setCheckInDate(foundCheckInDate);
+            setCheckOutDate(foundCheckOutDate);
+          } catch (dateError) {
+            console.error('❌ Erreur lors du parsing des dates depuis la recherche:', dateError);
+            // Fallback
+            try {
+              setCheckInDate(new Date(matchedReservation.start_date));
+              setCheckOutDate(new Date(matchedReservation.end_date));
+            } catch (fallbackError) {
+              console.error('❌ Erreur même avec fallback:', fallbackError);
+            }
+          }
           
           if (matchedReservation.number_of_guests) {
             setNumberOfGuests(matchedReservation.number_of_guests);

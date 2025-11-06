@@ -414,6 +414,16 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     }
   };
 
+  // ✅ CORRIGÉ : Mettre à jour contractUrl quand initialContractUrl change (problème Vercel)
+  useEffect(() => {
+    if (initialContractUrl && initialContractUrl !== contractUrl) {
+      console.log('✅ [WelcomingContractSignature] Mise à jour contractUrl depuis initialContractUrl:', initialContractUrl);
+      setContractUrl(initialContractUrl);
+      setLoadingContract(false);
+      setContractError(null);
+    }
+  }, [initialContractUrl]);
+
   useEffect(() => {
     if (!propertyData) return;
     const hasBookingId = !!bookingData?.id;
