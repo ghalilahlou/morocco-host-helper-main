@@ -32,35 +32,45 @@ export const ContractSigning: React.FC = () => {
       }
 
       try {
-        // ✅ CORRECTION : Vérifier d'abord les données de navigation state
-        // ⚠️ IMPORTANT : Sur Vercel, location.state peut être perdu, utiliser localStorage en fallback
+        // ✅ CORRIGÉ : Vérifier IMMÉDIATEMENT localStorage en premier (Vercel perd location.state)
+        // ⚠️ IMPORTANT : Sur Vercel, location.state est souvent perdu dès le chargement
         let navigationState = location.state;
         
-        // ✅ FALLBACK : Si location.state est perdu (problème Vercel), récupérer depuis localStorage
-        if (!navigationState || !navigationState.bookingId) {
-          console.log('⚠️ Navigation state perdu, tentative de récupération depuis localStorage...');
-          try {
-            const storedBookingId = localStorage.getItem('currentBookingId');
-            const storedBookingData = localStorage.getItem('currentBookingData');
-            const storedGuestData = localStorage.getItem('currentGuestData');
-            const storedContractUrl = localStorage.getItem('contractUrl');
-            const storedPoliceUrl = localStorage.getItem('policeUrl');
-            
-            if (storedBookingId && storedContractUrl) {
-              navigationState = {
-                bookingId: storedBookingId,
-                bookingData: storedBookingData ? JSON.parse(storedBookingData) : null,
-                guestData: storedGuestData ? JSON.parse(storedGuestData) : null,
-                contractUrl: storedContractUrl,
-                policeUrl: storedPoliceUrl || null,
-                propertyId: propertyId,
-                token: token,
-                timestamp: Date.now()
-              };
-              console.log('✅ Navigation state récupéré depuis localStorage:', navigationState);
-            }
-          } catch (localStorageError) {
-            console.warn('⚠️ Erreur lors de la récupération depuis localStorage:', localStorageError);
+        // ✅ PRIORITÉ 1 : Vérifier localStorage immédiatement (même si location.state existe)
+        // Car location.state peut être perdu sur Vercel même s'il était présent initialement
+        console.log('🔍 DEBUG: Vérification localStorage en priorité...');
+        try {
+          const storedBookingId = localStorage.getItem('currentBookingId');
+          const storedBookingData = localStorage.getItem('currentBookingData');
+          const storedGuestData = localStorage.getItem('currentGuestData');
+          const storedContractUrl = localStorage.getItem('contractUrl');
+          const storedPoliceUrl = localStorage.getItem('policeUrl');
+          
+          if (storedBookingId && storedContractUrl) {
+            console.log('✅ Données trouvées dans localStorage, utilisation prioritaire');
+            navigationState = {
+              bookingId: storedBookingId,
+              bookingData: storedBookingData ? JSON.parse(storedBookingData) : null,
+              guestData: storedGuestData ? JSON.parse(storedGuestData) : null,
+              contractUrl: storedContractUrl,
+              policeUrl: storedPoliceUrl || null,
+              propertyId: propertyId,
+              token: token,
+              timestamp: Date.now()
+            };
+            console.log('✅ Navigation state récupéré depuis localStorage:', navigationState);
+          } else if (location.state && location.state.bookingId) {
+            // ✅ FALLBACK : Utiliser location.state si localStorage n'a pas les données
+            console.log('✅ Utilisation location.state comme fallback');
+            navigationState = location.state;
+          } else {
+            console.log('⚠️ Aucune donnée trouvée dans localStorage ni location.state');
+          }
+        } catch (localStorageError) {
+          console.warn('⚠️ Erreur lors de la récupération depuis localStorage:', localStorageError);
+          // Fallback vers location.state si localStorage échoue
+          if (location.state && location.state.bookingId) {
+            navigationState = location.state;
           }
         }
         
