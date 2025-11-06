@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { supabase } from '@/integrations/supabase/client';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 interface AirbnbReservationModalProps {
   reservation: AirbnbReservation | null;
   isOpen: boolean;
@@ -174,7 +175,14 @@ export const AirbnbReservationModal = ({
                   }
                 }
               }
-              return reservation?.guestName || 'Réservation Airbnb';
+              // ✅ CORRIGÉ : Ne pas afficher le guestName si la réservation n'a pas de booking associé valide
+              // Utiliser getUnifiedBookingDisplayText pour une validation cohérente
+              const displayText = getUnifiedBookingDisplayText(reservation as any, true);
+              // Si le texte affiché est juste "Réservation" ou le code, utiliser le code Airbnb
+              if (displayText === 'Réservation' || displayText.length < 3) {
+                return reservation?.airbnbBookingId || 'Réservation Airbnb';
+              }
+              return displayText;
             })()}
               <Badge variant="secondary">En attente</Badge>
             </DialogTitle>

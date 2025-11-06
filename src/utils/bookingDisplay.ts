@@ -159,19 +159,31 @@ export const getUnifiedBookingDisplayText = (
   }
   
   // PRIORITÉ 2: Vérifier le guest_name (peut être validé via ICS ou mise à jour)
+  // ✅ CORRIGÉ : Pour les réservations Airbnb, ne pas afficher le guestName si pas de booking associé
+  // (c'est-à-dire si la réservation a été supprimée, le guestName peut persister mais ne doit pas être affiché)
   const guestName = isAirbnb 
     ? airbnbReservation?.guestName 
     : regularBooking?.guest_name;
   
   // ✅ AMÉLIORÉ : Nettoyer le guestName avant validation pour éviter les blocages
+  // ✅ CORRIGÉ : Pour les réservations Airbnb, vérifier qu'elles ont des soumissions réelles ou un booking associé
+  // Si une réservation Airbnb n'a pas de soumissions réelles, ne pas afficher le guestName même s'il existe
+  // (car cela signifie probablement que la réservation a été supprimée et le guestName persiste)
   if (guestName) {
-    const cleanedGuestName = cleanGuestName(guestName);
-    if (cleanedGuestName && isValidGuestName(cleanedGuestName)) {
-      const firstName = getFirstName(cleanedGuestName);
-      const totalGuests = isAirbnb 
-        ? (airbnbReservation?.numberOfGuests || 1)
-        : (regularBooking?.guests?.length || 1);
-      return formatGuestDisplayName(firstName, totalGuests);
+    // Pour les réservations Airbnb, ne pas afficher le guestName si pas de soumissions réelles
+    // (cela évite d'afficher des noms de guests supprimés)
+    if (isAirbnb && !enrichedBooking.hasRealSubmissions) {
+      // Ne pas afficher le guestName pour les réservations Airbnb sans soumissions réelles
+      // Passer à la priorité suivante (code de réservation)
+    } else {
+      const cleanedGuestName = cleanGuestName(guestName);
+      if (cleanedGuestName && isValidGuestName(cleanedGuestName)) {
+        const firstName = getFirstName(cleanedGuestName);
+        const totalGuests = isAirbnb 
+          ? (airbnbReservation?.numberOfGuests || 1)
+          : (regularBooking?.guests?.length || 1);
+        return formatGuestDisplayName(firstName, totalGuests);
+      }
     }
   }
   
