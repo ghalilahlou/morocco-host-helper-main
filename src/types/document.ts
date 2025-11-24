@@ -26,4 +26,5 @@ export interface DocumentMetadata {
   fileName: string;
   extractedData?: any;
   guestId?: string;
+  documentType?: string;
 }

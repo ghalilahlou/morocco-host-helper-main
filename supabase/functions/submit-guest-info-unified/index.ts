@@ -1145,18 +1145,18 @@ async function saveGuestDataInternal(
       if (existingGuest && existingGuest.id) {
         // ✅ CRITIQUE : Construire l'objet de mise à jour avec gestion conditionnelle de l'email
         const updateData: any = {
-          full_name: guestData.full_name,
-          nationality: guestData.nationality,
-          document_type: guestData.document_type,
-          document_number: guestData.document_number,
-          date_of_birth: guestData.date_of_birth,
-          phone: guestData.phone, // ✅ AJOUT : Téléphone du guest
+            full_name: guestData.full_name,
+            nationality: guestData.nationality,
+            document_type: guestData.document_type,
+            document_number: guestData.document_number,
+            date_of_birth: guestData.date_of_birth,
+            phone: guestData.phone, // ✅ AJOUT : Téléphone du guest
           // ✅ CRITIQUE : Mettre à jour tous les champs pour la variabilisation complète
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
           motif_sejour: guestData.motif_sejour,
           adresse_personnelle: guestData.adresse_personnelle,
-          updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString()
         };
         
         // ✅ CRITIQUE : Ajouter email seulement si présent (colonne peut ne pas exister)
@@ -1178,18 +1178,18 @@ async function saveGuestDataInternal(
         const firstGuestId = existingGuestsForBooking[0].id;
         // ✅ CRITIQUE : Construire l'objet de mise à jour avec gestion conditionnelle de l'email
         const updateData: any = {
-          full_name: guestData.full_name,
-          nationality: guestData.nationality,
-          document_type: guestData.document_type,
-          document_number: guestData.document_number,
-          date_of_birth: guestData.date_of_birth,
-          phone: guestData.phone, // ✅ AJOUT : Téléphone du guest
+            full_name: guestData.full_name,
+            nationality: guestData.nationality,
+            document_type: guestData.document_type,
+            document_number: guestData.document_number,
+            date_of_birth: guestData.date_of_birth,
+            phone: guestData.phone, // ✅ AJOUT : Téléphone du guest
           // ✅ CRITIQUE : Mettre à jour tous les champs pour la variabilisation complète
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
           motif_sejour: guestData.motif_sejour,
           adresse_personnelle: guestData.adresse_personnelle,
-          updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString()
         };
         
         // ✅ CRITIQUE : Ajouter email seulement si présent (colonne peut ne pas exister)
@@ -1548,18 +1548,24 @@ async function generateContractInternal(bookingId: string, signature?: Signature
 
     // 3. Sauvegarder le document en base (signé ou non)
     const isSigned = !!signature;
-    log('info', 'Sauvegarde du document en base', { isSigned });
+    log('info', '💾 [CONTRACT] Sauvegarde du contrat en base', { 
+      bookingId,
+      isSigned,
+      pdfUrlLength: pdfUrl?.length || 0
+    });
     
     await saveDocumentToDatabase(supabaseClient, bookingId, 'contract', pdfUrl, isSigned);
+    
     if (isSigned) {
-      log('info', '✅ Contrat signé sauvegardé en base');
+      log('info', '✅ [CONTRACT] Contrat signé sauvegardé dans uploaded_documents et generated_documents');
     } else {
-      log('info', '✅ Contrat non signé sauvegardé en base');
+      log('info', '✅ [CONTRACT] Contrat non signé sauvegardé dans uploaded_documents et generated_documents');
     }
 
-    log('info', 'Contrat généré avec succès (pdf-lib intégré)', { 
-      pdfUrl: pdfUrl.substring(0, 50) + '...',
-      isSigned 
+    log('info', '🎉 [CONTRACT] Contrat généré avec succès', { 
+      pdfUrl: pdfUrl.substring(0, 80) + '...',
+      isSigned,
+      bookingId
     });
     return pdfUrl;
 
@@ -1691,7 +1697,7 @@ async function generatePoliceFormsInternal(bookingId: string): Promise<string> {
               nationality: guests[0].nationality
             } : null
           });
-        } else {
+      } else {
           log('warn', '[Police] Aucun guest trouvé dans guest_data', { guestData });
         }
       } else {
@@ -1844,12 +1850,19 @@ async function generatePoliceFormsInternal(bookingId: string): Promise<string> {
     booking.guests = guests;
 
     // 3. Générer le PDF des fiches de police
+    log('info', '📄 [POLICE] Génération PDF des fiches de police');
     const policeUrl = await generatePoliceFormsPDF(supabaseClient, booking);
+    log('info', '✅ [POLICE] PDF généré', { policeUrlLength: policeUrl?.length || 0 });
     
     // 4. Sauvegarder le document en base
+    log('info', '💾 [POLICE] Sauvegarde de la fiche de police en base', { bookingId });
     await saveDocumentToDatabase(supabaseClient, bookingId, 'police', policeUrl);
+    log('info', '✅ [POLICE] Fiche de police sauvegardée dans uploaded_documents et generated_documents');
 
-    log('info', 'Fiche de police générée avec succès', { policeUrl });
+    log('info', '🎉 [POLICE] Fiche de police générée avec succès', { 
+      policeUrl: policeUrl.substring(0, 80) + '...',
+      bookingId
+    });
     return policeUrl;
 
   }, 'Génération fiche de police');
@@ -1980,6 +1993,7 @@ async function updateFinalStatus(
   bookingId: string,
   contractUrl: string,
   policeUrl: string,
+  identityUrl: string,
   emailSent: boolean,
   hasSignature: boolean,
   processingTime: number
@@ -1988,6 +2002,7 @@ async function updateFinalStatus(
     bookingId,
     hasContract: !!contractUrl,
     hasPolice: !!policeUrl,
+    hasIdentity: !!identityUrl,
     emailSent,
     hasSignature,
     processingTime
@@ -1996,9 +2011,37 @@ async function updateFinalStatus(
   try {
     const supabase = await getServerClient();
     
+    // ✅ CORRECTION CRITIQUE : Récupérer d'abord documents_generated existant
+    const { data: existingBooking } = await supabase
+      .from('bookings')
+      .select('documents_generated')
+      .eq('id', bookingId)
+      .single();
+    
+    const currentDocumentsGenerated = existingBooking?.documents_generated || {};
+    
+    // ✅ Construire le nouvel objet documents_generated avec les URLs
+    const documentsGenerated = {
+      ...currentDocumentsGenerated,
+      contract: !!contractUrl,
+      policeForm: !!policeUrl,
+      identity: !!identityUrl,
+      contractUrl: contractUrl || currentDocumentsGenerated.contractUrl,
+      policeUrl: policeUrl || currentDocumentsGenerated.policeUrl,
+      identityUrl: identityUrl || currentDocumentsGenerated.identityUrl,
+      generatedAt: new Date().toISOString()
+    };
+    
+    log('info', '📝 Mise à jour documents_generated', {
+      documentsGenerated,
+      hasContractUrl: !!documentsGenerated.contractUrl,
+      hasPoliceUrl: !!documentsGenerated.policeUrl
+    });
+    
     // ✅ Utiliser des statuts valides pour l'énum booking_status (frontend attend 'pending' | 'completed' | 'archived')
     const updateData = {
       status: hasSignature ? 'completed' : 'pending',
+      documents_generated: documentsGenerated,
       updated_at: new Date().toISOString()
     };
 
@@ -2008,9 +2051,13 @@ async function updateFinalStatus(
       .eq('id', bookingId);
     
     if (updateError) {
-      log('warn', 'Avertissement mise à jour statut', { error: updateError });
+      log('error', '❌ Erreur mise à jour statut et documents_generated', { error: updateError });
+      throw updateError;
     } else {
-      log('info', 'Statut final mis à jour avec succès');
+      log('info', '✅ Statut final et documents_generated mis à jour avec succès', {
+        contractUrl: documentsGenerated.contractUrl,
+        policeUrl: documentsGenerated.policeUrl
+      });
     }
 
     // Mise à jour de guest_submissions (sans colonnes qui n'existent pas)
@@ -2245,6 +2292,171 @@ serve(async (req) => {
           error: error.message
         }), {
           status: 400,
+          headers: corsHeaders
+        });
+      }
+    }
+    
+    // ✅ NOUVELLE ACTION : generate_contract_preview & generate_police_preview (aperçu depuis wizard)
+    if (requestBody.action === 'generate_contract_preview' || requestBody.action === 'generate_police_preview') {
+      log('info', `🔄 Mode: Génération aperçu ${requestBody.action === 'generate_contract_preview' ? 'contrat' : 'police'}`);
+      
+      // ✅ VALIDATION DÉTAILLÉE
+      if (!requestBody.is_preview) {
+        log('error', 'is_preview manquant dans la requête');
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'is_preview requis pour l\'aperçu'
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+      
+      if (!requestBody.bookingData) {
+        log('error', 'bookingData manquant dans la requête');
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'bookingData requis pour l\'aperçu'
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+      
+      if (!requestBody.guests || !Array.isArray(requestBody.guests) || requestBody.guests.length === 0) {
+        log('error', 'guests manquant ou vide dans la requête', { guests: requestBody.guests });
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'guests requis et doit contenir au moins un invité'
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+
+      try {
+        const supabaseClient = await getServerClient();
+        
+        // ✅ VALIDATION propertyId
+        if (!requestBody.bookingData.propertyId) {
+          throw new Error('propertyId manquant dans bookingData');
+        }
+        
+        log('info', '📋 Données reçues pour aperçu', {
+          propertyId: requestBody.bookingData.propertyId,
+          checkIn: requestBody.bookingData.checkIn,
+          checkOut: requestBody.bookingData.checkOut,
+          numberOfGuests: requestBody.bookingData.numberOfGuests,
+          guestsCount: requestBody.guests.length
+        });
+        
+        // ✅ Créer un booking temporaire EN BASE avec le service role key (contourne RLS)
+        // Générer un UUID valide pour le booking temporaire
+        const tempBookingId = crypto.randomUUID();
+        
+        log('info', '📝 Création booking temporaire', { tempBookingId });
+        
+        const { error: bookingError } = await supabaseClient
+          .from('bookings')
+          .insert({
+            id: tempBookingId,
+            property_id: requestBody.bookingData.propertyId,
+            check_in_date: requestBody.bookingData.checkIn,
+            check_out_date: requestBody.bookingData.checkOut,
+            number_of_guests: requestBody.bookingData.numberOfGuests,
+            guest_name: requestBody.guests[0]?.fullName || 'Aperçu',
+            status: 'pending',
+            booking_reference: `PREVIEW-${Date.now()}`,
+            is_preview: true
+          });
+
+        if (bookingError) {
+          log('error', 'Erreur création booking temporaire', { error: bookingError.message, details: bookingError });
+          throw new Error(`Erreur création booking temporaire: ${bookingError.message}`);
+        }
+
+        log('info', '✅ Booking temporaire créé côté Edge Function', { tempBookingId });
+
+        // Créer les guests temporaires
+        const guestsToInsert = requestBody.guests.map((guest: any) => ({
+          booking_id: tempBookingId,
+          full_name: guest.fullName,
+          nationality: guest.nationality || 'Non spécifiée',
+          document_type: guest.documentType || 'passport',
+          document_number: guest.documentNumber || '',
+          date_of_birth: guest.dateOfBirth || null,
+          place_of_birth: guest.placeOfBirth || null
+        }));
+
+        const { error: guestsError } = await supabaseClient
+          .from('guests')
+          .insert(guestsToInsert);
+
+        if (guestsError) {
+          throw new Error(`Erreur création guests: ${guestsError.message}`);
+        }
+
+        log('info', '✅ Guests temporaires créés', { count: guestsToInsert.length });
+
+        // Générer le document selon le type
+        let documentUrl: string;
+        try {
+          if (requestBody.action === 'generate_contract_preview') {
+            log('info', '📄 Génération contrat d\'aperçu...');
+            documentUrl = await generateContractInternal(tempBookingId, null);
+            log('info', '✅ Contrat d\'aperçu généré', { url: documentUrl });
+          } else {
+            log('info', '📄 Génération police d\'aperçu...');
+            documentUrl = await generatePoliceFormsInternal(tempBookingId);
+            log('info', '✅ Police d\'aperçu générée', { url: documentUrl });
+          }
+        } catch (genError) {
+          log('error', 'Erreur lors de la génération du document', { 
+            error: genError.message, 
+            stack: genError.stack,
+            tempBookingId 
+          });
+          // Nettoyer même en cas d'erreur
+          try {
+            await supabaseClient.from('guests').delete().eq('booking_id', tempBookingId);
+            await supabaseClient.from('bookings').delete().eq('id', tempBookingId);
+          } catch (cleanupError) {
+            log('warn', 'Erreur lors du nettoyage', { error: cleanupError.message });
+          }
+          throw genError;
+        }
+
+        // ✅ Nettoyer le booking temporaire après génération réussie
+        try {
+          await supabaseClient.from('guests').delete().eq('booking_id', tempBookingId);
+          await supabaseClient.from('bookings').delete().eq('id', tempBookingId);
+          log('info', '🗑️ Booking temporaire nettoyé', { tempBookingId });
+        } catch (cleanupError) {
+          log('warn', 'Erreur lors du nettoyage (non bloquant)', { error: cleanupError.message });
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          [requestBody.action === 'generate_contract_preview' ? 'contractUrl' : 'policeUrl']: documentUrl
+        }), {
+          status: 200,
+          headers: corsHeaders
+        });
+
+      } catch (error) {
+        log('error', '❌ Erreur génération aperçu', { 
+          error: error.message, 
+          stack: error.stack,
+          action: requestBody.action,
+          hasBookingData: !!requestBody.bookingData,
+          hasGuests: !!requestBody.guests && Array.isArray(requestBody.guests)
+        });
+        return new Response(JSON.stringify({
+          success: false,
+          error: error.message || 'Erreur lors de la génération de l\'aperçu'
+        }), {
+          status: 500,
           headers: corsHeaders
         });
       }
@@ -2843,7 +3055,17 @@ serve(async (req) => {
         };
 
         bookingId = existingBooking.id;
-        log('info', 'Réservation host_direct récupérée avec succès', { bookingId, propertyName: booking.propertyName });
+        log('info', 'Réservation host_direct récupérée avec succès', { 
+          bookingId, 
+          propertyName: booking.propertyName,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          guestName: booking.guestName
+        });
+        
+        // ✅ Pour host_direct, on continue avec la sauvegarde des documents et la génération
+        // Les guests ont déjà été créés par le front-end, donc on va juste sauvegarder les documents uploadés
+        log('info', '🔄 [HOST_DIRECT] Continuation avec sauvegarde documents et génération contrat/police');
       }
       // ✅ NOUVEAU : Gestion de l'action create_ics_booking
       else if (requestBody.action === 'create_ics_booking') {
@@ -3077,16 +3299,57 @@ serve(async (req) => {
       // ÉTAPE 2: Sauvegarde des données
       log('info', '🎯 ÉTAPE 2/5: Sauvegarde des données invité');
       
-      // ✅ CORRIGÉ : S'assurer que booking.bookingId est défini si une réservation existe
-      // Cela permet à saveGuestDataInternal d'utiliser directement la réservation existante
-      if (existingBooking && existingBooking.status !== 'cancelled' && existingBooking.status !== 'rejected') {
-        booking.bookingId = existingBooking.id;
-        log('info', 'Booking ID existant passé à saveGuestDataInternal', { bookingId: existingBooking.id });
+      // ✅ NOUVEAU : Pour host_direct, les guests et documents ont déjà été créés par le front-end
+      // On saute donc saveGuestDataInternal et on passe directement à la génération des documents
+      if (requestBody.action === 'host_direct') {
+        log('info', '🔄 [HOST_DIRECT] Skipping saveGuestDataInternal - guests et documents déjà créés par le front-end');
+        // Les documents ont déjà été uploadés via DocumentStorageService dans le front-end
+        // bookingId a déjà été défini lors de la récupération de la réservation (ligne 2845)
+        // On passe directement à la génération du contrat et de la fiche de police
+        log('info', '🔄 [HOST_DIRECT] BookingId déjà défini:', { bookingId });
+        
+        // ✅ Récupérer les URLs des documents d'identité déjà uploadés
+        const supabase = await getServerClient();
+        const { data: uploadedDocs } = await supabase
+          .from('uploaded_documents')
+          .select('document_url, document_type, id')
+          .eq('booking_id', bookingId)
+          .in('document_type', ['identity', 'identity_upload', 'id-document', 'passport']);
+        
+        log('info', '📄 [HOST_DIRECT] Recherche documents d\'identité', { 
+          bookingId, 
+          docsCount: uploadedDocs?.length || 0,
+          docs: uploadedDocs 
+        });
+        
+        if (uploadedDocs && uploadedDocs.length > 0) {
+          identityUrl = uploadedDocs[0].document_url;
+          log('info', '✅ [HOST_DIRECT] Document d\'identité récupéré', { 
+            identityUrl,
+            documentType: uploadedDocs[0].document_type,
+            totalDocs: uploadedDocs.length
+          });
+        } else {
+          log('warn', '⚠️ [HOST_DIRECT] Aucun document d\'identité trouvé pour ce booking');
+        }
+      } else {
+        // ✅ CORRIGÉ : S'assurer que booking.bookingId est défini si une réservation existe
+        // Cela permet à saveGuestDataInternal d'utiliser directement la réservation existante
+        if (existingBooking && existingBooking.status !== 'cancelled' && existingBooking.status !== 'rejected') {
+          booking.bookingId = existingBooking.id;
+          log('info', 'Booking ID existant passé à saveGuestDataInternal', { bookingId: existingBooking.id });
+        }
+        
+        bookingId = await saveGuestDataInternal(booking, requestBody.guestInfo, requestBody.idDocuments);
+        
+        log('info', 'Booking ID sauvegardé avec succès', { bookingId });
       }
       
-      bookingId = await saveGuestDataInternal(booking, requestBody.guestInfo, requestBody.idDocuments);
-      
-      log('info', 'Booking ID sauvegardé avec succès', { bookingId });
+      // ✅ VÉRIFICATION CRITIQUE : S'assurer que bookingId est défini avant de continuer
+      if (!bookingId) {
+        log('error', '❌ CRITICAL: bookingId is not defined before document generation');
+        throw new Error('bookingId manquant avant la génération des documents');
+      }
 
       // ÉTAPE 3, 4 & 5: Génération des documents en parallèle
       log('info', '🎯 ÉTAPE 3-5/5: Génération des documents en parallèle');
@@ -3158,6 +3421,7 @@ serve(async (req) => {
       bookingId,
       contractUrl,
       policeUrl,
+      identityUrl,
       emailSent,
       !!requestBody.signature,
       processingTime
@@ -3525,7 +3789,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       .eq('booking_id', bookingId)
       .order('created_at', { ascending: false })
       .limit(1);
-    
+
     if (!submissionsError && submissionsData && submissionsData.length > 0) {
       const submission = submissionsData[0];
       log('info', '[buildContractContext] Submission trouvée', {
@@ -3560,8 +3824,8 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
               document_type: g.documentType || g.document_type || g.idType || 'passport',
               document_number: g.documentNumber || g.document_number || g.idNumber || g.document_number || '',
               date_of_birth: g.dateOfBirth || g.date_of_birth || g.dateOfBirth || null,
-              place_of_birth: g.placeOfBirth || g.place_of_birth || '',
-              profession: g.profession || '',
+            place_of_birth: g.placeOfBirth || g.place_of_birth || '',
+            profession: g.profession || '',
               motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
               adresse_personnelle: g.adressePersonnelle || g.adresse_personnelle || ''
             };
@@ -3591,9 +3855,9 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
         log('warn', '[buildContractContext] guest_data n\'est pas un objet valide', { 
           type: typeof submission.guest_data,
           value: submission.guest_data 
-        });
+          });
+        }
       }
-    }
   }
   
   // ✅ CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests
@@ -3627,7 +3891,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       phone: guests[0].phone,
       warning: '⚠️ date_of_birth, nationality, document_number manquants - Le contrat ne sera pas entièrement variabilisé'
     });
-  }
+    }
   
   log('info', '[buildContractContext] Guests finaux', {
     count: guests.length,
@@ -3911,6 +4175,18 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
         }
       }
     }
+
+    // ✅ Générer un nom de fichier basé sur le type de document
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `${documentType}-${bookingId.substring(0, 8)}-${timestamp}.pdf`;
+
+    log('info', '💾 [SAVE DOCUMENT] Sauvegarde dans les tables', {
+      bookingId,
+      documentType,
+      fileName,
+      isSigned,
+      hasUrl: !!documentUrl
+    });
 
     // 1. Sauvegarder dans generated_documents (table principale)
     const { data: generatedRecord, error: generatedError } = await client

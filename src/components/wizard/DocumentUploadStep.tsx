@@ -1,32 +1,45 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { Upload, FileText, Loader2, Check, X, Eye, Edit, Trash2, Camera, User } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Upload, FileText, Loader2, Check, X, Eye, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SafeSelect, SafeSelectContent, SafeSelectItem, SafeSelectTrigger, SafeSelectValue } from '@/components/ui/safe-select';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { SimpleModal, SimpleModalHeader, SimpleModalTitle, SimpleModalDescription } from '@/components/ui/simple-modal';
 import { useToast } from '@/hooks/use-toast';
-import { BookingFormData } from '../BookingWizard';
+import { BookingFormData, BookingFormUpdate } from '../BookingWizard';
 import { UploadedDocument, Guest } from '@/types/booking';
 import { v4 as uuidv4 } from 'uuid';
 
-// Extend the UploadedDocument type to include the guest ID it created
-interface ExtendedUploadedDocument extends UploadedDocument {
-  createdGuestId?: string;
-}
-
 interface DocumentUploadStepProps {
   formData: BookingFormData;
-  updateFormData: (updates: Partial<BookingFormData>) => void;
+  updateFormData: (updates: BookingFormUpdate) => void;
+  propertyId?: string; // Optionnel pour compatibilité avec BookingWizard
+  bookingId?: string; // Optionnel pour compatibilité avec BookingWizard
+}
+
+// Type étendu pour les documents avec statut de traitement
+interface ExtendedUploadedDocument extends UploadedDocument {
+  processingStatus?: 'processing' | 'completed' | 'error';
 }
 
 export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadStepProps) => {
+  // ✅ TEST MODIFICATION - Ce log confirme que le code modifié est chargé
+  console.log('🟢 [DocumentUploadStep] Chargé - Version du ' + new Date().toISOString());
+  
   const { toast } = useToast();
-  const [uploadedDocs, setUploadedDocs] = useState<ExtendedUploadedDocument[]>(formData.uploadedDocuments || []);
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
   const [showPreview, setShowPreview] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const uploadedDocs = formData.uploadedDocuments || [];
+  
+  // 🔍 LOG DE DÉBOGAGE : Tracer l'état
+  console.log('📊 [DocumentUploadStep] État actuel:', {
+    uploadedDocs: uploadedDocs.length,
+    guests: formData.guests.length,
+    numberOfGuests: formData.numberOfGuests
+  });
 
   useEffect(() => {
     return () => {
@@ -35,52 +48,122 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     };
   }, []);
 
-  // Update form data whenever uploadedDocs changes
-  useEffect(() => {
-    updateFormData({ uploadedDocuments: uploadedDocs });
-  }, [uploadedDocs, updateFormData]);
+  const updateUploadedDocuments = useCallback((updater: (docs: UploadedDocument[]) => UploadedDocument[]) => {
+    console.log('📝 [updateUploadedDocuments] Mise à jour des documents...');
+    updateFormData(prev => {
+      const currentDocs = prev.uploadedDocuments || [];
+      const newDocs = updater(currentDocs);
+      console.log('📝 [updateUploadedDocuments] Documents:', currentDocs.length, '→', newDocs.length);
+      return {
+        uploadedDocuments: newDocs
+      };
+    });
+  }, [updateFormData]);
+
+useEffect(() => {
+  if (!uploadedDocs.length) {
+    return;
+  }
+
+  updateFormData(prev => {
+    const existingIds = new Set(prev.guests.map(g => g.id));
+    const docsWithGuests = uploadedDocs.filter(doc => doc.createdGuestId && doc.extractedData);
+
+    const newGuests = docsWithGuests
+      .filter(doc => !existingIds.has(doc.createdGuestId!))
+      .map(doc => ({
+        id: doc.createdGuestId!,
+        fullName: (doc.extractedData?.fullName as string) || doc.file.name,
+        dateOfBirth: doc.extractedData?.dateOfBirth || '',
+        documentNumber: doc.extractedData?.documentNumber || '',
+        nationality: doc.extractedData?.nationality || '',
+        placeOfBirth: doc.extractedData?.placeOfBirth || '',
+        documentType: (doc.extractedData?.documentType as 'passport' | 'national_id') || 'passport'
+      }));
+
+    if (newGuests.length === 0) {
+      return prev;
+    }
+
+    const guests = [...prev.guests, ...newGuests];
+    const guestCount = Math.max(prev.numberOfGuests, guests.length);
+
+    return {
+      guests,
+      numberOfGuests: guestCount
+    };
+  });
+}, [uploadedDocs, updateFormData]);
 
   const handleFileUpload = useCallback(async (files: FileList) => {
+    console.log('🚀 [UPLOAD START] Début du traitement de', files.length, 'fichier(s)');
+    
     // Calculate how many guests we will have after this upload; auto-expand guest count if needed
     const currentGuestCount = formData.guests.length;
     const newFilesCount = files.length;
 
+    console.log('📊 [UPLOAD] Invités actuels:', currentGuestCount, 'Nouveaux fichiers:', newFilesCount);
+
     // Do not block the upload; if exceeding, we will increase the reservation guest count automatically
     const resultingGuests = currentGuestCount + newFilesCount;
     if (resultingGuests > formData.numberOfGuests) {
+      console.log('⬆️ [UPLOAD] Augmentation du nombre d\'invités de', formData.numberOfGuests, 'à', resultingGuests);
       updateFormData({ numberOfGuests: resultingGuests });
     }
     
     const newDocs: ExtendedUploadedDocument[] = [];
-    // We'll accumulate guests extracted from documents and update once at the end
-    const pendingGuests: Guest[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
+      console.log(`📄 [UPLOAD] Traitement du fichier ${i + 1}/${files.length}:`, file.name, 'Type:', file.type, 'Taille:', Math.round(file.size / 1024), 'KB');
+      
       if (!file.type.match(/^image\/(jpeg|jpg|png|gif)$/)) {
+        console.error('❌ [UPLOAD] Format non supporté:', file.type);
         toast({
           title: "Format non supporté",
-          description: `Le fichier ${file.name} n'est pas une image valide.`,
+          description: `Le fichier ${file.name} n'est pas une image valide (type: ${file.type}).`,
           variant: "destructive",
         });
         continue;
       }
 
-      const doc: ExtendedUploadedDocument = {
-        id: uuidv4(),
-        file,
-        preview: URL.createObjectURL(file),
-        processingStatus: 'processing'
-      };
+      try {
+        const preview = URL.createObjectURL(file);
+        const doc: ExtendedUploadedDocument = {
+          id: uuidv4(),
+          file,
+          preview,
+          processingStatus: 'processing'
+        };
 
-      newDocs.push(doc);
+        console.log('✅ [UPLOAD] Document créé avec ID:', doc.id);
+        newDocs.push(doc);
+      } catch (error) {
+        console.error('❌ [UPLOAD] Erreur création document:', error);
+        toast({
+          title: "Erreur",
+          description: `Impossible de charger ${file.name}`,
+          variant: "destructive",
+        });
+      }
     }
 
-    const updatedDocs = [...uploadedDocs, ...newDocs];
-    setUploadedDocs(updatedDocs);
+    if (newDocs.length > 0) {
+      console.log('✅ [UPLOAD] Ajout de', newDocs.length, 'document(s) à la liste');
+      updateUploadedDocuments(prev => [...prev, ...newDocs]);
+      
+      toast({
+        title: "Fichiers ajoutés",
+        description: `${newDocs.length} fichier(s) ajouté(s). Extraction des données en cours...`,
+      });
+    } else {
+      console.warn('⚠️ [UPLOAD] Aucun document valide à ajouter');
+      return;
+    }
 
     // Process OCR for each document
+    console.log('🔍 [OCR] Début de l\'extraction pour', newDocs.length, 'document(s)');
     for (const doc of newDocs) {
       try {
         
@@ -121,41 +204,41 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           console.log('🔗 Creating guest from document:', doc.id, '->', newGuestId);
           
           // Update document with guest reference
-          setUploadedDocs(prev => prev.map(d => 
+          updateUploadedDocuments(prev => prev.map(d => 
             d.id === doc.id 
               ? { ...d, extractedData, processingStatus: 'completed', createdGuestId: newGuestId }
               : d
           ));
 
-          // Queue guest to be added (batch update later)
-          pendingGuests.push(newGuest);
+          // Inject guest immediately into form state
+          updateFormData(prev => {
+            const guests = [...prev.guests, newGuest];
+            const guestCount = Math.max(prev.numberOfGuests, guests.length);
+            return {
+              guests,
+              numberOfGuests: guestCount
+            };
+          });
         } else {
           console.warn('No valid guest data extracted from document:', extractedData);
           
           // Still mark as completed even if no guest data
-          setUploadedDocs(prev => {
-            const updatedDocs = prev.map(d => 
-              d.id === doc.id 
-                ? { ...d, extractedData, processingStatus: 'completed' as const }
-                : d
-            );
-            return updatedDocs;
-          });
+          updateUploadedDocuments(prev => prev.map(d => 
+            d.id === doc.id 
+              ? { ...d, extractedData, processingStatus: 'completed' as const }
+              : d
+          ));
         }
 
       } catch (error) {
         console.error(`❌ Critical error processing ${doc.file.name}:`, error);
         console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace available');
         
-        setUploadedDocs(prev => {
-          const updatedDocs = prev.map(d => 
-            d.id === doc.id 
-              ? { ...d, processingStatus: 'error' as const }
-              : d
-          );
-          
-          return updatedDocs;
-        });
+        updateUploadedDocuments(prev => prev.map(d => 
+          d.id === doc.id 
+            ? { ...d, processingStatus: 'error' as const }
+            : d
+        ));
         
         toast({
           title: "Erreur d'extraction",
@@ -164,25 +247,33 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
         });
       }
     }
-    // Batch update guests once after processing all documents
-    if (pendingGuests.length > 0) {
-      const base = formData.guests;
-      // Ensure we don't drop guests due to an outdated numberOfGuests limit
-      const targetMax = Math.max(formData.numberOfGuests, base.length + pendingGuests.length);
-      const merged = [...base, ...pendingGuests].slice(0, targetMax);
-      updateFormData({ guests: merged, numberOfGuests: targetMax });
-    }
-  }, [updateFormData, toast]);
+  }, [formData.guests.length, formData.numberOfGuests, updateFormData, updateUploadedDocuments, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    setIsDragging(false);
     const files = e.dataTransfer.files;
+    console.log('📁 [DRAG & DROP] Fichiers déposés:', files.length);
     if (files.length) {
       handleFileUpload(files);
     }
   }, [handleFileUpload]);
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    // Only set to false if leaving the drop zone itself
+    if (e.currentTarget === e.target) {
+      setIsDragging(false);
+    }
+  }, []);
+
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('📂 [FILE INPUT] Fichiers sélectionnés:', e.target.files?.length);
     if (e.target.files?.length) {
       handleFileUpload(e.target.files);
     }
@@ -202,15 +293,16 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
   };
 
   const saveGuest = (guest: Guest) => {
-    if (formData.guests.find(g => g.id === guest.id)) {
-      updateFormData({
-        guests: formData.guests.map(g => g.id === guest.id ? guest : g)
-      });
-    } else {
-      updateFormData({
-        guests: [...formData.guests, guest]
-      });
-    }
+    updateFormData(prev => {
+      const exists = prev.guests.find(g => g.id === guest.id);
+      const guests = exists
+        ? prev.guests.map(g => g.id === guest.id ? guest : g)
+        : [...prev.guests, guest];
+      return {
+        guests,
+        numberOfGuests: Math.max(prev.numberOfGuests, guests.length)
+      };
+    });
     setEditingGuest(null);
   };
 
@@ -218,16 +310,16 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     console.log('🗑️ Deleting guest:', guestId);
     
     // Remove the guest from uploaded docs if it was created from a document
-    setUploadedDocs(prev => prev.map(doc => 
+    updateUploadedDocuments(prev => prev.map(doc => 
       doc.createdGuestId === guestId 
         ? { ...doc, createdGuestId: undefined }
         : doc
     ));
     
     // Remove guest from form data
-    updateFormData({
-      guests: formData.guests.filter(g => g.id !== guestId)
-    });
+    updateFormData(prev => ({
+      guests: prev.guests.filter(g => g.id !== guestId)
+    }));
   };
 
   const removeDocument = (docId: string) => {
@@ -243,7 +335,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     URL.revokeObjectURL(docToRemove.preview);
     
     // Remove document from list
-    setUploadedDocs(prev => {
+    updateUploadedDocuments(prev => {
       const filtered = prev.filter(d => d.id !== docId);
       console.log('📋 Documents after removal:', filtered.length);
       return filtered;
@@ -252,13 +344,13 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     // Remove associated guest if exists
     if (docToRemove.createdGuestId) {
       console.log('✂️ REMOVING GUEST:', docToRemove.createdGuestId);
-      updateFormData({
-        guests: formData.guests.filter(g => {
+      updateFormData(prev => ({
+        guests: prev.guests.filter(g => {
           const keep = g.id !== docToRemove.createdGuestId;
           console.log(`Guest ${g.fullName} (${g.id}): ${keep ? 'KEEP' : 'REMOVE'}`);
           return keep;
         })
-      });
+      }));
     }
   };
 
@@ -294,22 +386,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
       )}
 
       {/* Upload Area */}
-      <div
-        className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors cursor-pointer"
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
-        onClick={() => document.getElementById('file-upload')?.click()}
-      >
-        <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-        <h3 className="text-lg font-medium text-foreground mb-2">
-          Glissez-déposez vos documents ici
-        </h3>
-        <p className="text-muted-foreground mb-4">
-          ou cliquez pour sélectionner des fichiers
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Formats supportés: JPG, PNG, GIF (max 10MB)
-        </p>
+      <div>
         <input
           id="file-upload"
           type="file"
@@ -318,6 +395,38 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           onChange={handleFileInput}
           className="hidden"
         />
+        <div
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+            isDragging 
+              ? 'border-primary bg-primary/10 scale-105' 
+              : 'border-border hover:border-primary/50'
+          }`}
+          onDrop={handleDrop}
+          onDragOver={(e) => e.preventDefault()}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onClick={() => {
+            console.log('🖱️ [CLICK] Zone de upload cliquée');
+            const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+            if (fileInput) {
+              console.log('✅ [CLICK] Input trouvé, déclenchement du clic');
+              fileInput.click();
+            } else {
+              console.error('❌ [CLICK] Input file-upload non trouvé !');
+            }
+          }}
+        >
+          <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium text-foreground mb-2">
+            Glissez-déposez vos documents ici
+          </h3>
+          <p className="text-muted-foreground mb-4">
+            ou cliquez pour sélectionner des fichiers
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Formats supportés: JPG, PNG, GIF (max 10MB)
+          </p>
+        </div>
       </div>
 
       {/* Uploaded Documents */}
@@ -436,36 +545,43 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
         )}
       </div>
 
-      {/* Guest Edit Dialog */}
-      <GuestEditDialog
-        guest={editingGuest}
-        open={!!editingGuest}
-        onSave={saveGuest}
-        onClose={() => setEditingGuest(null)}
-      />
+      {/* Guest Edit Dialog - Rendu conditionnel avec key pour éviter les erreurs de portal */}
+      {editingGuest && (
+        <GuestEditDialog
+          key={`guest-edit-${editingGuest.id}`}
+          guest={editingGuest}
+          open={true}
+          onSave={saveGuest}
+          onClose={() => setEditingGuest(null)}
+        />
+      )}
 
-      {/* Preview Dialog */}
-      <Dialog open={!!showPreview} onOpenChange={(open) => {
-        if (!open) setShowPreview(null);
-      }}>
-        <DialogContent className="max-w-3xl" aria-describedby="document-preview-description">
-          <DialogHeader>
-            <DialogTitle>Aperçu du document</DialogTitle>
-            <DialogDescription id="document-preview-description">
+      {/* Preview Modal - Utilise SimpleModal sans portal pour éviter les erreurs */}
+      {showPreview && (
+        <SimpleModal
+          open={!!showPreview}
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowPreview(null);
+            }
+          }}
+          className="max-w-3xl"
+        >
+          <SimpleModalHeader>
+            <SimpleModalTitle>Aperçu du document</SimpleModalTitle>
+            <SimpleModalDescription>
               Aperçu du document d'identité sélectionné.
-            </DialogDescription>
-          </DialogHeader>
+            </SimpleModalDescription>
+          </SimpleModalHeader>
           <div className="flex justify-center">
-            {showPreview && (
-              <img
-                src={showPreview}
-                alt="Prévisualisation du document"
-                className="max-w-full max-h-96 object-contain"
-              />
-            )}
+            <img
+              src={showPreview}
+              alt="Prévisualisation du document"
+              className="max-w-full max-h-96 object-contain"
+            />
           </div>
-        </DialogContent>
-      </Dialog>
+        </SimpleModal>
+      )}
     </div>
   );
 };
@@ -484,11 +600,8 @@ const GuestEditDialog = ({ guest, open, onSave, onClose }: GuestEditDialogProps)
     setFormData(guest);
   }, [guest]);
 
-  if (!formData) return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (!value) onClose();
-    }} />
-  );
+  // Ne rien rendre si pas de guest ou pas ouvert (évite les erreurs de portal)
+  if (!formData || !open) return null;
 
   const handleSave = () => {
     if (!formData.fullName.trim()) {
@@ -498,13 +611,15 @@ const GuestEditDialog = ({ guest, open, onSave, onClose }: GuestEditDialogProps)
   };
 
   return (
-    <Dialog open={open} onOpenChange={(value) => {
-      if (!value) onClose();
-    }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Informations du client</DialogTitle>
-        </DialogHeader>
+    <SimpleModal
+      open={open}
+      onOpenChange={(value) => {
+        if (!value) onClose();
+      }}
+    >
+      <SimpleModalHeader>
+        <SimpleModalTitle>Informations du client</SimpleModalTitle>
+      </SimpleModalHeader>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Nom complet *</Label>
@@ -535,20 +650,20 @@ const GuestEditDialog = ({ guest, open, onSave, onClose }: GuestEditDialogProps)
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Type de document</Label>
-              <Select
+              <SafeSelect
                 value={formData.documentType}
                 onValueChange={(value: 'passport' | 'national_id') => 
                   setFormData({ ...formData, documentType: value })
                 }
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="passport">Passeport</SelectItem>
-                  <SelectItem value="national_id">Carte d'identité</SelectItem>
-                </SelectContent>
-              </Select>
+                <SafeSelectTrigger>
+                  <SafeSelectValue />
+                </SafeSelectTrigger>
+                <SafeSelectContent>
+                  <SafeSelectItem value="passport">Passeport</SafeSelectItem>
+                  <SafeSelectItem value="national_id">Carte d'identité</SafeSelectItem>
+                </SafeSelectContent>
+              </SafeSelect>
             </div>
             <div className="space-y-2">
               <Label>Numéro de document</Label>
@@ -576,7 +691,6 @@ const GuestEditDialog = ({ guest, open, onSave, onClose }: GuestEditDialogProps)
             Enregistrer
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+    </SimpleModal>
   );
 };

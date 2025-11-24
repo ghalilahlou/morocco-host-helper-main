@@ -2,19 +2,23 @@ import { Calendar, Users, Hash } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { SafePopover, SafePopoverContent, SafePopoverTrigger } from '@/components/ui/safe-popover';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { BookingFormData } from '../BookingWizard';
+import { BookingFormData, BookingFormUpdate } from '../BookingWizard';
 
 interface BookingDetailsStepProps {
   formData: BookingFormData;
-  updateFormData: (updates: Partial<BookingFormData>) => void;
+  updateFormData: (updates: BookingFormUpdate) => void;
+  propertyId?: string; // Optionnel pour compatibilité avec BookingWizard
+  bookingId?: string; // Optionnel pour compatibilité avec BookingWizard
 }
 
 export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsStepProps) => {
+  console.log('🟣 [PORTAL FIX] BookingDetailsStep chargé avec SafePopover (sans Portal) - Version du ' + new Date().toISOString());
+  
   const handleCheckInChange = (date: Date | undefined) => {
     if (date) {
       // Utiliser le fuseau horaire local pour éviter les décalages
@@ -35,8 +39,9 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
     }
   };
 
-  const checkInDate = formData.checkInDate ? new Date(formData.checkInDate) : undefined;
-  const checkOutDate = formData.checkOutDate ? new Date(formData.checkOutDate) : undefined;
+  // ✅ CORRECTION : Ajout de l'heure pour éviter les problèmes de fuseau horaire
+  const checkInDate = formData.checkInDate ? new Date(formData.checkInDate + 'T00:00:00') : undefined;
+  const checkOutDate = formData.checkOutDate ? new Date(formData.checkOutDate + 'T00:00:00') : undefined;
 
   return (
     <div className="space-y-6">
@@ -55,8 +60,8 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
           <Label htmlFor="checkin" className="text-sm font-medium">
             Date d'arrivée *
           </Label>
-          <Popover>
-            <PopoverTrigger asChild>
+          <SafePopover key={`checkin-${formData.checkInDate}`}>
+            <SafePopoverTrigger asChild>
               <Button
                 variant="outline"
                 className={cn(
@@ -71,8 +76,8 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
                   <span>Sélectionner une date</span>
                 )}
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 z-[1500]" align="start">
+            </SafePopoverTrigger>
+            <SafePopoverContent className="w-auto p-0 z-[1500]" align="start">
               <CalendarComponent
                 mode="single"
                 selected={checkInDate}
@@ -81,8 +86,8 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
                 initialFocus
                 className="p-3 pointer-events-auto"
               />
-            </PopoverContent>
-          </Popover>
+            </SafePopoverContent>
+          </SafePopover>
         </div>
 
         {/* Check-out Date */}
@@ -90,8 +95,8 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
           <Label htmlFor="checkout" className="text-sm font-medium">
             Date de départ *
           </Label>
-          <Popover>
-            <PopoverTrigger asChild>
+          <SafePopover key={`checkout-${formData.checkOutDate}`}>
+            <SafePopoverTrigger asChild>
               <Button
                 variant="outline"
                 className={cn(
@@ -106,8 +111,8 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
                   <span>Sélectionner une date</span>
                 )}
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 z-[1500]" align="start">
+            </SafePopoverTrigger>
+            <SafePopoverContent className="w-auto p-0 z-[1500]" align="start">
               <CalendarComponent
                 mode="single"
                 selected={checkOutDate}
@@ -119,8 +124,8 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
                 initialFocus
                 className="p-3 pointer-events-auto"
               />
-            </PopoverContent>
-          </Popover>
+            </SafePopoverContent>
+          </SafePopover>
         </div>
       </div>
 

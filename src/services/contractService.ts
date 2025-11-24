@@ -39,7 +39,7 @@ export class ContractService {
         guests: booking.guests?.length || 0,
         checkIn: booking.checkInDate,
         checkOut: booking.checkOutDate,
-        source: booking.source,
+        source: (booking as any).source || undefined, // Optionnel, peut ne pas exister dans le type Booking
         reference: booking.bookingReference
       });
       
@@ -125,30 +125,31 @@ export class ContractService {
         }
 
         
-        // ✅ CORRECTION : Gestion robuste des réponses
-        if (data?.documentUrl || (data?.documentUrls && data.documentUrls.length > 0)) {
-          const contractDataUrl = data.documentUrl || data.documentUrls[0];
-          console.log(`🔍 ContractService - PDF generated for #${bookingShortId}, downloading...`);
-          console.log(`🔍 ContractService - PDF URL length for #${bookingShortId}:`, contractDataUrl.length);
+        // ✅ CORRECTION : Gestion robuste des réponses - l'Edge Function retourne contractUrl
+        const contractUrl = data?.contractUrl || data?.documentUrl || (data?.documentUrls && data.documentUrls.length > 0 ? data.documentUrls[0] : null);
+        
+        if (!contractUrl) {
+          console.warn(`⚠️ ContractService - No contract URL returned for #${bookingShortId}`);
+          console.warn(`⚠️ ContractService - Full response data for #${bookingShortId}:`, JSON.stringify(data, null, 2));
+          throw new Error('Aucun PDF généré - vérifiez les données de réservation et les logs de l\'Edge Function');
+        }
+
+        console.log(`🔍 ContractService - PDF generated for #${bookingShortId}, downloading...`);
+        console.log(`🔍 ContractService - PDF URL for #${bookingShortId}:`, contractUrl.substring(0, 100) + '...');
+        
+        try {
+          // Download PDF directly
+          const link = document.createElement('a');
+          link.href = contractUrl;
+          link.download = `contrat-${booking.bookingReference || booking.id.slice(-6)}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
           
-          try {
-            // Download PDF directly
-            const link = document.createElement('a');
-            link.href = contractDataUrl;
-            link.download = `contrat-${booking.bookingReference || booking.id.slice(-6)}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            console.log(`✅ ContractService - PDF downloaded successfully for #${bookingShortId}`);
-          } catch (downloadError) {
-            console.error(`ContractService - Error downloading PDF for #${bookingShortId}:`, downloadError);
-            throw new Error('Impossible de télécharger le PDF');
-          }
-        } else {
-          console.warn(`⚠️ ContractService - No PDF URLs returned for #${bookingShortId}`);
-          console.warn(`⚠️ ContractService - Full response data for #${bookingShortId}:`, data);
-          throw new Error('Aucun PDF généré - vérifiez les données de réservation');
+          console.log(`✅ ContractService - PDF downloaded successfully for #${bookingShortId}`);
+        } catch (downloadError) {
+          console.error(`ContractService - Error downloading PDF for #${bookingShortId}:`, downloadError);
+          throw new Error('Impossible de télécharger le PDF');
         }
         return {
           success: true,

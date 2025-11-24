@@ -29,6 +29,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { UnifiedDocumentService } from '@/services/unifiedDocumentService';
+import { ContractService } from '@/services/contractService';
 
 interface UnifiedBookingModalProps {
   booking: Booking | EnrichedBooking | AirbnbReservation | null;
@@ -68,6 +70,8 @@ export const UnifiedBookingModal = ({
     identityDocuments: [],
     loading: false
   });
+  const [isGeneratingContract, setIsGeneratingContract] = useState(false);
+  const [isGeneratingPolice, setIsGeneratingPolice] = useState(false);
 
   // ✅ DÉTECTION : Identifier le type de réservation (avant le useEffect)
   const isAirbnb = booking ? ('source' in booking && booking.source === 'airbnb') : false;
@@ -270,22 +274,25 @@ export const UnifiedBookingModal = ({
   // ⚠️ CRITIQUE : Ce useEffect doit TOUJOURS être appelé (même si booking est null)
   useEffect(() => {
     const loadDocuments = async () => {
-      // Seulement pour les réservations terminées et non-Airbnb
-      if (!booking || status !== 'completed' || isAirbnb || !booking.id) {
+      // ✅ MODIFIÉ : Charger aussi pour les réservations 'pending' (nouvelles réservations créées par host)
+      if (!booking || (status !== 'completed' && status !== 'pending') || isAirbnb || !booking.id) {
         setDocuments({ contractUrl: null, contractId: null, policeUrl: null, policeId: null, identityDocuments: [], loading: false });
         return;
       }
 
+      console.log('📄 [UNIFIED MODAL] Chargement des documents pour booking:', booking.id);
       setDocuments({ contractUrl: null, contractId: null, policeUrl: null, policeId: null, identityDocuments: [], loading: true });
 
       try {
         // Récupérer tous les documents depuis uploaded_documents (contrat, police, et pièces d'identité)
         const { data: uploadedDocs, error } = await supabase
           .from('uploaded_documents')
-          .select('id, document_url, document_type, is_signed, extracted_data, guests(full_name, document_number)')
+          .select('id, document_url, file_path, document_type, is_signed, extracted_data, guests(full_name, document_number)')
           .eq('booking_id', booking.id)
-          .in('document_type', ['contract', 'police', 'identity', 'id-document', 'passport'])
-          .order('created_at', { ascending: false });
+          .in('document_type', ['contract', 'police', 'identity', 'identity_upload', 'id-document', 'passport'])
+          .order('created_at', { ascending: false});
+        
+        console.log('📄 [UNIFIED MODAL] Documents trouvés dans uploaded_documents:', uploadedDocs?.length || 0, uploadedDocs);
 
         if (error) {
           console.error('❌ Erreur lors du chargement des documents:', error);
@@ -293,52 +300,119 @@ export const UnifiedBookingModal = ({
           return;
         }
 
+        // Utilitaire pour obtenir une URL exploitable (public ou signée)
+        const resolveDocumentUrl = async (doc: any) => {
+          console.log('🔍 [RESOLVE URL] Document:', { id: doc?.id, type: doc?.document_type, hasUrl: !!doc?.document_url, hasPath: !!doc?.file_path });
+          
+          if (doc?.document_url) {
+            console.log('✅ [RESOLVE URL] URL directe trouvée');
+            return doc.document_url;
+          }
+          
+          if (doc?.file_path) {
+            console.log('🔑 [RESOLVE URL] Génération URL signée pour:', doc.file_path);
+            try {
+              // Méthode directe avec le SDK Supabase Storage
+              const { data: signed, error: signError } = await supabase.storage
+                .from('guest-documents')
+                .createSignedUrl(doc.file_path, 3600);
+              
+              if (signError) {
+                console.error('❌ [RESOLVE URL] Erreur signature:', signError);
+                return null;
+              }
+              
+              console.log('✅ [RESOLVE URL] URL signée générée:', signed?.signedUrl);
+              return signed?.signedUrl || null;
+            } catch (signError) {
+              console.error('❌ [RESOLVE URL] Exception signature:', signError);
+            }
+          }
+          
+          console.warn('⚠️ [RESOLVE URL] Aucune URL trouvée pour ce document');
+          return null;
+        };
+
         // Extraire les URLs et IDs
         const contractDoc = uploadedDocs?.find(doc => doc.document_type === 'contract');
         const policeDoc = uploadedDocs?.find(doc => doc.document_type === 'police');
+        const contractUrl = contractDoc ? await resolveDocumentUrl(contractDoc) : null;
+        const policeUrl = policeDoc ? await resolveDocumentUrl(policeDoc) : null;
         
         // Extraire les pièces d'identité
-        const identityDocs = uploadedDocs
-          ?.filter(doc => ['identity', 'id-document', 'passport'].includes(doc.document_type))
-          .map(doc => ({
+        const identitySources = uploadedDocs
+          ?.filter(doc => ['identity', 'identity_upload', 'id-document', 'passport'].includes(doc.document_type)) || [];
+
+        console.log('🆔 [UNIFIED MODAL] Pièces d\'identité trouvées:', identitySources.length, identitySources);
+
+        const identityDocs = await Promise.all(identitySources.map(async doc => {
+          const url = await resolveDocumentUrl(doc);
+          const guestName = (doc.extracted_data as any)?.guest_name || 
+                            (doc.extracted_data as any)?.full_name || 
+                            (doc.guests as any)?.full_name || 
+                            'Invité';
+          const documentNumber = (doc.extracted_data as any)?.document_number || 
+                                (doc.extracted_data as any)?.id_number || 
+                                (doc.guests as any)?.document_number || 
+                                undefined;
+          
+          console.log('🆔 [UNIFIED MODAL] Document traité:', { 
+            id: doc.id, 
+            type: doc.document_type, 
+            hasUrl: !!url, 
+            guestName, 
+            documentNumber 
+          });
+          
+          return {
             id: doc.id,
-            url: doc.document_url,
-            guestName: (doc.extracted_data as any)?.guest_name || 
-                      (doc.guests as any)?.full_name || 
-                      'Invité',
-            documentNumber: (doc.extracted_data as any)?.document_number || 
-                           (doc.guests as any)?.document_number || 
-                           undefined
-          })) || [];
+            url: url,
+            guestName,
+            documentNumber
+          };
+        }));
 
         // Si pas de documents dans uploaded_documents, vérifier documents_generated dans bookings
         if (!contractDoc && !policeDoc && identityDocs.length === 0) {
+          console.log('⚠️ [UNIFIED MODAL] Aucun document dans uploaded_documents, vérification dans documents_generated...');
           const { data: bookingData } = await supabase
             .from('bookings')
             .select('documents_generated')
             .eq('id', booking.id)
             .single();
 
+          console.log('📄 [UNIFIED MODAL] documents_generated:', bookingData?.documents_generated);
+
           if (bookingData?.documents_generated) {
             const docs = bookingData.documents_generated as any;
             setDocuments({
-              contractUrl: docs.contract?.url || null,
+              contractUrl: docs.contractUrl || docs.contract?.url || null,
               contractId: null,
-              policeUrl: docs.police?.url || null,
+              policeUrl: docs.policeUrl || docs.police?.url || null,
               policeId: null,
               identityDocuments: [],
               loading: false
+            });
+            console.log('✅ [UNIFIED MODAL] Documents chargés depuis documents_generated:', {
+              hasContract: !!(docs.contractUrl || docs.contract?.url),
+              hasPolice: !!(docs.policeUrl || docs.police?.url)
             });
             return;
           }
         }
 
+        console.log('✅ [UNIFIED MODAL] Documents finaux:', {
+          contractUrl: !!contractUrl,
+          policeUrl: !!policeUrl,
+          identityCount: identityDocs.filter(doc => doc.url).length
+        });
+
         setDocuments({
-          contractUrl: contractDoc?.document_url || null,
+          contractUrl: contractUrl,
           contractId: contractDoc?.id || null,
-          policeUrl: policeDoc?.document_url || null,
+          policeUrl: policeUrl,
           policeId: policeDoc?.id || null,
-          identityDocuments: identityDocs,
+          identityDocuments: identityDocs.filter(doc => doc.url),
           loading: false
         });
       } catch (error) {
@@ -349,6 +423,113 @@ export const UnifiedBookingModal = ({
 
     loadDocuments();
   }, [status, isAirbnb, booking?.id]);
+
+  // ✅ GÉNÉRATION DU CONTRAT (copié depuis BookingCard)
+  const handleGenerateContract = async () => {
+    if (!booking || isAirbnb) return;
+    
+    setIsGeneratingContract(true);
+    try {
+      const bookingTyped = booking as Booking;
+      const result = await ContractService.generateAndDownloadContract(bookingTyped);
+      
+      if (result.success) {
+        toast({
+          title: "Contrat généré",
+          description: result.message,
+        });
+        
+        // Recharger les documents
+        const { data: uploadedDocs } = await supabase
+          .from('uploaded_documents')
+          .select('document_url, document_type, id')
+          .eq('booking_id', bookingTyped.id)
+          .eq('document_type', 'contract')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        
+        if (uploadedDocs && uploadedDocs.length > 0) {
+          setDocuments(prev => ({
+            ...prev,
+            contractUrl: uploadedDocs[0].document_url,
+            contractId: uploadedDocs[0].id
+          }));
+        }
+        
+        // Rafraîchir les réservations
+        await refreshBookings();
+      } else {
+        toast({
+          title: "Erreur",
+          description: result.message,
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error('❌ Erreur génération contrat:', error);
+      toast({
+        title: "Erreur",
+        description: error.message || "Impossible de générer le contrat",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingContract(false);
+    }
+  };
+
+  // ✅ GÉNÉRATION DE LA FICHE DE POLICE (copié depuis BookingCard)
+  const handleGeneratePolice = async () => {
+    if (!booking || isAirbnb) return;
+    
+    setIsGeneratingPolice(true);
+    try {
+      const bookingTyped = booking as Booking;
+      console.log('📄 [UNIFIED MODAL] Génération de la fiche de police pour booking:', bookingTyped.id);
+      
+      await UnifiedDocumentService.downloadPoliceFormsForAllGuests(bookingTyped);
+      
+      console.log('✅ [UNIFIED MODAL] Fiche de police générée avec succès');
+      
+      toast({
+        title: "Fiches police générées",
+        description: `${bookingTyped.guests?.length || 1} fiche(s) police téléchargée(s) et sauvegardée(s)`,
+      });
+      
+      // Attendre un peu pour que la base de données soit à jour
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Recharger les documents
+      const { data: uploadedDocs } = await supabase
+        .from('uploaded_documents')
+        .select('document_url, document_type, id')
+        .eq('booking_id', bookingTyped.id)
+        .eq('document_type', 'police')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      console.log('📄 [UNIFIED MODAL] Fiche de police rechargée depuis BD:', uploadedDocs);
+      
+      if (uploadedDocs && uploadedDocs.length > 0) {
+        setDocuments(prev => ({
+          ...prev,
+          policeUrl: uploadedDocs[0].document_url,
+          policeId: uploadedDocs[0].id
+        }));
+      }
+      
+      // Rafraîchir les réservations
+      await refreshBookings();
+    } catch (error: any) {
+      console.error('❌ Erreur génération fiche police:', error);
+      toast({
+        title: "Erreur",
+        description: error.message || "Impossible de générer les fiches de police",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingPolice(false);
+    }
+  };
 
   // ✅ SUPPRESSION DE RÉSERVATION
   const handleDeleteBooking = async () => {
@@ -361,16 +542,27 @@ export const UnifiedBookingModal = ({
       return;
     }
 
+    console.log('🗑️ [UNIFIED MODAL] Suppression de la réservation:', booking.id);
     setIsDeleting(true);
     try {
       await deleteBooking(booking.id);
+      console.log('✅ [UNIFIED MODAL] Réservation supprimée de la base de données');
+      
+      // Forcer le rafraîchissement complet
       await refreshBookings();
+      console.log('✅ [UNIFIED MODAL] Réservations rafraîchies');
+      
       toast({
         title: "Réservation supprimée",
         description: "La réservation a été supprimée avec succès",
       });
+      
       setShowDeleteDialog(false);
-      onClose();
+      
+      // Fermer le modal et forcer un petit délai pour que le contexte se propage
+      setTimeout(() => {
+        onClose();
+      }, 100);
     } catch (error) {
       console.error('❌ Erreur lors de la suppression de la réservation:', error);
       toast({
@@ -462,8 +654,10 @@ export const UnifiedBookingModal = ({
             </CardContent>
           </Card>
 
-          {/* ✅ DOCUMENTS : Section pour les réservations terminées */}
-          {status === 'completed' && !isAirbnb && (
+          {/* ✅ SUPPRIMÉ : Section dupliquée - Fusionnée avec "Documents enregistrés" ci-dessous */}
+
+          {/* ✅ DOCUMENTS : Section pour les réservations terminées ET pending (nouvelles réservations host) */}
+          {(status === 'completed' || status === 'pending') && !isAirbnb && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -486,8 +680,8 @@ export const UnifiedBookingModal = ({
                           <FileText className="w-5 h-5 text-brand-teal" />
                         </div>
                         <div>
-                          <p className="font-semibold text-gray-900">Contrat signé</p>
-                          <p className="text-sm text-gray-600">Document contractuel signé</p>
+                          <p className="font-semibold text-gray-900">Contrat {status === 'completed' ? 'signé' : ''}</p>
+                          <p className="text-sm text-gray-600">Document contractuel {status === 'completed' ? 'signé' : 'à signer physiquement'}</p>
                         </div>
                       </div>
                       {documents.contractUrl ? (
@@ -516,7 +710,25 @@ export const UnifiedBookingModal = ({
                           </Button>
                         </div>
                       ) : (
-                        <span className="text-sm text-gray-400">Non disponible</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleGenerateContract}
+                          disabled={isGeneratingContract}
+                          className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                        >
+                          {isGeneratingContract ? (
+                            <>
+                              <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                              Génération...
+                            </>
+                          ) : (
+                            <>
+                              <FileText className="w-4 h-4 mr-2" />
+                              Générer
+                            </>
+                          )}
+                        </Button>
                       )}
                     </div>
 
@@ -557,7 +769,25 @@ export const UnifiedBookingModal = ({
                           </Button>
                         </div>
                       ) : (
-                        <span className="text-sm text-gray-400">Non disponible</span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleGeneratePolice}
+                          disabled={isGeneratingPolice}
+                          className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                        >
+                          {isGeneratingPolice ? (
+                            <>
+                              <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                              Génération...
+                            </>
+                          ) : (
+                            <>
+                              <Shield className="w-4 h-4 mr-2" />
+                              Générer
+                            </>
+                          )}
+                        </Button>
                       )}
                     </div>
 

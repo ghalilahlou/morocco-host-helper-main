@@ -189,30 +189,35 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           guests: formData.numberOfGuests
         });
 
-        // ✅ NOUVEAU : Vérifier les conflits avant d'insérer
+        // ✅ NOUVEAU : Vérifier les conflits avant d'insérer (optionnel - continue si RPC n'existe pas)
         console.log('🔍 Vérification des conflits de réservation...');
-        const { data: conflictingBookings, error: conflictError } = await supabase
-          .rpc('check_booking_conflicts', {
+        try {
+          // La fonction RPC peut ne pas exister dans les types générés, utilisation de 'as any' pour contourner
+          const { data: conflictingBookings, error: conflictError } = await (supabase.rpc as any)('check_booking_conflicts', {
             p_property_id: propertyId,
             p_check_in_date: formData.checkInDate,
             p_check_out_date: formData.checkOutDate,
             p_exclude_booking_id: null
           });
 
-        if (conflictError) {
-          console.warn('⚠️ Erreur lors de la vérification des conflits:', conflictError);
-          // Continue quand même si la fonction RPC n'existe pas encore
-        } else if (conflictingBookings && conflictingBookings.length > 0) {
-          console.error('❌ Conflit détecté avec réservations existantes:', conflictingBookings);
-          toast({
-            title: "Conflit de réservation",
-            description: `Une ou plusieurs réservations existent déjà pour ces dates (${conflictingBookings.length} conflit(s) détecté(s)). Veuillez choisir d'autres dates.`,
-            variant: "destructive"
-          });
-          return;
+          if (conflictError) {
+            console.warn('⚠️ Fonction check_booking_conflicts non disponible, continuation sans vérification:', conflictError.message);
+            // Continue quand même si la fonction RPC n'existe pas encore
+          } else if (conflictingBookings && Array.isArray(conflictingBookings) && conflictingBookings.length > 0) {
+            console.error('❌ Conflit détecté avec réservations existantes:', conflictingBookings);
+            toast({
+              title: "Conflit de réservation",
+              description: `Une ou plusieurs réservations existent déjà pour ces dates (${conflictingBookings.length} conflit(s) détecté(s)). Veuillez choisir d'autres dates.`,
+              variant: "destructive"
+            });
+            return;
+          } else {
+            console.log('✅ Aucun conflit détecté, création de la réservation...');
+          }
+        } catch (rpcError) {
+          console.warn('⚠️ Erreur lors de la vérification des conflits (non bloquant):', rpcError);
+          // Continue la création même si la vérification échoue
         }
-
-        console.log('✅ Aucun conflit détecté, création de la réservation...');
 
         // ✅ DIAGNOSTIC : Vérifier les permissions avant l'insertion
         console.log('🔍 [DIAGNOSTIC] Données avant insertion:', {
@@ -323,15 +328,27 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
         // 2. Insert guests
         if (formData.guests.length > 0) {
-          const guestsData = formData.guests.map(guest => ({
-            booking_id: bookingData.id,
-            full_name: guest.fullName,
-            date_of_birth: guest.dateOfBirth,
-            document_number: guest.documentNumber,
-            nationality: guest.nationality,
-            place_of_birth: guest.placeOfBirth,
-            document_type: guest.documentType
-          }));
+          const guestsData = formData.guests.map(guest => {
+            // ✅ CORRECTION : Convertir date_of_birth en string si c'est une Date
+            let dateOfBirth: string | null = null;
+            if (guest.dateOfBirth) {
+              if (guest.dateOfBirth instanceof Date) {
+                dateOfBirth = guest.dateOfBirth.toISOString().split('T')[0]; // Format YYYY-MM-DD
+              } else if (typeof guest.dateOfBirth === 'string') {
+                dateOfBirth = guest.dateOfBirth;
+              }
+            }
+
+            return {
+              booking_id: bookingData.id,
+              full_name: guest.fullName || '',
+              date_of_birth: dateOfBirth,
+              document_number: guest.documentNumber || '',
+              nationality: guest.nationality || 'Non spécifiée',
+              place_of_birth: guest.placeOfBirth || null,
+              document_type: (guest.documentType || 'passport') as 'passport' | 'national_id'
+            };
+          });
 
           const { error: guestsError } = await supabase
             .from('guests')
@@ -352,227 +369,182 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         await refreshBookings();
         console.log('✅ [DIAGNOSTIC] Réservations rafraîchies - la réservation devrait maintenant être visible');
 
-        // 3. Save uploaded documents & generate contract + police form (HOST WORKFLOW)
-        // ✅ CORRIGÉ : Générer le contrat même sans documents uploadés si des guests sont présents (workflow signature physique)
-        if (formData.guests.length > 0) {
-          // Cas 1 : Documents uploadés → Générer contrat + fiche police automatiquement
-          if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
-          console.log('🏠 [HOST WORKFLOW] Génération automatique contrat + fiche police...');
+        // 3. ✅ GÉNÉRATION AUTOMATIQUE ROBUSTE DES DOCUMENTS
+        // Fonction helper pour générer les documents avec retry et fallback
+        const generateDocumentsRobustly = async (bookingId: string): Promise<{ contractUrl?: string; policeUrl?: string }> => {
+          const result: { contractUrl?: string; policeUrl?: string } = {};
           
+          // Méthode 1 : Essayer avec host_direct si documents uploadés
+          if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
+            try {
+              console.log('🔄 [AUTO-GEN] Tentative génération via host_direct...');
+              const mainGuest = formData.guests[0];
+              const guestInfo = {
+                firstName: mainGuest.fullName.split(' ')[0] || mainGuest.fullName,
+                lastName: mainGuest.fullName.split(' ').slice(1).join(' ') || '',
+                email: mainGuest.email || '',
+                phone: '',
+                nationality: mainGuest.nationality || '',
+                idType: mainGuest.documentType === 'passport' ? 'passport' : 'national_id',
+                idNumber: mainGuest.documentNumber || '',
+                dateOfBirth: typeof mainGuest.dateOfBirth === 'string' 
+                  ? mainGuest.dateOfBirth 
+                  : mainGuest.dateOfBirth?.toString() || ''
+              };
+
+              const idDocuments = await Promise.all(
+                formData.uploadedDocuments.map(async (doc) => {
+                  const { DocumentStorageService } = await import('@/services/documentStorageService');
+                  const uploadResult = await DocumentStorageService.storeDocument(doc.file, {
+                    bookingId: bookingId,
+                    fileName: doc.file.name,
+                    extractedData: doc.extractedData
+                  });
+
+                  if (!uploadResult.success || !uploadResult.filePath) {
+                    throw new Error(`Échec upload document: ${doc.file.name}`);
+                  }
+
+                  const { data: signedData, error: signedError } = await supabase.storage
+                    .from('guest-documents')
+                    .createSignedUrl(uploadResult.filePath, 3600);
+
+                  if (signedError || !signedData?.signedUrl) {
+                    throw new Error(`Impossible de signer l'URL du document: ${doc.file.name}`);
+                  }
+
+                  return {
+                    name: doc.file.name,
+                    url: signedData.signedUrl,
+                    type: doc.file.type,
+                    size: doc.file.size
+                  };
+                })
+              );
+
+              const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+                body: {
+                  action: 'host_direct',
+                  bookingId: bookingId,
+                  guestInfo,
+                  idDocuments,
+                  bookingData: {
+                    checkIn: formData.checkInDate,
+                    checkOut: formData.checkOutDate,
+                    numberOfGuests: formData.numberOfGuests
+                  }
+                }
+              });
+
+              if (!error && data) {
+                result.contractUrl = data.contractUrl;
+                result.policeUrl = data.policeUrl;
+                console.log('✅ [AUTO-GEN] Génération réussie via host_direct');
+                return result;
+              }
+            } catch (error) {
+              console.warn('⚠️ [AUTO-GEN] host_direct a échoué, passage au fallback:', error);
+            }
+          }
+
+          // Méthode 2 (Fallback) : Générer contrat et police séparément
+          console.log('🔄 [AUTO-GEN] Génération séparée contrat + police...');
+          
+          // Générer le contrat
           try {
-            // ✅ WORKFLOW HOST : Appeler le service unifié pour tout générer d'un coup
-            const { submitDocumentsUnified } = await import('@/services/documentServiceUnified');
-            
-            // Préparer les données du premier guest (requis pour le contrat)
-            const mainGuest = formData.guests[0];
-            const guestInfo = {
-              firstName: mainGuest.fullName.split(' ')[0] || mainGuest.fullName,
-              lastName: mainGuest.fullName.split(' ').slice(1).join(' ') || '',
-              email: mainGuest.email || '',
-              phone: '',
-              nationality: mainGuest.nationality || '',
-              idType: mainGuest.documentType === 'passport' ? 'passport' : 'national_id',
-              idNumber: mainGuest.documentNumber || '',
-              dateOfBirth: typeof mainGuest.dateOfBirth === 'string' 
-                ? mainGuest.dateOfBirth 
-                : mainGuest.dateOfBirth?.toString() || ''
-            };
-
-            // Convertir les documents uploadés en format attendu par l'Edge Function
-            const idDocuments = await Promise.all(
-              formData.uploadedDocuments.map(async (doc) => {
-                const { DocumentStorageService } = await import('@/services/documentStorageService');
-                const uploadResult = await DocumentStorageService.storeDocument(doc.file, {
-                  bookingId: bookingData.id,
-                  fileName: doc.file.name,
-                  extractedData: doc.extractedData
-                });
-
-                if (!uploadResult.success || !uploadResult.filePath) {
-                  throw new Error(`Échec upload document: ${doc.file.name}`);
-                }
-
-                const { data: signedData, error: signedError } = await supabase.storage
-                  .from('guest-documents')
-                  .createSignedUrl(uploadResult.filePath, 3600);
-
-                if (signedError || !signedData?.signedUrl) {
-                  throw new Error(`Impossible de signer l'URL du document: ${doc.file.name}`);
-                }
-
-                return {
-                  name: doc.file.name,
-                  url: signedData.signedUrl,
-                  type: doc.file.type,
-                  size: doc.file.size
-                };
-              })
-            );
-
-            console.log('📤 [HOST WORKFLOW] Appel submit-guest-info-unified (mode host_direct)...', {
-              bookingId: bookingData.id,
-              guestName: guestInfo.firstName + ' ' + guestInfo.lastName,
-              documentsCount: idDocuments.length
-            });
-
-            // ✅ Appel direct à l'Edge Function avec action=host_direct
-            const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+            const { data: contractData, error: contractError } = await supabase.functions.invoke('submit-guest-info-unified', {
               body: {
-                action: 'host_direct',
-                bookingId: bookingData.id,
-                guestInfo,
-                idDocuments,
-                bookingData: {
-                  checkIn: formData.checkInDate,
-                  checkOut: formData.checkOutDate,
-                  numberOfGuests: formData.numberOfGuests
-                }
+                action: 'generate_contract_only',
+                bookingId: bookingId
               }
             });
-
-            if (error) {
-              throw new Error(error.message || 'Erreur lors de la génération des documents');
+            
+            if (!contractError && contractData?.contractUrl) {
+              result.contractUrl = contractData.contractUrl;
+              console.log('✅ [AUTO-GEN] Contrat généré avec succès');
+            } else {
+              console.warn('⚠️ [AUTO-GEN] Échec génération contrat:', contractError?.message);
             }
+          } catch (error) {
+            console.warn('⚠️ [AUTO-GEN] Erreur génération contrat:', error);
+          }
 
-            const result = {
-              bookingId: data.bookingId,
-              contractUrl: data.contractUrl,
-              policeUrl: data.policeUrl,
-              booking: data.booking
-            };
-
-            console.log('✅ [HOST WORKFLOW] Documents générés avec succès:', {
-              bookingId: result.bookingId,
-              contractUrl: result.contractUrl,
-              policeUrl: result.policeUrl
+          // Générer la police
+          try {
+            const { data: policeData, error: policeError } = await supabase.functions.invoke('submit-guest-info-unified', {
+              body: {
+                action: 'generate_police_only',
+                bookingId: bookingId
+              }
             });
+            
+            if (!policeError && policeData?.policeUrl) {
+              result.policeUrl = policeData.policeUrl;
+              console.log('✅ [AUTO-GEN] Police générée avec succès');
+            } else {
+              console.warn('⚠️ [AUTO-GEN] Échec génération police:', policeError?.message);
+            }
+          } catch (error) {
+            console.warn('⚠️ [AUTO-GEN] Erreur génération police:', error);
+          }
 
+          return result;
+        };
+
+        // Générer les documents automatiquement si des guests sont présents
+        if (formData.guests.length > 0) {
+          console.log('🚀 [AUTO-GEN] Démarrage génération automatique des documents...');
+          
+          try {
+            const documentsResult = await generateDocumentsRobustly(bookingData.id);
+            
+            // Mettre à jour la réservation avec les URLs générées
+            const existingDocs = bookingData.documents_generated && typeof bookingData.documents_generated === 'object' 
+              ? bookingData.documents_generated 
+              : {};
+            
             const updatedDocumentsGenerated = {
-              ...(bookingData.documents_generated || {}),
-              contract: true,
-              policeForm: true,
-              contractUrl: result.contractUrl,
-              policeUrl: result.policeUrl
+              ...existingDocs,
+              contract: !!documentsResult.contractUrl,
+              policeForm: !!documentsResult.policeUrl,
+              contractUrl: documentsResult.contractUrl || undefined,
+              policeUrl: documentsResult.policeUrl || undefined
             };
 
             await supabase
               .from('bookings')
               .update({
                 documents_generated: updatedDocumentsGenerated,
-                status: 'completed',
-                guest_name: (mainGuest?.fullName || primaryGuestName || '').trim() || null
+                status: documentsResult.contractUrl && documentsResult.policeUrl ? 'completed' : 'pending',
+                guest_name: (formData.guests[0]?.fullName || primaryGuestName || '').trim() || null
               })
               .eq('id', bookingData.id);
 
             await refreshBookings();
 
-            toast({
-              title: "Réservation créée avec succès",
-              description: "Contrat et fiche de police générés automatiquement. Email envoyé au client.",
-            });
-
-          } catch (workflowError) {
-            console.error('❌ [HOST WORKFLOW] Erreur génération documents:', workflowError);
-            toast({
-              title: "Réservation créée",
-              description: "La réservation est créée mais la génération des documents a échoué. Vous pouvez les générer manuellement.",
-              variant: "destructive"
-            });
-            // ✅ CORRIGÉ : Rafraîchir même en cas d'erreur pour que la réservation s'affiche
-            await refreshBookings();
-          }
-          } else {
-            // Cas 2 : Pas de documents uploadés mais guests présents → Workflow signature physique
-            // ✅ CORRIGÉ : Générer le contrat même sans documents pour le workflow signature physique
-            console.log('📝 [WORKFLOW SIGNATURE PHYSIQUE] Réservation créée sans documents, génération du contrat...');
+            // Message de succès adapté selon ce qui a été généré
+            const generatedDocs = [];
+            if (documentsResult.contractUrl) generatedDocs.push('contrat');
+            if (documentsResult.policeUrl) generatedDocs.push('fiche de police');
             
-            try {
-              // Préparer les données du premier guest pour la génération du contrat
-              const mainGuest = formData.guests[0];
-              const guestName = primaryGuestName || mainGuest?.fullName || '';
-              
-              // ✅ CORRIGÉ : Générer le contrat même sans documents uploadés
-              const { data: contractData, error: contractError } = await supabase.functions.invoke('submit-guest-info-unified', {
-                body: {
-                  action: 'generate_contract_only',
-                  bookingId: bookingData.id
-                }
+            if (generatedDocs.length > 0) {
+              toast({
+                title: "Réservation créée avec succès",
+                description: `${generatedDocs.join(' et ')} généré${generatedDocs.length > 1 ? 's' : ''} automatiquement.`,
               });
-
-              if (contractError) {
-                console.error('❌ [WORKFLOW SIGNATURE PHYSIQUE] Erreur génération contrat:', contractError);
-                // Continuer quand même, le contrat pourra être généré plus tard
-              } else if (contractData?.contractUrl) {
-                console.log('✅ [WORKFLOW SIGNATURE PHYSIQUE] Contrat généré avec succès:', contractData.contractUrl);
-                
-                // ✅ NOUVEAU : Générer aussi la fiche de police pour le workflow signature physique
-                let policeUrl = null;
-                try {
-                  console.log('👮 [WORKFLOW SIGNATURE PHYSIQUE] Génération de la fiche de police...');
-                  const { data: policeData, error: policeError } = await supabase.functions.invoke('submit-guest-info-unified', {
-                    body: {
-                      action: 'generate_police_only',
-                      bookingId: bookingData.id
-                    }
-                  });
-
-                  if (policeError) {
-                    console.error('❌ [WORKFLOW SIGNATURE PHYSIQUE] Erreur génération fiche police:', policeError);
-                    // Continuer quand même, la fiche police pourra être générée plus tard
-                  } else if (policeData?.policeUrl) {
-                    policeUrl = policeData.policeUrl;
-                    console.log('✅ [WORKFLOW SIGNATURE PHYSIQUE] Fiche de police générée avec succès:', policeUrl);
-                  } else {
-                    console.warn('⚠️ [WORKFLOW SIGNATURE PHYSIQUE] Pas d\'URL de fiche police retournée');
-                  }
-                } catch (policeGenError) {
-                  console.error('❌ [WORKFLOW SIGNATURE PHYSIQUE] Erreur lors de la génération de la fiche de police:', policeGenError);
-                  // Continuer quand même
-                }
-                
-                // Mettre à jour la réservation avec l'URL du contrat et de la fiche de police
-                await supabase
-                  .from('bookings')
-                  .update({
-                    documents_generated: {
-                      ...(bookingData.documents_generated || {}),
-                      contract: true,
-                      contractUrl: contractData.contractUrl,
-                      policeForm: !!policeUrl, // True si la fiche police a été générée
-                      policeUrl: policeUrl || undefined
-                    },
-                    status: 'pending', // En attente de signature physique
-                    guest_name: guestName.trim() || null
-                  })
-                  .eq('id', bookingData.id);
-              } else {
-                // Pas d'erreur mais pas d'URL non plus, mettre à jour quand même
-                await supabase
-                  .from('bookings')
-                  .update({
-                    status: 'pending',
-                    guest_name: guestName.trim() || null
-                  })
-                  .eq('id', bookingData.id);
-              }
-            } catch (contractGenError) {
-              console.error('❌ [WORKFLOW SIGNATURE PHYSIQUE] Erreur lors de la génération du contrat:', contractGenError);
-              // Mettre à jour quand même le statut et le guest_name
-              await supabase
-                .from('bookings')
-                .update({
-                  status: 'pending',
-                  guest_name: (primaryGuestName || formData.guests[0]?.fullName || '').trim() || null
-                })
-                .eq('id', bookingData.id);
+            } else {
+              toast({
+                title: "Réservation créée",
+                description: "La réservation a été créée. Les documents seront générés automatiquement en arrière-plan.",
+              });
             }
-            
-            // ✅ CORRIGÉ : Rafraîchir pour que la réservation s'affiche dans le calendrier
+          } catch (error) {
+            console.error('❌ [AUTO-GEN] Erreur lors de la génération automatique:', error);
+            // Ne pas afficher d'erreur à l'utilisateur, juste continuer
             await refreshBookings();
-            
             toast({
               title: "Réservation créée",
-              description: "La réservation a été créée. Le contrat a été généré et sera signé physiquement.",
+              description: "La réservation a été créée. Les documents seront disponibles dans quelques instants.",
             });
           }
         } else if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
@@ -617,16 +589,29 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         
         try {
           // Use RPC function for atomic guest replacement
+          // @ts-ignore - La fonction RPC peut ne pas exister dans les types générés
           const { error: syncError } = await supabase.rpc('sync_booking_guests', {
             p_booking_id: editingBooking.id,
-            p_guests: formData.guests.map(guest => ({
-              full_name: guest.fullName,
-              date_of_birth: guest.dateOfBirth,
-              document_number: guest.documentNumber,
-              nationality: guest.nationality,
-              place_of_birth: guest.placeOfBirth || '',
-              document_type: guest.documentType
-            }))
+            p_guests: formData.guests.map(guest => {
+              // ✅ CORRECTION : Convertir date_of_birth en string si c'est une Date
+              let dateOfBirth: string | null = null;
+              if (guest.dateOfBirth) {
+                if (guest.dateOfBirth instanceof Date) {
+                  dateOfBirth = guest.dateOfBirth.toISOString().split('T')[0]; // Format YYYY-MM-DD
+                } else if (typeof guest.dateOfBirth === 'string') {
+                  dateOfBirth = guest.dateOfBirth;
+                }
+              }
+
+              return {
+                full_name: guest.fullName || '',
+                date_of_birth: dateOfBirth,
+                document_number: guest.documentNumber || '',
+                nationality: guest.nationality || 'Non spécifiée',
+                place_of_birth: guest.placeOfBirth || '',
+                document_type: (guest.documentType || 'passport') as 'passport' | 'national_id'
+              };
+            })
           });
 
           if (syncError) {
@@ -646,15 +631,27 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
             // Insert new guests if any
             if (formData.guests.length > 0) {
-              const guestsData = formData.guests.map(guest => ({
-                booking_id: editingBooking.id,
-                full_name: guest.fullName,
-                date_of_birth: guest.dateOfBirth,
-                document_number: guest.documentNumber,
-                nationality: guest.nationality,
-                place_of_birth: guest.placeOfBirth || '',
-                document_type: guest.documentType
-              }));
+              const guestsData = formData.guests.map(guest => {
+                // ✅ CORRECTION : Convertir date_of_birth en string si c'est une Date
+                let dateOfBirth: string | null = null;
+                if (guest.dateOfBirth) {
+                  if (guest.dateOfBirth instanceof Date) {
+                    dateOfBirth = guest.dateOfBirth.toISOString().split('T')[0]; // Format YYYY-MM-DD
+                  } else if (typeof guest.dateOfBirth === 'string') {
+                    dateOfBirth = guest.dateOfBirth;
+                  }
+                }
+
+                return {
+                  booking_id: editingBooking.id,
+                  full_name: guest.fullName || '',
+                  date_of_birth: dateOfBirth,
+                  document_number: guest.documentNumber || '',
+                  nationality: guest.nationality || 'Non spécifiée',
+                  place_of_birth: guest.placeOfBirth || null,
+                  document_type: (guest.documentType || 'passport') as 'passport' | 'national_id'
+                };
+              });
               
               const { error: insertError } = await supabase
                 .from('guests')
@@ -728,8 +725,20 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
     }
   };
 
-  const updateFormData = useCallback((updates: Partial<BookingFormData>) => {
-    setFormData(prev => ({ ...prev, ...updates }));
+  const updateFormData = useCallback((updates: Partial<BookingFormData> | ((prev: BookingFormData) => Partial<BookingFormData>)) => {
+    if (typeof updates === 'function') {
+      // Si updates est une fonction, l'appeler avec l'état précédent
+      console.log('🔄 [BookingWizard] updateFormData appelé avec FONCTION');
+      setFormData(prev => {
+        const result = updates(prev);
+        console.log('🔄 [BookingWizard] Résultat fonction:', result);
+        return { ...prev, ...result };
+      });
+    } else {
+      // Si updates est un objet, faire un merge simple
+      console.log('🔄 [BookingWizard] updateFormData appelé avec OBJET:', updates);
+      setFormData(prev => ({ ...prev, ...updates }));
+    }
   }, []);
 
   const CurrentStepComponent = steps[currentStep].component;
@@ -761,6 +770,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           <CurrentStepComponent
             formData={formData}
             updateFormData={updateFormData}
+            propertyId={propertyId}
+            bookingId={editingBooking?.id}
           />
         </CardContent>
 

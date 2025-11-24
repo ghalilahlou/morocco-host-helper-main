@@ -41,29 +41,34 @@ function extractGuestName(guest: any): string {
 }
 
 export class DocumentStorageService {
-  
   /**
-   * Store a document file and create a unified record
+   * Store a document file inside the `guest-documents` bucket,
+   * register the document in `uploaded_documents`, and return its path/public URL.
    */
   static async storeDocument(
-    file: File, 
+    file: File,
     metadata: DocumentMetadata
   ): Promise<DocumentStorageResult> {
     try {
-      console.log('📄 DocumentStorageService - Storing document:', {
+      console.log('📄 DocumentStorageService - Uploading document to storage:', {
         fileName: file.name,
         bookingId: metadata.bookingId,
         size: file.size
       });
 
-      // Generate unique file name
+      // Generate deterministic storage path per booking to keep files grouped
       const timestamp = Date.now();
-      const fileName = `${metadata.bookingId}/${timestamp}_${file.name}`;
+      // ✅ CORRECTION : Nettoyer le nom de fichier (enlever espaces et caractères spéciaux)
+      const cleanFileName = file.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Enlever les accents
+        .replace(/[^\w.-]/g, '_') // Remplacer caractères spéciaux par underscore
+        .replace(/_{2,}/g, '_'); // Éviter les underscores multiples
+      const filePath = `${metadata.bookingId}/${timestamp}_${cleanFileName}`;
 
-      // Upload to storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('guest-documents')
-        .upload(fileName, file, {
+        .upload(filePath, file, {
           cacheControl: '3600',
           upsert: false
         });
@@ -73,41 +78,49 @@ export class DocumentStorageService {
         return { success: false, error: uploadError.message };
       }
 
-      console.log('✅ File uploaded successfully:', { fileName });
+      console.log('✅ File uploaded successfully:', { filePath });
 
-      // Create unified document record in uploaded_documents - store only file path, no public URL
-      const documentRecord = {
-        booking_id: metadata.bookingId,
-        guest_id: metadata.guestId || null,
-        file_name: file.name,
-        file_path: fileName,
-        document_url: null, // No longer store public URLs
-        extracted_data: metadata.extractedData || null,
-        processing_status: 'completed'
-      };
+      // Generate a public URL (bucket is public)
+      const { data: publicData } = supabase.storage
+        .from('guest-documents')
+        .getPublicUrl(filePath);
 
-      const { data: dbData, error: dbError } = await supabase
-        .from('uploaded_documents')
-        .insert(documentRecord)
-        .select();
-
-      if (dbError) {
-        console.error('❌ DB insert failed:', dbError);
-        return { success: false, error: dbError.message };
+      const publicUrl = publicData?.publicUrl;
+      if (!publicUrl) {
+        console.warn('⚠️ Unable to generate public URL, consumers must sign the path later.');
       }
 
-      console.log('✅ Document record saved successfully:', dbData);
-      
-      return { 
-        success: true, 
-        filePath: fileName // Return file path instead of public URL
-      };
+      // Register the document in uploaded_documents for host visibility
+      try {
+        const documentRecord = {
+          booking_id: metadata.bookingId,
+          guest_id: metadata.guestId || null,
+          document_type: metadata.documentType || 'identity_upload',
+          file_name: metadata.fileName,
+          file_path: filePath,
+          document_url: publicUrl || null,
+          extracted_data: metadata.extractedData || null,
+          processing_status: 'uploaded',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
 
+        await supabase.from('uploaded_documents').insert(documentRecord);
+        console.log('✅ Document metadata stored in uploaded_documents');
+      } catch (dbError) {
+        console.warn('⚠️ Unable to insert uploaded_documents record:', dbError);
+      }
+
+      return {
+        success: true,
+        filePath,
+        documentUrl: publicUrl || undefined
+      };
     } catch (error) {
       console.error('❌ Document storage error:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }

@@ -1,17 +1,24 @@
-import { Calendar, Users, MapPin, FileText, Download } from 'lucide-react';
+import { Calendar, Users, MapPin, FileText, Download, Eye, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { BookingFormData } from '../BookingWizard';
+import { BookingFormData, BookingFormUpdate } from '../BookingWizard';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { useState } from 'react';
+import { useToast } from '@/hooks/use-toast';
+import { DocumentPreviewDialog } from './DocumentPreviewDialog';
 
 interface ReviewStepProps {
   formData: BookingFormData;
-  updateFormData: (updates: Partial<BookingFormData>) => void;
+  updateFormData: (updates: BookingFormUpdate) => void;
+  bookingId?: string; // ✅ NOUVEAU : ID de la réservation si elle est déjà créée (mode édition)
+  propertyId: string; // ✅ REQUIS pour générer les documents via Edge Function
 }
 
-export const ReviewStep = ({ formData }: ReviewStepProps) => {
+export const ReviewStep = ({ formData, bookingId, propertyId }: ReviewStepProps) => {
+  const { toast } = useToast();
+  const [previewDocument, setPreviewDocument] = useState<'police' | 'contract' | null>(null);
   const calculateNights = () => {
     if (!formData.checkInDate || !formData.checkOutDate) return 0;
     const checkIn = new Date(formData.checkInDate);
@@ -34,6 +41,21 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
       console.error('Date formatting error:', error, 'for date:', dateString);
       return 'Date invalide';
     }
+  };
+
+  // ✅ NOUVEAU : Fonction pour visualiser les documents AVANT création
+  const handlePreviewDocument = (documentType: 'police' | 'contract') => {
+    // Vérifier que nous avons les données nécessaires
+    if (!formData.checkInDate || !formData.checkOutDate || formData.guests.length === 0) {
+      toast({
+        title: "Données incomplètes",
+        description: "Veuillez renseigner les dates et ajouter au moins un client pour prévisualiser les documents.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setPreviewDocument(documentType);
   };
 
   return (
@@ -171,30 +193,56 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-              <div>
+            {/* Fiche de Police */}
+            <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-gradient-to-r from-blue-50/50 to-transparent hover:from-blue-50 transition-colors">
+              <div className="flex-1">
                 <p className="font-medium">Fiches d'arrivée (Police)</p>
                 <p className="text-sm text-muted-foreground">
                   {formData.guests.length} fiche(s) - Une par client
                 </p>
               </div>
-              <Badge variant="outline">
-                <Download className="w-3 h-3 mr-1" />
-                PDF
-              </Badge>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePreviewDocument('police')}
+                  disabled={formData.guests.length === 0}
+                  className="border-blue-200 hover:border-blue-300 hover:bg-blue-50"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Aperçu
+                </Button>
+                <Badge variant="outline" className="bg-white">
+                  <Download className="w-3 h-3 mr-1" />
+                  PDF
+                </Badge>
+              </div>
             </div>
             
-            <div className="flex items-center justify-between p-3 border border-border rounded-lg">
-              <div>
+            {/* Contrat de Location */}
+            <div className="flex items-center justify-between p-3 border border-border rounded-lg bg-gradient-to-r from-green-50/50 to-transparent hover:from-green-50 transition-colors">
+              <div className="flex-1">
                 <p className="font-medium">Contrat de location</p>
                 <p className="text-sm text-muted-foreground">
                   Contrat standard pour location meublée
                 </p>
               </div>
-              <Badge variant="outline">
-                <Download className="w-3 h-3 mr-1" />
-                PDF
-              </Badge>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePreviewDocument('contract')}
+                  disabled={formData.guests.length === 0}
+                  className="border-green-200 hover:border-green-300 hover:bg-green-50"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Aperçu
+                </Button>
+                <Badge variant="outline" className="bg-white">
+                  <Download className="w-3 h-3 mr-1" />
+                  PDF
+                </Badge>
+              </div>
             </div>
           </div>
           
@@ -228,6 +276,17 @@ export const ReviewStep = ({ formData }: ReviewStepProps) => {
             Vous pourrez compléter les informations plus tard.
           </p>
         </div>
+      )}
+
+      {/* Document Preview Dialog */}
+      {previewDocument && (
+        <DocumentPreviewDialog
+          isOpen={!!previewDocument}
+          onClose={() => setPreviewDocument(null)}
+          documentType={previewDocument}
+          formData={formData}
+          propertyId={propertyId}
+        />
       )}
     </div>
   );

@@ -324,4 +324,57 @@ export class UnifiedDocumentService {
       };
     }
   }
+
+  /**
+   * Générer et télécharger les fiches de police pour tous les guests d'une réservation
+   */
+  static async downloadPoliceFormsForAllGuests(booking: Booking): Promise<void> {
+    try {
+      console.log('📄 [UnifiedDocumentService] Génération fiches police pour booking:', booking.id);
+
+      if (!booking.id) {
+        throw new Error('Booking ID manquant');
+      }
+
+      // Appeler l'Edge Function submit-guest-info-unified avec l'action generate_police_only
+      const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+        body: {
+          action: 'generate_police_only',
+          bookingId: booking.id
+        }
+      });
+
+      if (error) {
+        console.error('❌ [UnifiedDocumentService] Erreur génération police:', error);
+        throw new Error(`Erreur lors de la génération des fiches de police: ${error.message}`);
+      }
+
+      if (!data?.success && !data?.policeUrl) {
+        console.error('❌ [UnifiedDocumentService] Pas de policeUrl dans la réponse:', data);
+        throw new Error('Aucune URL de fiche de police retournée par l\'Edge Function');
+      }
+
+      const policeUrl = data.policeUrl || data.data?.policeUrl;
+      
+      if (!policeUrl) {
+        throw new Error('URL de fiche de police manquante dans la réponse');
+      }
+
+      console.log('✅ [UnifiedDocumentService] Fiche de police générée:', policeUrl);
+
+      // Télécharger automatiquement le PDF
+      const link = document.createElement('a');
+      link.href = policeUrl;
+      link.download = `fiche-police-${booking.id}-${Date.now()}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      console.log('✅ [UnifiedDocumentService] Fiche de police téléchargée avec succès');
+
+    } catch (error) {
+      console.error('❌ [UnifiedDocumentService] Erreur dans downloadPoliceFormsForAllGuests:', error);
+      throw error;
+    }
+  }
 }
