@@ -1,7 +1,7 @@
 export interface Guest {
   id?: string;
   fullName: string;
-  dateOfBirth: Date | undefined; // ✅ CORRECTION: Utiliser Date comme dans GuestVerification
+  dateOfBirth: Date | string | undefined; // ✅ Supporter les valeurs ISO string du wizard
   documentNumber: string;
   nationality: string;
   placeOfBirth?: string;
@@ -34,6 +34,7 @@ export interface Booking {
   checkOutDate: string;
   numberOfGuests: number;
   bookingReference?: string;
+  guest_name?: string;
   status: 'pending' | 'completed' | 'archived';
   documentsGenerated?: {
     policeForm: boolean;
@@ -52,4 +53,5 @@ export interface UploadedDocument {
   preview: string;
   extractedData?: Partial<Guest>;
   processingStatus: 'uploading' | 'processing' | 'completed' | 'error';
+  createdGuestId?: string;
 }

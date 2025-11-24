@@ -268,6 +268,9 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
             <Dashboard
               onNewBooking={onNewBooking}
               onEditBooking={onEditBooking}
+              bookings={filteredBookings}
+              onRefreshBookings={refreshBookings}
+              propertyId={selectedProperty.id}
             />
           ) : (
             <CalendarView

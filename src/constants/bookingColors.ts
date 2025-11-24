@@ -1,25 +1,27 @@
 /**
  * Centralized booking color constants
  * This ensures consistency across all components that display booking status colors
+ * ✅ HARMONISÉ : Couleurs synchronisées avec la palette du dashboard Host (teal/cyan clair et ouvert)
  */
 
 export const BOOKING_COLORS = {
-  // ✅ AMÉLIORÉ : Système de couleurs optimisé avec gradients plus riches et meilleur contraste
+  // ✅ UNIFIÉ : Gris cohérent avec le style du dashboard (slate-400 unifié)
   pending: {
-    hex: '#9CA3AF',
-    gradient: 'linear-gradient(135deg, #D1D5DB 0%, #9CA3AF 50%, #6B7280 100%)',
-    tailwind: 'bg-gradient-to-br from-gray-300 to-gray-500',
-    text: 'text-gray-700',
-    shadow: 'shadow-gray-300/50',
-    hover: 'hover:from-gray-400 hover:to-gray-600'
+    hex: '#94A3B8', // slate-400 - gris unifié et cohérent avec CalendarGrid
+    gradient: 'linear-gradient(135deg, #CBD5E1 0%, #94A3B8 50%, #64748B 100%)',
+    tailwind: 'bg-gradient-to-br from-slate-300 to-slate-500',
+    text: 'text-slate-700',
+    shadow: 'shadow-slate-300/50',
+    hover: 'hover:from-slate-400 hover:to-slate-600'
   },
+  // ✅ HARMONISÉ : Teal/cyan clair et ouvert pour correspondre au style du dashboard (#8BD7D2 ou #54DEFD)
   completed: {
-    hex: '#059669', 
-    gradient: 'linear-gradient(135deg, #10B981 0%, #059669 50%, #047857 100%)',
-    tailwind: 'bg-gradient-to-br from-emerald-500 to-emerald-700',
-    text: 'text-emerald-800',
-    shadow: 'shadow-emerald-300/50',
-    hover: 'hover:from-emerald-600 hover:to-emerald-800'
+    hex: '#8BD7D2', // brand-3 - turquoise doux, clair et ouvert comme dans le dashboard
+    gradient: 'linear-gradient(135deg, #54DEFD 0%, #8BD7D2 50%, #119DA4 100%)',
+    tailwind: 'bg-gradient-to-br from-cyan-300 to-teal-400',
+    text: 'text-teal-900',
+    shadow: 'shadow-cyan-300/50',
+    hover: 'hover:from-cyan-400 hover:to-teal-500'
   },
   conflict: {
     hex: '#DC2626',
@@ -29,9 +31,9 @@ export const BOOKING_COLORS = {
     shadow: 'shadow-red-300/50',
     hover: 'hover:from-red-600 hover:to-red-800'
   },
-  // ✅ AMÉLIORÉ : Réservations en bleu turquoise (#119DA4) avec gradient plus riche pour meilleure visibilité
+  // ✅ HARMONISÉ : Réservations Airbnb en teal moyen (#119DA4) cohérent avec le dashboard
   airbnb: {
-    hex: '#119DA4',
+    hex: '#119DA4', // brand-1 - teal moyen du dashboard
     gradient: 'linear-gradient(135deg, #54DEFD 0%, #119DA4 50%, #0C7489 100%)',
     tailwind: 'bg-gradient-to-br from-cyan-400 to-teal-600',
     text: 'text-teal-900',
@@ -39,16 +41,16 @@ export const BOOKING_COLORS = {
     hover: 'hover:from-cyan-500 hover:to-teal-700'
   },
   manual: {
-    hex: '#119DA4',
+    hex: '#119DA4', // brand-1 - teal moyen du dashboard
     gradient: 'linear-gradient(135deg, #54DEFD 0%, #119DA4 50%, #0C7489 100%)',
     tailwind: 'bg-gradient-to-br from-cyan-400 to-teal-600',
     text: 'text-teal-900',
     shadow: 'shadow-cyan-300/50',
     hover: 'hover:from-cyan-500 hover:to-teal-700'
   },
-  // ✅ AMÉLIORÉ : Couleur par défaut en bleu turquoise avec gradient plus riche
+  // ✅ HARMONISÉ : Couleur par défaut en teal moyen (#119DA4) cohérent avec le dashboard
   default: {
-    hex: '#119DA4',
+    hex: '#119DA4', // brand-1 - teal moyen du dashboard
     gradient: 'linear-gradient(135deg, #54DEFD 0%, #119DA4 50%, #0C7489 100%)',
     tailwind: 'bg-gradient-to-br from-cyan-400 to-teal-600',
     text: 'text-teal-900',

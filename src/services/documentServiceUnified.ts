@@ -10,12 +10,15 @@ import { edgeClient } from '@/lib/edgeClient';
 export interface GuestInfo {
   firstName: string;
   lastName: string;
-  email?: string; // ✅ OPTIONNEL : Email non obligatoire pour confirmer réservation
+  email: string; // ✅ REQUIS : Email obligatoire
   phone?: string;
   nationality?: string;
   idType?: string;
   idNumber?: string;
   dateOfBirth?: string;
+  profession?: string;
+  motifSejour?: string;
+  adressePersonnelle?: string;
 }
 
 export interface IdDocument {
@@ -130,7 +133,18 @@ export async function submitDocumentsUnified(
 
     if (!response.success) {
       console.error('❌ [DocumentServiceUnified] Unified function failed:', response.error);
-      throw new Error(response.error?.message || 'Génération des documents échouée');
+      // ✅ AMÉLIORATION : Afficher les détails de l'erreur si disponibles
+      const errorDetails = response.data?.details || [];
+      const errorMessage = typeof response.error === 'string' 
+        ? response.error 
+        : (response.error?.message || 'Génération des documents échouée');
+      
+      if (errorDetails.length > 0) {
+        console.error('📋 Détails des erreurs:', errorDetails);
+        throw new Error(`${errorMessage}. Détails : ${errorDetails.join(', ')}`);
+      }
+      
+      throw new Error(errorMessage);
     }
 
     console.log('✅ [DocumentServiceUnified] All documents generated successfully');

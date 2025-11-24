@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { UnifiedDocumentService } from '@/services/unifiedDocumentService';
@@ -11,10 +12,6 @@ import { ContractService } from '@/services/contractService';
 import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
-import { DocumentsViewer } from './DocumentsViewer';
-import { HostSignatureCapture } from './HostSignatureCapture';
-import { ContractDebugPanel } from './ContractDebugPanel';
-import { supabase } from '@/integrations/supabase/client';
 import { ApiService } from '@/services/apiService';
 
 interface BookingDetailsModalProps {
@@ -41,10 +38,6 @@ export const BookingDetailsModal = ({
     generatePropertyVerificationUrl,
     isLoading: isGeneratingLink
   } = useGuestVerification();
-  const [showDocuments, setShowDocuments] = useState<'id-documents' | 'contract' | 'police-form' | null>(null);
-  const [showHostSignature, setShowHostSignature] = useState(false);
-  const [isSubmittingHostSignature, setIsSubmittingHostSignature] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [isGeneratingLocal, setIsGeneratingLocal] = useState(false); // ✅ State local pour bloquer immédiatement
 
   // Enhanced fallback: fetch guest name from multiple sources
@@ -377,10 +370,19 @@ export const BookingDetailsModal = ({
       return;
     }
 
-    if (!booking.propertyId) {
+    // ✅ AMÉLIORÉ : Essayer de récupérer propertyId depuis booking.propertyId ou booking.property?.id
+    const propertyId = booking.propertyId || booking.property?.id;
+    
+    if (!propertyId) {
+      console.error('❌ Aucune propriété associée à cette réservation:', {
+        bookingId: booking.id,
+        hasPropertyId: !!booking.propertyId,
+        hasProperty: !!booking.property,
+        propertyIdFromProperty: booking.property?.id
+      });
       toast({
         title: "Erreur",
-        description: "Aucune propriété associée à cette réservation",
+        description: "Aucune propriété associée à cette réservation. Veuillez modifier la réservation pour associer une propriété.",
         variant: "destructive"
       });
       return;
@@ -393,17 +395,24 @@ export const BookingDetailsModal = ({
     const userEvent = event?.nativeEvent || undefined;
 
     try {
+      console.log('🔗 Génération du lien pour:', {
+        propertyId,
+        bookingId: booking.id,
+        bookingReference: booking.bookingReference
+      });
+      
       // ✅ SIMPLIFIÉ : Le lien est automatiquement copié dans le hook
       // ✅ IMPORTANT : Passer l'événement utilisateur pour préserver le contexte
-      await generatePropertyVerificationUrl(booking.propertyId, booking.id, {
+      await generatePropertyVerificationUrl(propertyId, booking.id, {
         userEvent: userEvent
       });
       // Le toast de succès est déjà affiché dans le hook
     } catch (error) {
       console.error('❌ Erreur lors de la génération du lien:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
       toast({
         title: "Erreur",
-        description: "Impossible de générer le lien. Veuillez réessayer.",
+        description: `Impossible de générer le lien: ${errorMessage}`,
         variant: "destructive"
       });
     } finally {
@@ -438,215 +447,99 @@ export const BookingDetailsModal = ({
 
   return <>
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-2">
-              {booking.realGuestNames.length > 0 
-                ? booking.realGuestNames.join(', ')
-                : booking.guests?.[0]?.fullName || fallbackGuestName || booking.bookingReference || `Réservation #${booking.id.slice(-6)}`}
+              <div className="w-3 h-3 rounded-full" style={{
+                backgroundColor: booking.status === 'completed' ? '#10b981' : booking.status === 'pending' ? '#94a3b8' : '#64748b'
+              }}></div>
+              {booking.bookingReference || booking.realGuestNames[0] || booking.guests?.[0]?.fullName || fallbackGuestName || `Réservation #${booking.id.slice(-6)}`}
               {getStatusBadge()}
             </DialogTitle>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>
           </div>
+          <DialogDescription>
+            Détails et actions pour la réservation du {formatDate(booking.checkInDate)} au {formatDate(booking.checkOutDate)}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center space-x-3">
-              <Calendar className="w-5 h-5 text-muted-foreground" />
+          {/* ✅ UNIFIÉ : Structure identique à AirbnbReservationModal */}
+          {/* Informations principales - Version simplifiée */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Référence</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div>
-                <p className="font-medium">Arrivée</p>
-                <p className="text-muted-foreground">{formatDate(booking.checkInDate)}</p>
+                <p className="font-medium text-sm">Code réservation {booking.bookingReference ? 'Airbnb' : ''}</p>
+                <p className="text-lg font-mono">
+                  {booking.bookingReference || booking.id.slice(-12).toUpperCase()}
+                </p>
               </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <Calendar className="w-5 h-5 text-muted-foreground" />
-              <div>
-                <p className="font-medium">Départ</p>
-                <p className="text-muted-foreground">{formatDate(booking.checkOutDate)}</p>
-              </div>
-            </div>
-          </div>
 
-          {/* Guests Info */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Users className="w-5 h-5 text-muted-foreground" />
-              <span className="font-medium">
-                {booking.hasRealSubmissions 
-                  ? `${booking.realGuestCount} client(s) enregistré(s) / ${booking.numberOfGuests} total`
-                  : `${booking.numberOfGuests} client(s)`}
-              </span>
-            </div>
-            <span className="text-muted-foreground">{calculateNights()} nuit(s)</span>
-          </div>
-
-          {/* Registered Guests */}
-          {booking.guests.length > 0 && <div className="space-y-3">
-              <p className="font-medium">Clients enregistrés:</p>
-              <div className="space-y-2">
-                {booking.guests.map((guest, index) => <div key={guest.id} className="bg-muted/50 px-3 py-2 rounded-md">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-medium">{guest.fullName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {guest.nationality} • {guest.documentType === 'passport' ? 'Passeport' : 'CNI'}: {guest.documentNumber}
-                        </p>
-                        {guest.placeOfBirth && <p className="text-sm text-muted-foreground">
-                            Né(e) à: {guest.placeOfBirth}
-                          </p>}
-                      </div>
-                    </div>
-                  </div>)}
-              </div>
-            </div>}
-
-          {/* Documents Status */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center space-x-2">
-              <FileCheck className={`w-4 h-4 ${booking.documentsGenerated.policeForm || booking.submissionStatus.hasDocuments ? 'text-success' : 'text-muted-foreground'}`} />
-              <span className={booking.documentsGenerated.policeForm || booking.submissionStatus.hasDocuments ? 'text-success' : 'text-muted-foreground'}>
-                Fiches de police {booking.submissionStatus.hasDocuments && !booking.documentsGenerated.policeForm ? '(docs soumis)' : ''}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <FileCheck className={`w-4 h-4 ${booking.documentsGenerated.contract || booking.submissionStatus.hasSignature ? 'text-success' : 'text-muted-foreground'}`} />
-              <span className={booking.documentsGenerated.contract || booking.submissionStatus.hasSignature ? 'text-success' : 'text-muted-foreground'}>
-                Contrat {booking.submissionStatus.hasSignature && !booking.documentsGenerated.contract ? '(signé)' : ''}
-              </span>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex flex-col gap-3">
-            {/* Bouton Copier le lien */}
-            <Button 
-              variant="outline" 
-              onClick={(e) => handleGenerateGuestLink(e)}
-              disabled={isGeneratingLocal || isGeneratingLink}
-              className="w-full flex items-center justify-center"
-            >
-              {isGeneratingLocal || isGeneratingLink ? (
-                <>
-                  <div className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  <span>Génération...</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4 mr-2" />
-                  <span>Copier le lien</span>
-                </>
-              )}
-            </Button>
-            
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => {
-                onEdit(booking);
-                onClose();
-              }} className="flex-1">
-                <Edit className="w-4 h-4 mr-2" />
-                Modifier
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" className="flex-1">
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Supprimer
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Êtes-vous sûr ?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Voulez-vous vraiment supprimer cette réservation ? Cette action est irréversible.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <div className="rounded-md border bg-destructive/10 p-4">
-                    <p className="font-semibold">⚠️ ATTENTION : Cette action supprimera définitivement :</p>
-                    <ul className="mt-2 list-disc pl-5 space-y-1 text-sm">
-                      <li>La réservation et toutes ses informations</li>
-                      <li>Toutes les fiches clients et leurs documents</li>
-                      <li>Les contrats signés et formulaires de police associés</li>
-                    </ul>
-                    <p className="mt-2 font-medium">Cette action ne peut pas être annulée !</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center space-x-3">
+                  <Calendar className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Arrivée</p>
+                    <p className="text-muted-foreground">{formatDate(booking.checkInDate)}</p>
                   </div>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Annuler</AlertDialogCancel>
-                    <AlertDialogAction onClick={confirmDeleteBookingAction} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                      Supprimer
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-            
-            {(booking.guests.length > 0 || booking.hasRealSubmissions) && <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" size="sm" onClick={async () => {
-                await handleGeneratePolice();
-                setShowDocuments('police-form');
-              }}>
-                  <Shield className="w-4 h-4 mr-1" />
-                  Police
-                </Button>
-                <Button variant="outline" size="sm" onClick={async () => {
-                await handleGenerateContract();
-                setShowDocuments('contract');
-              }}>
-                  <FileText className="w-4 h-4 mr-1" />
-                  Contrat
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowHostSignature(true)}>
-                  <Pen className="w-4 h-4 mr-1" />
-                  Signature Hôte
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowDocuments('id-documents')}>
-                  <FileCheck className="w-4 h-4 mr-1" />
-                  Pièces ID
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowDocuments('id-cards')}>
-                  <Users className="w-4 h-4 mr-1" />
-                  Fiches ID
-                </Button>
-              </div>}
-            
-            
-          </div>
-        </div>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <Calendar className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">Départ</p>
+                    <p className="text-muted-foreground">{formatDate(booking.checkOutDate)}</p>
+                  </div>
+                </div>
+              </div>
 
-        {/* Documents Viewer */}
-        {showDocuments && <DocumentsViewer booking={booking} documentType={showDocuments} onClose={() => setShowDocuments(null)} />}
+              <div className="text-center">
+                <span className="text-lg sm:text-2xl font-bold">{calculateNights()} nuit(s)</span>
+              </div>
+
+            </CardContent>
+          </Card>
+
+          {/* ✅ UNIFIÉ : Actions simplifiées - uniquement "Copier le lien" en bleu */}
+          {(booking.propertyId || booking.property?.id) && <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button 
+                  onClick={(e) => handleGenerateGuestLink(e)} 
+                  disabled={isGeneratingLocal || isGeneratingLink} 
+                  className="w-full flex items-center justify-center bg-brand-1 hover:bg-brand-1/90 text-white"
+                >
+                  {/* ✅ Conteneur stable pour éviter NotFoundError */}
+                  <span className="flex items-center">
+                    {isGeneratingLocal || isGeneratingLink ? (
+                      <>
+                        <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
+                        <span>Génération...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4 mr-2" />
+                        <span>Copier le lien</span>
+                      </>
+                    )}
+                  </span>
+                </Button>
+                
+
+                <p className="text-xs text-muted-foreground mt-2">
+                  Génère et copie automatiquement le lien de vérification client avec les dates de cette réservation pré-remplies
+                </p>
+              </CardContent>
+            </Card>}
+        </div>
       </DialogContent>
     </Dialog>
-
-    {/* Host Signature Modal */}
-    {showHostSignature && (
-      <Dialog open={showHostSignature} onOpenChange={setShowHostSignature}>
-        <DialogContent className="max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Signature de l'hôte</DialogTitle>
-            <DialogDescription>
-              Signez le contrat pour cette réservation. Votre signature sera intégrée au document final.
-            </DialogDescription>
-          </DialogHeader>
-          <HostSignatureCapture
-            onSignatureComplete={handleHostSignatureComplete}
-            onCancel={() => setShowHostSignature(false)}
-            hostName={booking.property?.contact_info?.name || 'Host'}
-          />
-        </DialogContent>
-      </Dialog>
-    )}
-
-    {/* Debug Panel */}
-    <ContractDebugPanel 
-      bookingId={booking.id}
-      isVisible={showDebugPanel}
-      onToggle={setShowDebugPanel}
-    />
-
   </>;
 };

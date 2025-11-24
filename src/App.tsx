@@ -265,14 +265,14 @@ const App = () => (
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
-        </Routes>
-        
+          </Routes>
+          
           {/* ✅ Panel de monitoring des erreurs (dev seulement) */}
           {process.env.NODE_ENV === 'development' && <ErrorMonitorPanel />}
         </BrowserRouter>
-      </AdminProvider>
-    </TooltipProvider>
-  </QueryClientProvider>
+        </AdminProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
   </ErrorBoundary>
 );
 

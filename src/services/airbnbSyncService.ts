@@ -1,5 +1,6 @@
 // Legacy service for compatibility - using simplified types
 import { BOOKING_COLORS } from '@/constants/bookingColors';
+import { getBookingDocumentStatus } from '@/utils/bookingDocuments';
 export interface AirbnbReservation {
   id: string;
   summary: string;
@@ -52,26 +53,22 @@ export class AirbnbSyncService {
   }
 
   static getBookingStatusColor(booking: any, matchedBookings: string[], conflicts: string[]): string {
-    // ✅ CORRIGÉ SYSTÈME: 
-    // - Rouge UNIQUEMENT pour conflits
-    // - Vert pour réservations complétées (avec match Airbnb)
-    // - Bleu par défaut (au lieu de gris)
-    if (conflicts.includes(booking.id)) {
+    const documents = getBookingDocumentStatus(booking);
+    const isValidated = documents.isValidated;
+
+    if (conflicts.includes(booking.id) && isValidated) {
       return BOOKING_COLORS.conflict.tailwind;
     }
-    if (booking.status === 'completed' || matchedBookings.includes(booking.id)) {
+    
+    if (isValidated || matchedBookings.includes(booking.id)) {
       return BOOKING_COLORS.completed.tailwind;
     }
-    // ✅ CORRIGÉ : Bleu par défaut au lieu de gris
+    
     return BOOKING_COLORS.default?.tailwind || BOOKING_COLORS.airbnb.tailwind;
   }
 
   static getAirbnbReservationColor(reservation: AirbnbReservation, matchedBookings: string[], conflicts: string[]): string {
-    // ✅ CORRIGÉ : Les réservations Airbnb sont maintenant en bleu (pas gris), rouge uniquement pour conflits
-    if (conflicts.includes(reservation.id)) {
-      return BOOKING_COLORS.conflict.tailwind;
-    }
-    // ✅ CORRIGÉ : Bleu par défaut pour Airbnb
-    return BOOKING_COLORS.default?.tailwind || BOOKING_COLORS.airbnb.tailwind;
+    // Réservations Airbnb (ICS) doivent apparaître en gris tant qu'elles ne sont pas validées
+    return BOOKING_COLORS.pending.tailwind;
   }
 }

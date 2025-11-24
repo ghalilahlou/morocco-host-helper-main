@@ -14,7 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
 import { useToast } from '@/hooks/use-toast';
 import { Dashboard } from './Dashboard';
-import { BookingWizard } from './BookingWizard';
+import { BookingWizardWithBoundary as BookingWizard } from './BookingWizard';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
 import { TestDocumentUpload } from './TestDocumentUpload';
 import { AirbnbSyncManager } from './AirbnbSyncManager';
@@ -264,10 +264,10 @@ export const PropertyDetail = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 lg:gap-6">
             
             {/* Property Info Section */}
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 pr-12">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 lg:max-w-[50%] xl:max-w-[45%] pr-4 lg:pr-8">
               {property.photo_url ? (
                 <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden bg-muted flex-shrink-0">
                   <img 
@@ -281,19 +281,19 @@ export const PropertyDetail = () => {
                   <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                 </div>
               )}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 overflow-hidden">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-1">
                   <CardTitle className="text-lg sm:text-xl font-bold truncate">{property.name}</CardTitle>
-                  <Badge variant="secondary" className="text-xs w-fit">{property.property_type}</Badge>
+                  <Badge variant="secondary" className="text-xs w-fit flex-shrink-0">{property.property_type}</Badge>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
                   {property.address && (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 min-w-0">
                       <MapPin className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">{property.address?.split(',')[0]?.trim()}</span>
+                      <span className="truncate max-w-[200px] sm:max-w-[300px] lg:max-w-[250px] xl:max-w-[350px]">{property.address?.split(',')[0]?.trim()}</span>
                     </div>
                   )}
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <Users className="h-3 w-3 flex-shrink-0" />
                     <span>{property.max_occupancy}</span>
                   </div>
@@ -302,7 +302,7 @@ export const PropertyDetail = () => {
             </div>
             
             {/* Stats and Actions Section */}
-            <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6 flex-shrink-0">
               {/* Compact Stats */}
               <div className="flex items-center justify-around lg:justify-center lg:gap-6" data-tutorial="stats">
                 <div className="text-center min-w-[50px] sm:min-w-[60px]">

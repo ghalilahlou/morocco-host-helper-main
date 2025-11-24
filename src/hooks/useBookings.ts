@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Booking } from '@/types/booking';
 import { useAuth } from '@/hooks/useAuth';
@@ -8,6 +8,7 @@ import { validateBookingData, logDataError } from '@/utils/errorMonitoring';
 export const useBookings = () => {
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const loadingRef = useRef(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -94,12 +95,13 @@ export const useBookings = () => {
 
   const loadBookings = async () => {
     try {
-      // ✅ PROTECTION : Éviter les appels multiples simultanés
-      if (isLoading) {
+      // ✅ PROTECTION : Éviter les appels multiples simultanés avec une ref indépendante de l'état React
+      if (loadingRef.current) {
         console.log('⏳ Already loading bookings, skipping...');
         return;
       }
       
+      loadingRef.current = true;
       setIsLoading(true);
       
       // Check if user is authenticated
@@ -147,6 +149,7 @@ export const useBookings = () => {
           checkOutDate: booking.check_out_date,
           numberOfGuests: booking.number_of_guests,
           bookingReference: booking.booking_reference || undefined,
+        guest_name: booking.guest_name || undefined,
           
           // ✅ CORRECTION : CamelCase cohérent
           propertyId: booking.property_id,
@@ -203,10 +206,13 @@ export const useBookings = () => {
 
       // Enrich bookings with guest submission data
       const enrichedBookings = await enrichBookingsWithGuestSubmissions(transformedBookings);
+      console.log('📊 [useBookings] Bookings enrichis:', enrichedBookings.length);
+      console.log('📊 [useBookings] IDs des réservations:', enrichedBookings.map(b => ({ id: b.id, propertyId: b.propertyId, status: b.status })));
       setBookings(enrichedBookings);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
+      loadingRef.current = false;
       setIsLoading(false);
     }
   };
@@ -230,6 +236,7 @@ export const useBookings = () => {
           check_out_date: booking.checkOutDate,
           number_of_guests: booking.numberOfGuests,
           booking_reference: booking.bookingReference,
+          guest_name: booking.guest_name,
           status: booking.status,
           documents_generated: booking.documentsGenerated
         })
@@ -318,6 +325,7 @@ export const useBookings = () => {
       if (updates.checkOutDate) updateData.check_out_date = updates.checkOutDate;
       if (updates.numberOfGuests) updateData.number_of_guests = updates.numberOfGuests;
       if (updates.bookingReference !== undefined) updateData.booking_reference = updates.bookingReference;
+      if (updates.guest_name !== undefined) updateData.guest_name = updates.guest_name;
       
       // ✅ CORRECTION: Gestion sécurisée des documents générés
       if (updates.documentsGenerated) {

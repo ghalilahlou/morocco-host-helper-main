@@ -797,30 +797,18 @@ export const GuestVerification = () => {
   };
 
   const updateGuest = (index: number, field: keyof Guest, value: any) => {
-    // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour trouver le bon guest
-    // car le rendu utilise deduplicatedGuests, donc l'index correspond à deduplicatedGuests
-    const targetGuest = deduplicatedGuests[index];
-    if (!targetGuest) return;
+    console.log('🔄 updateGuest appelé:', { index, field, value });
     
-    // Trouver l'index dans guests en utilisant documentNumber ou fullName comme identifiant
-    const guestId = targetGuest.documentNumber || targetGuest.fullName;
-    const actualIndex = guests.findIndex(g => 
-      (g.documentNumber && g.documentNumber === guestId) || 
-      (g.fullName && g.fullName === guestId && !g.documentNumber)
-    );
-    
-    if (actualIndex === -1) {
-      // Si pas trouvé, utiliser l'index directement (fallback)
-    const updatedGuests = [...guests];
+    // ✅ SIMPLIFIÉ : Utiliser directement l'index dans guests
+    // Pas besoin de chercher dans deduplicatedGuests car l'index correspond à guests
+    setGuests(prevGuests => {
+      const updatedGuests = [...prevGuests];
       if (updatedGuests[index]) {
     updatedGuests[index] = { ...updatedGuests[index], [field]: value };
-    setGuests(updatedGuests);
+        console.log('✅ Guest mis à jour:', updatedGuests[index]);
       }
-    } else {
-      const updatedGuests = [...guests];
-      updatedGuests[actualIndex] = { ...updatedGuests[actualIndex], [field]: value };
-      setGuests(updatedGuests);
-    }
+      return updatedGuests;
+    });
   };
 
   const removeGuest = (index: number) => {
@@ -1025,8 +1013,8 @@ export const GuestVerification = () => {
               targetGuest.documentType = extractedData.documentType as 'passport' | 'national_id';
             }
             
-            // ✅ CORRIGÉ : Parsing simplifié de la date de naissance
-            if (extractedData.dateOfBirth && !targetGuest.dateOfBirth) {
+            // ✅ AMÉLIORÉ : Parsing robuste de la date de naissance - toujours mettre à jour si extraite
+            if (extractedData.dateOfBirth) {
               let parsedDate: Date | null = null;
               
               // Tentative 1: Direct parsing
@@ -1036,11 +1024,27 @@ export const GuestVerification = () => {
                 const isoMatch = extractedData.dateOfBirth.match(/(\d{4})-(\d{2})-(\d{2})/);
                 if (isoMatch) {
                   parsedDate = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+                } else {
+                  // Tentative 3: Format DD/MM/YYYY ou DD-MM-YYYY
+                  const ddmmyyyyMatch = extractedData.dateOfBirth.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+                  if (ddmmyyyyMatch) {
+                    parsedDate = new Date(parseInt(ddmmyyyyMatch[3]), parseInt(ddmmyyyyMatch[2]) - 1, parseInt(ddmmyyyyMatch[1]));
+                  }
                 }
               }
               
               if (parsedDate && !isNaN(parsedDate.getTime())) {
-                targetGuest.dateOfBirth = parsedDate;
+                // Vérifier que la date est raisonnable (pas dans le futur, pas trop ancienne)
+                const now = new Date();
+                const minDate = new Date(1900, 0, 1);
+                if (parsedDate <= now && parsedDate >= minDate) {
+                  targetGuest.dateOfBirth = parsedDate;
+                  console.log('✅ Date de naissance extraite et mise à jour:', format(parsedDate, 'dd/MM/yyyy'));
+                } else {
+                  console.warn('⚠️ Date de naissance invalide (hors limites):', parsedDate);
+                }
+              } else {
+                console.warn('⚠️ Impossible de parser la date de naissance:', extractedData.dateOfBirth);
               }
             }
             
@@ -1280,19 +1284,68 @@ export const GuestVerification = () => {
         formattedDateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined
       });
 
+      // ✅ CRITIQUE : Lire les valeurs directement depuis les inputs pour les champs non-contrôlés
+      const emailInput = document.querySelector('input[name="email-0"]') as HTMLInputElement;
+      const professionInput = document.querySelector('input[name="profession-0"]') as HTMLInputElement;
+      const adresseInput = document.querySelector('input[name="adresse-0"]') as HTMLInputElement;
+      const motifSelect = document.querySelector('select[name="motifSejour-0"]') as HTMLSelectElement;
+
       const guestInfo = {
         firstName: firstGuest?.fullName?.split(' ')[0] || '',
         lastName: firstGuest?.fullName?.split(' ').slice(1).join(' ') || '',
-        email: firstGuest?.email || '',
+        email: emailInput?.value || firstGuest?.email || '',
         // phone: firstGuest?.phone || '', // ✅ CORRIGÉ : Retiré car non présent dans le type Guest
         nationality: firstGuest?.nationality || '',
         idType: firstGuest?.documentType || 'passport',
         idNumber: firstGuest?.documentNumber || '',
-        dateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined
+        dateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined,
+        profession: professionInput?.value || firstGuest?.profession || '',
+        motifSejour: motifSelect?.value || firstGuest?.motifSejour || 'TOURISME',
+        adressePersonnelle: adresseInput?.value || firstGuest?.adressePersonnelle || ''
       };
 
       // ✅ DEBUG: Log des données finales
       console.log('🔍 DEBUG - guestInfo final:', guestInfo);
+
+      // ✅ VALIDATION CRITIQUE : Vérifier que l'email est renseigné AVANT d'envoyer
+      if (!guestInfo.email || !guestInfo.email.trim()) {
+        console.error('❌ Email manquant');
+        toast({
+          title: "Email requis",
+          description: "Veuillez renseigner votre adresse email avant de continuer.",
+          variant: "destructive",
+        });
+        isSubmittingRef.current = false;
+        isProcessingRef.current = false;
+        return;
+      }
+
+      // ✅ VALIDATION : Vérifier le format de l'email
+      const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+      if (!emailRegex.test(guestInfo.email)) {
+        console.error('❌ Format email invalide:', guestInfo.email);
+        toast({
+          title: "Email invalide",
+          description: "Veuillez saisir une adresse email valide (ex: nom@exemple.com).",
+          variant: "destructive",
+        });
+        isSubmittingRef.current = false;
+        isProcessingRef.current = false;
+        return;
+      }
+
+      // ✅ VALIDATION : Vérifier que le motif de séjour est sélectionné
+      if (!guestInfo.motifSejour || guestInfo.motifSejour.trim() === '') {
+        console.error('❌ Motif de séjour manquant');
+        toast({
+          title: "Motif de séjour requis",
+          description: "Veuillez sélectionner un motif de séjour.",
+          variant: "destructive",
+        });
+        isSubmittingRef.current = false;
+        isProcessingRef.current = false;
+        return;
+      }
 
       // ✅ CORRECTION : Convertir les fichiers en base64 au lieu d'envoyer des blob URLs
       // ✅ CRITIQUE : Wrapper dans try-catch pour éviter que les erreurs Portal bloquent le flux
@@ -1987,13 +2040,15 @@ export const GuestVerification = () => {
                             <div
                               key={`guest-form-${index}`}
                             >
-                              <Card className="p-6 border-2 border-gray-100 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-xl bg-gradient-to-r from-white to-gray-50/50">
-                                <div className="flex items-center justify-between mb-6">
-                                  <h4 className="font-bold text-lg text-gray-900 flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded-full bg-brand-teal flex items-center justify-center text-white font-bold text-sm">
+                              <Card className="p-8 border-2 border-gray-200 hover:border-brand-teal/40 transition-all duration-300 shadow-lg hover:shadow-2xl bg-gradient-to-br from-white via-gray-50/30 to-white rounded-xl">
+                                <div className="flex items-center justify-between mb-8 pb-4 border-b-2 border-gray-100">
+                                  <h4 className="font-bold text-xl text-gray-900 flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-teal to-teal-600 flex items-center justify-center text-white font-bold text-base shadow-md">
                                       {index + 1}
                                     </div>
-                                    {t('guest.clients.clientNumber', { number: index + 1 })}
+                                    <span className="bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+                                      {t('guest.clients.clientNumber', { number: index + 1 })}
+                                    </span>
                                   </h4>
                                   {deduplicatedGuests.length > 1 && (
                                     <Button 
@@ -2008,54 +2063,74 @@ export const GuestVerification = () => {
                                 </div>
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                  <EnhancedInput
-                                    label={t('guest.clients.fullName')}
-                                    value={guest.fullName}
-                                    onChange={(e) => updateGuest(index, 'fullName', e.target.value)}
-                                    placeholder={t('guest.clients.fullNamePlaceholder')}
-                                    validation={{
-                                      required: true,
-                                      minLength: 2,
-                                      validator: (value) => {
-                                        if (value.trim().split(' ').length < 2) {
-                                          return "Veuillez saisir le nom et prénom";
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <Users className="w-4 h-4 text-brand-teal" />
+                                      {t('guest.clients.fullName')} <span className="text-red-500">*</span>
+                                    </Label>
+                                    <EnhancedInput
+                                      label=""
+                                      value={guest.fullName}
+                                      onChange={(e) => updateGuest(index, 'fullName', e.target.value)}
+                                      placeholder={t('guest.clients.fullNamePlaceholder')}
+                                      validation={{
+                                        required: true,
+                                        minLength: 2,
+                                        validator: (value) => {
+                                          if (value.trim().split(' ').length < 2) {
+                                            return "Veuillez saisir le nom et prénom";
+                                          }
+                                          return null;
                                         }
-                                        return null;
-                                      }
-                                    }}
-                                  />
+                                      }}
+                                    />
+                                  </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-medium text-gray-700">
-                                      {t('guest.clients.dateOfBirth')} *
+                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <CalendarIcon className="w-4 h-4 text-brand-teal" />
+                                      {t('guest.clients.dateOfBirth')} <span className="text-red-500">*</span>
                                     </Label>
                                     <Popover>
                                       <PopoverTrigger asChild>
-                                        <Button variant="outline" className="w-full justify-start text-left h-12 border-2 hover:border-primary/50 transition-transform hover:scale-[1.02]">
-                                          <CalendarIcon className="mr-3 h-5 w-5 text-primary" />
-                                          {guest.dateOfBirth ? format(guest.dateOfBirth, 'dd/MM/yyyy') : t('guest.booking.selectDate')}
+                                        <Button 
+                                          variant="outline" 
+                                          className={`w-full justify-start text-left h-12 border-2 transition-all duration-200 ${
+                                            guest.dateOfBirth 
+                                              ? 'border-brand-teal/50 bg-brand-teal/5 hover:bg-brand-teal/10 hover:border-brand-teal shadow-sm' 
+                                              : 'border-gray-300 hover:border-primary/50 hover:bg-gray-50'
+                                          } focus-visible:ring-2 focus-visible:ring-brand-teal/20 focus-visible:ring-offset-2`}
+                                        >
+                                          <CalendarIcon className={`mr-3 h-5 w-5 ${guest.dateOfBirth ? 'text-brand-teal' : 'text-gray-400'}`} />
+                                          <span className={guest.dateOfBirth ? 'text-gray-900 font-medium' : 'text-gray-500'}>
+                                            {guest.dateOfBirth 
+                                              ? format(guest.dateOfBirth, 'dd/MM/yyyy') 
+                                              : 'Sélectionner une date'}
+                                          </span>
                                         </Button>
                                       </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-0 border-2 shadow-xl">
+                                      <PopoverContent className="w-auto p-0 border-2 border-brand-teal/20 shadow-xl bg-white">
                                         <Calendar
                                           mode="single"
                                           selected={guest.dateOfBirth}
                                           onSelect={(date) => updateGuest(index, 'dateOfBirth', date)}
                                           initialFocus
+                                          className="rounded-md"
                                         />
                                       </PopoverContent>
                                     </Popover>
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-medium text-gray-700">
-                                      {t('guest.clients.nationality')} *
+                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <span className="text-brand-teal">🌍</span>
+                                      {t('guest.clients.nationality')} <span className="text-red-500">*</span>
                                     </Label>
-                                      <EnhancedInput
-                                        value={guest.nationality}
-                                        onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
-                                      placeholder="Nationalité"
-                                        validation={{ required: true }}
+                                    <EnhancedInput
+                                      value={guest.nationality}
+                                      onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
+                                      placeholder="Sélectionnez ou saisissez la nationalité"
+                                      validation={{ required: true }}
                                       list={`nationalities-list-${index}`}
                                     />
                                     <datalist id={`nationalities-list-${index}`}>
@@ -2066,53 +2141,76 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-medium text-gray-700">
-                                      {t('guest.clients.documentType')} *
+                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <FileText className="w-4 h-4 text-brand-teal" />
+                                      {t('guest.clients.documentType')} <span className="text-red-500">*</span>
                                     </Label>
                                     <select
                                       value={guest.documentType} 
                                       onChange={(e) => updateGuest(index, 'documentType', e.target.value)}
-                                      className="h-12 w-full border-2 rounded-md px-3 hover:border-primary/50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                      className="h-12 w-full border-2 rounded-lg px-4 bg-white border-gray-300 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 text-gray-900 font-medium shadow-sm hover:shadow-md"
                                     >
                                       <option value="passport">{t('guest.clients.passport')}</option>
                                       <option value="national_id">{t('guest.clients.nationalId')}</option>
                                     </select>
                                   </div>
                                   
-                                  <EnhancedInput
-                                    label={t('guest.clients.documentNumber')}
-                                    value={guest.documentNumber}
-                                    onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
-                                    placeholder={t('guest.clients.documentNumberPlaceholder')}
-                                    validation={{
-                                      required: true,
-                                      minLength: 5,
-                                      validator: (value) => {
-                                        if (!/^[A-Z0-9]+$/i.test(value.replace(/\s/g, ''))) {
-                                          return "Format de document invalide";
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <FileText className="w-4 h-4 text-brand-teal" />
+                                      {t('guest.clients.documentNumber')} <span className="text-red-500">*</span>
+                                    </Label>
+                                    <EnhancedInput
+                                      label=""
+                                      value={guest.documentNumber}
+                                      onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
+                                      placeholder={t('guest.clients.documentNumberPlaceholder')}
+                                      validation={{
+                                        required: true,
+                                        minLength: 5,
+                                        validator: (value) => {
+                                          if (!/^[A-Z0-9]+$/i.test(value.replace(/\s/g, ''))) {
+                                            return "Format de document invalide";
+                                          }
+                                          return null;
                                         }
-                                        return null;
-                                      }
-                                    }}
-                                  />
-                                  
-                                  <EnhancedInput
-                                    label="Profession"
-                                    value={guest.profession || ''}
-                                    onChange={(e) => updateGuest(index, 'profession', e.target.value)}
-                                    placeholder="Ex: Étudiant, Employé, Retraité..."
-                                    validation={{ required: false }}
-                                  />
+                                      }}
+                                    />
+                                  </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-medium text-gray-700">
-                                      Motif du séjour *
-                                    </Label>
+                                    <label className="block text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <span className="text-brand-teal">💼</span>
+                                      Profession
+                                    </label>
+                                    <input
+                                      type="text"
+                                      name={`profession-${index}`}
+                                      defaultValue={guest.profession || ''}
+                                      onInput={(e) => {
+                                        const target = e.target as HTMLInputElement;
+                                        updateGuest(index, 'profession', target.value);
+                                      }}
+                                      placeholder="Ex : Étudiant, Employé, Retraité..."
+                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
+                                  />
+                                  </div>
+                                  
+                                  <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <CalendarLucide className="w-4 h-4 text-brand-teal" />
+                                      Motif du séjour <span className="text-red-500">*</span>
+                                    </label>
                                     <select
-                                      value={guest.motifSejour || 'TOURISME'} 
-                                      onChange={(e) => updateGuest(index, 'motifSejour', e.target.value)}
-                                      className="h-12 w-full border-2 rounded-md px-3 hover:border-primary/50 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                      name={`motifSejour-${index}`}
+                                      defaultValue={guest.motifSejour || ''} 
+                                      onChange={(e) => {
+                                        updateGuest(index, 'motifSejour', e.target.value);
+                                      }}
+                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+                                      required
                                     >
+                                      <option value="">Sélectionnez un motif</option>
                                       <option value="TOURISME">Tourisme</option>
                                       <option value="AFFAIRES">Affaires</option>
                                       <option value="FAMILLE">Famille</option>
@@ -2122,32 +2220,42 @@ export const GuestVerification = () => {
                                     </select>
                                   </div>
                                   
-                                  <EnhancedInput
-                                    label="Adresse personnelle"
-                                    value={guest.adressePersonnelle || ''}
-                                    onChange={(e) => updateGuest(index, 'adressePersonnelle', e.target.value)}
+                                  <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <span className="text-brand-teal">📍</span>
+                                      Adresse personnelle
+                                    </label>
+                                    <input
+                                      type="text"
+                                      name={`adresse-${index}`}
+                                      defaultValue={guest.adressePersonnelle || ''}
+                                      onInput={(e) => {
+                                        const target = e.target as HTMLInputElement;
+                                        updateGuest(index, 'adressePersonnelle', target.value);
+                                      }}
                                     placeholder="Votre adresse au Maroc ou à l'étranger"
-                                    validation={{ required: false }}
-                                  />
+                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
+                                    />
+                                  </div>
                                   
-                                  <EnhancedInput
-                                    label="Email (optionnel)"
+                                  <div className="space-y-2">
+                                    <label className="block text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                      <span className="text-brand-teal">✉️</span>
+                                      Courriel <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
                                     type="email"
-                                    value={guest.email || ''}
-                                    onChange={(e) => updateGuest(index, 'email', e.target.value)}
-                                    placeholder="votre.email@exemple.com"
-                                    validation={{ 
-                                      required: false,
-                                      validator: (value) => {
-                                        if (!value || value.trim() === '') return null;
-                                        const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-                                        if (!emailRegex.test(value)) {
-                                          return "Format d'email invalide";
-                                        }
-                                        return null;
-                                      }
-                                    }}
-                                  />
+                                      name={`email-${index}`}
+                                      defaultValue={guest.email || ''}
+                                      onInput={(e) => {
+                                        const target = e.target as HTMLInputElement;
+                                        updateGuest(index, 'email', target.value);
+                                      }}
+                                      placeholder="votre.email@example.com"
+                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
+                                      required
+                                    />
+                                  </div>
                                 </div>
                               </Card>
                             </div>

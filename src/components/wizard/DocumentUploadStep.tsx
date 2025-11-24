@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { BookingFormData } from '../BookingWizard';
 import { UploadedDocument, Guest } from '@/types/booking';
@@ -27,6 +27,13 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
   const [uploadedDocs, setUploadedDocs] = useState<ExtendedUploadedDocument[]>(formData.uploadedDocuments || []);
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);
   const [showPreview, setShowPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      setEditingGuest(null);
+      setShowPreview(null);
+    };
+  }, []);
 
   // Update form data whenever uploadedDocs changes
   useEffect(() => {
@@ -430,43 +437,58 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
       </div>
 
       {/* Guest Edit Dialog */}
-      {editingGuest && (
-        <GuestEditDialog
-          guest={editingGuest}
-          onSave={saveGuest}
-          onClose={() => setEditingGuest(null)}
-        />
-      )}
+      <GuestEditDialog
+        guest={editingGuest}
+        open={!!editingGuest}
+        onSave={saveGuest}
+        onClose={() => setEditingGuest(null)}
+      />
 
       {/* Preview Dialog */}
-      {showPreview && (
-        <Dialog open={true} onOpenChange={() => setShowPreview(null)}>
-          <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>Aperçu du document</DialogTitle>
-            </DialogHeader>
-            <div className="flex justify-center">
+      <Dialog open={!!showPreview} onOpenChange={(open) => {
+        if (!open) setShowPreview(null);
+      }}>
+        <DialogContent className="max-w-3xl" aria-describedby="document-preview-description">
+          <DialogHeader>
+            <DialogTitle>Aperçu du document</DialogTitle>
+            <DialogDescription id="document-preview-description">
+              Aperçu du document d'identité sélectionné.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center">
+            {showPreview && (
               <img
                 src={showPreview}
-                alt="Document preview"
+                alt="Prévisualisation du document"
                 className="max-w-full max-h-96 object-contain"
               />
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
 interface GuestEditDialogProps {
-  guest: Guest;
+  guest: Guest | null;
+  open: boolean;
   onSave: (guest: Guest) => void;
   onClose: () => void;
 }
 
-const GuestEditDialog = ({ guest, onSave, onClose }: GuestEditDialogProps) => {
-  const [formData, setFormData] = useState(guest);
+const GuestEditDialog = ({ guest, open, onSave, onClose }: GuestEditDialogProps) => {
+  const [formData, setFormData] = useState<Guest | null>(guest);
+
+  useEffect(() => {
+    setFormData(guest);
+  }, [guest]);
+
+  if (!formData) return (
+    <Dialog open={open} onOpenChange={(value) => {
+      if (!value) onClose();
+    }} />
+  );
 
   const handleSave = () => {
     if (!formData.fullName.trim()) {
@@ -476,7 +498,9 @@ const GuestEditDialog = ({ guest, onSave, onClose }: GuestEditDialogProps) => {
   };
 
   return (
-    <Dialog open={true} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (!value) onClose();
+    }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Informations du client</DialogTitle>

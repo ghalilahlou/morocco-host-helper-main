@@ -95,6 +95,7 @@ export const CalendarHeader = ({
           </div>
           
           <Select 
+            key={`${currentDate.getFullYear()}-${currentDate.getMonth()}`}
             value={`${currentDate.getFullYear()}-${currentDate.getMonth()}`}
             onValueChange={(value) => {
               const [year, month] = value.split('-').map(Number);
@@ -102,9 +103,9 @@ export const CalendarHeader = ({
             }}
           >
             <SelectTrigger className="w-[140px] sm:w-[200px] border-0 text-base sm:text-xl lg:text-2xl font-semibold bg-transparent hover:bg-muted/50 transition-colors">
-              <SelectValue placeholder="Sélectionner le mois">
+              <span className="flex-1 text-left">
                 {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-              </SelectValue>
+              </span>
             </SelectTrigger>
             <SelectContent className="bg-background border shadow-lg z-50">
               {Array.from({ length: 24 }, (_, i) => {

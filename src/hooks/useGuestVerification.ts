@@ -172,7 +172,7 @@ export const useGuestVerification = () => {
     propertyId: string, 
     airbnbBookingId?: string, 
     options?: {
-      linkType?: 'ics_direct' | 'ics_with_code' | 'independent';
+      linkType?: 'ics_direct'; // ✅ UNIFIÉ : Seule la logique ics_direct est utilisée (dates pré-remplies)
       reservationData?: {
         airbnbCode: string;
         startDate: Date;
@@ -190,14 +190,23 @@ export const useGuestVerification = () => {
       
       console.log('🔗 Generating verification URL via Edge Function:', { propertyId, airbnbBookingId });
       
+      // ✅ UNIFIÉ : Toujours utiliser ics_direct avec dates pré-remplies
+      // Si pas de reservationData, créer un objet minimal avec les dates disponibles
+      const finalReservationData = options?.reservationData || (airbnbBookingId ? {
+        airbnbCode: airbnbBookingId,
+        startDate: new Date(), // Date par défaut si non fournie
+        endDate: new Date(),
+        numberOfGuests: 1
+      } : undefined);
+
       // Use the Edge Function instead of direct database access
       const { data, error } = await supabase.functions.invoke('issue-guest-link', {
         body: { 
           action: 'issue', // Explicite
           propertyId, 
           airbnbCode: airbnbBookingId, // Utiliser airbnbCode au lieu de bookingId
-          linkType: options?.linkType || 'ics_with_code', // Nouveau paramètre
-          reservationData: options?.reservationData // Données de réservation pour liens directs
+          linkType: 'ics_direct', // ✅ FORCÉ : Toujours utiliser ics_direct avec dates pré-remplies
+          reservationData: finalReservationData // Données de réservation pour liens directs
         }
       });
 
@@ -233,225 +242,132 @@ export const useGuestVerification = () => {
         return null;
       }
 
-      // ✅ NOUVEAU : Distinction entre trois types de liens
-      let clientUrl;
+      // ✅ UNIFIÉ : Toujours utiliser la logique ics_direct avec dates pré-remplies
+      // Tous les liens redirigent directement vers GuestVerification avec les dates dans l'URL
+      const reservationData = options?.reservationData || finalReservationData;
+      let startDate: string | undefined;
+      let endDate: string | undefined;
       
-      if (options?.linkType === 'ics_direct') {
-        // NOUVEAU : Lien ICS direct - pas de validation de code, dates pré-remplies
-        const reservationData = options.reservationData;
-        let startDate: string | undefined;
-        let endDate: string | undefined;
+      if (reservationData) {
+        // ✅ CORRIGÉ : Inclure les dates dans l'URL en utilisant formatLocalDate pour éviter décalage timezone
+        // ⚠️ IMPORTANT : DTEND dans ICS est exclusif, donc endDate est déjà la date de départ réelle
+        const startDateObj = reservationData.startDate instanceof Date 
+          ? reservationData.startDate 
+          : new Date(reservationData.startDate);
+        const endDateObj = reservationData.endDate instanceof Date 
+          ? reservationData.endDate 
+          : new Date(reservationData.endDate);
         
-        if (reservationData) {
-          // ✅ CORRIGÉ : Inclure les dates dans l'URL en utilisant formatLocalDate pour éviter décalage timezone
-          // ⚠️ IMPORTANT : DTEND dans ICS est exclusif, donc endDate est déjà la date de départ réelle
-          const startDateObj = reservationData.startDate instanceof Date 
-            ? reservationData.startDate 
-            : new Date(reservationData.startDate);
-          const endDateObj = reservationData.endDate instanceof Date 
-            ? reservationData.endDate 
-            : new Date(reservationData.endDate);
-          
-          // Utiliser formatLocalDate pour éviter le décalage timezone (format YYYY-MM-DD en heure locale)
-          startDate = formatLocalDate(startDateObj);
-          endDate = formatLocalDate(endDateObj);
-          
-          // ✅ NOUVEAU : Nettoyer le nom du guest avant de l'inclure dans l'URL
-          // ⚠️ IMPORTANT : Ne pas inclure guestName dans l'URL si vide pour éviter le double formulaire
-          const cleanGuestName = cleanGuestNameForUrl(reservationData.guestName || '');
-          const numberOfGuests = reservationData.numberOfGuests || 1;
-          
-          // Construire l'URL avec ou sans guestName selon s'il est valide
-          let urlParams = `startDate=${startDate}&endDate=${endDate}&guests=${numberOfGuests}&airbnbCode=${reservationData.airbnbCode}`;
-          
-          // ✅ CORRIGÉ : Ne pas ajouter guestName si vide pour éviter les problèmes de double formulaire
-          if (cleanGuestName && cleanGuestName.trim() !== '') {
-            const guestName = encodeURIComponent(cleanGuestName);
-            urlParams += `&guestName=${guestName}`;
-          }
-          
-          clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?${urlParams}`;
-        } else {
-          clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
+        // Utiliser formatLocalDate pour éviter le décalage timezone (format YYYY-MM-DD en heure locale)
+        startDate = formatLocalDate(startDateObj);
+        endDate = formatLocalDate(endDateObj);
+        
+        // ✅ NOUVEAU : Nettoyer le nom du guest avant de l'inclure dans l'URL
+        // ⚠️ IMPORTANT : Ne pas inclure guestName dans l'URL si vide pour éviter le double formulaire
+        const cleanGuestName = cleanGuestNameForUrl(reservationData.guestName || '');
+        const numberOfGuests = reservationData.numberOfGuests || 1;
+        const airbnbCode = reservationData.airbnbCode || airbnbBookingId || 'INDEPENDENT_BOOKING';
+        
+        // Construire l'URL avec ou sans guestName selon s'il est valide
+        let urlParams = `startDate=${startDate}&endDate=${endDate}&guests=${numberOfGuests}&airbnbCode=${airbnbCode}`;
+        
+        // ✅ CORRIGÉ : Ne pas ajouter guestName si vide pour éviter les problèmes de double formulaire
+        if (cleanGuestName && cleanGuestName.trim() !== '') {
+          const guestName = encodeURIComponent(cleanGuestName);
+          urlParams += `&guestName=${guestName}`;
         }
         
-        console.log('🔗 Lien ICS direct généré (sans validation de code):', { 
+        const clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?${urlParams}`;
+        
+        // ✅ LOGS AMÉLIORÉS : Afficher le lien complet dans la console
+        console.log('🔗 [UNIFIÉ] Lien généré avec dates pré-remplies:', { 
           propertyId, 
           token: data.token, 
-          airbnbCode: airbnbBookingId,
+          airbnbCode,
           fullUrl: clientUrl,
-          dates: startDate && endDate ? `${startDate} → ${endDate}` : 'N/A',
-          workflow: 'Guest accès direct → Dates automatiquement remplies depuis ICS'
+          dates: `${startDate} → ${endDate}`,
+          workflow: 'Dates automatiquement remplies dans l\'URL → Accès direct à GuestVerification'
         });
-      } else if (airbnbBookingId && airbnbBookingId !== 'INDEPENDENT_BOOKING') {
-        // LOGIQUE ICS AVEC CODE : Le guest entre le code Airbnb, les dates sont pré-remplies
-        clientUrl = `${runtime.urls.app.base}/verify/${data.token}`;
-        console.log('🔗 Lien ICS généré (code Airbnb requis):', { 
-          propertyId, 
-          token: data.token, 
-          airbnbCode: airbnbBookingId,
-          fullUrl: clientUrl,
-          workflow: 'Guest entre le code Airbnb → Dates automatiquement remplies'
-        });
+        // ✅ CRITIQUE : Afficher le lien complet dans la console pour faciliter la copie manuelle
+        console.log('📋 [LIEN COMPLET À COPIER]:', clientUrl);
+        console.log('📋 [LIEN COMPLET À COPIER - URL seule]:', clientUrl);
+        
+        // ✅ COPIE ROBUSTE : Utiliser copyToClipboard avec fallback
+        let copySuccess = false;
+        try {
+          const { copyToClipboard } = await import('@/lib/clipboardUtils');
+          copySuccess = await copyToClipboard(clientUrl);
+          
+          if (copySuccess) {
+            console.log('✅ Lien copié avec succès dans le presse-papiers');
+            toast({
+              title: "Lien copié !",
+              description: "Le lien de vérification a été copié dans le presse-papiers",
+            });
+          } else {
+            console.warn('⚠️ La copie a échoué, affichage du lien dans le toast');
+            toast({
+              title: "Lien généré",
+              description: `Le lien a été généré. Copiez-le manuellement : ${clientUrl}`,
+              duration: 10000,
+            });
+          }
+        } catch (copyError) {
+          console.error('❌ Erreur lors de la copie:', copyError);
+          console.log('📋 [LIEN À COPIER MANUELLEMENT]:', clientUrl);
+          toast({
+            title: "Lien généré",
+            description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
+            duration: 10000,
+          });
+        }
+        
+        return clientUrl;
       } else {
-        // LOGIQUE INDÉPENDANTE : Le guest entre toutes les dates manuellement
-        clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
-        console.log('🔗 Lien indépendant généré (dates manuelles):', { 
+        // Fallback : Si pas de dates, rediriger vers GuestVerification sans dates (l'utilisateur devra les saisir)
+        const clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
+        console.warn('⚠️ [UNIFIÉ] Lien généré sans dates (fallback):', { 
           propertyId, 
           token: data.token,
           fullUrl: clientUrl,
-          workflow: 'Guest entre toutes les dates manuellement'
+          workflow: 'Pas de dates disponibles → L\'utilisateur devra les saisir manuellement'
         });
-      }
-      
-      console.log('✅ Generated client verification URL:', clientUrl);
-      
-      // ✅ DIAGNOSTIC : Logs détaillés pour comprendre le problème
-      const timeSinceEvent = options?.userEvent ? Date.now() - (options.userEvent.timeStamp || Date.now()) : 'unknown';
-      console.log('🔍 DIAGNOSTIC - État du contexte:', {
-        isSecureContext: window.isSecureContext,
-        hasClipboard: !!navigator.clipboard,
-        userAgent: navigator.userAgent,
-        url: window.location.href,
-        timestamp: new Date().toISOString(),
-        timeSinceUserEvent: timeSinceEvent,
-        hasUserEvent: !!options?.userEvent
-      });
-      
-      // ✅ SOLUTION : Copie avec préservation du contexte utilisateur
-      try {
-        console.log('🔵 Début de la copie...');
-        const { copyToClipboard } = await import('@/lib/clipboardUtils');
+        // ✅ CRITIQUE : Afficher le lien complet dans la console
+        console.log('📋 [LIEN COMPLET À COPIER]:', clientUrl);
+        console.log('📋 [LIEN COMPLET À COPIER - URL seule]:', clientUrl);
         
-        // Si on a un événement utilisateur, on doit copier de manière synchrone
-        // Sinon, on utilise la méthode asynchrone normale
-        let success = false;
-        
-        if (options?.userEvent && navigator.clipboard && window.isSecureContext) {
-          // ✅ MEILLEURE MÉTHODE : Utiliser l'événement pour préserver le contexte
-          try {
-            console.log('📋 Copie avec contexte utilisateur préservé...');
-            // La copie doit être faite dans la même stack que l'événement
-            // On utilise une Promise qui se résout immédiatement
-            await navigator.clipboard.writeText(clientUrl);
-            success = true;
-            console.log('✅ Clipboard API réussie avec contexte utilisateur');
-          } catch (clipboardError) {
-            console.warn('❌ Clipboard API échoué avec contexte utilisateur:', clipboardError);
-            // Fallback sur la méthode normale
-            success = await copyToClipboard(clientUrl);
-          }
-        } else {
-          // Méthode normale (peut échouer si contexte utilisateur expiré)
-          const startTime = Date.now();
-          success = await copyToClipboard(clientUrl);
-          const endTime = Date.now();
-          const duration = endTime - startTime;
+        // ✅ COPIE ROBUSTE : Utiliser copyToClipboard avec fallback
+        let copySuccess = false;
+        try {
+          const { copyToClipboard } = await import('@/lib/clipboardUtils');
+          copySuccess = await copyToClipboard(clientUrl);
           
-          console.log('📊 Résultat de la copie:', {
-            success,
-            duration: `${duration}ms`,
-            clientUrl: clientUrl.substring(0, 50) + '...',
-            warning: !window.isSecureContext ? '⚠️ HTTP - La copie peut ne pas fonctionner même si success=true' : undefined
-          });
-        }
-        
-        // ⚠️ IMPORTANT : En HTTP, execCommand peut retourner true sans vraiment copier
-        // On ne peut pas vérifier avec clipboard API car il n'est pas disponible
-        // Solution : Afficher le lien dans un toast pour que l'utilisateur puisse le copier manuellement
-        
-        console.log('🔍 ÉTAPE DE VÉRIFICATION:', {
-          success,
-          hasClipboard: !!navigator.clipboard,
-          isSecureContext: window.isSecureContext,
-          canVerify: !!(navigator.clipboard && window.isSecureContext),
-          willShowModal: !!(success && !window.isSecureContext),
-          condition1: success && navigator.clipboard && window.isSecureContext,
-          condition2: !(success && navigator.clipboard && window.isSecureContext)
-        });
-        
-        // Vérifier si le texte est vraiment dans le presse-papier (si possible)
-        if (success && navigator.clipboard && window.isSecureContext) {
-          console.log('✅ Branche HTTPS - Vérification possible');
-          console.log('🔍 Condition vérifiée:', {
-            success,
-            hasClipboard: !!navigator.clipboard,
-            isSecureContext: window.isSecureContext,
-            allTrue: success && navigator.clipboard && window.isSecureContext
-          });
-          try {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            const clipboardText = await navigator.clipboard.readText();
-            const verified = clipboardText === clientUrl;
-            console.log('✅ Vérification presse-papier:', {
-              verified,
-              clipboardLength: clipboardText.length,
-              expectedLength: clientUrl.length,
-              match: verified ? '✅ CORRESPOND' : '❌ DIFFÉRENT'
-            });
-            
-            if (verified) {
-              toast({
-                title: "✅ Lien copié et vérifié !",
-                description: "Le lien de vérification a été copié dans votre presse-papier. Utilisez Ctrl+V pour le coller.",
-                duration: 3000
-              });
-            } else {
-              toast({
-                title: "⚠️ Copie non vérifiée",
-                description: `Le lien a été généré mais la vérification a échoué. Lien: ${clientUrl.substring(0, 60)}...`,
-                duration: 5000
-              });
-            }
-          } catch (verifyError) {
-            console.warn('⚠️ Impossible de vérifier le presse-papier (permission):', verifyError);
+          if (copySuccess) {
+            console.log('✅ Lien copié avec succès dans le presse-papiers');
             toast({
-              title: success ? "✅ Lien copié !" : "⚠️ Lien généré",
-              description: success 
-                ? "Le lien de vérification a été copié dans votre presse-papier. Utilisez Ctrl+V pour le coller."
-                : `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
-              duration: success ? 3000 : 5000
-            });
-          }
-        } else {
-          // ⚠️ En HTTP, même si success=true, la copie peut ne pas fonctionner
-          // SOLUTION SIMPLIFIÉE : Afficher le lien dans le toast
-          if (success && !window.isSecureContext) {
-            // En HTTP, afficher le lien dans le toast pour copie manuelle
-            toast({
-              title: "✅ Lien généré",
-              description: `Le lien a été généré. En HTTP, copiez-le manuellement : ${clientUrl}`,
-              duration: 10000
-            });
-          } else if (success) {
-            toast({
-              title: "✅ Lien copié !",
-              description: "Le lien de vérification a été copié dans votre presse-papier. Utilisez Ctrl+V pour le coller.",
-              duration: 3000
+              title: "Lien copié !",
+              description: "Le lien de vérification a été copié dans le presse-papiers",
             });
           } else {
+            console.warn('⚠️ La copie a échoué, affichage du lien dans le toast');
             toast({
-              title: "⚠️ Lien généré",
-              description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
-              duration: 10000
+              title: "Lien généré",
+              description: `Le lien a été généré. Copiez-le manuellement : ${clientUrl}`,
+              duration: 10000,
             });
           }
+        } catch (copyError) {
+          console.error('❌ Erreur lors de la copie:', copyError);
+          console.log('📋 [LIEN À COPIER MANUELLEMENT]:', clientUrl);
+          toast({
+            title: "Lien généré",
+            description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
+            duration: 10000,
+          });
         }
-      } catch (err) {
-        console.error('❌ ERREUR lors de la copie:', err);
-        console.error('❌ Détails de l\'erreur:', {
-          message: err instanceof Error ? err.message : 'Unknown error',
-          stack: err instanceof Error ? err.stack : undefined,
-          name: err instanceof Error ? err.name : undefined
-        });
-        toast({
-          title: "✅ Lien généré",
-          description: `Lien de vérification: ${clientUrl}`,
-          duration: 5000
-        });
+        
+        return clientUrl;
       }
-
-      return clientUrl;
     } catch (error) {
       console.error('❌ Error generating verification URL:', error);
       toast({

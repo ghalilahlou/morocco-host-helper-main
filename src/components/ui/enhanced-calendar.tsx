@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -48,6 +48,29 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   const [tempRangeStart, setTempRangeStart] = useState<Date | null>(null);
   const [hoveredDate, setHoveredDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('14:00');
+
+  // ✅ CRITIQUE : Synchroniser currentMonth avec les dates sélectionnées
+  useEffect(() => {
+    if (mode === 'range' && rangeStart) {
+      // Si une date de début est sélectionnée, afficher le mois de cette date
+      const startMonth = startOfMonth(rangeStart);
+      if (!isSameMonth(startMonth, currentMonth)) {
+        setCurrentMonth(startMonth);
+      }
+    } else if (mode === 'range' && rangeEnd) {
+      // Si seulement une date de fin est sélectionnée, afficher le mois de cette date
+      const endMonth = startOfMonth(rangeEnd);
+      if (!isSameMonth(endMonth, currentMonth)) {
+        setCurrentMonth(endMonth);
+      }
+    } else if (mode === 'single' && selected) {
+      // En mode single, afficher le mois de la date sélectionnée
+      const selectedMonth = startOfMonth(selected);
+      if (!isSameMonth(selectedMonth, currentMonth)) {
+        setCurrentMonth(selectedMonth);
+      }
+    }
+  }, [rangeStart, rangeEnd, selected, mode, currentMonth]);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,48 @@ import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
+
+// ✅ ErrorBoundary local pour isoler le wizard
+class WizardErrorBoundary extends Component<
+  { children: ReactNode; onError: () => void },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode; onError: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(_: Error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('🔴 [WizardErrorBoundary] Erreur capturée:', error, errorInfo);
+    this.props.onError();
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-[1050] flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="p-6 text-center space-y-4">
+              <h2 className="text-xl font-semibold">Une erreur s'est produite</h2>
+              <p className="text-muted-foreground">
+                Le formulaire a rencontré une erreur inattendue. Nous allons fermer la fenêtre.
+              </p>
+              <Button onClick={this.props.onError}>
+                Fermer
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 interface BookingWizardProps {
   onClose: () => void;
@@ -28,8 +70,20 @@ export interface BookingFormData {
 }
 
 export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWizardProps) => {
-  const { addBooking, updateBooking } = useBookings();
+  const { addBooking, updateBooking, refreshBookings } = useBookings();
   const { toast } = useToast();
+  
+  // ✅ PROTECTION : Capturer l'userId au mount pour éviter les crashs si déconnexion temporaire
+  const initialUserIdRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    // Capturer l'userId une seule fois au mount
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user?.id) {
+        initialUserIdRef.current = data.session.user.id;
+      }
+    });
+  }, []);
   
   const [currentStep, setCurrentStep] = useState(0);
   const [formData, setFormData] = useState<BookingFormData>({
@@ -47,7 +101,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
     { title: 'Vérification', component: ReviewStep }
   ];
 
-  const isStepValid = () => {
+  // ✅ OPTIMISATION : Mémoriser la validation pour éviter les recalculs inutiles
+  const isStepValid = useMemo(() => {
     switch (currentStep) {
       case 0: {
         // ✅ VALIDATION RENFORCÉE : Vérifier propriété, dates et invités
@@ -55,23 +110,10 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         const hasValidGuests = formData.numberOfGuests > 0;
         const hasProperty = propertyId; // Vérifier que la propriété est sélectionnée
         
-        if (!hasProperty) {
-          console.warn('⚠️ Étape 0 : Pas de propriété sélectionnée');
-        }
-        if (!hasValidDates) {
-          console.warn('⚠️ Étape 0 : Dates invalides');
-        }
-        if (!hasValidGuests) {
-          console.warn('⚠️ Étape 0 : Nombre d\'invités invalide');
-        }
-        
         return hasValidDates && hasValidGuests && hasProperty;
       }
       case 1: {
         const hasGuests = formData.guests.length > 0;
-        if (!hasGuests) {
-          console.warn('⚠️ Étape 1 : Aucun invité ajouté');
-        }
         return hasGuests;
       }
       case 2:
@@ -79,7 +121,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       default:
         return false;
     }
-  };
+  }, [currentStep, formData.checkInDate, formData.checkOutDate, formData.numberOfGuests, formData.guests.length, propertyId]);
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
@@ -108,22 +150,40 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         return;
       }
 
+      // ✅ VALIDATION SESSION : Vérifier que l'utilisateur est toujours connecté
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.error('❌ Session expirée pendant la création de réservation');
+        toast({
+          title: "Session expirée",
+          description: "Votre session a expiré. Veuillez vous reconnecter.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       console.log('🔍 PropertyId validé pour création booking:', propertyId);
       
       const bookingId = editingBooking?.id || uuidv4();
+      const primaryGuestName = formData.guests.length > 0
+        ? (formData.guests[0].fullName || '').trim()
+        : null;
       
 
       if (!editingBooking) {
         // Create new booking with direct database calls to handle documents
         const { data: userData } = await supabase.auth.getUser();
-        if (!userData.user) {
+        
+        // ✅ FALLBACK : Utiliser l'userId initial si l'appel échoue (déconnexion temporaire)
+        const userId = userData.user?.id || initialUserIdRef.current;
+        if (!userId) {
           throw new Error('User not authenticated');
         }
 
         console.log('📝 Création booking avec données:', {
           bookingId,
           propertyId,
-          userId: userData.user.id,
+          userId,
           checkIn: formData.checkInDate,
           checkOut: formData.checkOutDate,
           guests: formData.numberOfGuests
@@ -154,17 +214,61 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
         console.log('✅ Aucun conflit détecté, création de la réservation...');
 
+        // ✅ DIAGNOSTIC : Vérifier les permissions avant l'insertion
+        console.log('🔍 [DIAGNOSTIC] Données avant insertion:', {
+          bookingId,
+          userId,
+          propertyId,
+          checkIn: formData.checkInDate,
+          checkOut: formData.checkOutDate,
+          guests: formData.numberOfGuests,
+          hasGuests: formData.guests.length > 0
+        });
+
+        // Vérifier que l'utilisateur est bien propriétaire de la propriété
+        const { data: propertyCheck, error: propertyCheckError } = await supabase
+          .from('properties')
+          .select('id, user_id, name')
+          .eq('id', propertyId)
+          .single();
+
+        if (propertyCheckError || !propertyCheck) {
+          console.error('❌ [DIAGNOSTIC] Erreur vérification propriété:', propertyCheckError);
+          toast({
+            title: "Erreur de propriété",
+            description: "Impossible de vérifier la propriété. Veuillez réessayer.",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        if (propertyCheck.user_id !== userId) {
+          console.error('❌ [DIAGNOSTIC] L\'utilisateur n\'est pas propriétaire de la propriété:', {
+            propertyUserId: propertyCheck.user_id,
+            currentUserId: userId
+          });
+          toast({
+            title: "Erreur de permissions",
+            description: "Vous n'êtes pas autorisé à créer une réservation pour cette propriété.",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        console.log('✅ [DIAGNOSTIC] Propriété vérifiée:', propertyCheck.name);
+
         // 1. Insert booking
         const { data: bookingData, error: bookingError } = await supabase
           .from('bookings')
           .insert({
             id: bookingId,
-            user_id: userData.user.id,
+            user_id: userId, // ✅ Utiliser le userId avec fallback
             property_id: propertyId, // Maintenant sûr d'être défini
             check_in_date: formData.checkInDate,
             check_out_date: formData.checkOutDate,
             number_of_guests: formData.numberOfGuests,
-            booking_reference: formData.bookingReference,
+            booking_reference: formData.bookingReference || null,
+            guest_name: primaryGuestName || null,
             status: formData.guests.length > 0 ? 'completed' : 'pending',
             documents_generated: {
               policeForm: false,
@@ -175,13 +279,47 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           .single();
 
         if (bookingError) {
-          console.error('❌ Erreur création booking:', bookingError);
+          console.error('❌ [DIAGNOSTIC] Erreur création booking:', {
+            error: bookingError,
+            code: bookingError.code,
+            message: bookingError.message,
+            details: bookingError.details,
+            hint: bookingError.hint
+          });
+          
+          // ✅ AMÉLIORATION : Message d'erreur plus détaillé
+          let errorMessage = "Impossible de créer la réservation.";
+          if (bookingError.code === '42501') {
+            errorMessage = "Vous n'avez pas les permissions nécessaires pour créer cette réservation.";
+          } else if (bookingError.code === '23505') {
+            errorMessage = "Une réservation avec cet ID existe déjà.";
+          } else if (bookingError.message) {
+            errorMessage = `Erreur: ${bookingError.message}`;
+          }
+          
+          toast({
+            title: "Erreur de création",
+            description: errorMessage,
+            variant: "destructive"
+          });
           throw bookingError;
         }
 
-        console.log('✅ Booking créé avec succès:', bookingData);
+        if (!bookingData) {
+          console.error('❌ [DIAGNOSTIC] Aucune donnée retournée après insertion');
+          toast({
+            title: "Erreur de création",
+            description: "La réservation n'a pas pu être créée. Aucune donnée retournée.",
+            variant: "destructive"
+          });
+          return;
+        }
 
-        
+        console.log('✅ [DIAGNOSTIC] Booking créé avec succès:', {
+          id: bookingData.id,
+          propertyId: bookingData.property_id,
+          status: bookingData.status
+        });
 
         // 2. Insert guests
         if (formData.guests.length > 0) {
@@ -200,15 +338,246 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             .insert(guestsData);
 
           if (guestsError) {
+            console.error('❌ [DIAGNOSTIC] Erreur insertion guests:', guestsError);
             throw guestsError;
           }
           
+          console.log('✅ [DIAGNOSTIC] Guests insérés avec succès');
         }
 
-        // 3. Save uploaded documents
-        if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
+        // ✅ CRITIQUE : Rafraîchir immédiatement après création pour que la réservation s'affiche
+        console.log('🔄 [DIAGNOSTIC] Rafraîchissement des réservations après création...');
+        console.log('🔄 [DIAGNOSTIC] Booking ID créé:', bookingData.id);
+        console.log('🔄 [DIAGNOSTIC] Property ID:', propertyId);
+        await refreshBookings();
+        console.log('✅ [DIAGNOSTIC] Réservations rafraîchies - la réservation devrait maintenant être visible');
+
+        // 3. Save uploaded documents & generate contract + police form (HOST WORKFLOW)
+        // ✅ CORRIGÉ : Générer le contrat même sans documents uploadés si des guests sont présents (workflow signature physique)
+        if (formData.guests.length > 0) {
+          // Cas 1 : Documents uploadés → Générer contrat + fiche police automatiquement
+          if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
+          console.log('🏠 [HOST WORKFLOW] Génération automatique contrat + fiche police...');
           
-          // Upload documents using unified service
+          try {
+            // ✅ WORKFLOW HOST : Appeler le service unifié pour tout générer d'un coup
+            const { submitDocumentsUnified } = await import('@/services/documentServiceUnified');
+            
+            // Préparer les données du premier guest (requis pour le contrat)
+            const mainGuest = formData.guests[0];
+            const guestInfo = {
+              firstName: mainGuest.fullName.split(' ')[0] || mainGuest.fullName,
+              lastName: mainGuest.fullName.split(' ').slice(1).join(' ') || '',
+              email: mainGuest.email || '',
+              phone: '',
+              nationality: mainGuest.nationality || '',
+              idType: mainGuest.documentType === 'passport' ? 'passport' : 'national_id',
+              idNumber: mainGuest.documentNumber || '',
+              dateOfBirth: typeof mainGuest.dateOfBirth === 'string' 
+                ? mainGuest.dateOfBirth 
+                : mainGuest.dateOfBirth?.toString() || ''
+            };
+
+            // Convertir les documents uploadés en format attendu par l'Edge Function
+            const idDocuments = await Promise.all(
+              formData.uploadedDocuments.map(async (doc) => {
+                const { DocumentStorageService } = await import('@/services/documentStorageService');
+                const uploadResult = await DocumentStorageService.storeDocument(doc.file, {
+                  bookingId: bookingData.id,
+                  fileName: doc.file.name,
+                  extractedData: doc.extractedData
+                });
+
+                if (!uploadResult.success || !uploadResult.filePath) {
+                  throw new Error(`Échec upload document: ${doc.file.name}`);
+                }
+
+                const { data: signedData, error: signedError } = await supabase.storage
+                  .from('guest-documents')
+                  .createSignedUrl(uploadResult.filePath, 3600);
+
+                if (signedError || !signedData?.signedUrl) {
+                  throw new Error(`Impossible de signer l'URL du document: ${doc.file.name}`);
+                }
+
+                return {
+                  name: doc.file.name,
+                  url: signedData.signedUrl,
+                  type: doc.file.type,
+                  size: doc.file.size
+                };
+              })
+            );
+
+            console.log('📤 [HOST WORKFLOW] Appel submit-guest-info-unified (mode host_direct)...', {
+              bookingId: bookingData.id,
+              guestName: guestInfo.firstName + ' ' + guestInfo.lastName,
+              documentsCount: idDocuments.length
+            });
+
+            // ✅ Appel direct à l'Edge Function avec action=host_direct
+            const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+              body: {
+                action: 'host_direct',
+                bookingId: bookingData.id,
+                guestInfo,
+                idDocuments,
+                bookingData: {
+                  checkIn: formData.checkInDate,
+                  checkOut: formData.checkOutDate,
+                  numberOfGuests: formData.numberOfGuests
+                }
+              }
+            });
+
+            if (error) {
+              throw new Error(error.message || 'Erreur lors de la génération des documents');
+            }
+
+            const result = {
+              bookingId: data.bookingId,
+              contractUrl: data.contractUrl,
+              policeUrl: data.policeUrl,
+              booking: data.booking
+            };
+
+            console.log('✅ [HOST WORKFLOW] Documents générés avec succès:', {
+              bookingId: result.bookingId,
+              contractUrl: result.contractUrl,
+              policeUrl: result.policeUrl
+            });
+
+            const updatedDocumentsGenerated = {
+              ...(bookingData.documents_generated || {}),
+              contract: true,
+              policeForm: true,
+              contractUrl: result.contractUrl,
+              policeUrl: result.policeUrl
+            };
+
+            await supabase
+              .from('bookings')
+              .update({
+                documents_generated: updatedDocumentsGenerated,
+                status: 'completed',
+                guest_name: (mainGuest?.fullName || primaryGuestName || '').trim() || null
+              })
+              .eq('id', bookingData.id);
+
+            await refreshBookings();
+
+            toast({
+              title: "Réservation créée avec succès",
+              description: "Contrat et fiche de police générés automatiquement. Email envoyé au client.",
+            });
+
+          } catch (workflowError) {
+            console.error('❌ [HOST WORKFLOW] Erreur génération documents:', workflowError);
+            toast({
+              title: "Réservation créée",
+              description: "La réservation est créée mais la génération des documents a échoué. Vous pouvez les générer manuellement.",
+              variant: "destructive"
+            });
+            // ✅ CORRIGÉ : Rafraîchir même en cas d'erreur pour que la réservation s'affiche
+            await refreshBookings();
+          }
+          } else {
+            // Cas 2 : Pas de documents uploadés mais guests présents → Workflow signature physique
+            // ✅ CORRIGÉ : Générer le contrat même sans documents pour le workflow signature physique
+            console.log('📝 [WORKFLOW SIGNATURE PHYSIQUE] Réservation créée sans documents, génération du contrat...');
+            
+            try {
+              // Préparer les données du premier guest pour la génération du contrat
+              const mainGuest = formData.guests[0];
+              const guestName = primaryGuestName || mainGuest?.fullName || '';
+              
+              // ✅ CORRIGÉ : Générer le contrat même sans documents uploadés
+              const { data: contractData, error: contractError } = await supabase.functions.invoke('submit-guest-info-unified', {
+                body: {
+                  action: 'generate_contract_only',
+                  bookingId: bookingData.id
+                }
+              });
+
+              if (contractError) {
+                console.error('❌ [WORKFLOW SIGNATURE PHYSIQUE] Erreur génération contrat:', contractError);
+                // Continuer quand même, le contrat pourra être généré plus tard
+              } else if (contractData?.contractUrl) {
+                console.log('✅ [WORKFLOW SIGNATURE PHYSIQUE] Contrat généré avec succès:', contractData.contractUrl);
+                
+                // ✅ NOUVEAU : Générer aussi la fiche de police pour le workflow signature physique
+                let policeUrl = null;
+                try {
+                  console.log('👮 [WORKFLOW SIGNATURE PHYSIQUE] Génération de la fiche de police...');
+                  const { data: policeData, error: policeError } = await supabase.functions.invoke('submit-guest-info-unified', {
+                    body: {
+                      action: 'generate_police_only',
+                      bookingId: bookingData.id
+                    }
+                  });
+
+                  if (policeError) {
+                    console.error('❌ [WORKFLOW SIGNATURE PHYSIQUE] Erreur génération fiche police:', policeError);
+                    // Continuer quand même, la fiche police pourra être générée plus tard
+                  } else if (policeData?.policeUrl) {
+                    policeUrl = policeData.policeUrl;
+                    console.log('✅ [WORKFLOW SIGNATURE PHYSIQUE] Fiche de police générée avec succès:', policeUrl);
+                  } else {
+                    console.warn('⚠️ [WORKFLOW SIGNATURE PHYSIQUE] Pas d\'URL de fiche police retournée');
+                  }
+                } catch (policeGenError) {
+                  console.error('❌ [WORKFLOW SIGNATURE PHYSIQUE] Erreur lors de la génération de la fiche de police:', policeGenError);
+                  // Continuer quand même
+                }
+                
+                // Mettre à jour la réservation avec l'URL du contrat et de la fiche de police
+                await supabase
+                  .from('bookings')
+                  .update({
+                    documents_generated: {
+                      ...(bookingData.documents_generated || {}),
+                      contract: true,
+                      contractUrl: contractData.contractUrl,
+                      policeForm: !!policeUrl, // True si la fiche police a été générée
+                      policeUrl: policeUrl || undefined
+                    },
+                    status: 'pending', // En attente de signature physique
+                    guest_name: guestName.trim() || null
+                  })
+                  .eq('id', bookingData.id);
+              } else {
+                // Pas d'erreur mais pas d'URL non plus, mettre à jour quand même
+                await supabase
+                  .from('bookings')
+                  .update({
+                    status: 'pending',
+                    guest_name: guestName.trim() || null
+                  })
+                  .eq('id', bookingData.id);
+              }
+            } catch (contractGenError) {
+              console.error('❌ [WORKFLOW SIGNATURE PHYSIQUE] Erreur lors de la génération du contrat:', contractGenError);
+              // Mettre à jour quand même le statut et le guest_name
+              await supabase
+                .from('bookings')
+                .update({
+                  status: 'pending',
+                  guest_name: (primaryGuestName || formData.guests[0]?.fullName || '').trim() || null
+                })
+                .eq('id', bookingData.id);
+            }
+            
+            // ✅ CORRIGÉ : Rafraîchir pour que la réservation s'affiche dans le calendrier
+            await refreshBookings();
+            
+            toast({
+              title: "Réservation créée",
+              description: "La réservation a été créée. Le contrat a été généré et sera signé physiquement.",
+            });
+          }
+        } else if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
+          // Fallback : Documents uploadés mais pas de guests → Juste stocker les documents
+          console.log('📄 Stockage des documents sans génération de contrat (pas de guests)');
           for (const doc of formData.uploadedDocuments) {
             try {
               const { DocumentStorageService } = await import('@/services/documentStorageService');
@@ -225,6 +594,12 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               console.error('❌ Error storing document:', error);
             }
           }
+          // ✅ CORRIGÉ : Rafraîchir même dans ce cas
+          await refreshBookings();
+        } else {
+          // ✅ CORRIGÉ : Cas où aucune donnée supplémentaire n'est fournie, rafraîchir quand même
+          console.log('✅ Réservation créée sans guests ni documents');
+          await refreshBookings();
         }
       } else {
         // Handle editing existing booking - update booking and sync guests + documents
@@ -325,12 +700,22 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         }
       }
 
-      toast({
-        title: editingBooking ? "Réservation mise à jour" : "Réservation créée",
-        description: editingBooking 
-          ? "La réservation a été mise à jour avec succès."
-          : "La nouvelle réservation a été créée avec succès.",
-      });
+      // ✅ Toast de succès uniquement si pas déjà affiché par le workflow host
+      if (editingBooking || !formData.uploadedDocuments || formData.uploadedDocuments.length === 0 || formData.guests.length === 0) {
+        toast({
+          title: editingBooking ? "Réservation mise à jour" : "Réservation créée",
+          description: editingBooking 
+            ? "La réservation a été mise à jour avec succès."
+            : "La nouvelle réservation a été créée avec succès.",
+        });
+      }
+
+      // ✅ CRITIQUE : Attendre que refreshBookings() termine et laisser le temps aux subscriptions de se mettre à jour
+      console.log('⏳ [DIAGNOSTIC] Attente finale avant fermeture du modal...');
+      await refreshBookings();
+      // Attendre un court délai pour que les subscriptions en temps réel se mettent à jour
+      await new Promise(resolve => setTimeout(resolve, 500));
+      console.log('✅ [DIAGNOSTIC] Fermeture du modal après rafraîchissement');
 
       onClose();
     } catch (error) {
@@ -343,9 +728,9 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
     }
   };
 
-  const updateFormData = (updates: Partial<BookingFormData>) => {
+  const updateFormData = useCallback((updates: Partial<BookingFormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
   const CurrentStepComponent = steps[currentStep].component;
   const progress = ((currentStep + 1) / steps.length) * 100;
@@ -392,7 +777,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             
             <Button
               onClick={handleNext}
-              disabled={!isStepValid()}
+              disabled={!isStepValid}
               variant={currentStep === steps.length - 1 ? "success" : "professional"}
             >
               {currentStep === steps.length - 1 ? (
@@ -413,3 +798,10 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
     </div>
   );
 };
+
+// ✅ Export avec ErrorBoundary wrapper
+export const BookingWizardWithBoundary = (props: BookingWizardProps) => (
+  <WizardErrorBoundary onError={props.onClose}>
+    <BookingWizard {...props} />
+  </WizardErrorBoundary>
+);

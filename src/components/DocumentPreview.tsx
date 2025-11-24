@@ -204,11 +204,19 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
 
     const run = async () => {
       try {
+        // ✅ Helper pour convertir les dates de naissance en string si nécessaire
+        const formatBirthDateForAPI = (date: any): string | null => {
+          if (!date) return null;
+          if (date instanceof Date) return date.toISOString().split('T')[0]; // Format YYYY-MM-DD
+          if (typeof date === 'string') return date;
+          return null;
+        };
+
         let guests = (formData?.guests || []).map((g: any) => ({
           fullName: g.fullName,
           full_name: g.fullName,
-          dateOfBirth: g.dateOfBirth,
-          date_of_birth: g.dateOfBirth,
+          dateOfBirth: formatBirthDateForAPI(g.dateOfBirth),
+          date_of_birth: formatBirthDateForAPI(g.dateOfBirth),
           documentNumber: g.documentNumber,
           document_number: g.documentNumber,
           nationality: g.nationality,
@@ -216,6 +224,9 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
           place_of_birth: g.placeOfBirth,
           documentType: g.documentType,
           document_type: g.documentType,
+          profession: g.profession || '',
+          motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
+          adresse_personnelle: g.adressePersonnelle || g.adresse_personnelle || '',
         }));
 
         if (!guests.length) {
@@ -231,6 +242,9 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
             place_of_birth: '',
             documentType: 'passport',
             document_type: 'passport',
+            profession: '',
+            motif_sejour: 'TOURISME',
+            adresse_personnelle: '',
           }];
         }
 
@@ -255,12 +269,20 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
           .filter(Boolean)
           .join(', ') || property.address;
 
+        // ✅ Helper pour convertir les dates en string si nécessaire
+        const formatDateForAPI = (date: any): string | null => {
+          if (!date) return null;
+          if (date instanceof Date) return date.toISOString();
+          if (typeof date === 'string') return date;
+          return null;
+        };
+
         const booking: any = {
           id: formData?.id || formData?.bookingId || null,
-          checkInDate: formData?.checkInDate || null,
-          check_in_date: formData?.checkInDate || null,
-          checkOutDate: formData?.checkOutDate || null,
-          check_out_date: formData?.checkOutDate || null,
+          checkInDate: formatDateForAPI(formData?.checkInDate),
+          check_in_date: formatDateForAPI(formData?.checkInDate),
+          checkOutDate: formatDateForAPI(formData?.checkOutDate),
+          check_out_date: formatDateForAPI(formData?.checkOutDate),
           number_of_guests: formData?.numberOfGuests || guests.length || 1,
           source: formData?.source || 'host',
           property: {
@@ -277,16 +299,21 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
         console.log('🔍 Police booking data being sent:', booking);
         console.log('🔍 Police contract template:', booking.property.contract_template);
 
-        // ✅ CORRECTION : Utiliser submit-guest-info-unified au lieu de generate-police-forms
+        // ✅ CORRECTION : Utiliser submit-guest-info-unified avec mode preview
+        // Cette fonction utilise la logique complète de génération de police avec support arabe
         const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
           body: { 
-            bookingId: booking.id,
-            action: 'generate_police_only'
+            action: 'generate_police_only',
+            // Mode preview : passer l'objet booking directement
+            booking: booking
           }
         });
         if (error) throw error as any;
 
-        const urls = (data as any)?.documentUrls || (data as any)?.policeUrl ? [(data as any).policeUrl] : [];
+        // La fonction retourne policeUrl, documentUrl (singular) ou documentUrls (plural)
+        const urls = (data as any)?.documentUrls || 
+                     ((data as any)?.documentUrl ? [(data as any).documentUrl] : []) ||
+                     ((data as any)?.policeUrl ? [(data as any).policeUrl] : []);
         const normalized: string[] = [];
         for (const u of urls) {
           const final = await normalizePdfUrl(u);

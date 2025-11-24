@@ -78,7 +78,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   initialContractUrl
 }) => {
   const isMountedRef = useRef(true);
-  const [currentStep, setCurrentStep] = useState<'welcome' | 'review' | 'signature' | 'celebration'>('review');
+  const [currentStep, setCurrentStep] = useState<'review' | 'celebration'>('review');
   
   // ✅ SUPPRIMÉ : Intercepteur d'erreurs redondant - l'intercepteur global dans main.tsx gère déjà les erreurs Portal
   
@@ -93,12 +93,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
     };
   }, []);
   
-    // Réinitialiser l'état du canvas quand on change d'étape
-  useEffect(() => {
-    if (currentStep !== 'signature') {
-      setCanvasInitialized(false);
-    }
-  }, [currentStep]);
+  // ✅ SIMPLIFIÉ : Plus besoin de réinitialiser le canvas car on reste sur la même page
   const [isAgreed, setIsAgreed] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -359,15 +354,26 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   const [canvasInitialized, setCanvasInitialized] = useState(false);
   const [signedContractUrl, setSignedContractUrl] = useState<string | null>(null);
 
-  // Configuration du canvas avec un callback ref (une seule fois)
+  // ✅ AMÉLIORÉ : Configuration du canvas qui s'initialise dès le montage
   const canvasCallbackRef = useCallback((canvas: HTMLCanvasElement | null) => {
-    if (canvas && currentStep === 'signature' && !canvasInitialized) {
-      // Mettre à jour la ref pour les autres fonctions
+    if (canvas && !canvasInitialized) {
       canvasRef.current = canvas;
       
-      // Configuration simple du canvas
-      canvas.width = 600;
-      canvas.height = 250;
+      // Configuration du canvas avec device pixel ratio pour meilleure qualité
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      
+      // Dimensions logiques
+      const logicalWidth = 600;
+      const logicalHeight = 250;
+      
+      // Dimensions réelles avec DPR
+      canvas.width = logicalWidth * dpr;
+      canvas.height = logicalHeight * dpr;
+      
+      // Style CSS pour l'affichage
+      canvas.style.width = `${logicalWidth}px`;
+      canvas.style.height = `${logicalHeight}px`;
       
       // ✅ CORRIGÉ : Utiliser willReadFrequently dans getContext
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -376,43 +382,56 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         return;
       }
 
+      // Mettre à l'échelle pour le DPR
+      ctx.scale(dpr, dpr);
+      
       // ✅ Utiliser la fonction centralisée pour configurer le contexte
       configureCanvasContext(ctx);
       
+      // Remplir le canvas en blanc
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+      
       setCanvasInitialized(true);
+      console.log('✅ Canvas initialisé avec succès');
     }
-  }, [currentStep, canvasInitialized]);
+  }, [canvasInitialized]);
 
   // Restaurer la signature si elle existe déjà
   useEffect(() => {
-    if (signature && canvasRef.current) {
+    if (signature && canvasRef.current && canvasInitialized) {
       const canvas = canvasRef.current;
-      // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de lecture
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
         const img = new Image();
         img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          // Remplir en blanc d'abord
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, 600, 250);
+          // Dessiner la signature
+          ctx.drawImage(img, 0, 0, 600, 250);
+          configureCanvasContext(ctx); // Reconfigurer pour continuer à dessiner
         };
         img.src = signature;
       }
     }
-  }, [signature, currentStep]);
+  }, [signature, canvasInitialized]);
 
-  // ✅ NOUVEAU : Fonction pour configurer le contexte du canvas avec les bons styles
+  // ✅ AMÉLIORÉ : Fonction pour configurer le contexte du canvas avec les bons styles
   const configureCanvasContext = (ctx: CanvasRenderingContext2D) => {
-    ctx.strokeStyle = '#0891b2'; // Cyan moderne
+    ctx.strokeStyle = '#0891b2'; // brand-teal
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
   };
 
   const getMousePos = (canvas: HTMLCanvasElement, e: MouseEvent | TouchEvent) => {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    // Utiliser les dimensions logiques (600x250) au lieu des dimensions réelles
+    const scaleX = 600 / rect.width;
+    const scaleY = 250 / rect.height;
     
     let clientX, clientY;
     if (e instanceof MouseEvent) {
@@ -476,25 +495,41 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       return;
     }
     
-    // Sauvegarder la signature
-    const dataURL = canvas.toDataURL('image/png');
-    
-    // Vérifier que la signature n'est pas vide
-    // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de lecture
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (ctx) {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const hasSignature = imageData.data.some((pixel, index) => 
-        index % 4 === 3 && pixel > 0 // Vérifier les pixels alpha (transparence)
-      );
+    // ✅ AMÉLIORÉ : Sauvegarder la signature avec un petit délai pour s'assurer que le dernier trait est bien dessiné
+    setTimeout(() => {
+      const dataURL = canvas.toDataURL('image/png', 1.0);
       
-      if (hasSignature) {
+      // Vérifier que la signature n'est pas vide
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        // Utiliser les dimensions logiques pour la vérification
+        const imageData = ctx.getImageData(0, 0, 600, 250);
+        let nonWhitePixels = 0;
+        
+        // Compter les pixels non-blancs
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const r = imageData.data[i];
+          const g = imageData.data[i + 1];
+          const b = imageData.data[i + 2];
+          const a = imageData.data[i + 3];
+          
+          // Vérifier si le pixel n'est pas blanc et a de l'opacité
+          if (a > 10 && !(r > 240 && g > 240 && b > 240)) {
+            nonWhitePixels++;
+          }
+        }
+        
+        if (nonWhitePixels > 50) { // Au moins 50 pixels non-blancs
+          setSignature(dataURL);
+          console.log('✅ Signature sauvegardée avec', nonWhitePixels, 'pixels');
+        } else {
+          console.log('⚠️ Signature trop petite ou vide:', nonWhitePixels, 'pixels');
+        }
+      } else {
+        // Fallback si on ne peut pas vérifier le contenu
         setSignature(dataURL);
       }
-    } else {
-      // Fallback si on ne peut pas vérifier le contenu
-      setSignature(dataURL);
-    }
+    }, 50);
   };
 
   const clearSignature = () => {
@@ -723,8 +758,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       }
       
       toast({
-        title: 'Contrat signé avec succès ! 🎉',
-        description: 'Votre séjour est maintenant confirmé. Nous avons hâte de vous accueillir !',
+        title: 'Contrat signé avec succès',
+        description: 'Votre séjour est maintenant confirmé. Vous recevrez un email de confirmation sous peu.',
       });
 
       // ✅ CORRIGÉ : Appeler onSignatureComplete immédiatement sans setTimeout
@@ -749,7 +784,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-white to-teal-50 relative overflow-hidden">
       {/* Éléments décoratifs flottants */}
       <div className="absolute inset-0 pointer-events-none">
         <motion.div 
@@ -779,126 +814,32 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
       <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
         <ErrorBoundary>
-          {/* ✅ CORRIGÉ : Retirer AnimatePresence pour éviter les conflits avec Portals */}
-          {/* Étape 1: Accueil chaleureux */}
-          {currentStep === 'welcome' && (
-            <div
-              key="welcome"
-              className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
-                className="mx-auto w-32 h-32 bg-gradient-to-r from-blue-500 to-teal-500 rounded-full flex items-center justify-center shadow-2xl"
-              >
-                <Heart className="w-16 h-16 text-white" />
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="space-y-4"
-              >
-                <h1 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
-                  Bienvenue {guestName.split(' ')[0]} ! 🎉
-                </h1>
-                <p className="text-xl md:text-2xl text-gray-600 max-w-3xl mx-auto">
-                  Nous sommes ravis de vous accueillir à <span className="font-semibold text-blue-600">{propertyName}</span>
-                </p>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 shadow-xl border border-white/50 max-w-2xl mx-auto"
-              >
-                <div className="space-y-6">
-                  <div className="flex items-center justify-center gap-4 text-lg">
-                    <div className="flex items-center gap-2 text-blue-600">
-                      <Calendar className="w-6 h-6" />
-                      <span className="font-medium">Du {checkInDate}</span>
-                    </div>
-                    <ArrowRight className="w-5 h-5 text-gray-400" />
-                    <div className="flex items-center gap-2 text-teal-600">
-                      <Calendar className="w-6 h-6" />
-                      <span className="font-medium">Au {checkOutDate}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-center gap-8 text-gray-600">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-5 h-5" />
-                      <span>{bookingData?.numberOfGuests || guestData?.guests?.length || 1} invité{(bookingData?.numberOfGuests || 1) > 1 ? 's' : ''}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-5 h-5" />
-                      <span>{numberOfNights} nuit{numberOfNights > 1 ? 's' : ''}</span>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.8 }}
-                className="space-y-6"
-              >
-                <p className="text-lg text-gray-700 max-w-2xl mx-auto">
-                  Pour finaliser votre réservation, nous avons besoin de votre signature électronique sur le contrat de location. 
-                  <span className="text-blue-600 font-medium"> C'est rapide, sécurisé et complètement dématérialisé !</span>
-                </p>
-
-                <motion.div
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <Button
-                    onClick={() => setCurrentStep('review')}
-                    size="lg"
-                    className="px-12 py-6 text-xl bg-gradient-to-r from-blue-500 to-teal-500 hover:from-blue-600 hover:to-teal-600 text-white rounded-2xl shadow-2xl hover:shadow-3xl transition-all duration-300"
-                  >
-                    <Sparkles className="w-6 h-6 mr-3" />
-                    Commencer la signature
-                    <ArrowRight className="w-6 h-6 ml-3" />
-                  </Button>
-                </motion.div>
-              </motion.div>
-            </div>
-          )}
-
-          {/* Étape 2: Révision du contrat */}
+          {/* ✅ SIMPLIFIÉ : Une seule page avec contrat + signature */}
           {currentStep === 'review' && (
             <div
               key="review"
-              className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300"
+              className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300"
             >
-              <div className="text-center space-y-4">
-                <div className="inline-flex items-center gap-3 px-6 py-3 bg-blue-100 rounded-full text-blue-800 font-medium">
+              <div className="text-center space-y-3">
+                <div className="inline-flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-brand-teal/10 to-teal-100 rounded-full text-brand-teal font-semibold border-2 border-brand-teal/20 shadow-sm">
                   <FileText className="w-5 h-5" />
-                  Révision du contrat
+                  Signature du contrat
                 </div>
-                <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
+                <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
                   Votre contrat de location
                 </h2>
-                <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-                  Prenez le temps de lire attentivement les conditions de votre séjour
+                <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                  Lisez le contrat ci-dessous, acceptez les conditions et signez
                 </p>
-                <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg max-w-2xl mx-auto">
-                  <p className="text-blue-800 font-medium">
-                    📋 Important : Veuillez lire entièrement le contrat ci-dessous avant de procéder à la signature. 
-                    Votre signature électronique a la même valeur légale qu'une signature manuscrite.
-                  </p>
-                </div>
               </div>
 
-              <Card className="shadow-2xl border-0 bg-white/90 backdrop-blur-sm">
-                <CardHeader className="bg-gradient-to-r from-blue-50 to-teal-50 border-b">
-                  <CardTitle className="flex items-center gap-3 text-2xl">
-                    <FileText className="w-7 h-7 text-blue-600" />
+              {/* Contrat en haut */}
+              <Card className="shadow-xl border-2 border-gray-200 bg-white rounded-xl">
+                <CardHeader className="bg-gradient-to-r from-brand-teal/10 via-cyan-50 to-teal-50 border-b-2 border-brand-teal/20">
+                  <CardTitle className="flex items-center gap-3 text-xl font-bold text-gray-900">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-teal to-teal-600 flex items-center justify-center shadow-md">
+                      <FileText className="w-5 h-5 text-white" />
+                    </div>
                     Contrat de location saisonnière
                   </CardTitle>
                 </CardHeader>
@@ -908,15 +849,15 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       <motion.div
                         animate={{ rotate: 360 }}
                         transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"
+                        className="w-12 h-12 border-4 border-brand-teal border-t-transparent rounded-full"
                       />
-                      <p className="text-lg text-gray-600">Génération de votre contrat personnalisé...</p>
+                      <p className="text-lg text-gray-600">Génération de votre contrat...</p>
                     </div>
                   ) : contractUrl ? (
                     <iframe 
                       src={contractUrl} 
                       title="Contrat de location" 
-                      className="w-full h-[600px] rounded-b-lg" 
+                      className="w-full h-[400px] rounded-b-lg" 
                     />
                   ) : contractError ? (
                     <div className="p-8 text-center">
@@ -939,87 +880,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 </CardContent>
               </Card>
 
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="flex gap-4 justify-center"
-              >
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentStep('welcome')}
-                  size="lg"
-                  className="px-8 py-4 rounded-xl"
-                >
-                  ← Retour
-                </Button>
-                <Button
-                  onClick={() => setCurrentStep('signature')}
-                  size="lg"
-                  className="px-8 py-4 bg-gradient-to-r from-blue-500 to-teal-500 hover:from-blue-600 hover:to-teal-600 text-white rounded-xl"
-                >
-                  Procéder à la signature
-                  <Pen className="w-5 h-5 ml-2" />
-                </Button>
-              </motion.div>
-            </div>
-          )}
-
-          {/* Étape 3: Signature */}
-          {currentStep === 'signature' && (
-            <div
-              key="signature"
-              className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300"
-            >
-              <div className="text-center space-y-4">
-                <div className="inline-flex items-center gap-3 px-6 py-3 bg-green-100 rounded-full text-green-800 font-medium">
-                  <Pen className="w-5 h-5" />
-                  Signature électronique
-                </div>
-                <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
-                  Signez votre contrat
-                </h2>
-                <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-                  Votre signature électronique a la même valeur légale qu'une signature manuscrite
-                </p>
-                <div className="flex justify-center">
-                  <Button
-                    variant="outline"
-                    onClick={() => setCurrentStep('welcome')}
-                    size="sm"
-                    className="px-4 py-2"
-                  >
-                    ← Retour à l'accueil
-                  </Button>
-                </div>
-              </div>
-
-              {/* Affichage du contrat pendant la signature */}
-              {contractUrl && (
-                <Card className="shadow-2xl border-0 bg-white/90 backdrop-blur-sm">
-                  <CardHeader className="bg-gradient-to-r from-blue-50 to-teal-50 border-b">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <FileText className="w-6 h-6 text-blue-600" />
-                      Votre contrat de location
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <iframe 
-                      src={contractUrl} 
-                      title="Contrat de location" 
-                      className="w-full h-[400px] rounded-b-lg" 
-                    />
-                  </CardContent>
-                </Card>
-              )}
-
-              <Card className="shadow-2xl border-0 bg-white/90 backdrop-blur-sm max-w-3xl mx-auto">
-                <CardContent className="p-8 space-y-8">
-                  {/* Accord préalable */}
+              {/* Zone de signature et acceptation */}
+              <Card className="shadow-xl border-2 border-gray-200 bg-white rounded-xl">
+                <CardContent className="p-6 space-y-6">
+                  {/* Accord préalable - toujours visible */}
                   <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex items-start space-x-4 p-6 bg-gradient-to-r from-blue-50 to-teal-50 rounded-2xl border border-blue-200"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-start space-x-3 p-4 bg-gradient-to-r from-brand-teal/5 via-cyan-50 to-teal-50 rounded-lg border-2 border-brand-teal/30"
                   >
                     <Checkbox 
                       id="agree" 
@@ -1029,43 +897,28 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                     />
                     <label 
                       htmlFor="agree" 
-                      className="text-lg leading-relaxed cursor-pointer"
+                      className="text-base leading-relaxed cursor-pointer text-gray-800 flex-1"
                     >
-                      <span className="font-semibold text-gray-900">J'ai lu et j'accepte</span> toutes les conditions du contrat de location. 
-                      Je confirme que toutes les informations fournies sont exactes et complètes.
+                      <span className="font-semibold text-gray-900">J'ai lu et j'accepte</span> toutes les conditions du contrat. 
+                      Je confirme que toutes les informations sont exactes.
                     </label>
                   </motion.div>
 
-                  {/* Zone de signature */}
+                  {/* Zone de signature - visible dès que l'accord est accepté */}
                   {isAgreed && (
                     <motion.div
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="space-y-6"
+                      transition={{ duration: 0.3 }}
+                      className="space-y-4"
                     >
-                      <div className="text-center space-y-2">
-                        <h3 className="text-2xl font-bold text-gray-900">Votre signature</h3>
-                        <p className="text-gray-600">Dessinez votre signature dans l'espace ci-dessous</p>
+                      <div className="text-center">
+                        <h3 className="text-xl font-bold text-gray-900 mb-1">Votre signature</h3>
+                        <p className="text-sm text-gray-600">Dessinez votre signature ci-dessous</p>
                       </div>
 
-                      <div className="relative">
-                        <div className="absolute inset-0 bg-gradient-to-r from-blue-400/10 to-teal-400/10 rounded-3xl blur-xl"></div>
-                        <div className="relative border-3 border-dashed border-blue-300 rounded-3xl p-8 bg-white/90 backdrop-blur-sm shadow-xl">
-                          {/* Titre de la zone de signature */}
-                          <div className="text-center mb-6">
-                            <div className="flex items-center justify-center gap-2 mb-2">
-                              <motion.div
-                                animate={{ scale: [1, 1.1, 1] }}
-                                transition={{ duration: 2, repeat: Infinity }}
-                              >
-                                <Pen className="w-6 h-6 text-blue-600" />
-                              </motion.div>
-                              <span className="text-lg font-semibold text-gray-800">Zone de signature</span>
-                            </div>
-                            <p className="text-sm text-gray-600">
-                              Dessinez votre signature comme vous le feriez sur papier
-                            </p>
-                          </div>
+                          <div className="relative">
+                        <div className="relative border-2 border-dashed border-brand-teal/40 rounded-lg p-4 bg-gradient-to-br from-white via-white to-cyan-50/30 shadow-md hover:shadow-lg transition-all duration-200">
 
                           {/* ✨ Canvas container ultra-moderne avec animations */}
                           <div className="relative group">
@@ -1077,39 +930,22 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                             `} />
                             
                             <div className={`
-                              relative bg-gradient-to-br from-white via-white to-cyan-50/30 rounded-3xl 
-                              border-3 transition-all duration-500 shadow-2xl
+                              relative bg-gradient-to-br from-white via-white to-cyan-50/30 rounded-xl 
+                              border-2 transition-all duration-500 shadow-xl
                               ${signature 
-                                ? 'border-gradient-to-r border-green-400 shadow-green-200/50 ring-4 ring-green-100' 
-                                : 'border-gradient-to-r border-cyan-300 group-hover:border-cyan-400 group-hover:shadow-cyan-200/50 group-hover:ring-4 group-hover:ring-cyan-100/50'
+                                ? 'border-green-400 shadow-green-200/50 ring-4 ring-green-100' 
+                                : 'border-brand-teal/40 group-hover:border-brand-teal/60 group-hover:shadow-brand-teal/20 group-hover:ring-4 group-hover:ring-brand-teal/20'
                               }
                             `}>
-                              {/* Badge "En cours de signature" animé */}
-                              {isDrawing && (
-                                <motion.div
-                                  initial={{ opacity: 0, scale: 0.8, y: -10 }}
-                                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                                  exit={{ opacity: 0, scale: 0.8 }}
-                                  className="absolute -top-4 right-4 z-10 bg-gradient-to-r from-cyan-500 to-blue-500 text-white px-4 py-1 rounded-full text-xs font-semibold shadow-lg flex items-center gap-2"
-                                >
-                                  <motion.div
-                                    animate={{ scale: [1, 1.2, 1] }}
-                                    transition={{ duration: 1, repeat: Infinity }}
-                                    className="w-2 h-2 bg-white rounded-full"
-                                  />
-                                  En cours de signature...
-                                </motion.div>
-                              )}
-                              
                               {/* Badge "Signature complétée" */}
                               {signature && !isDrawing && (
                                 <motion.div
-                                  initial={{ opacity: 0, scale: 0, y: -10 }}
-                                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                                  className="absolute -top-4 left-4 z-10 bg-gradient-to-r from-green-500 to-emerald-500 text-white px-4 py-1 rounded-full text-xs font-semibold shadow-lg flex items-center gap-2"
+                                  initial={{ opacity: 0, scale: 0 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  className="absolute -top-2 right-2 z-10 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-md flex items-center gap-1"
                                 >
-                                  <CheckCircle className="w-4 h-4" />
-                                  Signature validée !
+                                  <CheckCircle className="w-3 h-3" />
+                                  Validée
                                 </motion.div>
                               )}
                               
@@ -1118,8 +954,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                 width={600}
                                 height={250}
                                 className={`
-                                  w-full h-full touch-none select-none rounded-3xl
-                                  transition-all duration-300
+                                  w-full touch-none select-none rounded-lg
+                                  transition-all duration-200
                                   ${isDrawing ? 'cursor-grabbing' : 'cursor-crosshair'}
                                 `}
                                 style={{ 
@@ -1128,8 +964,9 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                   WebkitUserSelect: 'none',
                                   userSelect: 'none',
                                   display: 'block',
-                                  minHeight: '200px',
-                                  backgroundColor: 'white'
+                                  height: '200px',
+                                  backgroundColor: 'white',
+                                  border: '1px solid #e5e7eb'
                                 }}
                                 onContextMenu={(e) => e.preventDefault()}
                                 onMouseDown={startDrawing}
@@ -1141,308 +978,75 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                 onTouchEnd={stopDrawing}
                               />
                               
-                              {/* Guide lines élégantes pour signature */}
-                              <div className="absolute inset-0 pointer-events-none rounded-3xl overflow-hidden">
-                                <div className="absolute bottom-1/3 left-6 right-6 h-[2px] bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent"></div>
-                                <div className="absolute top-3 right-4 text-xs font-semibold text-cyan-600/70 flex items-center gap-1">
-                                  <Pen className="w-3 h-3" />
-                                  Signez ici
-                                </div>
-                              </div>
-
-                              {/* Indication interactive quand pas de signature */}
-                              {!signature && !isDrawing && (
-                                <motion.div 
-                                  initial={{ opacity: 0.6 }}
-                                  animate={{ opacity: [0.6, 1, 0.6] }}
-                                  transition={{ duration: 3, repeat: Infinity }}
-                                  className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                                >
-                                  <div className="text-center">
-                                    <motion.div
-                                      animate={{ 
-                                        y: [0, -8, 0],
-                                        rotate: [0, -5, 5, 0]
-                                      }}
-                                      transition={{ duration: 2.5, repeat: Infinity }}
-                                    >
-                                      <Pen className="w-14 h-14 mx-auto mb-4 text-cyan-500/60" />
-                                    </motion.div>
-                                    <p className="text-xl font-semibold text-cyan-600/80 mb-2">✨ Signez ici</p>
-                                    <p className="text-sm text-gray-500">Cliquez et dessinez votre signature</p>
-                                  </div>
-                                </motion.div>
+                              {/* Guide line simple */}
+                              {!signature && (
+                                <div className="absolute bottom-1/3 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-brand-teal/30 to-transparent pointer-events-none"></div>
                               )}
                             </div>
                           </div>
 
-                          {/* Instructions et feedback */}
-                          <div className="text-center mt-6 space-y-2">
-                            <div className="flex items-center justify-center gap-4 text-sm text-gray-600">
-                              <div className="flex items-center gap-1">
-                                <span>🖱️</span>
-                                <span>Souris</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span>👆</span>
-                                <span>Tactile</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <span>✏️</span>
-                                <span>Stylet</span>
+                          {/* Feedback simple */}
+                          {signature ? (
+                            <div className="mt-3 text-center">
+                              <div className="inline-flex items-center gap-2 text-sm text-green-700 bg-green-50 px-3 py-1 rounded-full">
+                                <CheckCircle className="w-4 h-4" />
+                                Signature prête
                               </div>
                             </div>
-                            
-                            {signature ? (
-                              <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="bg-green-50 border border-green-200 rounded-xl p-3"
-                              >
-                                <div className="flex items-center justify-center gap-2 text-green-700">
-                                  <CheckCircle className="w-5 h-5" />
-                                  <span className="font-medium">Signature capturée avec succès !</span>
-                                </div>
-                                <p className="text-sm text-green-600 mt-1">
-                                  Vous pouvez maintenant procéder à la signature du contrat
-                                </p>
-                              </motion.div>
-                            ) : (
-                              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-                                <p className="text-blue-700 font-medium text-sm">
-                                  💡 Conseil : Signez naturellement comme sur papier
-                                </p>
-                                <p className="text-blue-600 text-xs mt-1">
-                                  Votre signature doit être lisible et ressembler à votre signature habituelle
-                                </p>
-                              </div>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="mt-3 text-center text-xs text-gray-500">
+                              💡 Signez naturellement avec votre souris, doigt ou stylet
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Boutons d'action améliorés */}
-                      <div className="space-y-4">
-                        {/* Boutons secondaires */}
-                        <div className="flex gap-3">
-                          <motion.div className="flex-1" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                            <Button
-                              variant="outline"
-                              onClick={() => setCurrentStep('review')}
-                              size="lg"
-                              className="w-full py-4 rounded-xl border-2 border-gray-300 hover:border-blue-400 transition-all"
-                            >
-                              <ArrowLeft className="w-5 h-5 mr-2" />
-                              Retour au contrat
-                            </Button>
-                          </motion.div>
-                          
-                          {signature && (
-                            <motion.div 
-                              initial={{ opacity: 0, scale: 0.8, x: -20 }}
-                              animate={{ opacity: 1, scale: 1, x: 0 }}
-                              exit={{ opacity: 0, scale: 0.8, x: -20 }}
-                              whileHover={{ scale: 1.05, rotate: -2 }} 
-                              whileTap={{ scale: 0.95 }}
-                              transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                            >
-                              <Button 
-                                onClick={clearSignature}
-                                variant="outline"
-                                size="lg"
-                                className="
-                                  px-6 py-4 rounded-xl border-2 
-                                  bg-gradient-to-r from-orange-50 to-red-50
-                                  border-orange-400 text-orange-700 
-                                  hover:border-red-500 hover:from-orange-100 hover:to-red-100
-                                  hover:text-red-700 hover:shadow-lg hover:shadow-orange-200/50
-                                  transition-all duration-300
-                                  group relative overflow-hidden
-                                "
-                              >
-                                {/* Effet de brillance au survol */}
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700" />
-                                
-                                <motion.div
-                                  animate={{ rotate: [0, -10, 10, 0] }}
-                                  transition={{ duration: 0.5, repeat: 0 }}
-                                  className="inline-block"
-                              >
-                                <X className="w-5 h-5 mr-2" />
-                                </motion.div>
-                                Effacer
-                              </Button>
-                            </motion.div>
-                          )}
-                        </div>
-
-                        {/* 🌟 Bouton principal ultra-moderne */}
-                        <motion.div 
-                          whileHover={signature && !isSubmitting ? { scale: 1.03, y: -2 } : {}} 
-                          whileTap={signature && !isSubmitting ? { scale: 0.97 } : {}}
-                          transition={{ type: "spring", stiffness: 400, damping: 17 }}
-                          className="w-full"
-                        >
+                      {/* ✅ SIMPLIFIÉ : Un seul bouton principal */}
+                      <div className="flex gap-3 items-center">
+                        {signature && (
                           <Button 
-                            onClick={handleSubmitSignature}
-                            disabled={!signature || isSubmitting}
+                            onClick={clearSignature}
+                            variant="outline"
                             size="lg"
-                            className={`
-                              w-full py-6 rounded-2xl text-lg font-bold transition-all duration-300 
-                              relative overflow-hidden group
-                              ${signature && !isSubmitting
-                                ? 'bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 hover:from-green-600 hover:via-emerald-600 hover:to-teal-600 text-white shadow-2xl shadow-green-300/50 hover:shadow-green-400/60 ring-4 ring-green-100 hover:ring-green-200'
-                                : 'bg-gray-200 text-gray-500 cursor-not-allowed opacity-60'
-                              }
-                            `}
+                            className="px-4 py-3 border-2 border-gray-300 hover:border-red-400 text-gray-700 hover:text-red-700 transition-all"
                           >
-                            {/* Effet de brillance animé */}
-                            {signature && !isSubmitting && (
-                              <motion.div 
-                                animate={{ 
-                                  x: ['-200%', '200%'],
-                                }}
-                                transition={{ 
-                                  duration: 2, 
-                                  repeat: Infinity,
-                                  repeatDelay: 1
-                                }}
-                                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
-                              />
-                            )}
-                            
-                            {/* Particules flottantes */}
-                            {signature && !isSubmitting && (
-                              <>
-                                <motion.div
-                                  animate={{ 
-                                    y: [0, -100, 0],
-                                    opacity: [0, 1, 0],
-                                    scale: [0, 1, 0]
-                                  }}
-                                  transition={{ 
-                                    duration: 3, 
-                                    repeat: Infinity,
-                                    delay: 0
-                                  }}
-                                  className="absolute left-1/4 top-1/2 w-2 h-2 bg-white/50 rounded-full"
-                                />
-                                <motion.div
-                                  animate={{ 
-                                    y: [0, -100, 0],
-                                    opacity: [0, 1, 0],
-                                    scale: [0, 1, 0]
-                                  }}
-                                  transition={{ 
-                                    duration: 3, 
-                                    repeat: Infinity,
-                                    delay: 1
-                                  }}
-                                  className="absolute right-1/4 top-1/2 w-2 h-2 bg-white/50 rounded-full"
-                                />
-                              </>
-                            )}
-                            
-                            <span className="relative z-10 flex items-center justify-center gap-3">
-                            {isSubmitting ? (
-                              <>
-                                <motion.div
-                                  animate={{ rotate: 360 }}
-                                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                                  className="mr-3"
-                                >
-                                  <Loader2 className="w-6 h-6" />
-                                </motion.div>
-                                Finalisation en cours...
-                              </>
-                            ) : signature ? (
-                              <>
-                                <motion.div
-                                  initial={{ scale: 0 }}
-                                  animate={{ scale: [1, 1.2, 1] }}
-                                  transition={{ duration: 0.5 }}
-                                >
-                                  <CheckCircle className="w-6 h-6" />
-                                </motion.div>
-                                ✨ Signer le contrat maintenant
-                                <motion.div
-                                  animate={{ x: [0, 5, 0] }}
-                                  transition={{ duration: 1.5, repeat: Infinity }}
-                                >
-                                  <ArrowRight className="w-6 h-6 ml-2" />
-                                </motion.div>
-                              </>
-                            ) : (
-                              <>
-                                <Pen className="w-6 h-6 opacity-50" />
-                                Dessinez votre signature d'abord
-                              </>
-                            )}
-                            </span>
+                            <X className="w-4 h-4 mr-1" />
+                            Effacer
                           </Button>
-                        </motion.div>
-
-                        {/* Message d'aide contextuel */}
-                        {!signature && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="text-center text-sm text-gray-500 space-y-2"
-                          >
-                            <p>✍️ Dessinez votre signature dans la zone ci-dessus pour continuer</p>
-                            
-                            {/* Bouton de test simplifié */}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const canvas = canvasRef.current;
-                                if (!canvas) {
-                                  console.error('❌ Canvas not found');
-                                  return;
-                                }
-                                
-                                // ✅ CORRIGÉ : Utiliser willReadFrequently pour les opérations de test
-                                const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                                if (!ctx) {
-                                  console.error('❌ Cannot get context');
-                                  return;
-                                }
-                                
-                                // Dessiner une signature de test simple
-                                ctx.strokeStyle = '#ff0000';
-                                ctx.lineWidth = 3;
-                                ctx.lineCap = 'round';
-                                ctx.beginPath();
-                                ctx.moveTo(100, 100);
-                                ctx.lineTo(200, 120);
-                                ctx.lineTo(300, 100);
-                                ctx.lineTo(400, 140);
-                                ctx.stroke();
-                                
-                                // Dessiner quelques lettres
-                                ctx.beginPath();
-                                ctx.moveTo(150, 150);
-                                ctx.lineTo(180, 180);
-                                ctx.lineTo(210, 150);
-                                ctx.stroke();
-                                
-                                setSignature(canvas.toDataURL());
-                              }}
-                              className="mx-auto bg-red-100 hover:bg-red-200 text-red-700"
-                            >
-                              🧪 TEST - Créer signature test
-                            </Button>
-                          </motion.div>
                         )}
+                        
+                        <Button 
+                          onClick={handleSubmitSignature}
+                          disabled={!signature || !isAgreed || isSubmitting}
+                          size="lg"
+                          className={`
+                            flex-1 py-4 rounded-xl text-base font-semibold transition-all duration-200
+                            ${signature && isAgreed && !isSubmitting
+                              ? 'bg-brand-teal hover:bg-brand-teal/90 text-white shadow-lg hover:shadow-xl'
+                              : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            }
+                          `}
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                              Signature en cours...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-5 h-5 mr-2" />
+                              Signer le contrat
+                            </>
+                          )}
+                        </Button>
                       </div>
                     </motion.div>
                   )}
 
                   {!isAgreed && (
-                    <Alert className="bg-yellow-50 border-yellow-200">
-                      <Shield className="w-5 h-5 text-yellow-600" />
-                      <AlertDescription className="text-yellow-800">
+                    <Alert className="bg-amber-50 border-2 border-amber-200 rounded-lg">
+                      <Shield className="w-5 h-5 text-amber-600" />
+                      <AlertDescription className="text-amber-800 font-medium">
                         Veuillez lire et accepter les conditions du contrat pour pouvoir le signer.
                       </AlertDescription>
                     </Alert>
@@ -1452,119 +1056,131 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
             </div>
           )}
 
-          {/* Étape 4: Célébration */}
+          {/* Étape de confirmation professionnelle */}
           {currentStep === 'celebration' && (
             <motion.div
               key="celebration"
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -30 }}
-              transition={{ duration: 0.3 }}
-              className="text-center space-y-8 max-w-2xl mx-auto"
+              transition={{ duration: 0.4 }}
+              className="max-w-3xl mx-auto"
             >
-              <motion.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                className="mx-auto w-32 h-32 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center shadow-2xl"
-              >
-                <CheckCircle className="w-16 h-16 text-white" />
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="space-y-4"
-              >
-                <h1 className="text-4xl md:text-5xl font-bold text-gray-900">
-                  Félicitations ! 🎉
-                </h1>
-                <p className="text-2xl text-gray-600">
-                  Votre contrat a été signé avec succès
-                </p>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-3xl p-8 border border-green-200"
-              >
-                <div className="space-y-6">
-                  <div className="flex items-center justify-center gap-2 text-green-800">
-                    <Gift className="w-6 h-6" />
-                    <span className="text-xl font-semibold">Votre séjour est confirmé !</span>
+              <Card className="shadow-xl border-2 border-gray-200 bg-white rounded-xl overflow-hidden">
+                <CardContent className="p-8 md:p-12">
+                  {/* En-tête professionnel */}
+                  <div className="text-center mb-8">
+                    <motion.div
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+                      className="mx-auto w-20 h-20 bg-brand-teal rounded-full flex items-center justify-center shadow-lg mb-6"
+                    >
+                      <CheckCircle className="w-10 h-10 text-white" />
+                    </motion.div>
+                    
+                    <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
+                      Contrat signé avec succès
+                    </h1>
+                    <p className="text-lg text-gray-600">
+                      Félicitations ! Votre séjour est maintenant confirmé.
+                    </p>
                   </div>
-                  
-                  <div className="space-y-3 text-lg text-gray-700">
-                    <p>✨ Vous recevrez un email de confirmation sous peu</p>
-                    <p>🏠 Les informations d'accès vous seront envoyées avant votre arrivée</p>
-                    <p>📞 Notre équipe reste à votre disposition pour toute question</p>
+
+                  {/* Informations importantes */}
+                  <div className="bg-gradient-to-r from-brand-teal/5 via-cyan-50/50 to-teal-50 rounded-lg p-6 border border-brand-teal/20 mb-8">
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 rounded-full bg-brand-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <CheckCircle className="w-4 h-4 text-brand-teal" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900 mb-1">Confirmation par email</p>
+                          <p className="text-sm text-gray-600">
+                            Vous avez reçu toutes les informations par email, incluant votre contrat signé et les détails de votre réservation.
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 rounded-full bg-brand-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <Home className="w-4 h-4 text-brand-teal" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900 mb-1">Informations d'accès</p>
+                          <p className="text-sm text-gray-600">
+                            Les informations d'accès à la propriété vous seront envoyées avant votre arrivée.
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 rounded-full bg-brand-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <Shield className="w-4 h-4 text-brand-teal" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-900 mb-1">Support client</p>
+                          <p className="text-sm text-gray-600">
+                            Notre équipe reste à votre disposition pour toute question ou assistance.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  
-                  {/* Affichage du contrat signé */}
+
+                  {/* Contrat signé */}
                   {signedContractUrl && (
                     <motion.div
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.8 }}
-                      className="mt-8 p-6 bg-white rounded-2xl border border-gray-200 shadow-lg"
+                      transition={{ delay: 0.4 }}
+                      className="bg-gray-50 rounded-lg p-6 border border-gray-200 mb-8"
                     >
-                      <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                        <FileText className="w-5 h-5 text-blue-600" />
-                        Votre contrat signé
-                      </h3>
-                      <div className="space-y-4">
-                        <p className="text-gray-600">
-                          Votre contrat a été généré et signé avec succès. Vous pouvez le télécharger ou le consulter.
-                        </p>
-                        <div className="flex gap-3 justify-center">
-                          <Button
-                            onClick={() => window.open(signedContractUrl, '_blank')}
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
-                          >
-                            <FileText className="w-4 h-4 mr-2" />
-                            Voir le contrat
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              const link = document.createElement('a');
-                              link.href = signedContractUrl;
-                              const bookingId = getBookingId();
-                              link.download = `contrat-signe-${bookingId || 'contrat'}.pdf`;
-                              link.click();
-                            }}
-                            variant="outline"
-                          >
-                            Télécharger PDF
-                          </Button>
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
+                          <FileText className="w-5 h-5 text-brand-teal" />
                         </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">Votre contrat signé</h3>
+                          <p className="text-sm text-gray-600">Document disponible en téléchargement</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <Button
+                          onClick={() => window.open(signedContractUrl, '_blank')}
+                          className="flex-1 bg-brand-teal hover:bg-brand-teal/90 text-white"
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          Consulter le contrat
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = signedContractUrl;
+                            const bookingId = getBookingId();
+                            link.download = `contrat-signe-${bookingId || 'contrat'}.pdf`;
+                            link.click();
+                          }}
+                          variant="outline"
+                          className="flex-1 border-2 border-gray-300 hover:border-brand-teal/50"
+                        >
+                          Télécharger PDF
+                        </Button>
                       </div>
                     </motion.div>
                   )}
 
-                  <div className="pt-4">
-                    <p className="text-2xl text-center">
-                      <span className="text-gray-600">Nous avons hâte de vous accueillir à</span>
-                      <br />
-                      <span className="font-bold text-blue-600">{propertyName}</span> ! 
+                  {/* Message de bienvenue professionnel */}
+                  <div className="text-center pt-6 border-t border-gray-200">
+                    <p className="text-gray-700 mb-2">
+                      Nous avons hâte de vous accueillir à
+                    </p>
+                    <p className="text-xl font-semibold text-brand-teal">
+                      {propertyName}
                     </p>
                   </div>
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.8 }}
-                className="flex justify-center gap-4 text-3xl"
-              >
-                <motion.span animate={{ rotate: [0, 10, -10, 0] }} transition={{ duration: 2, repeat: Infinity }}>🎉</motion.span>
-                <motion.span animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>❤️</motion.span>
-                <motion.span animate={{ rotate: [0, -10, 10, 0] }} transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}>🏠</motion.span>
-              </motion.div>
-              </motion.div>
+                </CardContent>
+              </Card>
+            </motion.div>
           )}
         </ErrorBoundary>
       </div>

@@ -1,6 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
 
 // Fonction pour créer le client Supabase
 async function getServerClient() {
@@ -25,7 +27,7 @@ interface Guest {
   profession?: string;
   motif_sejour?: string;
   adresse_personnelle?: string;
-  email?: string;
+  email: string;
 }
 
 interface Property {
@@ -147,23 +149,33 @@ serve(async (req) => {
 
     console.log(`📋 Generating police forms for ${guests.length} validated guests`);
 
-    // Generate police forms
-    const documentUrl = await generatePoliceFormsPDF(booking);
+    // Generate police forms avec la logique complète
+    const documentUrl = await generatePoliceFormsPDF(client, booking);
     
-    // Save to database
-    const documentRecord = await saveDocumentToDatabase(
-      client, 
-      booking.id, 
-      'police', 
-      documentUrl
-    );
+    // ✅ CORRECTION : Ne sauvegarder en base que si bookingId existe (mode normal, pas preview)
+    let documentRecord = null;
+    if (booking.id) {
+      try {
+        documentRecord = await saveDocumentToDatabase(
+          client, 
+          booking.id, 
+          'police', 
+          documentUrl
+        );
+      } catch (saveError) {
+        console.warn('⚠️ Failed to save document to database (preview mode?):', saveError);
+        // En mode preview, on continue quand même sans sauvegarder
+      }
+    } else {
+      console.log('👁️ Mode preview : document généré sans sauvegarde en base');
+    }
 
     return new Response(JSON.stringify({
       success: true,
       message: `Generated ${guests.length} police form(s) successfully`,
       documentUrl: documentUrl,          // ✅ Format principal (singular)
       documentUrls: [documentUrl],       // ✅ Rétrocompatibilité (plural)
-      documentId: documentRecord.id,
+      documentId: documentRecord?.id || null,
       guestsCount: guests.length
     }), {
       status: 200,
@@ -235,7 +247,8 @@ async function fetchBookingFromDatabase(client: any, bookingId: string): Promise
                 place_of_birth: guest.placeOfBirth || guest.place_of_birth || '',
                 profession: guest.profession || '',
                 motif_sejour: guest.motif_sejour || 'TOURISME',
-                adresse_personnelle: guest.adresse_personnelle || ''
+                adresse_personnelle: guest.adresse_personnelle || '',
+                email: guest.email || ''
               });
             }
           }
@@ -382,6 +395,7 @@ async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
     yPosition -= 20;
     yPosition = drawField(page, 'MOTIF DU SÉJOUR:', guest.motif_sejour || 'TOURISME', leftColumn, yPosition, font, boldFont, fontSize);
     yPosition = drawField(page, 'ADRESSE AU MAROC:', guest.adresse_personnelle || property.address || '', leftColumn, yPosition, font, boldFont, fontSize);
+    yPosition = drawField(page, 'COURRIEL:', guest.email || '', leftColumn, yPosition, font, boldFont, fontSize);
     
     // Signature section
     yPosition -= 40;

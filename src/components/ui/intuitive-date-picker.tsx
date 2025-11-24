@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion'; // ✅ AnimatePresence retiré
-import { Calendar, Clock, MapPin, Users, ArrowRight, Check, X } from 'lucide-react';
+import { MapPin, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { format, differenceInDays, addDays, isSameDay } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { EnhancedCalendar } from './enhanced-calendar';
 
@@ -17,6 +17,8 @@ interface IntuitiveBookingPickerProps {
   className?: string;
 }
 
+type PickerStep = 'dates' | 'guests';
+
 export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
   checkInDate,
   checkOutDate,
@@ -26,7 +28,7 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
   propertyName = "Hébergement",
   className
 }) => {
-  const [step, setStep] = useState<'dates' | 'guests' | 'summary'>('dates');
+  const [step, setStep] = useState<PickerStep>('dates');
   const [tempCheckIn, setTempCheckIn] = useState<Date | undefined>(checkInDate);
   const [tempCheckOut, setTempCheckOut] = useState<Date | undefined>(checkOutDate);
   const [tempGuests, setTempGuests] = useState(numberOfGuests);
@@ -57,12 +59,15 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
   const handleCalendarSelect = (start: Date, end: Date) => {
     setTempCheckIn(start);
     setTempCheckOut(end);
-    // Ne pas changer d'étape automatiquement, laisser l'utilisateur cliquer sur "Continuer"
+
+    if (start && end) {
+      // Avancer automatiquement à l'étape des invités
+      setStep('guests');
+    }
   };
 
-  const handleConfirm = () => {
+  useEffect(() => {
     if (tempCheckIn && tempCheckOut) {
-      // ✅ CORRECTION: Validation avant confirmation
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const checkInStartOfDay = new Date(tempCheckIn);
@@ -70,24 +75,19 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
       const checkOutStartOfDay = new Date(tempCheckOut);
       checkOutStartOfDay.setHours(0, 0, 0, 0);
 
-      // Vérifications de base
-      if (checkInStartOfDay < today) {
-        return; // Date passée non autorisée
-      }
-
-      if (checkOutStartOfDay <= checkInStartOfDay) {
-        return; // Date de départ doit être après l'arrivée
-      }
+      if (checkInStartOfDay < today) return;
+      if (checkOutStartOfDay <= checkInStartOfDay) return;
 
       onDatesChange?.(tempCheckIn, tempCheckOut);
-      onGuestsChange?.(tempGuests);
-      setStep('summary');
     }
+  }, [tempCheckIn, tempCheckOut, onDatesChange]);
+
+  const updateGuests = (value: number) => {
+    setTempGuests(value);
+    onGuestsChange?.(value);
   };
 
-  const handleEdit = () => {
-    setStep('dates');
-  };
+  const progressSteps: PickerStep[] = ['dates', 'guests'];
 
   return (
     <div className={cn("max-w-md mx-auto", className)}>
@@ -104,18 +104,18 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
           </motion.div>
           
           <div className="flex justify-between items-center">
-            {['checkin', 'checkout', 'guests', 'summary'].map((stepName, index) => (
+            {progressSteps.map((stepName, index) => (
               <div key={stepName} className="flex items-center">
                 <motion.div
                   animate={{
                     backgroundColor: 
                       step === stepName ? '#ffffff' :
-                      ['checkin', 'checkout', 'guests', 'summary'].indexOf(step) > index ? '#10b981' : 
+                      progressSteps.indexOf(step) > index ? '#10b981' : 
                       'rgba(255,255,255,0.3)'
                   }}
                   className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
                 >
-                  {['checkin', 'checkout', 'guests', 'summary'].indexOf(step) > index ? (
+                  {progressSteps.indexOf(step) > index ? (
                     <Check className="w-4 h-4 text-white" />
                   ) : (
                     <span className={step === stepName ? 'text-primary' : 'text-white'}>
@@ -123,7 +123,7 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                     </span>
                   )}
                 </motion.div>
-                {index < 3 && <div className="w-6 h-px bg-white/30 mx-2" />}
+                {index < progressSteps.length - 1 && <div className="w-6 h-px bg-white/30 mx-2" />}
               </div>
             ))}
           </div>
@@ -178,18 +178,6 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                     minDate={new Date()}
                     className="w-full"
                   />
-                  
-                  {tempCheckIn && tempCheckOut && (
-                    <div className="flex justify-center">
-                      <Button 
-                        onClick={() => setStep('guests')}
-                        className="px-8 py-3 bg-brand-teal text-white rounded-xl font-medium hover:bg-brand-teal/90 transition-all duration-200"
-                      >
-                        Continuer
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
@@ -238,7 +226,7 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
-                    onClick={() => tempGuests > 1 && setTempGuests(tempGuests - 1)}
+                    onClick={() => tempGuests > 1 && updateGuests(tempGuests - 1)}
                     disabled={tempGuests <= 1}
                     className="w-12 h-12 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-xl font-bold text-gray-700"
                   >
@@ -260,77 +248,13 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
-                    onClick={() => tempGuests < 20 && setTempGuests(tempGuests + 1)}
+                    onClick={() => tempGuests < 20 && updateGuests(tempGuests + 1)}
                     disabled={tempGuests >= 20}
                     className="w-12 h-12 rounded-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-xl font-bold text-gray-700"
                   >
                     +
                   </motion.button>
                 </div>
-
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleConfirm}
-                  className="w-full p-4 bg-brand-green text-white rounded-xl font-medium hover:bg-brand-green/90 transition-all duration-200"
-                >
-                  Confirmer la réservation
-                </motion.button>
-              </div>
-            )}
-
-            {/* Étape 3: Résumé */}
-            {step === 'summary' && (
-              <div
-                key="summary"
-                className="space-y-6"
-              >
-                <div className="text-center">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: 0.2, type: "spring" }}
-                    className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4"
-                  >
-                    <Check className="w-8 h-8 text-emerald-600" />
-                  </motion.div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                    Parfait !
-                  </h3>
-                  <p className="text-gray-600">
-                    Votre réservation est configurée
-                  </p>
-                </div>
-
-                {/* Résumé de la réservation */}
-                <div className="bg-gray-50 p-6 rounded-xl space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Dates</span>
-                    <span className="font-medium">
-                      {tempCheckIn && tempCheckOut && (
-                        <>
-                          {format(tempCheckIn, 'dd MMM', { locale: fr })} → {format(tempCheckOut, 'dd MMM', { locale: fr })}
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Durée</span>
-                    <span className="font-medium">{nights} nuit{nights > 1 ? 's' : ''}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Invités</span>
-                    <span className="font-medium">{tempGuests} personne{tempGuests > 1 ? 's' : ''}</span>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handleEdit}
-                  variant="outline"
-                  className="w-full"
-                >
-                  Modifier les détails
-                </Button>
               </div>
             )}
         </div>

@@ -79,6 +79,7 @@ const config: Config = {
           cyan: '#54DEFD',       // Bleu cyan clair
           turquoise: '#8BD7D2',  // Turquoise doux
           teal: '#00BD9D',       // Teal (couleur CTA principale)
+          '1': 'hsl(var(--brand-1))', // brand-1 - teal moyen du dashboard (#119DA4)
         }
       },
       borderRadius: {

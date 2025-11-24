@@ -51,7 +51,7 @@ export const Dashboard = memo(({
 
   // 🚀 OPTIMISATION: Memoize filtered bookings pour éviter les re-calculs
   const filteredBookings = useMemo(() => {
-    return bookings.filter(booking => {
+    const filtered = bookings.filter(booking => {
       // If no search term, show all bookings
       const matchesSearch = !searchTerm || 
                            booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -61,6 +61,17 @@ export const Dashboard = memo(({
       
       return matchesSearch && matchesStatus;
     });
+    
+    // ✅ DIAGNOSTIC : Log des réservations filtrées
+    console.log('📋 [DASHBOARD DIAGNOSTIC] Réservations:', {
+      total: bookings.length,
+      filtered: filtered.length,
+      searchTerm,
+      statusFilter,
+      bookingIds: bookings.map(b => ({ id: b.id, propertyId: b.propertyId, status: b.status, guestName: b.guest_name }))
+    });
+    
+    return filtered;
   }, [bookings, searchTerm, statusFilter]);
 
   // 🚀 OPTIMISATION: Memoize stats pour éviter les re-calculs

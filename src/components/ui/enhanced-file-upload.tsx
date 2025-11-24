@@ -237,12 +237,14 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
           animate={{ opacity: 1, height: "auto" }}
           className="space-y-4"
         >
-            <h4 className="font-semibold text-gray-900 flex items-center gap-2">
-              <FileText className="w-5 h-5" />
+            <h4 className="font-bold text-lg text-gray-900 flex items-center gap-3 mb-4 pb-3 border-b-2 border-gray-200">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-teal to-teal-600 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
               Documents téléchargés ({uploadedFiles.length})
             </h4>
             
-            <div className="space-y-3">
+            <div className="space-y-4">
               {uploadedFiles.map((file, index) => (
                 <motion.div
                   key={file.url}
@@ -250,30 +252,30 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
                   className={cn(
-                    "flex items-center justify-between p-4 rounded-xl border-2 transition-all duration-300",
+                    "flex items-center justify-between p-5 rounded-xl border-2 transition-all duration-300 shadow-md hover:shadow-lg",
                     file.isInvalid 
-                      ? "border-red-200 bg-red-50" 
+                      ? "border-red-300 bg-gradient-to-br from-red-50 to-red-100/50" 
                       : file.extractedData 
-                        ? "border-green-200 bg-green-50" 
+                        ? "border-green-300 bg-gradient-to-br from-green-50 via-emerald-50 to-green-50" 
                         : file.processing 
-                          ? "border-blue-200 bg-blue-50" 
-                          : "border-gray-200 bg-white hover:border-gray-300"
+                          ? "border-blue-300 bg-gradient-to-br from-blue-50 to-cyan-50" 
+                          : "border-gray-200 bg-gradient-to-br from-white to-gray-50/50 hover:border-gray-300"
                   )}
                 >
                   <div className="flex items-center space-x-4 flex-1">
                     {getFileIcon(file)}
                     
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3">
-                        <p className="font-medium text-gray-900 truncate">
+                      <div className="flex items-center gap-3 mb-2">
+                        <p className="font-semibold text-gray-900 truncate text-base">
                           {file.file.name}
                         </p>
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                          {(file.file.size / 1024 / 1024).toFixed(1)}MB
+                        <span className="text-xs font-medium text-gray-600 bg-white border border-gray-300 px-2.5 py-1 rounded-lg shadow-sm">
+                          {(file.file.size / 1024 / 1024).toFixed(1)} Mo
                         </span>
                       </div>
                       
-                      <p className={cn("text-sm", getFileStatusColor(file))}>
+                      <p className={cn("text-sm font-medium mb-1", getFileStatusColor(file))}>
                         {getFileStatus(file)}
                       </p>
                       
@@ -287,10 +289,37 @@ export const EnhancedFileUpload: React.FC<EnhancedFileUploadProps> = ({
                         <motion.div
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: "auto" }}
-                          className="mt-2 text-xs text-green-700 bg-green-100 rounded p-2"
+                          className="mt-3 text-xs text-green-800 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-200 shadow-sm"
                         >
-                          ✓ Nom: {file.extractedData.fullName} • 
-                          ✓ Document: {file.extractedData.documentNumber}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="flex items-center gap-1 font-semibold">
+                              <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                              Nom:
+                            </span>
+                            <span className="text-gray-900 font-medium">{file.extractedData.fullName}</span>
+                            <span className="text-green-400">•</span>
+                            <span className="flex items-center gap-1 font-semibold">
+                              <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                              Document:
+                            </span>
+                            <span className="text-gray-900 font-medium">{file.extractedData.documentNumber}</span>
+                            {file.extractedData.dateOfBirth && (
+                              <>
+                                <span className="text-green-400">•</span>
+                                <span className="flex items-center gap-1 font-semibold">
+                                  <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                                  Date de naissance:
+                                </span>
+                                <span className="text-gray-900 font-medium">
+                                  {new Date(file.extractedData.dateOfBirth).toLocaleDateString('fr-FR', { 
+                                    day: '2-digit', 
+                                    month: '2-digit', 
+                                    year: 'numeric' 
+                                  })}
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </motion.div>
                       )}
                     </div>

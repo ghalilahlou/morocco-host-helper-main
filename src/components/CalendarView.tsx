@@ -9,12 +9,10 @@ import { EnrichedBooking } from '@/services/guestSubmissionService';
 // ✅ CORRIGÉ : Imports supprimés - on n'utilise plus cleanGuestName/isValidGuestName ici
 // getUnifiedBookingDisplayText() gère toute la logique de nettoyage et validation
 import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
-import { BookingDetailsModal } from './BookingDetailsModal';
+import { UnifiedBookingModal } from './UnifiedBookingModal';
 import { CalendarHeader } from './calendar/CalendarHeader';
 import { CalendarGrid } from './calendar/CalendarGrid';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-
-import { AirbnbReservationModal } from './AirbnbReservationModal';
 import { 
   generateCalendarDays, 
   calculateBookingLayout, 
@@ -102,8 +100,7 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     bookingsRef.current = bookings;
   }, [bookings]);
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedBooking, setSelectedBooking] = useState<EnrichedBooking | null>(null);
-  const [selectedAirbnbReservation, setSelectedAirbnbReservation] = useState<AirbnbReservation | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<Booking | EnrichedBooking | AirbnbReservation | null>(null);
   const [airbnbReservations, setAirbnbReservations] = useState<AirbnbReservation[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
@@ -452,16 +449,25 @@ const handleManualRefresh = useCallback(async () => {
     };
   }, [propertyId, debouncedReload]);
 
+  // ✅ UNIFIÉ : Un seul handler pour tous les types de réservations
   const handleBookingClick = useCallback((booking: Booking | AirbnbReservation) => {
-    // Check if it's an Airbnb reservation
-    if ('source' in booking && booking.source === 'airbnb') {
-      const airbnbRes = booking as unknown as AirbnbReservation;
-      setSelectedAirbnbReservation(airbnbRes);
+    console.log('🖱️ [CalendarView] handleBookingClick appelé:', {
+      bookingId: booking.id,
+      bookingType: 'source' in booking ? 'airbnb' : 'manual',
+      hasBooking: !!booking
+    });
+    
+    if (!booking) {
+      console.error('❌ [CalendarView] handleBookingClick: booking is null/undefined');
       return;
     }
     
-    // Regular booking
-    setSelectedBooking(booking as EnrichedBooking);
+    try {
+      setSelectedBooking(booking);
+      console.log('✅ [CalendarView] selectedBooking mis à jour');
+    } catch (error) {
+      console.error('❌ [CalendarView] Erreur lors de setSelectedBooking:', error);
+    }
   }, []);
 
   // Handle sync from calendar button - VERSION CORRIGÉE
@@ -723,8 +729,29 @@ const handleOpenConfig = useCallback(() => {
   // Generate calendar days
   const calendarDays = useMemo(() => generateCalendarDays(currentDate), [currentDate]);
 
+  // ✅ DIAGNOSTIC : Log des réservations avant calcul du layout
+  useEffect(() => {
+    console.log('📅 [CALENDAR DIAGNOSTIC] Réservations reçues:', {
+      totalBookings: bookings.length,
+      totalAirbnb: airbnbReservations.length,
+      totalAllReservations: allReservations.length,
+      bookingIds: bookings.map(b => ({ id: b.id, propertyId: b.propertyId, checkIn: b.checkInDate, checkOut: b.checkOutDate, status: b.status })),
+      currentMonth: currentDate.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })
+    });
+  }, [bookings, airbnbReservations, allReservations, currentDate]);
+
   // Calculate booking positions for continuous bars
-  const bookingLayout = useMemo(() => calculateBookingLayout(calendarDays, allReservations, colorOverrides), [calendarDays, allReservations, colorOverrides]);
+  const bookingLayout = useMemo(() => {
+    console.log('📅 [CALENDAR DIAGNOSTIC] Calcul du layout avec', allReservations.length, 'réservations');
+    const layout = calculateBookingLayout(calendarDays, allReservations, colorOverrides);
+    console.log('📅 [CALENDAR DIAGNOSTIC] Layout calculé:', Object.keys(layout).length, 'semaines avec réservations');
+    Object.keys(layout).forEach(weekIndex => {
+      if (layout[weekIndex].length > 0) {
+        console.log(`📅 [CALENDAR DIAGNOSTIC] Semaine ${weekIndex}:`, layout[weekIndex].length, 'réservations');
+      }
+    });
+    return layout;
+  }, [calendarDays, allReservations, colorOverrides]);
 
 
   // ✅ CORRIGÉ : Utiliser les conflits déjà calculés plus haut (pas besoin de les recalculer)
@@ -970,21 +997,11 @@ const handleOpenConfig = useCallback(() => {
         </AnimatePresence>
       </motion.div>
 
-      {/* Booking Details Modal */}
-      {selectedBooking && (
-        <BookingDetailsModal
-          booking={selectedBooking}
-          isOpen={!!selectedBooking}
-          onClose={() => setSelectedBooking(null)}
-          onEdit={onEditBooking}
-        />
-      )}
-
-      {/* Airbnb Reservation Modal */}
-      <AirbnbReservationModal
-        reservation={selectedAirbnbReservation}
-        isOpen={!!selectedAirbnbReservation}
-        onClose={() => setSelectedAirbnbReservation(null)}
+      {/* ✅ UNIFIÉ : Modal unique pour toutes les réservations */}
+      <UnifiedBookingModal
+        booking={selectedBooking}
+        isOpen={!!selectedBooking}
+        onClose={() => setSelectedBooking(null)}
         propertyId={propertyId}
       />
 

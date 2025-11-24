@@ -2,6 +2,7 @@ import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { getUnifiedBookingDisplayText, getGuestInitials as getUnifiedGuestInitials } from '@/utils/bookingDisplay';
+import { getBookingDocumentStatus } from '@/utils/bookingDocuments';
 import { BOOKING_COLORS as CONSTANT_BOOKING_COLORS } from '@/constants/bookingColors';
 
 export interface CalendarDay {
@@ -40,7 +41,7 @@ export const generateCalendarDays = (currentDate: Date): CalendarDay[] => {
   
   // Add previous month days
   for (let i = firstDayOfWeek - 1; i > 0; i--) {
-    const date = new Date(year, month, 1 - i);
+    const date = new Date(year, month, 1 - i, 0, 0, 0, 0);
     days.push({
       date,
       isCurrentMonth: false,
@@ -50,7 +51,7 @@ export const generateCalendarDays = (currentDate: Date): CalendarDay[] => {
   
   // Add current month days
   for (let day = 1; day <= lastDay.getDate(); day++) {
-    const date = new Date(year, month, day);
+    const date = new Date(year, month, day, 0, 0, 0, 0);
     days.push({
       date,
       isCurrentMonth: true,
@@ -61,7 +62,7 @@ export const generateCalendarDays = (currentDate: Date): CalendarDay[] => {
   // Add next month days to complete the grid
   const remainingDays = 42 - days.length; // 6 weeks * 7 days
   for (let day = 1; day <= remainingDays; day++) {
-    const date = new Date(year, month + 1, day);
+    const date = new Date(year, month + 1, day, 0, 0, 0, 0);
     days.push({
       date,
       isCurrentMonth: false,
@@ -188,17 +189,45 @@ export const calculateBookingLayout = (
   // Process each booking and find all weeks it appears in
   bookings.forEach((booking, bookingIndex) => {
     const isAirbnb = 'source' in booking && booking.source === 'airbnb';
-    // ✅ NORMALISATION LOCALE : éviter les décalages de fuseau sur 'YYYY-MM-DD'
+    // ✅ NORMALISATION LOCALE AMÉLIORÉE : gérer les dates YYYY-MM-DD sans décalage UTC
     const toLocalMidnight = (d: Date | string) => {
-      const date = typeof d === 'string' ? new Date(d) : d;
+      if (typeof d === 'string') {
+        // Si c'est une chaîne au format YYYY-MM-DD, parser manuellement pour éviter UTC
+        const match = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (match) {
+          const year = parseInt(match[1], 10);
+          const month = parseInt(match[2], 10) - 1; // Les mois commencent à 0
+          const day = parseInt(match[3], 10);
+          return new Date(year, month, day);
+        }
+        // Sinon, utiliser new Date() qui peut interpréter en UTC
+        const date = new Date(d);
       return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      } else {
+        // Si c'est déjà un objet Date, extraire les composants locaux
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      }
     };
-    const checkIn = isAirbnb 
-      ? toLocalMidnight((booking as unknown as AirbnbReservation).startDate)
-      : toLocalMidnight((booking as Booking).checkInDate);
-    const checkOut = isAirbnb 
-      ? toLocalMidnight((booking as unknown as AirbnbReservation).endDate)
-      : toLocalMidnight((booking as Booking).checkOutDate);
+    const rawCheckIn = isAirbnb 
+      ? (booking as unknown as AirbnbReservation).startDate
+      : (booking as Booking).checkInDate;
+    const rawCheckOut = isAirbnb 
+      ? (booking as unknown as AirbnbReservation).endDate
+      : (booking as Booking).checkOutDate;
+    
+    const checkIn = toLocalMidnight(rawCheckIn);
+    const checkOut = toLocalMidnight(rawCheckOut);
+    
+    // 📊 DEBUG : Log pour vérifier les conversions
+    if (bookingIndex === 0) {
+      console.log('🗓️ [Calendar] Première réservation:', {
+        isAirbnb,
+        rawCheckIn,
+        rawCheckOut,
+        convertedCheckIn: checkIn.toLocaleDateString('fr-FR'),
+        convertedCheckOut: checkOut.toLocaleDateString('fr-FR')
+      });
+    }
     
     // Use color override if provided, otherwise use status-based or default colors
     const bookingId = isAirbnb ? booking.id : booking.id;
@@ -252,25 +281,64 @@ export const calculateBookingLayout = (
     }
     
     
+    // ✅ CORRIGÉ : Normalisation stricte des dates pour éviter les décalages
+    const normalizeDate = (date: Date): Date => {
+      // Créer une nouvelle date avec seulement l'année, le mois et le jour (sans heures/minutes/secondes)
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    };
+    
+    const normalizedCheckIn = normalizeDate(checkIn);
+    const normalizedCheckOut = normalizeDate(checkOut);
+    
     // Check each week to see if the booking appears in it
     weeks.forEach((week, weekIndex) => {
       let startIndex = -1;
       let endIndex = -1;
       
-      // Find the booking span within this specific week
+      // ✅ DIAGNOSTIC EXHAUSTIF : Log des jours de la semaine pour cette réservation
+      const weekDates = week.map(d => ({
+        date: normalizeDate(new Date(d.date.getFullYear(), d.date.getMonth(), d.date.getDate())).toLocaleDateString('fr-FR'),
+        dayNumber: d.dayNumber,
+        isCurrentMonth: d.isCurrentMonth
+      }));
+      
+      // ✅ ANALYSE EXHAUSTIVE : Trouver le span de la réservation dans cette semaine
       for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
         const day = week[dayIndex];
-        const dayDate = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate());
-        const checkInDate = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
-        const checkOutDate = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
+        // ✅ CRITIQUE : Normaliser la date du jour de la même manière que checkIn/checkOut
+        const dayDate = normalizeDate(new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate()));
         
-        // CORRECTED: Check if this day is within booking period (inclusive start, up to but NOT including checkout day)
-        // This matches Airbnb format where bars end at the beginning of checkout day
-        const isInBookingPeriod = dayDate >= checkInDate && dayDate < checkOutDate;
+        // ✅ DIAGNOSTIC : Log pour le premier jour de la première réservation
+        if (bookingIndex === 0 && weekIndex === 0 && dayIndex === 0) {
+          console.log('🔍 [ANALYSE POSITION] Comparaison dates:', {
+            dayDate: dayDate.toLocaleDateString('fr-FR'),
+            dayNumber: day.dayNumber,
+            normalizedCheckIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
+            normalizedCheckOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
+            dayTime: dayDate.getTime(),
+            checkInTime: normalizedCheckIn.getTime(),
+            checkOutTime: normalizedCheckOut.getTime()
+          });
+        }
+        
+        // ✅ CORRIGÉ : Comparaison stricte avec dates normalisées
+        // La réservation inclut le jour d'arrivée (inclusif) et se termine le jour de départ (exclusif)
+        // Exemple : Arrivée 25/11, Départ 26/11 → Barre uniquement sur le 25
+        const isInBookingPeriod = dayDate.getTime() >= normalizedCheckIn.getTime() && dayDate.getTime() < normalizedCheckOut.getTime();
         
         if (isInBookingPeriod) {
           if (startIndex === -1) {
             startIndex = dayIndex;
+            // ✅ DIAGNOSTIC : Vérifier que startIndex correspond bien à la date d'arrivée
+            if (bookingIndex === 0 && weekIndex === 0) {
+              console.log('✅ [ANALYSE POSITION] startIndex trouvé:', {
+                dayIndex,
+                dayNumber: day.dayNumber,
+                dayDate: dayDate.toLocaleDateString('fr-FR'),
+                checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
+                match: dayDate.getTime() === normalizedCheckIn.getTime()
+              });
+            }
           }
           endIndex = dayIndex;
         }
@@ -279,10 +347,27 @@ export const calculateBookingLayout = (
       // If we found booking days in this week, create a layout entry
       if (startIndex !== -1 && endIndex !== -1) {
         const span = endIndex - startIndex + 1;
-        const firstDayDate = new Date(week[startIndex].date.getFullYear(), week[startIndex].date.getMonth(), week[startIndex].date.getDate());
-        const checkInDate = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
-        const isStart = firstDayDate.getTime() === checkInDate.getTime();
         
+        // ✅ CORRIGÉ : Vérification stricte de l'alignement avec la date d'arrivée
+        const firstDayDate = normalizeDate(new Date(week[startIndex].date.getFullYear(), week[startIndex].date.getMonth(), week[startIndex].date.getDate()));
+        const isStart = firstDayDate.getTime() === normalizedCheckIn.getTime();
+        
+        // ✅ DIAGNOSTIC EXHAUSTIF : Log détaillé pour chaque réservation
+        console.log(`📅 [CALCUL LAYOUT] Réservation ${booking.id.substring(0, 8)}... dans semaine ${weekIndex}:`, {
+          bookingId: booking.id,
+          checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
+          checkOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
+          weekDates,
+          startDayIndex: startIndex,
+          endDayIndex: endIndex,
+          span,
+          isStart,
+          dayNumber: week[startIndex].dayNumber,
+          expectedDayNumber: normalizedCheckIn.getDate(),
+          match: week[startIndex].dayNumber === normalizedCheckIn.getDate() && 
+                 week[startIndex].date.getMonth() === normalizedCheckIn.getMonth() &&
+                 week[startIndex].date.getFullYear() === normalizedCheckIn.getFullYear()
+        });
         
         const bookingLayout = {
           booking,
@@ -376,18 +461,19 @@ export const detectBookingConflicts = (
     end: Date, 
     bookingReference?: string,
     status?: string,
-    hasGuests?: boolean
+    isValidated?: boolean
   }> = [];
   
   // Ajouter toutes les réservations manuelles
   bookings.forEach(booking => {
+    const documentStatus = getBookingDocumentStatus(booking);
     allReservations.push({
       id: booking.id,
       start: new Date(booking.checkInDate),
       end: new Date(booking.checkOutDate),
       bookingReference: booking.bookingReference,
       status: booking.status,
-      hasGuests: booking.guests && booking.guests.length > 0 && booking.guests.some(g => g.fullName && g.fullName.trim() !== '')
+      isValidated: documentStatus.isValidated
     });
   });
   
@@ -408,13 +494,14 @@ export const detectBookingConflicts = (
       } else {
         // C'est un Booking transformé
         const booking = reservation as Booking;
+        const documentStatus = getBookingDocumentStatus(booking);
         allReservations.push({
           id: booking.id,
           start: new Date(booking.checkInDate),
           end: new Date(booking.checkOutDate),
           bookingReference: booking.bookingReference,
           status: booking.status,
-          hasGuests: booking.guests && booking.guests.length > 0 && booking.guests.some(g => g.fullName && g.fullName.trim() !== '')
+          isValidated: documentStatus.isValidated
         });
       }
     });
@@ -452,8 +539,8 @@ export const detectBookingConflicts = (
       if (overlaps) {
         // ✅ NOUVEAU : Un conflit n'est valide QUE SI les DEUX réservations sont "enregistrées"
         // Une réservation est "enregistrée" si elle a des guests (documents d'identité + contrat + police)
-        const res1IsValidated = res1.hasGuests === true;
-        const res2IsValidated = res2.hasGuests === true;
+        const res1IsValidated = res1.isValidated === true;
+        const res2IsValidated = res2.isValidated === true;
         
         // ✅ CRITIQUE : Ignorer les conflits si au moins UNE des réservations n'est pas validée
         // Cela empêche les réservations ICS (pending, sans guests) d'être marquées en rouge

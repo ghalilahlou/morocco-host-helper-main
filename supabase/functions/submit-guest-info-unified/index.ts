@@ -33,6 +33,9 @@ interface GuestInfo {
   idType?: string;
   idNumber?: string;
   dateOfBirth?: string;
+  profession?: string;
+  motifSejour?: string;
+  adressePersonnelle?: string;
 }
 
 interface IdDocument {
@@ -197,17 +200,14 @@ function validateRequest(request: UnifiedRequest): ValidationResult {
       errors.push('Nom invalide (minimum 2 caractères)');
     }
     
-    // Validation email OPTIONNELLE avec support caractères internationaux
-    if (email && email.trim()) {
+    // Validation email OBLIGATOIRE avec support caractères internationaux
+    if (!email || !email.trim()) {
+      errors.push('Email requis');
+    } else {
       const emailRegex = /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
       if (!emailRegex.test(email.trim())) {
         errors.push('Email invalide (format incorrect)');
       }
-    }
-
-    // Warnings pour champs optionnels
-    if (!email || !email.trim()) {
-      warnings.push('Email non fourni (optionnel mais recommandé pour l\'envoi du contrat)');
     }
     
     if (!request.guestInfo.phone) {
@@ -249,7 +249,8 @@ function validateRequest(request: UnifiedRequest): ValidationResult {
 
 // Sanitisation des données
 function sanitizeGuestInfo(guestInfo: GuestInfo): GuestInfo {
-  const sanitized = {
+  // ✅ CRITIQUE : Préserver TOUS les champs pour la variabilisation complète
+  const sanitized: GuestInfo = {
     firstName: guestInfo.firstName?.trim().replace(/[<>]/g, '') || '',
     lastName: guestInfo.lastName?.trim().replace(/[<>]/g, '') || '',
     email: guestInfo.email?.toLowerCase().trim(),
@@ -257,7 +258,11 @@ function sanitizeGuestInfo(guestInfo: GuestInfo): GuestInfo {
     nationality: guestInfo.nationality?.trim() || 'Non spécifiée',
     idType: guestInfo.idType?.trim() || 'passport',
     idNumber: guestInfo.idNumber?.trim() || '',
-    dateOfBirth: guestInfo.dateOfBirth?.trim() || undefined
+    dateOfBirth: guestInfo.dateOfBirth?.trim() || undefined,
+    // ✅ CRITIQUE : Préserver les champs supplémentaires pour la variabilisation complète
+    profession: guestInfo.profession?.trim() || undefined,
+    motifSejour: guestInfo.motifSejour?.trim() || undefined,
+    adressePersonnelle: guestInfo.adressePersonnelle?.trim() || undefined
   };
   
   log('info', 'Sanitisation des données invité', {
@@ -265,7 +270,10 @@ function sanitizeGuestInfo(guestInfo: GuestInfo): GuestInfo {
     sanitizedDateOfBirth: sanitized.dateOfBirth,
     hasDateOfBirth: !!sanitized.dateOfBirth,
     dateOfBirthType: typeof guestInfo.dateOfBirth,
-    dateOfBirthLength: guestInfo.dateOfBirth?.length
+    dateOfBirthLength: guestInfo.dateOfBirth?.length,
+    hasProfession: !!sanitized.profession,
+    hasMotifSejour: !!sanitized.motifSejour,
+    hasAdressePersonnelle: !!sanitized.adressePersonnelle
   });
   
   return sanitized;
@@ -1079,23 +1087,40 @@ async function saveGuestDataInternal(
       }
     }
 
-    const guestData = {
+    // ✅ CRITIQUE : Sauvegarder TOUTES les données du guest pour la variabilisation complète
+    const guestData: any = {
       booking_id: bookingId,
       full_name: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`,
       nationality: sanitizedGuest.nationality || 'Non spécifiée',
       document_type: sanitizedGuest.idType || 'passport',
       document_number: sanitizedGuest.idNumber || '',
       date_of_birth: processedDateOfBirth,
+      phone: sanitizedGuest.phone || null, // ✅ AJOUT : Téléphone du guest
+      // ✅ CRITIQUE : Ajouter tous les champs pour la variabilisation complète
+      place_of_birth: '', // Non disponible dans GuestInfo pour l'instant
+      profession: sanitizedGuest.profession || '',
+      motif_sejour: sanitizedGuest.motifSejour || 'TOURISME',
+      adresse_personnelle: sanitizedGuest.adressePersonnelle || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
+    
+    // ✅ CRITIQUE : Essayer d'ajouter email seulement si la colonne existe
+    // (géré par Supabase - si la colonne n'existe pas, elle sera ignorée)
+    if (sanitizedGuest.email) {
+      guestData.email = sanitizedGuest.email;
+    }
     
     log('info', 'Sauvegarde données invité', {
       guestName: guestData.full_name,
       dateOfBirth: guestData.date_of_birth,
       originalDateOfBirth: sanitizedGuest.dateOfBirth,
       hasDateOfBirth: !!guestData.date_of_birth,
-      processedDateOfBirth
+      processedDateOfBirth,
+      email: guestData.email, // ✅ DIAGNOSTIC : Log de l'email
+      phone: guestData.phone, // ✅ DIAGNOSTIC : Log du téléphone
+      hasEmail: !!guestData.email,
+      hasPhone: !!guestData.phone
     });
 
     // ✅ CORRECTION : Vérifier si l'invité existe déjà pour éviter les doublons
@@ -1118,16 +1143,30 @@ async function saveGuestDataInternal(
     if (maxGuests === 1) {
       // Cas réservation pour 1 invité: on met à jour l'unique ligne au lieu d'insérer
       if (existingGuest && existingGuest.id) {
+        // ✅ CRITIQUE : Construire l'objet de mise à jour avec gestion conditionnelle de l'email
+        const updateData: any = {
+          full_name: guestData.full_name,
+          nationality: guestData.nationality,
+          document_type: guestData.document_type,
+          document_number: guestData.document_number,
+          date_of_birth: guestData.date_of_birth,
+          phone: guestData.phone, // ✅ AJOUT : Téléphone du guest
+          // ✅ CRITIQUE : Mettre à jour tous les champs pour la variabilisation complète
+          place_of_birth: guestData.place_of_birth,
+          profession: guestData.profession,
+          motif_sejour: guestData.motif_sejour,
+          adresse_personnelle: guestData.adresse_personnelle,
+          updated_at: new Date().toISOString()
+        };
+        
+        // ✅ CRITIQUE : Ajouter email seulement si présent (colonne peut ne pas exister)
+        if (guestData.email) {
+          updateData.email = guestData.email;
+        }
+        
         const { error: updateErr } = await supabase
           .from('guests')
-          .update({
-            full_name: guestData.full_name,
-            nationality: guestData.nationality,
-            document_type: guestData.document_type,
-            document_number: guestData.document_number,
-            date_of_birth: guestData.date_of_birth,
-            updated_at: new Date().toISOString()
-          })
+          .update(updateData)
           .eq('id', existingGuest.id);
         if (updateErr) {
           log('warn', 'Avertissement mise à jour invité (single booking)', { error: updateErr });
@@ -1137,16 +1176,30 @@ async function saveGuestDataInternal(
       } else if (Array.isArray(existingGuestsForBooking) && existingGuestsForBooking.length > 0) {
         // Une ligne existe déjà pour cette réservation: la mettre à jour
         const firstGuestId = existingGuestsForBooking[0].id;
+        // ✅ CRITIQUE : Construire l'objet de mise à jour avec gestion conditionnelle de l'email
+        const updateData: any = {
+          full_name: guestData.full_name,
+          nationality: guestData.nationality,
+          document_type: guestData.document_type,
+          document_number: guestData.document_number,
+          date_of_birth: guestData.date_of_birth,
+          phone: guestData.phone, // ✅ AJOUT : Téléphone du guest
+          // ✅ CRITIQUE : Mettre à jour tous les champs pour la variabilisation complète
+          place_of_birth: guestData.place_of_birth,
+          profession: guestData.profession,
+          motif_sejour: guestData.motif_sejour,
+          adresse_personnelle: guestData.adresse_personnelle,
+          updated_at: new Date().toISOString()
+        };
+        
+        // ✅ CRITIQUE : Ajouter email seulement si présent (colonne peut ne pas exister)
+        if (guestData.email) {
+          updateData.email = guestData.email;
+        }
+        
         const { error: updateErr } = await supabase
           .from('guests')
-          .update({
-            full_name: guestData.full_name,
-            nationality: guestData.nationality,
-            document_type: guestData.document_type,
-            document_number: guestData.document_number,
-            date_of_birth: guestData.date_of_birth,
-            updated_at: new Date().toISOString()
-          })
+          .update(updateData)
           .eq('id', firstGuestId);
         if (updateErr) {
           log('warn', 'Avertissement mise à jour invité existant (single booking)', { error: updateErr });
@@ -1540,12 +1593,242 @@ async function generatePoliceFormsInternal(bookingId: string): Promise<string> {
     if (!booking) {
       throw new Error('Booking non trouvé');
     }
+    
+    // ✅ DIAGNOSTIC : Log détaillé de la réponse de la requête
+    log('info', '[Police] Booking récupéré depuis DB:', {
+      bookingId: booking.id,
+      hasProperty: !!booking.property,
+      guestsCount: Array.isArray(booking.guests) ? booking.guests.length : 0,
+      guestsIsArray: Array.isArray(booking.guests),
+      guestsType: typeof booking.guests,
+      guestsValue: booking.guests,
+      allBookingKeys: Object.keys(booking || {})
+    });
+    
+    // ✅ SIMPLIFICATION : Récupération directe depuis la table guests
+    let guests = Array.isArray(booking.guests) ? booking.guests : [];
+    
+    if (!guests.length) {
+      log('warn', '[Police] Aucun guest dans booking.guests, tentative récupération depuis table guests');
+      const { data: guestsData, error: guestsError } = await supabaseClient
+        .from('guests')
+        .select('*')
+        .eq('booking_id', bookingId);
+      
+      if (guestsError) {
+        log('error', '[Police] Erreur récupération guests', { error: guestsError });
+      } else if (guestsData && guestsData.length > 0) {
+        guests = guestsData;
+        log('info', '[Police] Guests récupérés depuis table', { count: guests.length });
+      }
+    }
+    
+  // ✅ CRITIQUE : Fallback - Récupérer d'abord depuis guest_submissions si disponible
+  if (!guests.length) {
+    log('warn', '[Police] Aucun guest trouvé, tentative récupération depuis guest_submissions');
+    const { data: submissionsData, error: submissionsError } = await supabaseClient
+      .from('guest_submissions')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    if (!submissionsError && submissionsData && submissionsData.length > 0) {
+      const submission = submissionsData[0];
+      log('info', '[Police] Submission trouvée', {
+        hasGuestData: !!submission.guest_data,
+        guestDataType: typeof submission.guest_data
+      });
+      
+      // ✅ CRITIQUE : Essayer de récupérer les guests depuis la soumission
+      if (submission.guest_data && typeof submission.guest_data === 'object') {
+        const guestData = submission.guest_data as any;
+        
+        // Essayer plusieurs formats possibles
+        let guestsArray: any[] = [];
+        
+        if (guestData.guests && Array.isArray(guestData.guests)) {
+          guestsArray = guestData.guests;
+        } else if (Array.isArray(guestData)) {
+          guestsArray = guestData;
+        } else if (guestData.fullName || guestData.full_name) {
+          // Format avec un seul guest directement dans guest_data
+          guestsArray = [guestData];
+        }
+        
+        if (guestsArray.length > 0) {
+          guests = guestsArray.map((g: any) => {
+            // ✅ CRITIQUE : Normaliser toutes les variantes de noms de champs
+            const normalizedGuest = {
+              full_name: g.fullName || g.full_name || g.name || '',
+              email: g.email || booking.guest_email || null,
+              phone: g.phone || booking.guest_phone || null,
+              nationality: g.nationality || 'Non spécifiée',
+              document_type: g.documentType || g.document_type || g.idType || 'passport',
+              document_number: g.documentNumber || g.document_number || g.idNumber || g.document_number || '',
+              date_of_birth: g.dateOfBirth || g.date_of_birth || g.dateOfBirth || null,
+              place_of_birth: g.placeOfBirth || g.place_of_birth || '',
+              profession: g.profession || '',
+              motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
+              adresse_personnelle: g.adressePersonnelle || g.adresse_personnelle || ''
+            };
+            
+            log('info', '[Police] Guest normalisé depuis submission', {
+              hasDateOfBirth: !!normalizedGuest.date_of_birth,
+              hasDocumentNumber: !!normalizedGuest.document_number,
+              hasNationality: !!normalizedGuest.nationality && normalizedGuest.nationality !== 'Non spécifiée'
+            });
+            
+            return normalizedGuest;
+          });
+          
+          log('info', '[Police] ✅ Guests récupérés depuis guest_submissions', { 
+            count: guests.length,
+            firstGuest: guests[0] ? {
+              name: guests[0].full_name,
+              hasDateOfBirth: !!guests[0].date_of_birth,
+              hasDocumentNumber: !!guests[0].document_number,
+              nationality: guests[0].nationality
+            } : null
+          });
+        } else {
+          log('warn', '[Police] Aucun guest trouvé dans guest_data', { guestData });
+        }
+      } else {
+        log('warn', '[Police] guest_data n\'est pas un objet valide', { 
+          type: typeof submission.guest_data,
+          value: submission.guest_data 
+        });
+      }
+    }
+  }
+  
+  // ✅ CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests
+  const hasGuestName = booking.guest_name && booking.guest_name.trim().length > 0;
+  log('info', '[Police] Vérification fallback final guest', {
+    hasGuests: guests.length > 0,
+    hasGuestName: hasGuestName,
+    guestName: booking.guest_name,
+    guestEmail: booking.guest_email,
+    guestPhone: booking.guest_phone
+  });
+  
+  if (!guests.length && hasGuestName) {
+    log('warn', '[Police] ⚠️ Création guest virtuel - DONNÉES INCOMPLÈTES - La fiche police ne sera pas entièrement variabilisée');
+    guests = [{
+      full_name: booking.guest_name.trim(),
+      email: booking.guest_email || null,
+      phone: booking.guest_phone || null,
+      nationality: 'Non spécifiée',
+      document_type: 'passport',
+      document_number: '',
+      date_of_birth: null,
+      place_of_birth: '',
+      profession: '',
+      motif_sejour: 'TOURISME',
+      adresse_personnelle: ''
+    }];
+    log('info', '[Police] ✅ Guest virtuel créé depuis booking (DONNÉES INCOMPLÈTES)', { 
+      name: guests[0].full_name,
+      email: guests[0].email,
+      phone: guests[0].phone,
+      warning: '⚠️ date_of_birth, nationality, document_number manquants - La fiche police ne sera pas entièrement variabilisée'
+    });
+  }
+    
+    log('info', '[Police] Guests finaux', {
+      count: guests.length,
+      hasGuests: guests.length > 0,
+      firstGuest: guests[0] ? {
+        name: guests[0].full_name,
+        email: guests[0].email,
+        phone: guests[0].phone
+      } : null
+    });
 
-    // 2. Validation des données invités
-    const guests = booking.guests || [];
+    // ✅ AJOUT : Récupérer le host profile pour avoir l'email et le téléphone
+    let host: any = null;
+    if (booking?.property?.user_id) {
+      // 1. Récupérer le host profile
+      const { data: hp } = await supabaseClient
+        .from('host_profiles')
+        .select(`
+          id,
+          full_name,
+          first_name,
+          last_name,
+          phone,
+          email
+        `)
+        .eq('id', booking.property.user_id)
+        .maybeSingle();
+      
+      host = hp ?? null;
+      
+      // 2. ✅ NOUVEAU : Récupérer l'email depuis auth.users (email d'authentification)
+      let authEmail: string | null = null;
+      try {
+        const { data: authUser } = await supabaseClient.auth.admin.getUserById(booking.property.user_id);
+        if (authUser?.user?.email) {
+          authEmail = authUser.user.email;
+          log('info', '[Police] Auth email retrieved:', { email: authEmail });
+        }
+      } catch (authError) {
+        log('warn', '[Police] Could not retrieve auth email:', { error: String(authError) });
+      }
+      
+      // 3. Prioriser l'email d'authentification, puis host_profiles, puis contact_info
+      const property = booking.property || {};
+      const contactInfo = (property.contact_info as any) || {};
+      const contractTemplate = (property.contract_template as any) || {};
+      
+      host = {
+        ...(host || {}),
+        email: authEmail || 
+               contractTemplate.landlord_email || 
+               (host?.email as string) || 
+               contactInfo.email || 
+               '',
+        phone: contractTemplate.landlord_phone || 
+               (host?.phone as string) || 
+               contactInfo.phone || 
+               ''
+      };
+      
+      log('info', '[Police] Host profile loaded:', {
+        hasHost: !!host,
+        hasEmail: !!host?.email,
+        hasPhone: !!host?.phone,
+        emailSource: authEmail ? 'auth.users' : ((host?.email as string) ? 'host_profiles' : 'contact_info')
+      });
+    }
+
+    // Attacher le host au booking pour la génération PDF
+    booking.host = host;
+
+    // 2. Validation des données invités (guests déjà récupérés ci-dessus)
     if (guests.length === 0) {
+      log('error', '[Police] Aucun invité trouvé après toutes les tentatives', {
+        bookingId,
+        hasBooking: !!booking,
+        bookingGuests: booking.guests
+      });
       throw new Error('Aucun invité trouvé pour générer les fiches de police');
     }
+    
+    // ✅ DIAGNOSTIC : Log des données des guests récupérées depuis la DB
+    log('info', '[Police] Guests récupérés depuis DB:', {
+      guestsCount: guests.length,
+      guestsData: guests.map((g: any) => ({
+        id: g.id,
+        full_name: g.full_name,
+        email: g.email,
+        phone: g.phone,
+        hasEmail: !!g.email,
+        hasPhone: !!g.phone,
+        allKeys: Object.keys(g || {})
+      }))
+    });
 
     const invalidGuests = guests.filter((guest: any) => 
       !guest.full_name?.trim() || !guest.document_number?.trim()
@@ -1556,6 +1839,9 @@ async function generatePoliceFormsInternal(bookingId: string): Promise<string> {
     }
 
     log('info', `Génération fiches de police pour ${guests.length} invités validés`);
+
+    // ✅ CORRECTION : S'assurer que booking.guests contient les guests récupérés
+    booking.guests = guests;
 
     // 3. Générer le PDF des fiches de police
     const policeUrl = await generatePoliceFormsPDF(supabaseClient, booking);
@@ -1654,13 +1940,14 @@ async function sendGuestContractInternal(
 
     log('info', 'Appel à send-guest-contract', { emailData });
 
+    // ✅ CORRECTION : Utiliser l'URL complète avec le bon format d'authentification
     const response = await fetch(`${functionUrl}/functions/v1/send-guest-contract`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${serviceKey}`,
         'apikey': serviceKey,
-        'User-Agent': `${FUNCTION_NAME}/1.0`
+        'x-client-info': `${FUNCTION_NAME}/1.0`
       },
       body: JSON.stringify(emailData)
     });
@@ -1825,9 +2112,9 @@ async function createIndependentBooking(token: string, guestInfo: GuestInfo, boo
         nationality: guestInfo.nationality || '',
         documentNumber: guestInfo.idNumber || '',
         documentType: (guestInfo.idType as 'passport' | 'national_id') || 'passport',
-        profession: '',
-        motifSejour: 'TOURISME',
-        adressePersonnelle: '',
+        profession: guestInfo.profession || '',
+        motifSejour: guestInfo.motifSejour || 'TOURISME',
+        adressePersonnelle: guestInfo.adressePersonnelle || '',
         email: guestInfo.email || ''
       }],
       property: {
@@ -1977,6 +2264,71 @@ serve(async (req) => {
         });
       }
       
+      // ✅ CRITIQUE : Vérifier et créer les guests si nécessaire
+      const supabaseClient = await getServerClient();
+      const { data: bookingData, error: bookingError } = await supabaseClient
+        .from('bookings')
+        .select('id, guest_name, guest_email, guest_phone, number_of_guests')
+        .eq('id', requestBody.bookingId)
+        .single();
+      
+      if (bookingError || !bookingData) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: `Réservation non trouvée: ${bookingError?.message || 'Introuvable'}`
+        }), {
+          status: 404,
+          headers: corsHeaders
+        });
+      }
+      
+      // Vérifier si des guests existent dans la table guests
+      const { data: existingGuests, error: guestsError } = await supabaseClient
+        .from('guests')
+        .select('id')
+        .eq('booking_id', requestBody.bookingId);
+      
+      if (guestsError) {
+        log('warn', 'Erreur lors de la vérification des guests', { error: guestsError });
+      }
+      
+      // Si aucun guest n'existe et qu'on a des données dans booking, créer un guest
+      if ((!existingGuests || existingGuests.length === 0) && bookingData.guest_name) {
+        log('info', '[generate_contract_only] Création d\'un guest à partir des données de la réservation', {
+          guest_name: bookingData.guest_name,
+          guest_email: bookingData.guest_email,
+          guest_phone: bookingData.guest_phone
+        });
+        
+        // ✅ CORRECTION : Ne pas inclure email si la colonne n'existe pas dans la table
+        const guestData: any = {
+          booking_id: requestBody.bookingId,
+          full_name: bookingData.guest_name,
+          phone: bookingData.guest_phone || null,
+          nationality: 'Non spécifiée',
+          document_type: 'passport',
+          document_number: '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        // ✅ CRITIQUE : Essayer d'ajouter email seulement si la colonne existe
+        // (géré par Supabase - si la colonne n'existe pas, elle sera ignorée)
+        if (bookingData.guest_email) {
+          guestData.email = bookingData.guest_email;
+        }
+        
+        const { error: insertError } = await supabaseClient
+          .from('guests')
+          .insert(guestData);
+        
+        if (insertError) {
+          log('warn', 'Erreur lors de la création du guest', { error: insertError });
+        } else {
+          log('info', '[generate_contract_only] Guest créé avec succès');
+        }
+      }
+      
       // ✅ CORRECTION : Signature optionnelle pour generate_contract_only
       if (!requestBody.signature) {
         log('warn', 'Aucune signature fournie, génération contrat non signé');
@@ -1987,13 +2339,56 @@ serve(async (req) => {
       
       if (contractUrl) {
         // Sauvegarder le document en base même non signé
-        const supabaseClient = await getServerClient();
         await saveDocumentToDatabase(supabaseClient, requestBody.bookingId, 'contract', contractUrl, !!requestBody.signature);
+        
+        // ✅ ENVOI EMAIL : Envoyer l'email si on a un email dans le booking
+        let emailSent = false;
+        if (bookingData.guest_email) {
+          try {
+            log('info', '[generate_contract_only] Envoi email au guest', { email: bookingData.guest_email });
+            
+            // Récupérer les données de la propriété pour l'email
+            const { data: propertyData } = await supabaseClient
+              .from('properties')
+              .select('name, address')
+              .eq('id', bookingData.property_id)
+              .single();
+            
+            const guestName = bookingData.guest_name || 'Client';
+            const nameParts = guestName.split(' ');
+            const firstName = nameParts[0] || guestName;
+            const lastName = nameParts.slice(1).join(' ') || '';
+            
+            const emailResult = await sendGuestContractInternal(
+              {
+                firstName: firstName,
+                lastName: lastName,
+                email: bookingData.guest_email
+              },
+              {
+                propertyId: bookingData.property_id,
+                airbnbCode: bookingData.booking_reference || '',
+                checkIn: bookingData.check_in_date,
+                checkOut: bookingData.check_out_date,
+                propertyName: propertyData?.name || '',
+                propertyAddress: propertyData?.address || '',
+                guestName: guestName,
+                numberOfGuests: bookingData.number_of_guests || 1
+              },
+              contractUrl
+            );
+            emailSent = emailResult;
+            log('info', '[generate_contract_only] Email envoyé', { success: emailSent });
+          } catch (emailError) {
+            log('warn', '[generate_contract_only] Envoi email échoué', { error: emailError.message });
+          }
+        }
         
         return new Response(JSON.stringify({
           success: true,
           contractUrl: contractUrl,
           isSigned: !!requestBody.signature,
+          emailSent: emailSent,
           message: 'Contrat généré avec succès'
         }), {
           status: 200,
@@ -2158,14 +2553,80 @@ serve(async (req) => {
       }
     }
     
-    // ✅ NOUVELLE ACTION : generate_police_only (depuis dashboard hôte)
+    // ✅ NOUVELLE ACTION : generate_police_only (depuis dashboard hôte ou preview)
     if (requestBody.action === 'generate_police_only') {
-      log('info', '🔄 Mode: Génération fiches police uniquement (depuis dashboard)');
+      log('info', '🔄 Mode: Génération fiches police uniquement');
       
+      // ✅ NOUVEAU : Support du mode preview avec objet booking directement
+      if (requestBody.booking) {
+        log('info', '👁️ Mode preview : utilisation des données fournies directement');
+        
+        const supabaseClient = await getServerClient();
+        const booking = requestBody.booking;
+        
+        // Validation des données invités pour preview
+        const guests = booking.guests || [];
+        if (guests.length === 0) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Aucun invité trouvé pour générer les fiches de police'
+          }), {
+            status: 400,
+            headers: corsHeaders
+          });
+        }
+        
+        // Validation moins stricte en mode preview (accepte les placeholders)
+        const invalidGuests = guests.filter((guest: any) => 
+          !guest.full_name?.trim() && !guest.fullName?.trim()
+        );
+        
+        if (invalidGuests.length > 0) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: `${invalidGuests.length} invité(s) ont des données incomplètes`
+          }), {
+            status: 400,
+            headers: corsHeaders
+          });
+        }
+        
+        // Normaliser les données des guests pour la compatibilité
+        const normalizedBooking = {
+          ...booking,
+          guests: guests.map((g: any) => ({
+            full_name: g.full_name || g.fullName || '',
+            date_of_birth: g.date_of_birth || g.dateOfBirth || null,
+            document_number: g.document_number || g.documentNumber || '',
+            nationality: g.nationality || '',
+            place_of_birth: g.place_of_birth || g.placeOfBirth || '',
+            document_type: g.document_type || g.documentType || 'passport',
+            profession: g.profession || '',
+            motif_sejour: g.motif_sejour || g.motifSejour || 'TOURISME',
+            adresse_personnelle: g.adresse_personnelle || g.adressePersonnelle || '',
+          }))
+        };
+        
+        // Générer le PDF en mode preview (sans sauvegarde en base, retourne data URL)
+        const policeUrl = await generatePoliceFormsPDF(supabaseClient, normalizedBooking, true);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          policeUrl,
+          documentUrl: policeUrl, // Rétrocompatibilité
+          documentUrls: [policeUrl], // Rétrocompatibilité
+          message: 'Fiches de police générées avec succès (preview)'
+        }), {
+          status: 200,
+          headers: corsHeaders
+        });
+      }
+      
+      // Mode normal : avec bookingId
       if (!requestBody.bookingId) {
         return new Response(JSON.stringify({
           success: false,
-          error: 'bookingId requis pour generate_police_only'
+          error: 'bookingId ou booking requis pour generate_police_only'
         }), {
           status: 400,
           headers: corsHeaders
@@ -2178,6 +2639,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({
         success: true,
         policeUrl,
+        documentUrl: policeUrl, // Rétrocompatibilité
+        documentUrls: [policeUrl], // Rétrocompatibilité
         message: 'Fiches de police générées avec succès'
       }), {
         status: 200,
@@ -2288,15 +2751,35 @@ serve(async (req) => {
         });
       }
       log('info', '✅ Validation réussie pour create_ics_booking');
+    } else if (requestBody.action === 'host_direct') {
+      // ✅ NOUVEAU : Action pour les réservations créées directement par le host
+      if (!requestBody.bookingId) {
+        log('error', 'Validation échouée pour host_direct', { 
+          hasBookingId: !!requestBody.bookingId
+        });
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'bookingId requis pour host_direct',
+          details: ['bookingId manquant']
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+      log('info', '✅ Validation réussie pour host_direct');
     } else {
       // Validation complète pour les autres actions
       const validation = validateRequest(requestBody);
       
       if (!validation.isValid) {
         log('error', 'Validation échouée', { errors: validation.errors });
+        // ✅ AMÉLIORATION : Message d'erreur plus explicite
+        const errorMessage = validation.errors.length > 0 
+          ? validation.errors.join(', ') 
+          : 'Données invalides';
         return new Response(JSON.stringify({
           success: false,
-          error: 'Données invalides',
+          error: errorMessage,
           details: validation.errors
         }), {
           status: 400,
@@ -2323,8 +2806,47 @@ serve(async (req) => {
       // ÉTAPE 1: Résolution de la réservation
       log('info', '🎯 ÉTAPE 1/5: Résolution de la réservation');
       
+      // ✅ NOUVEAU : Gestion de l'action host_direct
+      if (requestBody.action === 'host_direct') {
+        log('info', 'Action host_direct détectée, récupération directe de la réservation');
+        
+        const supabase = await getServerClient();
+        const { data: existingBooking, error: bookingError } = await supabase
+          .from('bookings')
+          .select(`
+            *,
+            property:properties!inner(
+              id,
+              name,
+              address,
+              contact_info
+            )
+          `)
+          .eq('id', requestBody.bookingId)
+          .single();
+
+        if (bookingError || !existingBooking) {
+          throw new Error(`Réservation non trouvée: ${bookingError?.message || 'Réservation introuvable'}`);
+        }
+
+        // Créer l'objet ResolvedBooking à partir de la réservation existante
+        booking = {
+          propertyId: existingBooking.property_id,
+          airbnbCode: existingBooking.booking_reference || 'INDEPENDENT_BOOKING',
+          checkIn: existingBooking.check_in_date,
+          checkOut: existingBooking.check_out_date,
+          propertyName: existingBooking.property?.name || 'Propriété',
+          propertyAddress: existingBooking.property?.address || '',
+          guestName: existingBooking.guest_name || `${requestBody.guestInfo?.firstName} ${requestBody.guestInfo?.lastName}`,
+          numberOfGuests: existingBooking.number_of_guests,
+          bookingId: existingBooking.id
+        };
+
+        bookingId = existingBooking.id;
+        log('info', 'Réservation host_direct récupérée avec succès', { bookingId, propertyName: booking.propertyName });
+      }
       // ✅ NOUVEAU : Gestion de l'action create_ics_booking
-      if (requestBody.action === 'create_ics_booking') {
+      else if (requestBody.action === 'create_ics_booking') {
         log('info', 'Action create_ics_booking détectée, récupération de la réservation ICS existante');
         
         // Récupérer le token avec ses métadonnées pour obtenir l'ID de la réservation
@@ -2975,40 +3497,147 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     ) : 'none'
   });
 
-  // ✅ VARIABILISATION COMPLÈTE : Guests avec données enrichies
+  // ✅ SIMPLIFICATION : Récupération directe depuis la table guests (source principale)
   let guests = Array.isArray(b.guests) ? b.guests : [];
+  
+  // Si pas de guests dans la relation, récupérer directement depuis la table
   if (!guests.length) {
-    const { data: subs } = await client
-      .from('guest_submissions')
-      .select('guest_data')
-      .eq('booking_id', bookingId)
-      .order('submitted_at', { ascending: false });
-
-    if (subs?.length) {
-      const arr = [];
-      for (const s of subs) {
-        const gs = s?.guest_data?.guests || [];
-        for (const g of gs) {
-          const name = g.fullName || g.full_name || '';
-          const docn = g.documentNumber || g.document_number || '';
-          if (!name || !docn) continue;
-          arr.push({
-            full_name: name,
-            date_of_birth: g.dateOfBirth || g.date_of_birth || '',
-            nationality: g.nationality || '',
-            document_type: g.documentType || g.document_type || '',
-            document_number: docn,
-            place_of_birth: g.placeOfBirth || g.place_of_birth || '',
-            profession: g.profession || '',
-            motif_sejour: g.motif_sejour || 'TOURISME',
-            adresse_personnelle: g.adresse_personnelle || '',
-            email: g.email || ''
-          });
-        }
-      }
-      if (arr.length) guests = arr;
+    log('warn', '[buildContractContext] Aucun guest dans relation, tentative récupération depuis table guests');
+    const { data: guestsData, error: guestsError } = await client
+      .from('guests')
+      .select('*')
+      .eq('booking_id', bookingId);
+    
+    if (guestsError) {
+      log('error', '[buildContractContext] Erreur récupération guests', { error: guestsError });
+    } else if (guestsData && guestsData.length > 0) {
+      guests = guestsData;
+      log('info', '[buildContractContext] Guests récupérés depuis table', { count: guests.length });
     }
   }
+  
+  // ✅ CRITIQUE : Fallback - Récupérer d'abord depuis guest_submissions si disponible
+  if (!guests.length) {
+    log('warn', '[buildContractContext] Aucun guest trouvé, tentative récupération depuis guest_submissions');
+    const { data: submissionsData, error: submissionsError } = await client
+      .from('guest_submissions')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    if (!submissionsError && submissionsData && submissionsData.length > 0) {
+      const submission = submissionsData[0];
+      log('info', '[buildContractContext] Submission trouvée', {
+        hasGuestData: !!submission.guest_data,
+        guestDataType: typeof submission.guest_data
+      });
+      
+      // ✅ CRITIQUE : Essayer de récupérer les guests depuis la soumission
+      if (submission.guest_data && typeof submission.guest_data === 'object') {
+        const guestData = submission.guest_data as any;
+        
+        // Essayer plusieurs formats possibles
+        let guestsArray: any[] = [];
+        
+        if (guestData.guests && Array.isArray(guestData.guests)) {
+          guestsArray = guestData.guests;
+        } else if (Array.isArray(guestData)) {
+          guestsArray = guestData;
+        } else if (guestData.fullName || guestData.full_name) {
+          // Format avec un seul guest directement dans guest_data
+          guestsArray = [guestData];
+        }
+        
+        if (guestsArray.length > 0) {
+          guests = guestsArray.map((g: any) => {
+            // ✅ CRITIQUE : Normaliser toutes les variantes de noms de champs
+            const normalizedGuest = {
+              full_name: g.fullName || g.full_name || g.name || '',
+              email: g.email || b.guest_email || null,
+              phone: g.phone || b.guest_phone || null,
+              nationality: g.nationality || 'Non spécifiée',
+              document_type: g.documentType || g.document_type || g.idType || 'passport',
+              document_number: g.documentNumber || g.document_number || g.idNumber || g.document_number || '',
+              date_of_birth: g.dateOfBirth || g.date_of_birth || g.dateOfBirth || null,
+              place_of_birth: g.placeOfBirth || g.place_of_birth || '',
+              profession: g.profession || '',
+              motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
+              adresse_personnelle: g.adressePersonnelle || g.adresse_personnelle || ''
+            };
+            
+            log('info', '[buildContractContext] Guest normalisé depuis submission', {
+              hasDateOfBirth: !!normalizedGuest.date_of_birth,
+              hasDocumentNumber: !!normalizedGuest.document_number,
+              hasNationality: !!normalizedGuest.nationality && normalizedGuest.nationality !== 'Non spécifiée'
+            });
+            
+            return normalizedGuest;
+          });
+          
+          log('info', '[buildContractContext] ✅ Guests récupérés depuis guest_submissions', { 
+            count: guests.length,
+            firstGuest: guests[0] ? {
+              name: guests[0].full_name,
+              hasDateOfBirth: !!guests[0].date_of_birth,
+              hasDocumentNumber: !!guests[0].document_number,
+              nationality: guests[0].nationality
+            } : null
+          });
+        } else {
+          log('warn', '[buildContractContext] Aucun guest trouvé dans guest_data', { guestData });
+        }
+      } else {
+        log('warn', '[buildContractContext] guest_data n\'est pas un objet valide', { 
+          type: typeof submission.guest_data,
+          value: submission.guest_data 
+        });
+      }
+    }
+  }
+  
+  // ✅ CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests
+  const hasGuestName = b.guest_name && b.guest_name.trim().length > 0;
+  log('info', '[buildContractContext] Vérification fallback final guest', {
+    hasGuests: guests.length > 0,
+    hasGuestName: hasGuestName,
+    guestName: b.guest_name,
+    guestEmail: b.guest_email,
+    guestPhone: b.guest_phone
+  });
+  
+  if (!guests.length && hasGuestName) {
+    log('warn', '[buildContractContext] ⚠️ Création guest virtuel - DONNÉES INCOMPLÈTES - Le contrat ne sera pas entièrement variabilisé');
+    guests = [{
+      full_name: b.guest_name.trim(),
+      email: b.guest_email || null,
+      phone: b.guest_phone || null,
+      nationality: 'Non spécifiée',
+      document_type: 'passport',
+      document_number: '',
+      date_of_birth: null,
+      place_of_birth: '',
+      profession: '',
+      motif_sejour: 'TOURISME',
+      adresse_personnelle: ''
+    }];
+    log('info', '[buildContractContext] ✅ Guest virtuel créé depuis booking (DONNÉES INCOMPLÈTES)', { 
+      name: guests[0].full_name,
+      email: guests[0].email,
+      phone: guests[0].phone,
+      warning: '⚠️ date_of_birth, nationality, document_number manquants - Le contrat ne sera pas entièrement variabilisé'
+    });
+  }
+  
+  log('info', '[buildContractContext] Guests finaux', {
+    count: guests.length,
+    hasGuests: guests.length > 0,
+    firstGuest: guests[0] ? {
+      name: guests[0].full_name,
+      email: guests[0].email,
+      phone: guests[0].phone
+    } : null
+  });
 
   // ✅ VARIABILISATION : Règles de maison avec fallback intelligent
   const houseRules = rules.length ? rules : [
@@ -3088,8 +3717,8 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       guests_count: b.number_of_guests || guests.length || 1,
       booking_reference: b.booking_reference || null,
       guest_name: b.guest_name || (guests[0]?.full_name) || '',
-      guest_email: b.guest_email || null,
-      guest_phone: b.guest_phone || null,
+      guest_email: b.guest_email || guests[0]?.email || null,
+      guest_phone: b.guest_phone || guests[0]?.phone || null,
       total_price: b.total_price || null,
       total_amount: b.total_amount || b.total_price || null,
       currency: 'MAD',
@@ -3108,8 +3737,8 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       document_number: g.document_number || '',
       place_of_birth: g.place_of_birth || '',
       profession: g.profession || '',
-      motif_sejour: g.motif_sejour || 'TOURISME',
-      adresse_personnelle: g.adresse_personnelle || '',
+      motif_sejour: g.motif_sejour || g.motifSejour || 'TOURISME',
+      adresse_personnelle: g.adresse_personnelle || g.adressePersonnelle || '',
       email: g.email || ''
     })),
     // ✅ Métadonnées pour le template
@@ -3372,8 +4001,45 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   const host = ctx.host;
 
   // Locataire principal (premier invité)
+  // ✅ CORRECTION : Utiliser les données du booking comme fallback si pas de guests
   const mainGuest = guests[0] || {};
-  const locataireName = mainGuest.full_name || 'Locataire';
+  const locataireName = mainGuest.full_name || 
+    booking.guest_name || 
+    booking.guestName || 
+    'Locataire';
+  
+  // ✅ Enrichir mainGuest avec les données du booking si manquantes
+  if (!mainGuest.full_name && booking.guest_name) {
+    mainGuest.full_name = booking.guest_name;
+  }
+  if (!mainGuest.date_of_birth && booking.guest_date_of_birth) {
+    mainGuest.date_of_birth = booking.guest_date_of_birth;
+  }
+  if (!mainGuest.nationality && booking.guest_nationality) {
+    mainGuest.nationality = booking.guest_nationality;
+  }
+  if (!mainGuest.document_number && booking.guest_document_number) {
+    mainGuest.document_number = booking.guest_document_number;
+  }
+  if (!mainGuest.email && booking.guest_email) {
+    mainGuest.email = booking.guest_email;
+  }
+  if (!mainGuest.phone && booking.guest_phone) {
+    mainGuest.phone = booking.guest_phone;
+  }
+  
+  // Log pour diagnostic
+  log('info', 'PDF Generation - Guest data:', {
+    hasGuests: guests.length > 0,
+    mainGuestName: mainGuest.full_name,
+    mainGuestDoc: mainGuest.document_number,
+    mainGuestNationality: mainGuest.nationality,
+    mainGuestEmail: mainGuest.email,
+    mainGuestPhone: mainGuest.phone,
+    bookingGuestName: booking.guest_name,
+    bookingGuestEmail: booking.guest_email,
+    bookingGuestPhone: booking.guest_phone
+  });
   
   // ✅ Nom du bailleur selon la variabilisation
   const contractTemplate = ctx.property.contract_template || {};
@@ -3929,7 +4595,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
 // =====================================================
 
 // Generate police forms PDF - Format officiel marocain bilingue EXACT
-async function generatePoliceFormsPDF(client: any, booking: any): Promise<string> {
+async function generatePoliceFormsPDF(client: any, booking: any, isPreview: boolean = false): Promise<string> {
   log('info', 'Création PDF fiches de police format officiel marocain...');
   
   const guests = booking.guests || [];
@@ -4224,7 +4890,22 @@ async function generatePoliceFormsPDF(client: any, booking: any): Promise<string
     yPosition = drawBilingualField(page, 'Numéro du document / ID number', 'رقم الوثيقة', guest.document_number || '', margin, yPosition);
     yPosition = drawBilingualField(page, 'Date de délivrance / Date of issue', 'تاريخ الإصدار', '', margin, yPosition);
     yPosition = drawBilingualField(page, 'Date d\'entrée au Maroc / Date of entry in Morocco', 'تاريخ الدخول إلى المغرب', '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Profession', 'المهنة', guest.profession || '', margin, yPosition);
     yPosition = drawBilingualField(page, 'Adresse / Home address', 'العنوان الشخصي', guest.adresse_personnelle || '', margin, yPosition);
+    
+    // ✅ DIAGNOSTIC : Log des données du guest avant affichage
+    log('info', '[Police] Données guest pour fiche:', {
+      guestId: guest.id,
+      guestName: guest.full_name,
+      email: guest.email,
+      phone: guest.phone,
+      hasEmail: !!guest.email,
+      hasPhone: !!guest.phone,
+      allGuestKeys: Object.keys(guest)
+    });
+    
+    yPosition = drawBilingualField(page, 'Courriel / Email', 'البريد الإلكتروني', guest.email || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Numéro de téléphone / Phone number', 'رقم الهاتف', guest.phone || '', margin, yPosition);
     
     yPosition -= 30;
     
@@ -4255,6 +4936,7 @@ async function generatePoliceFormsPDF(client: any, booking: any): Promise<string
     
     yPosition = drawBilingualField(page, 'Date d\'arrivée / Date of arrival', 'تاريخ الوصول', checkInDate, margin, yPosition);
     yPosition = drawBilingualField(page, 'Date de départ / Date of departure', 'تاريخ المغادرة', checkOutDate, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Motif du séjour / Purpose of stay', 'سبب الإقامة', guest.motif_sejour || 'TOURISME', margin, yPosition);
     yPosition = drawBilingualField(page, 'Nombre de mineurs / Number of minors', 'عدد القاصرين', '0', margin, yPosition);
     yPosition = drawBilingualField(page, 'Lieu de provenance / Place of prenance', 'مكان القدوم', '', margin, yPosition);
     yPosition = drawBilingualField(page, 'Destination', 'الوجهة', property.city || property.address || '', margin, yPosition);
@@ -4399,6 +5081,18 @@ async function generatePoliceFormsPDF(client: any, booking: any): Promise<string
   });
 
   const pdfBytes = await pdfDoc.save();
+  
+  // ✅ NOUVEAU : En mode preview, retourner un data URL au lieu d'uploader
+  if (isPreview || !booking.id) {
+    log('info', 'Mode preview : retour d\'un data URL');
+    let binary = '';
+    const bytes = new Uint8Array(pdfBytes);
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64PDF = btoa(binary);
+    return `data:application/pdf;base64,${base64PDF}`;
+  }
   
   // Upload to Storage and return URL with correct document type
   const documentUrl = await uploadPdfToStorage(client, booking.id, pdfBytes, 'police');

@@ -27,15 +27,14 @@ export const CalendarGrid = ({
   }
 
   return (
-    <div className="rounded-xl overflow-hidden bg-card shadow-xl border border-border/60">
-      {/* ✅ AMÉLIORÉ : En-têtes avec meilleur contraste, espacement et esthétique moderne */}
-      <div className="grid grid-cols-7 bg-gradient-to-r from-slate-100 via-blue-50/30 to-slate-100 border-b-2 border-slate-300/50 shadow-md">
+    <div className="rounded-xl overflow-hidden bg-white shadow-sm border border-border/50">
+      {/* ✅ SIMPLIFIÉ : En-têtes sobres */}
+      <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
         {dayNames.map((day, index) => (
           <div 
             key={day} 
             className={`
-              p-3 sm:p-4 text-center text-xs sm:text-sm font-bold text-slate-800
-              transition-all duration-200 hover:bg-cyan-100/50 hover:shadow-inner
+              p-3 sm:p-4 text-center text-xs sm:text-sm font-semibold text-slate-600
               ${index === 0 ? 'rounded-tl-xl' : ''}
               ${index === 6 ? 'rounded-tr-xl' : ''}
             `}
@@ -48,138 +47,208 @@ export const CalendarGrid = ({
 
       {/* Calendar Grid */}
       <div className="relative">
-        {weeks.map((week, weekIndex) => (
-          <div key={weekIndex} className="relative">
-            {/* Week Row with Days */}
-            <div className="grid grid-cols-7">
-              {week.map((day, dayIndex) => {
-                const isToday = day.date.toDateString() === new Date().toDateString();
-                
-                return (
-                  <div
-                    key={dayIndex}
-                    className={`
-                      border-r border-b border-slate-300/50 p-2 sm:p-3 bg-white relative 
-                      hover:bg-gradient-to-br hover:from-cyan-50/80 hover:to-teal-50/80
-                      transition-all duration-300 ease-in-out group
-                      ${!day.isCurrentMonth ? 'bg-slate-100/30 text-slate-400' : 'bg-white'}
-                      ${isToday ? 'bg-gradient-to-br from-cyan-200/60 via-teal-100/40 to-cyan-200/60 ring-2 ring-cyan-500 ring-offset-2 shadow-lg' : ''}
-                      ${dayIndex === 6 ? 'border-r-0' : ''}
-                      ${isToday ? 'shadow-cyan-400/50 z-10' : 'hover:shadow-md'}
-                    `}
-                    style={{
-                      // ✅ OPTIMISÉ : Hauteur dynamique basée sur le nombre de réservations dans la semaine
-                      minHeight: (() => {
-                        const layersInWeek = bookingLayout[weekIndex] ? 
-                          Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1 : 1;
-                        const baseHeight = isMobile ? 20 : 26;
-                        const spacing = isMobile ? 8 : 12;
-                        const headerSpace = isMobile ? 30 : 40;
-                        const padding = isMobile ? 16 : 20;
-                        const calculatedHeight = headerSpace + (layersInWeek * (baseHeight + spacing)) + padding;
-                        const minHeight = isMobile ? 80 : 120;
-                        return `${Math.max(minHeight, calculatedHeight)}px`;
-                      })(),
-                      height: 'auto', // Permettre l'expansion automatique
-                    }}
-                  >
-                    {/* ✅ AMÉLIORÉ : Numéro de jour avec meilleur contraste et style moderne */}
-                    <div className={`
-                      text-sm sm:text-base font-bold mb-1 sm:mb-2 
-                      transition-all duration-300 group-hover:scale-125 group-hover:font-extrabold
-                      ${isToday ? 'text-teal-700 font-extrabold drop-shadow-sm' : 'text-slate-800'}
-                      ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
-                    `}>
-                      {day.dayNumber}
-                    </div>
-                    
-                    {/* ✅ AMÉLIORÉ : Indicateur de réservations multiples avec meilleure visibilité */}
-                    {bookingLayout[weekIndex] && bookingLayout[weekIndex].length > 2 && (
-                      <div className="absolute top-1 right-1 bg-gradient-to-br from-cyan-600 to-teal-700 text-white text-[10px] px-2 py-1 rounded-full font-bold z-20 shadow-lg border border-white/30 backdrop-blur-sm">
-                        +{bookingLayout[weekIndex].length - 2}
+        {weeks.map((week, weekIndex) => {
+          // ✅ CALCULER les valeurs une seule fois par semaine pour cohérence
+          const layersInWeek = bookingLayout[weekIndex] ? 
+            Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1 : 1;
+          const baseHeight = isMobile ? 24 : 32;
+          const spacing = isMobile ? 10 : 14;
+          const headerSpace = isMobile ? 35 : 45; // Espace pour le numéro de jour + padding
+          const padding = isMobile ? 20 : 25;
+          const calculatedHeight = headerSpace + (layersInWeek * (baseHeight + spacing)) + padding;
+          const minHeight = isMobile ? 100 : 150;
+          const cellHeight = Math.max(minHeight, calculatedHeight);
+          
+          return (
+            <div key={weekIndex} className="relative" style={{ minHeight: `${cellHeight}px` }}>
+              {/* Week Row with Days */}
+              <div className="grid grid-cols-7 relative" style={{ minHeight: `${cellHeight}px` }}>
+                {week.map((day, dayIndex) => {
+                  const isToday = day.date.toDateString() === new Date().toDateString();
+                  
+                  return (
+                    <div
+                      key={dayIndex}
+                      className={`
+                        border-r border-b border-slate-100 p-2 sm:p-3 bg-white relative
+                        ${!day.isCurrentMonth ? 'bg-slate-50 text-slate-400' : 'bg-white'}
+                        ${isToday ? 'bg-cyan-50 border-cyan-200 z-10' : ''}
+                        ${dayIndex === 6 ? 'border-r-0' : ''}
+                      `}
+                      style={{
+                        minHeight: `${cellHeight}px`,
+                        height: `${cellHeight}px`,
+                      }}
+                    >
+                      <div className={`
+                        text-sm sm:text-base font-semibold mb-1 sm:mb-2
+                        ${isToday ? 'text-cyan-700' : 'text-slate-700'}
+                        ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
+                      `}>
+                        {day.dayNumber}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            
-            {/* Booking Bars (grid-column spanning for pixel-perfect ends at day boundaries) */}
-            {bookingLayout[weekIndex] && (
-              <div className="absolute inset-0 top-6 sm:top-8 pointer-events-none z-20">
-                <div className="grid grid-cols-7 h-full">
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* ✅ CORRIGÉ CRITIQUE : Booking Bars positionnées directement dans chaque cellule pour alignement parfait */}
+              {bookingLayout[weekIndex] && bookingLayout[weekIndex].length > 0 && (
+                <>
                   {bookingLayout[weekIndex].map((bookingData, arrayIndex) => {
+                    // ✅ CRITIQUE : Vérifier que bookingData.booking existe
+                    if (!bookingData.booking) {
+                      console.error('❌ [CALENDAR ERROR] bookingData.booking is undefined:', {
+                        weekIndex,
+                        arrayIndex,
+                        bookingData
+                      });
+                      return null;
+                    }
+                    
                     const layer = bookingData.layer || 0;
-                    const maxLayers = Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1;
+                    const maxLayers = layersInWeek;
                     
-                    // ✅ OPTIMISÉ : Calcul dynamique amélioré de l'espacement avec meilleures valeurs
-                    const baseHeight = isMobile ? 22 : 28; // Hauteur de base augmentée pour plus de lisibilité
-                    const minSpacing = isMobile ? 5 : 7; // Espacement minimum garanti entre les barres
-                    const idealSpacing = isMobile ? 9 : 13; // Espacement idéal quand l'espace le permet
+                    // ✅ DIAGNOSTIC EXHAUSTIF : Log détaillé pour chaque barre
+                    if (arrayIndex === 0) {
+                      const booking = bookingData.booking as Booking;
+                      const expectedDay = week.find(d => {
+                        const dDate = new Date(d.date.getFullYear(), d.date.getMonth(), d.date.getDate(), 0, 0, 0, 0);
+                        const checkIn = new Date(booking.checkInDate);
+                        const checkInNorm = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate(), 0, 0, 0, 0);
+                        return dDate.getTime() === checkInNorm.getTime();
+                      });
+                      
+                      console.log(`📊 [RENDU BARRE] Semaine ${weekIndex}, première barre:`, {
+                        bookingId: booking.id.substring(0, 8),
+                        startDayIndex: bookingData.startDayIndex,
+                        span: bookingData.span,
+                        layer,
+                        gridColumn: `${bookingData.startDayIndex + 1} / span ${bookingData.span}`,
+                        checkIn: booking.checkInDate,
+                        checkOut: booking.checkOutDate,
+                        cellHeight,
+                        weekDayNumbers: week.map(d => d.dayNumber),
+                        expectedDayNumber: expectedDay?.dayNumber,
+                        actualDayNumber: week[bookingData.startDayIndex]?.dayNumber,
+                        alignmentMatch: expectedDay?.dayNumber === week[bookingData.startDayIndex]?.dayNumber,
+                        hasBooking: !!bookingData.booking,
+                        bookingType: 'source' in bookingData.booking ? 'airbnb' : 'manual'
+                      });
+                    }
                     
-                    // Calculer la hauteur totale de la cellule dynamiquement
-                    const headerOffset = isMobile ? 20 : 30;
-                    const cellPadding = isMobile ? 8 : 12;
-                    const availableSpace = (isMobile ? 80 : 120) - headerOffset - cellPadding;
+                    // ✅ CALCUL PRÉCIS : Valeurs pour le positionnement
+                    const cellPadding = isMobile ? 8 : 12; // p-2 (8px) ou p-3 (12px)
+                    const dayNumberHeight = isMobile ? 20 : 24; // Hauteur du numéro
+                    const dayNumberMargin = isMobile ? 4 : 8; // mb-1 (4px) ou mb-2 (8px)
+                    const spaceAfterNumber = dayNumberHeight + dayNumberMargin;
                     
-                    // Calculer l'espacement optimal en fonction du nombre de couches
-                    const totalRequiredSpace = maxLayers * baseHeight + (maxLayers - 1) * idealSpacing;
+                    // ✅ ESPACEMENT : Calcul dynamique entre les couches
+                    const minSpacing = isMobile ? 6 : 8;
+                    const idealSpacing = isMobile ? 10 : 14;
+                    const availableSpace = cellHeight - cellPadding - spaceAfterNumber - cellPadding;
+                    const totalRequiredSpace = maxLayers * baseHeight + (maxLayers > 1 ? (maxLayers - 1) * idealSpacing : 0);
                     
                     let actualSpacing: number;
                     if (totalRequiredSpace <= availableSpace) {
-                      // Assez d'espace pour l'espacement idéal
                       actualSpacing = idealSpacing;
                     } else {
-                      // Calculer un espacement réduit mais jamais inférieur au minimum
-                      const calculatedSpacing = (availableSpace - (maxLayers * baseHeight)) / (maxLayers - 1);
+                      const calculatedSpacing = maxLayers > 1 
+                        ? (availableSpace - (maxLayers * baseHeight)) / (maxLayers - 1)
+                        : 0;
                       actualSpacing = Math.max(minSpacing, calculatedSpacing);
                     }
                     
-                    // Position verticale avec espacement optimisé
-                    const topOffset = headerOffset + (layer * (baseHeight + actualSpacing));
-                    
-                    // Marges horizontales pour une meilleure séparation visuelle
-                    const endDayIndex = bookingData.startDayIndex + bookingData.span - 1;
-                    const overhangRight = endDayIndex < 6 ? (isMobile ? 3 : 8) : 0;
-                    const startInset = bookingData.startDayIndex > 0 ? (isMobile ? 3 : 8) : 0;
+                    // ✅ POSITION VERTICALE : Depuis le haut de la cellule (inclut le padding)
+                    const topOffset = cellPadding + spaceAfterNumber + (layer * (baseHeight + actualSpacing));
 
+                    // ✅ CRITIQUE : Utiliser un ID unique pour la clé
+                    const bookingId = bookingData.booking.id || `unknown-${arrayIndex}`;
+                    
                     return (
                       <div
-                        key={`${bookingData.booking.id}-${arrayIndex}`}
-                        className="relative pointer-events-auto"
+                        key={`${bookingId}-${weekIndex}-${arrayIndex}`}
+                        className="absolute z-30"
                         style={{
-                          gridColumn: `${bookingData.startDayIndex + 1} / span ${bookingData.span}`,
+                          // ✅ CRITIQUE : Position dans la grille correspondant exactement aux cellules
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          pointerEvents: 'none', // Désactiver les événements sur le conteneur
                         }}
                       >
-                        <div
-                          className="absolute transition-all duration-300 ease-out hover:scale-[1.02]"
+                        <div 
+                          className="grid grid-cols-7 h-full"
                           style={{
-                            top: `${topOffset}px`,
-                            height: `${baseHeight}px`,
-                            zIndex: 100 + layer,
-                            left: `${startInset}px`,
-                            right: `-${overhangRight}px`,
-                            // ✅ OPTIMISÉ : Meilleure séparation visuelle entre les couches avec espacement amélioré
-                            marginTop: `${layer > 0 ? 2 : 0}px`, // Marge supplémentaire pour les couches supérieures
-                            marginBottom: `${layer < maxLayers - 1 ? 2 : 0}px`,
-                            opacity: 1, // Opacité pleine pour toutes les couches
+                            // ✅ CRITIQUE : S'assurer que la grille correspond exactement aux cellules
+                            height: `${cellHeight}px`,
+                            pointerEvents: 'none', // Désactiver les événements sur la grille
                           }}
                         >
-                          <CalendarBookingBar
-                            bookingData={bookingData}
-                            bookingIndex={layer}
-                            conflicts={conflicts}
-                            onBookingClick={onBookingClick}
-                          />
+                          <div
+                            className="relative"
+                            style={{
+                              // ✅ CRITIQUE : Utiliser gridColumn avec index basé sur 1 (CSS Grid)
+                              gridColumn: `${bookingData.startDayIndex + 1} / span ${bookingData.span}`,
+                              gridColumnStart: bookingData.startDayIndex + 1,
+                              gridColumnEnd: bookingData.startDayIndex + bookingData.span + 1,
+                              pointerEvents: 'none', // Désactiver les événements sur le conteneur de colonne
+                            }}
+                          >
+                            <div
+                              className="absolute transition-all duration-300 ease-out hover:scale-[1.02]"
+                              style={{
+                                top: `${topOffset}px`,
+                                height: `${baseHeight}px`,
+                                zIndex: 100 + layer, // ✅ AUGMENTÉ : Z-index plus élevé pour être au-dessus
+                                left: '0px',
+                                right: '0px',
+                                width: '100%',
+                                opacity: 1,
+                                pointerEvents: 'auto', // ✅ CRITIQUE : Activer les événements uniquement sur la barre
+                              }}
+                              onClick={(e) => {
+                                // ✅ DIAGNOSTIC : Log du clic
+                                console.log('🖱️ [CLIC BARRE]', {
+                                  bookingId: bookingData.booking.id,
+                                  bookingType: 'source' in bookingData.booking ? 'airbnb' : 'manual',
+                                  layer,
+                                  weekIndex,
+                                  arrayIndex
+                                });
+                                
+                                // ✅ CRITIQUE : Empêcher la propagation pour éviter les clics multiples
+                                e.stopPropagation();
+                                
+                                // ✅ CRITIQUE : Vérifier que booking existe avant d'appeler
+                                if (bookingData.booking && onBookingClick) {
+                                  onBookingClick(bookingData.booking);
+                                } else {
+                                  console.error('❌ [CLIC BARRE] Erreur:', {
+                                    hasBooking: !!bookingData.booking,
+                                    hasOnClick: !!onBookingClick
+                                  });
+                                }
+                              }}
+                            >
+                              <CalendarBookingBar
+                                bookingData={bookingData}
+                                bookingIndex={layer}
+                                conflicts={conflicts}
+                                onBookingClick={onBookingClick}
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
