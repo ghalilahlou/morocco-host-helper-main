@@ -130,15 +130,15 @@ useEffect(() => {
 
       try {
         const preview = URL.createObjectURL(file);
-        const doc: ExtendedUploadedDocument = {
-          id: uuidv4(),
-          file,
+      const doc: ExtendedUploadedDocument = {
+        id: uuidv4(),
+        file,
           preview,
-          processingStatus: 'processing'
-        };
+        processingStatus: 'processing'
+      };
 
         console.log('✅ [UPLOAD] Document créé avec ID:', doc.id);
-        newDocs.push(doc);
+      newDocs.push(doc);
       } catch (error) {
         console.error('❌ [UPLOAD] Erreur création document:', error);
         toast({
@@ -395,14 +395,14 @@ useEffect(() => {
           onChange={handleFileInput}
           className="hidden"
         />
-        <div
+      <div
           className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
             isDragging 
               ? 'border-primary bg-primary/10 scale-105' 
               : 'border-border hover:border-primary/50'
           }`}
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
+        onDrop={handleDrop}
+        onDragOver={(e) => e.preventDefault()}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
           onClick={() => {
@@ -415,17 +415,17 @@ useEffect(() => {
               console.error('❌ [CLICK] Input file-upload non trouvé !');
             }
           }}
-        >
-          <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">
-            Glissez-déposez vos documents ici
-          </h3>
-          <p className="text-muted-foreground mb-4">
-            ou cliquez pour sélectionner des fichiers
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Formats supportés: JPG, PNG, GIF (max 10MB)
-          </p>
+      >
+        <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+        <h3 className="text-lg font-medium text-foreground mb-2">
+          Glissez-déposez vos documents ici
+        </h3>
+        <p className="text-muted-foreground mb-4">
+          ou cliquez pour sélectionner des fichiers
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Formats supportés: JPG, PNG, GIF (max 10MB)
+        </p>
         </div>
       </div>
 
@@ -547,13 +547,13 @@ useEffect(() => {
 
       {/* Guest Edit Dialog - Rendu conditionnel avec key pour éviter les erreurs de portal */}
       {editingGuest && (
-        <GuestEditDialog
+      <GuestEditDialog
           key={`guest-edit-${editingGuest.id}`}
-          guest={editingGuest}
+        guest={editingGuest}
           open={true}
-          onSave={saveGuest}
-          onClose={() => setEditingGuest(null)}
-        />
+        onSave={saveGuest}
+        onClose={() => setEditingGuest(null)}
+      />
       )}
 
       {/* Preview Modal - Utilise SimpleModal sans portal pour éviter les erreurs */}
@@ -574,11 +574,11 @@ useEffect(() => {
             </SimpleModalDescription>
           </SimpleModalHeader>
           <div className="flex justify-center">
-            <img
-              src={showPreview}
-              alt="Prévisualisation du document"
-              className="max-w-full max-h-96 object-contain"
-            />
+              <img
+                src={showPreview}
+                alt="Prévisualisation du document"
+                className="max-w-full max-h-96 object-contain"
+              />
           </div>
         </SimpleModal>
       )}
@@ -614,7 +614,7 @@ const GuestEditDialog = ({ guest, open, onSave, onClose }: GuestEditDialogProps)
     <SimpleModal
       open={open}
       onOpenChange={(value) => {
-        if (!value) onClose();
+      if (!value) onClose();
       }}
     >
       <SimpleModalHeader>

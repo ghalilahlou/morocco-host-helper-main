@@ -36,7 +36,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   rangeStart,
   rangeEnd,
   onRangeSelect,
-  minDate = new Date(),
+  minDate = undefined,
   maxDate,
   disabledDates = [],
   className,
@@ -86,7 +86,8 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
   const isDateDisabled = (date: Date) => {
-    if (isPast(date) && !isSameDay(date, new Date())) return true;
+    // ✅ SUPPRESSION : Plus de restriction sur les dates passées
+    // if (isPast(date) && !isSameDay(date, new Date())) return true;
     if (minDate && date < minDate) return true;
     if (maxDate && date > maxDate) return true;
     if (!showWeekends && isWeekend(date)) return true;

@@ -2803,9 +2803,26 @@ serve(async (req) => {
           });
         }
         
+        // ✅ AMÉLIORATION : Charger la propriété avec contract_template si pas fournie
+        let property = booking.property || {};
+        if (!property.contract_template && requestBody.bookingData?.propertyId) {
+          log('info', '[Police Preview] Chargement propriété avec contract_template...');
+          const { data: propertyData } = await supabaseClient
+            .from('properties')
+            .select('*, contract_template')
+            .eq('id', requestBody.bookingData.propertyId)
+            .single();
+          
+          if (propertyData) {
+            property = propertyData;
+            log('info', '[Police Preview] Propriété chargée avec contract_template');
+          }
+        }
+        
         // Normaliser les données des guests pour la compatibilité
         const normalizedBooking = {
           ...booking,
+          property: property, // ✅ S'assurer que la propriété avec contract_template est incluse
           guests: guests.map((g: any) => ({
             full_name: g.full_name || g.fullName || '',
             date_of_birth: g.date_of_birth || g.dateOfBirth || null,
@@ -3333,16 +3350,16 @@ serve(async (req) => {
           log('warn', '⚠️ [HOST_DIRECT] Aucun document d\'identité trouvé pour ce booking');
         }
       } else {
-        // ✅ CORRIGÉ : S'assurer que booking.bookingId est défini si une réservation existe
-        // Cela permet à saveGuestDataInternal d'utiliser directement la réservation existante
-        if (existingBooking && existingBooking.status !== 'cancelled' && existingBooking.status !== 'rejected') {
-          booking.bookingId = existingBooking.id;
-          log('info', 'Booking ID existant passé à saveGuestDataInternal', { bookingId: existingBooking.id });
-        }
-        
-        bookingId = await saveGuestDataInternal(booking, requestBody.guestInfo, requestBody.idDocuments);
-        
-        log('info', 'Booking ID sauvegardé avec succès', { bookingId });
+      // ✅ CORRIGÉ : S'assurer que booking.bookingId est défini si une réservation existe
+      // Cela permet à saveGuestDataInternal d'utiliser directement la réservation existante
+      if (existingBooking && existingBooking.status !== 'cancelled' && existingBooking.status !== 'rejected') {
+        booking.bookingId = existingBooking.id;
+        log('info', 'Booking ID existant passé à saveGuestDataInternal', { bookingId: existingBooking.id });
+      }
+      
+      bookingId = await saveGuestDataInternal(booking, requestBody.guestInfo, requestBody.idDocuments);
+      
+      log('info', 'Booking ID sauvegardé avec succès', { bookingId });
       }
       
       // ✅ VÉRIFICATION CRITIQUE : S'assurer que bookingId est défini avant de continuer
@@ -4875,7 +4892,32 @@ async function generatePoliceFormsPDF(client: any, booking: any, isPreview: bool
   log('info', 'Création PDF fiches de police format officiel marocain...');
   
   const guests = booking.guests || [];
-  const property = booking.property || {};
+  let property = booking.property || {};
+  
+  // ✅ AMÉLIORATION : Si contract_template n'est pas chargé, le récupérer explicitement
+  if (!property.contract_template && property.id) {
+    log('info', '[Police] contract_template manquant, récupération explicite...');
+    const { data: propertyData } = await client
+      .from('properties')
+      .select('contract_template')
+      .eq('id', property.id)
+      .single();
+    
+    if (propertyData?.contract_template) {
+      property.contract_template = propertyData.contract_template;
+      log('info', '[Police] contract_template récupéré avec succès');
+    }
+  }
+  
+  // ✅ DIAGNOSTIC : Log de la propriété avant génération
+  log('info', '[Police] Données propriété:', {
+    hasProperty: !!property,
+    propertyId: property.id,
+    hasContractTemplate: !!property.contract_template,
+    contractTemplateType: typeof property.contract_template,
+    contractTemplateKeys: property.contract_template ? Object.keys(property.contract_template) : [],
+    hasLandlordSignature: !!(property.contract_template as any)?.landlord_signature
+  });
   
   // Configuration PDF - Format officiel A4 identique au modèle
   const pageWidth = 595.28; // A4 width
@@ -5285,56 +5327,127 @@ async function generatePoliceFormsPDF(client: any, booking: any, isPreview: bool
     yPosition -= 10;
     
     // ✅ NOUVEAU : Intégrer la signature du loueur dans la fiche de police
+    // ✅ AMÉLIORATION : Récupérer la signature depuis plusieurs sources possibles
     const contractTemplate = property.contract_template || {};
-    const hostSignature = contractTemplate.landlord_signature;
+    let hostSignature = contractTemplate.landlord_signature;
     
-    if (hostSignature && (hostSignature.startsWith('data:image/') || hostSignature.startsWith('http'))) {
+    // ✅ FALLBACK : Si pas de signature dans contract_template, essayer depuis host_profiles
+    if (!hostSignature && booking.host) {
+      hostSignature = booking.host.signature_svg || booking.host.signature_image_url || null;
+    }
+    
+    // ✅ DIAGNOSTIC : Log détaillé pour comprendre pourquoi la signature n'apparaît pas
+    log('info', '[Police] Recherche signature du loueur:', {
+      hasProperty: !!property,
+      hasContractTemplate: !!contractTemplate,
+      contractTemplateKeys: Object.keys(contractTemplate),
+      hasLandlordSignature: !!contractTemplate.landlord_signature,
+      landlordSignatureType: contractTemplate.landlord_signature ? typeof contractTemplate.landlord_signature : 'none',
+      landlordSignaturePrefix: contractTemplate.landlord_signature ? contractTemplate.landlord_signature.substring(0, 50) : 'none',
+      hasHost: !!booking.host,
+      hostSignatureSvg: !!booking.host?.signature_svg,
+      hostSignatureImage: !!booking.host?.signature_image_url,
+      finalHostSignature: !!hostSignature
+    });
+    
+    if (hostSignature && (hostSignature.startsWith('data:image/') || hostSignature.startsWith('http') || hostSignature.startsWith('data:image/svg'))) {
       try {
-        log('info', 'Embedding host signature in police form...');
+        log('info', '[Police] Embedding host signature in police form...', {
+          signatureType: hostSignature.startsWith('data:image/svg') ? 'svg' : 
+                        hostSignature.startsWith('data:image/png') ? 'png' :
+                        hostSignature.startsWith('data:image/jpg') || hostSignature.startsWith('data:image/jpeg') ? 'jpg' :
+                        hostSignature.startsWith('http') ? 'url' : 'unknown',
+          signatureLength: hostSignature.length
+        });
         
         let signatureImageBytes;
         if (hostSignature.startsWith('data:')) {
-          const base64Data = hostSignature.split(',')[1];
-          signatureImageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-        } else {
+          // ✅ GESTION SVG : Les signatures SVG doivent être converties en image
+          if (hostSignature.startsWith('data:image/svg')) {
+            log('warn', '[Police] Signature SVG détectée - conversion non supportée, utilisation du texte');
+            // Pour SVG, on ne peut pas l'embed directement, on continue sans image
+            hostSignature = null;
+          } else {
+            const base64Data = hostSignature.split(',')[1];
+            if (!base64Data) {
+              throw new Error('Base64 data manquante dans la signature');
+            }
+            signatureImageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+          }
+        } else if (hostSignature.startsWith('http')) {
           const response = await fetch(hostSignature);
+          if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+          }
           signatureImageBytes = new Uint8Array(await response.arrayBuffer());
         }
         
-        let signatureImage;
-        try {
-          signatureImage = await pdfDoc.embedPng(signatureImageBytes);
-        } catch {
-          signatureImage = await pdfDoc.embedJpg(signatureImageBytes);
+        if (signatureImageBytes && signatureImageBytes.length > 0) {
+          let signatureImage;
+          try {
+            signatureImage = await pdfDoc.embedPng(signatureImageBytes);
+            log('info', '[Police] Signature PNG embedée avec succès');
+          } catch (pngError) {
+            try {
+              signatureImage = await pdfDoc.embedJpg(signatureImageBytes);
+              log('info', '[Police] Signature JPG embedée avec succès');
+            } catch (jpgError) {
+              log('error', '[Police] Échec embedding signature (PNG et JPG)', {
+                pngError: String(pngError),
+                jpgError: String(jpgError)
+              });
+              throw new Error('Format de signature non supporté');
+            }
+          }
+          
+          const maxWidth = 180;
+          const maxHeight = 60;
+          const scale = Math.min(
+            maxWidth / signatureImage.width,
+            maxHeight / signatureImage.height
+          );
+          const width = signatureImage.width * scale;
+          const height = signatureImage.height * scale;
+          
+          log('info', '[Police] Dimensions signature:', {
+            originalWidth: signatureImage.width,
+            originalHeight: signatureImage.height,
+            scaledWidth: width,
+            scaledHeight: height,
+            scale: scale
+          });
+          
+          page.drawImage(signatureImage, {
+            x: margin,
+            y: yPosition - height,
+            width,
+            height
+          });
+          
+          log('info', '✅ Host signature embedded in police form successfully', {
+            x: margin,
+            y: yPosition - height,
+            width,
+            height
+          });
+          yPosition -= height + 10;
+        } else {
+          log('warn', '[Police] Signature bytes vides ou invalides');
         }
-        
-        const maxWidth = 180;
-        const maxHeight = 60;
-        const scale = Math.min(
-          maxWidth / signatureImage.width,
-          maxHeight / signatureImage.height
-        );
-        const width = signatureImage.width * scale;
-        const height = signatureImage.height * scale;
-        
-        page.drawImage(signatureImage, {
-          x: margin,
-          y: yPosition - height,
-          width,
-          height
-        });
-        
-        log('info', '✅ Host signature embedded in police form successfully');
-        yPosition -= height + 10;
-      } catch (signatureError) {
+      } catch (signatureError: any) {
         log('warn', '⚠️ Failed to embed host signature in police form (will continue without):', {
           error: String(signatureError),
-          message: signatureError.message
+          message: signatureError?.message,
+          stack: signatureError?.stack
         });
         // Continue sans la signature
       }
     } else {
-      log('info', 'No host signature available for police form');
+      log('warn', '[Police] No host signature available for police form', {
+        hasHostSignature: !!hostSignature,
+        signatureType: hostSignature ? typeof hostSignature : 'none',
+        signatureValue: hostSignature ? hostSignature.substring(0, 100) : 'none'
+      });
     }
     
     // ✅ Footer CHECKY - Position exacte comme le modèle

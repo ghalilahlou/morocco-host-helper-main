@@ -72,10 +72,30 @@ export const UnifiedBookingModal = ({
   });
   const [isGeneratingContract, setIsGeneratingContract] = useState(false);
   const [isGeneratingPolice, setIsGeneratingPolice] = useState(false);
+  const [hasGuestData, setHasGuestData] = useState(false); // ✅ NOUVEAU : Vérifier si la réservation a des données clients
 
   // ✅ DÉTECTION : Identifier le type de réservation (avant le useEffect)
   const isAirbnb = booking ? ('source' in booking && booking.source === 'airbnb') : false;
   const isEnriched = booking ? ('hasRealSubmissions' in booking) : false;
+  
+  // ✅ NOUVEAU : Détecter si c'est une réservation issue d'un fichier ICS (non supprimable)
+  // Une réservation ICS est identifiée par :
+  // - Status 'pending'
+  // - booking_reference existe et n'est pas 'INDEPENDENT_BOOKING' (code Airbnb)
+  // - Pas de guests complets (pas de full_name, document_number, nationality pour tous les guests)
+  const bookingTyped = booking as Booking;
+  const hasCompleteGuestsForICS = bookingTyped?.guests && bookingTyped.guests.length > 0 && 
+    bookingTyped.guests.every(guest => 
+      guest.fullName && 
+      guest.documentNumber && 
+      guest.nationality
+    );
+  const isICSReservation = !isAirbnb && 
+    bookingTyped && 
+    status === 'pending' && 
+    bookingTyped.bookingReference && 
+    bookingTyped.bookingReference !== 'INDEPENDENT_BOOKING' &&
+    !hasCompleteGuestsForICS; // Pas de guests complets = réservation ICS non complétée
   
   // ✅ EXTRACTION : Données unifiées pour tous les types (avec vérification null)
   const bookingCode = booking 
@@ -349,11 +369,11 @@ export const UnifiedBookingModal = ({
           const url = await resolveDocumentUrl(doc);
           const guestName = (doc.extracted_data as any)?.guest_name || 
                             (doc.extracted_data as any)?.full_name || 
-                            (doc.guests as any)?.full_name || 
+                      (doc.guests as any)?.full_name || 
                             'Invité';
           const documentNumber = (doc.extracted_data as any)?.document_number || 
                                 (doc.extracted_data as any)?.id_number || 
-                                (doc.guests as any)?.document_number || 
+                           (doc.guests as any)?.document_number || 
                                 undefined;
           
           console.log('🆔 [UNIFIED MODAL] Document traité:', { 
@@ -407,17 +427,35 @@ export const UnifiedBookingModal = ({
           identityCount: identityDocs.filter(doc => doc.url).length
         });
 
+        const finalIdentityDocs = identityDocs.filter(doc => doc.url);
+        
         setDocuments({
           contractUrl: contractUrl,
           contractId: contractDoc?.id || null,
           policeUrl: policeUrl,
           policeId: policeDoc?.id || null,
-          identityDocuments: identityDocs.filter(doc => doc.url),
+          identityDocuments: finalIdentityDocs,
           loading: false
         });
+        
+        // ✅ NOUVEAU : Vérifier si la réservation a des données clients suffisantes pour générer les documents
+        // Les documents peuvent être générés si :
+        // 1. Il y a des pièces d'identité uploadées
+        // 2. OU il y a des guests avec informations complètes (full_name, document_number, etc.)
+        const hasIdentityDocuments = finalIdentityDocs.length > 0;
+        const bookingTyped = booking as Booking;
+        const hasCompleteGuests = bookingTyped?.guests && bookingTyped.guests.length > 0 && 
+          bookingTyped.guests.some(guest => 
+            guest.fullName && 
+            guest.documentNumber && 
+            guest.nationality
+          );
+        
+        setHasGuestData(hasIdentityDocuments || hasCompleteGuests || false);
       } catch (error) {
         console.error('❌ Erreur lors du chargement des documents:', error);
         setDocuments({ contractUrl: null, contractId: null, policeUrl: null, policeId: null, identityDocuments: [], loading: false });
+        setHasGuestData(false);
       }
     };
 
@@ -533,10 +571,21 @@ export const UnifiedBookingModal = ({
 
   // ✅ SUPPRESSION DE RÉSERVATION
   const handleDeleteBooking = async () => {
+    // ✅ PROTECTION : Empêcher la suppression des réservations Airbnb et ICS
     if (!booking || isAirbnb || !('id' in booking)) {
       toast({
         title: "Erreur",
         description: "Impossible de supprimer cette réservation",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // ✅ PROTECTION : Empêcher la suppression des réservations issues de fichiers ICS
+    if (isICSReservation) {
+      toast({
+        title: "Suppression impossible",
+        description: "Cette réservation provient d'un fichier ICS Airbnb et ne peut pas être supprimée manuellement. Elle sera synchronisée automatiquement.",
         variant: "destructive"
       });
       return;
@@ -548,9 +597,10 @@ export const UnifiedBookingModal = ({
       await deleteBooking(booking.id);
       console.log('✅ [UNIFIED MODAL] Réservation supprimée de la base de données');
       
-      // Forcer le rafraîchissement complet
-      await refreshBookings();
-      console.log('✅ [UNIFIED MODAL] Réservations rafraîchies');
+      // ✅ AMÉLIORATION : Le rafraîchissement est maintenant automatique via :
+      // 1. Mise à jour optimiste immédiate dans deleteBooking()
+      // 2. Subscription en temps réel qui va confirmer le changement
+      // Plus besoin d'appeler refreshBookings() manuellement
       
       toast({
         title: "Réservation supprimée",
@@ -559,10 +609,8 @@ export const UnifiedBookingModal = ({
       
       setShowDeleteDialog(false);
       
-      // Fermer le modal et forcer un petit délai pour que le contexte se propage
-      setTimeout(() => {
-        onClose();
-      }, 100);
+      // Fermer le modal immédiatement (la réservation disparaît déjà de l'UI)
+      onClose();
     } catch (error) {
       console.error('❌ Erreur lors de la suppression de la réservation:', error);
       toast({
@@ -595,8 +643,8 @@ export const UnifiedBookingModal = ({
               {getStatusBadge()}
             </DialogTitle>
             <div className="flex items-center gap-2">
-              {/* ✅ BOUTON SUPPRESSION : Uniquement pour les réservations non-Airbnb */}
-              {!isAirbnb && 'id' in booking && (
+              {/* ✅ BOUTON SUPPRESSION : Uniquement pour les réservations non-Airbnb et non-ICS */}
+              {!isAirbnb && !isICSReservation && 'id' in booking && (
                 <Button 
                   variant="ghost" 
                   size="icon" 
@@ -656,8 +704,11 @@ export const UnifiedBookingModal = ({
 
           {/* ✅ SUPPRIMÉ : Section dupliquée - Fusionnée avec "Documents enregistrés" ci-dessous */}
 
-          {/* ✅ DOCUMENTS : Section pour les réservations terminées ET pending (nouvelles réservations host) */}
-          {(status === 'completed' || status === 'pending') && !isAirbnb && (
+          {/* ✅ DOCUMENTS : Section pour les réservations terminées ET pending avec données clients */}
+          {/* ✅ CORRIGÉ : Afficher les boutons "Générer" uniquement si :
+              - La réservation est terminée (completed) OU
+              - La réservation est en attente (pending) ET a des données clients (guests complets OU pièces d'identité) */}
+          {(status === 'completed' || (status === 'pending' && hasGuestData)) && !isAirbnb && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -673,122 +724,126 @@ export const UnifiedBookingModal = ({
                   </div>
                 ) : (
                   <>
-                    {/* Contrat */}
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
-                          <FileText className="w-5 h-5 text-brand-teal" />
-                        </div>
-                        <div>
+                {/* Contrat */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
+                      <FileText className="w-5 h-5 text-brand-teal" />
+                    </div>
+                    <div>
                           <p className="font-semibold text-gray-900">Contrat {status === 'completed' ? 'signé' : ''}</p>
                           <p className="text-sm text-gray-600">Document contractuel {status === 'completed' ? 'signé' : 'à signer physiquement'}</p>
-                        </div>
-                      </div>
-                      {documents.contractUrl ? (
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open(documents.contractUrl!, '_blank')}
-                            className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
-                          >
-                            <FileText className="w-4 h-4 mr-2" />
-                            Voir
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const link = document.createElement('a');
-                              link.href = documents.contractUrl!;
-                              link.download = `contrat-${getReservationCode()}.pdf`;
-                              link.click();
-                            }}
-                            className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
-                          >
-                            Télécharger
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleGenerateContract}
-                          disabled={isGeneratingContract}
-                          className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
-                        >
-                          {isGeneratingContract ? (
-                            <>
-                              <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-                              Génération...
-                            </>
-                          ) : (
-                            <>
-                              <FileText className="w-4 h-4 mr-2" />
-                              Générer
-                            </>
-                          )}
-                        </Button>
-                      )}
                     </div>
-
-                    {/* Police */}
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
-                          <Shield className="w-5 h-5 text-brand-teal" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900">Fiche de police</p>
-                          <p className="text-sm text-gray-600">Formulaire de déclaration de police</p>
-                        </div>
-                      </div>
-                      {documents.policeUrl ? (
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open(documents.policeUrl!, '_blank')}
-                            className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
-                          >
-                            <Shield className="w-4 h-4 mr-2" />
-                            Voir
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const link = document.createElement('a');
-                              link.href = documents.policeUrl!;
-                              link.download = `police-${getReservationCode()}.pdf`;
-                              link.click();
-                            }}
-                            className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
-                          >
-                            Télécharger
-                          </Button>
-                        </div>
+                  </div>
+                  {documents.contractUrl ? (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(documents.contractUrl!, '_blank')}
+                        className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                      >
+                        <FileText className="w-4 h-4 mr-2" />
+                        Voir
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = documents.contractUrl!;
+                          link.download = `contrat-${getReservationCode()}.pdf`;
+                          link.click();
+                        }}
+                        className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                      >
+                        Télécharger
+                      </Button>
+                    </div>
+                  ) : hasGuestData ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleGenerateContract}
+                      disabled={isGeneratingContract}
+                      className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                    >
+                      {isGeneratingContract ? (
+                        <>
+                          <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                          Génération...
+                        </>
                       ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleGeneratePolice}
-                          disabled={isGeneratingPolice}
-                          className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
-                        >
-                          {isGeneratingPolice ? (
-                            <>
-                              <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-                              Génération...
-                            </>
-                          ) : (
-                            <>
-                              <Shield className="w-4 h-4 mr-2" />
-                              Générer
-                            </>
-                          )}
-                        </Button>
+                        <>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Générer
+                        </>
                       )}
+                    </Button>
+                  ) : (
+                    <span className="text-sm text-gray-400">En attente des informations clients</span>
+                  )}
+                </div>
+
+                {/* Police */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
+                      <Shield className="w-5 h-5 text-brand-teal" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">Fiche de police</p>
+                          <p className="text-sm text-gray-600">Formulaire de déclaration de police</p>
+                    </div>
+                  </div>
+                  {documents.policeUrl ? (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(documents.policeUrl!, '_blank')}
+                        className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                      >
+                        <Shield className="w-4 h-4 mr-2" />
+                        Voir
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = documents.policeUrl!;
+                          link.download = `police-${getReservationCode()}.pdf`;
+                          link.click();
+                        }}
+                        className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                      >
+                        Télécharger
+                      </Button>
+                    </div>
+                  ) : hasGuestData ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleGeneratePolice}
+                      disabled={isGeneratingPolice}
+                      className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                    >
+                      {isGeneratingPolice ? (
+                        <>
+                          <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                          Génération...
+                        </>
+                      ) : (
+                        <>
+                          <Shield className="w-4 h-4 mr-2" />
+                          Générer
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <span className="text-sm text-gray-400">En attente des informations clients</span>
+                  )}
                     </div>
 
                     {/* Pièces d'identité */}

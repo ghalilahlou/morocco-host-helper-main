@@ -4,6 +4,7 @@ import { Booking } from '@/types/booking';
 import { useAuth } from '@/hooks/useAuth';
 import { enrichBookingsWithGuestSubmissions, EnrichedBooking } from '@/services/guestSubmissionService';
 import { validateBookingData, logDataError } from '@/utils/errorMonitoring';
+import { debug, info, warn, error as logError } from '@/lib/logger';
 
 export const useBookings = () => {
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
@@ -22,33 +23,49 @@ export const useBookings = () => {
     }
   }, [user?.id]); // ✅ FIX: Utiliser user.id au lieu de user pour éviter les re-renders
 
-  // Set up real-time subscriptions for automatic updates
+  // ✅ AMÉLIORATION : Set up real-time subscriptions for automatic updates avec debounce optimisé
   useEffect(() => {
     if (!user) return;
 
-    console.log('🔄 Setting up real-time subscriptions for bookings and guests');
+    debug('Setting up real-time subscriptions for bookings and guests');
 
-    // ✅ PROTECTION : Éviter les boucles infinies
+    // ✅ PROTECTION : Éviter les boucles infinies et les appels multiples
     let isProcessing = false;
+    let debounceTimeout: NodeJS.Timeout | null = null;
+    const DEBOUNCE_DELAY = 300; // 300ms de debounce pour éviter les appels multiples
+    
+    const debouncedLoadBookings = () => {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+      
+      debounceTimeout = setTimeout(() => {
+        if (!isProcessing) {
+          isProcessing = true;
+          debug('Real-time: Déclenchement rafraîchissement automatique');
+          loadBookings().finally(() => {
+            isProcessing = false;
+          });
+        }
+      }, DEBOUNCE_DELAY);
+    };
     
     // Subscribe to changes in bookings table
     const bookingsChannel = supabase
-      .channel('schema-db-changes')
+      .channel(`bookings-realtime-${user.id}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: '*', // INSERT, UPDATE, DELETE
           schema: 'public',
           table: 'bookings'
         },
         (payload) => {
-          if (!isProcessing) {
-            console.log('📊 Real-time booking update:', payload);
-            isProcessing = true;
-            loadBookings().finally(() => {
-              isProcessing = false;
-            });
-          }
+          debug('Real-time: Changement détecté dans bookings', {
+            event: payload.eventType,
+            id: payload.new?.id || payload.old?.id
+          });
+          debouncedLoadBookings();
         }
       )
       .on(
@@ -59,13 +76,11 @@ export const useBookings = () => {
           table: 'guests'
         },
         (payload) => {
-          if (!isProcessing) {
-            console.log('👤 Real-time guest update:', payload);
-            isProcessing = true;
-            loadBookings().finally(() => {
-              isProcessing = false;
-            });
-          }
+          debug('Real-time: Changement détecté dans guests', {
+            event: payload.eventType,
+            bookingId: payload.new?.booking_id || payload.old?.booking_id
+          });
+          debouncedLoadBookings();
         }
       )
       .on(
@@ -76,19 +91,22 @@ export const useBookings = () => {
           table: 'guest_submissions'
         },
         (payload) => {
-          if (!isProcessing) {
-            console.log('📝 Real-time guest submission update:', payload);
-            isProcessing = true;
-            loadBookings().finally(() => {
-              isProcessing = false;
-            });
-          }
+          debug('Real-time: Changement détecté dans guest_submissions', {
+            event: payload.eventType,
+            bookingId: payload.new?.booking_id || payload.old?.booking_id
+          });
+          debouncedLoadBookings();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        debug('Real-time: Statut subscription', { status });
+      });
 
     return () => {
-      console.log('🛑 Cleaning up real-time subscriptions');
+      debug('Cleaning up real-time subscriptions');
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
       supabase.removeChannel(bookingsChannel);
     };
   }, [user?.id]); // ✅ FIX: Utiliser user.id au lieu de user pour éviter les re-renders
@@ -97,7 +115,7 @@ export const useBookings = () => {
     try {
       // ✅ PROTECTION : Éviter les appels multiples simultanés avec une ref indépendante de l'état React
       if (loadingRef.current) {
-        console.log('⏳ Already loading bookings, skipping...');
+        debug('Already loading bookings, skipping');
         return;
       }
       
@@ -106,13 +124,15 @@ export const useBookings = () => {
       
       // Check if user is authenticated
       if (!user) {
-        console.log('👤 No authenticated user, skipping booking load');
+        debug('No authenticated user, skipping booking load');
         setBookings([]);
         return;
       }
       
-      console.log('👤 Loading bookings for user:', user.id);
+      debug('Loading bookings for user', { userId: user.id });
       
+      // ✅ FILTRE : Charger toutes les réservations, puis filtrer côté application
+      // (pour éviter l'erreur si 'draft' n'existe pas encore dans l'ENUM)
       const { data: bookingsData, error } = await supabase
         .from('bookings')
         .select(`
@@ -123,18 +143,27 @@ export const useBookings = () => {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('❌ Error loading bookings:', error);
+        logError('Error loading bookings', error as Error);
         return;
       }
 
-      console.log('📊 Raw bookings data from Supabase:', bookingsData);
-      console.log('📊 Number of bookings returned:', bookingsData?.length || 0);
+      debug('Raw bookings data from Supabase', { count: bookingsData?.length || 0 });
+
+      // ✅ FILTRE DÉFENSIF : Exclure les réservations 'draft' côté application si nécessaire
+      // (au cas où le filtre DB n'a pas fonctionné ou si 'draft' n'existe pas encore)
+      const filteredBookingsData = bookingsData?.filter(booking => {
+        // Si le statut est 'draft', exclure (même si c'est une string, pas encore dans l'ENUM)
+        if (booking.status === 'draft' || (booking.status as any) === 'draft') {
+          return false;
+        }
+        return true;
+      }) || [];
 
       // ✅ Transform Supabase data with defensive validation + monitoring
-      const transformedBookings: Booking[] = bookingsData?.map(booking => {
+      const transformedBookings: Booking[] = filteredBookingsData.map(booking => {
         // ✅ VALIDATION CRITIQUE : Exclure les bookings sans property_id
         if (!booking.property_id) {
-          console.warn('⚠️ Booking sans property_id détecté et exclu:', booking.id);
+          warn('Booking sans property_id détecté et exclu', { bookingId: booking.id });
           logDataError('missing_property_id', 'useBookings.loadBookings', {
             bookingId: booking.id,
             createdAt: booking.created_at,
@@ -186,7 +215,7 @@ export const useBookings = () => {
             placeOfBirth: guest.place_of_birth || undefined,
             documentType: guest.document_type as 'passport' | 'national_id'
           })) || [],
-          status: booking.status as 'pending' | 'completed' | 'archived',
+          status: booking.status as 'pending' | 'completed' | 'archived' | 'draft',
           createdAt: booking.created_at,
           documentsGenerated: typeof booking.documents_generated === 'object' && booking.documents_generated !== null
             ? booking.documents_generated as { policeForm: boolean; contract: boolean; }
@@ -196,21 +225,26 @@ export const useBookings = () => {
         // ✅ VALIDATION FINALE avec monitoring
         const isValid = validateBookingData(transformedBooking, 'useBookings.transform');
         if (!isValid) {
-          console.warn('⚠️ Booking avec données invalides détecté:', transformedBooking.id);
+          warn('Booking avec données invalides détecté', { bookingId: transformedBooking.id });
         }
 
         return transformedBooking;
       }).filter(Boolean) as Booking[]; // ✅ Exclure les bookings null
 
-      console.log(`📊 Bookings transformés: ${transformedBookings.length}/${bookingsData?.length || 0}`);
+      debug('Bookings transformés', { 
+        transformed: transformedBookings.length, 
+        total: bookingsData?.length || 0 
+      });
 
       // Enrich bookings with guest submission data
       const enrichedBookings = await enrichBookingsWithGuestSubmissions(transformedBookings);
-      console.log('📊 [useBookings] Bookings enrichis:', enrichedBookings.length);
-      console.log('📊 [useBookings] IDs des réservations:', enrichedBookings.map(b => ({ id: b.id, propertyId: b.propertyId, status: b.status })));
+      debug('Bookings enrichis', { 
+        count: enrichedBookings.length,
+        ids: enrichedBookings.map(b => b.id)
+      });
       setBookings(enrichedBookings);
     } catch (error) {
-      console.error('Error loading bookings:', error);
+      logError('Error loading bookings', error as Error);
     } finally {
       loadingRef.current = false;
       setIsLoading(false);
@@ -219,10 +253,10 @@ export const useBookings = () => {
 
   const addBooking = async (booking: Booking) => {
     try {
-      console.log('Adding new booking:', booking);
+      debug('Adding new booking', { bookingId: booking.id, propertyId: booking.propertyId });
       
       if (!user) {
-        console.error('No authenticated user');
+        logError('No authenticated user', new Error('User not authenticated'));
         return;
       }
       
@@ -244,26 +278,26 @@ export const useBookings = () => {
         .single();
 
       if (bookingError) {
-        console.error('Error adding booking:', bookingError);
+        logError('Error adding booking', bookingError as Error);
         return;
       }
 
       // Insert guests
       if (booking.guests.length > 0) {
-        console.log('📋 Inserting guests:', booking.guests);
+        debug('Inserting guests', { count: booking.guests.length });
         
         const guestsData = booking.guests.map(guest => {
           // Validate and clean the date format
           let cleanDateOfBirth = guest.dateOfBirth;
           if (cleanDateOfBirth && !cleanDateOfBirth.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            console.warn('⚠️ Invalid date format detected:', cleanDateOfBirth);
+            warn('Invalid date format detected', { dateOfBirth: cleanDateOfBirth });
             // Try to parse and reformat the date
             const date = new Date(cleanDateOfBirth);
             if (!isNaN(date.getTime())) {
               cleanDateOfBirth = date.toISOString().split('T')[0];
-              console.log('✅ Date reformatted to:', cleanDateOfBirth);
+              debug('Date reformatted', { original: guest.dateOfBirth, formatted: cleanDateOfBirth });
             } else {
-              console.error('❌ Could not parse date, setting to null');
+              logError('Could not parse date, setting to null', new Error('Invalid date format'));
               cleanDateOfBirth = null;
             }
           }
@@ -283,30 +317,40 @@ export const useBookings = () => {
           };
         });
 
-        console.log('📋 Final guests data for insert:', guestsData);
+        debug('Final guests data for insert', { count: guestsData.length });
 
         const { error: guestsError } = await supabase
           .from('guests')
           .insert(guestsData);
 
         if (guestsError) {
-          console.error('❌ Error adding guests:', guestsError);
+          logError('Error adding guests', guestsError as Error);
           return;
         } else {
-          console.log('✅ Guests added successfully');
+          debug('Guests added successfully', { count: guestsData.length });
         }
       }
 
+      // ✅ AMÉLIORATION : Ajout optimiste immédiat + rafraîchissement complet
+      // Ajouter la réservation immédiatement à l'état local pour une réactivité instantanée
+      const newBooking: Booking = {
+        ...booking,
+        id: bookingData.id,
+        createdAt: bookingData.created_at
+      };
+      setBookings(prevBookings => [newBooking, ...prevBookings]);
+      
       // Refresh bookings to get the complete data with relationships
+      // La subscription en temps réel va aussi déclencher un refresh, mais on le fait immédiatement pour UX
       await loadBookings();
     } catch (error) {
-      console.error('Error adding booking:', error);
+      logError('Error adding booking', error as Error);
     }
   };
 
   const updateBooking = async (id: string, updates: Partial<Booking>) => {
     try {
-      console.log('🔄 Updating booking with safety checks:', id, updates);
+      debug('Updating booking with safety checks', { bookingId: id, updates });
       
       // ✅ CORRECTION: Utilisation d'une transaction atomique pour éviter les race conditions
       const { data: currentBooking, error: fetchError } = await supabase
@@ -316,7 +360,7 @@ export const useBookings = () => {
         .single();
 
       if (fetchError || !currentBooking) {
-        console.error('❌ Error fetching current booking for update:', fetchError);
+        logError('Error fetching current booking for update', fetchError as Error);
         return;
       }
 
@@ -334,7 +378,7 @@ export const useBookings = () => {
         const newDocGen = { ...currentDocGen, ...updates.documentsGenerated };
         updateData.documents_generated = newDocGen;
         
-        console.log('📋 Document generation state:', {
+        debug('Document generation state', {
           current: currentDocGen,
           updates: updates.documentsGenerated,
           final: newDocGen
@@ -349,7 +393,7 @@ export const useBookings = () => {
         const finalDocGen = updateData.documents_generated;
         if (finalDocGen?.contract && finalDocGen?.policeForm && currentBooking.status !== 'completed') {
           updateData.status = 'completed';
-          console.log('✅ Auto-completing booking - both documents generated');
+          debug('Auto-completing booking - both documents generated', { bookingId: id });
         }
       }
 
@@ -364,25 +408,37 @@ export const useBookings = () => {
         .eq('updated_at', currentBooking.updated_at); // Optimistic locking
 
       if (error) {
-        console.error('❌ Error updating booking (possible concurrent modification):', error);
+        logError('Error updating booking (possible concurrent modification)', error as Error);
         // Retry once if it's a concurrent modification
         if (error.message?.includes('conflict') || error.code === 'PGRST116') {
-          console.log('🔄 Retrying booking update due to concurrent modification...');
+          debug('Retrying booking update due to concurrent modification', { bookingId: id });
           return updateBooking(id, updates); // Recursive retry
         }
         return;
       }
 
-      console.log('✅ Booking updated successfully');
+      debug('Booking updated successfully', { bookingId: id });
+      
+      // ✅ AMÉLIORATION : Mise à jour optimiste immédiate
+      // Mettre à jour l'état local immédiatement pour une réactivité instantanée
+      setBookings(prevBookings => 
+        prevBookings.map(b => 
+          b.id === id 
+            ? { ...b, ...updates, updated_at: new Date().toISOString() }
+            : b
+        )
+      );
+      
+      // Rafraîchissement complet en arrière-plan (la subscription va aussi déclencher)
       await loadBookings();
     } catch (error) {
-      console.error('❌ Error updating booking:', error);
+      logError('Error updating booking', error as Error);
     }
   };
 
   const deleteBooking = async (id: string) => {
     try {
-      console.log('🗑️ Starting deletion of booking:', id);
+      debug('Starting deletion of booking', { bookingId: id });
       
       // Step 0: Récupérer les informations de la réservation avant suppression
       // (notamment booking_reference pour nettoyer airbnb_reservations)
@@ -393,7 +449,7 @@ export const useBookings = () => {
         .maybeSingle();
 
       if (fetchError) {
-        console.warn('⚠️ Warning: Could not fetch booking data:', fetchError);
+        warn('Could not fetch booking data', { error: fetchError.message });
       }
 
       // Step 1: Delete related guest submissions first
@@ -403,10 +459,10 @@ export const useBookings = () => {
         .eq('booking_id', id);
 
       if (guestSubmissionsError) {
-        console.warn('⚠️ Warning: Could not delete guest submissions:', guestSubmissionsError);
+        warn('Could not delete guest submissions', { error: guestSubmissionsError.message });
         // Continue with deletion even if guest submissions deletion fails
       } else {
-        console.log('✅ Guest submissions deleted successfully');
+        debug('Guest submissions deleted successfully', { bookingId: id });
       }
 
       // Step 2: Delete related guests
@@ -416,9 +472,9 @@ export const useBookings = () => {
         .eq('booking_id', id);
 
       if (guestsError) {
-        console.warn('⚠️ Warning: Could not delete guests:', guestsError);
+        warn('Could not delete guests', { error: guestsError.message });
       } else {
-        console.log('✅ Guests deleted successfully');
+        debug('Guests deleted successfully', { bookingId: id });
       }
 
       // Step 3: Delete related uploaded documents
@@ -428,14 +484,14 @@ export const useBookings = () => {
         .eq('booking_id', id);
 
       if (documentsError) {
-        console.warn('⚠️ Warning: Could not delete uploaded documents:', documentsError);
+        warn('Could not delete uploaded documents', { error: documentsError.message });
       } else {
-        console.log('✅ Uploaded documents deleted successfully');
+        debug('Uploaded documents deleted successfully', { bookingId: id });
       }
 
       // Step 4: Nettoyer le guest_name dans airbnb_reservations si la réservation a un booking_reference
       if (bookingData?.booking_reference && bookingData.booking_reference !== 'INDEPENDENT_BOOKING' && bookingData.property_id) {
-        console.log('🔄 Nettoyage du guest_name dans airbnb_reservations...', {
+        debug('Nettoyage du guest_name dans airbnb_reservations', {
           propertyId: bookingData.property_id,
           bookingReference: bookingData.booking_reference
         });
@@ -451,10 +507,10 @@ export const useBookings = () => {
           .eq('airbnb_booking_id', bookingData.booking_reference);
 
         if (airbnbUpdateError) {
-          console.warn('⚠️ Warning: Could not clean guest_name in airbnb_reservations:', airbnbUpdateError);
+          warn('Could not clean guest_name in airbnb_reservations', { error: airbnbUpdateError.message });
           // Continue with deletion even if airbnb_reservations update fails
         } else {
-          console.log('✅ guest_name nettoyé dans airbnb_reservations');
+          debug('guest_name nettoyé dans airbnb_reservations', { bookingId: id });
         }
       }
 
@@ -465,11 +521,15 @@ export const useBookings = () => {
         .eq('id', id);
 
       if (error) {
-        console.error('❌ Error deleting booking:', error);
+        logError('Error deleting booking', error as Error);
         throw error;
       }
 
-      console.log('✅ Booking deleted successfully');
+      debug('Booking deleted successfully', { bookingId: id });
+      
+      // ✅ AMÉLIORATION : Mise à jour optimiste immédiate + rafraîchissement complet
+      // Mettre à jour l'état local immédiatement pour une réactivité instantanée
+      setBookings(prevBookings => prevBookings.filter(b => b.id !== id));
       
       // ✅ CORRIGÉ : Fermer tous les Portals Radix UI avant de recharger les bookings
       // Cela évite les erreurs Portal lors du re-render
@@ -501,18 +561,11 @@ export const useBookings = () => {
       
       closeAllRadixPortals();
       
-      // Attendre que React nettoie les Portals avant de recharger
-      await new Promise(resolve => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            resolve(undefined);
-          });
-        });
-      });
-      
+      // ✅ AMÉLIORATION : Rafraîchissement immédiat + confirmation via subscription
+      // La subscription en temps réel va aussi déclencher un refresh, mais on le fait immédiatement pour UX
       await loadBookings();
     } catch (error) {
-      console.error('❌ Error in deleteBooking:', error);
+      logError('Error in deleteBooking', error as Error);
       throw error;
     }
   };

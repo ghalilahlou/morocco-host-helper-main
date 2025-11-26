@@ -175,11 +175,11 @@ export default function Auth() {
               <form onSubmit={handleSignIn} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label htmlFor="signin-email">Email</Label>
-                    <Input id="signin-email" type="email" placeholder="Enter your email" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading} className="bg-[hsl(var(--home-bg))] text-gray-900 placeholder-gray-700 border-gray-300" />
+                    <Input id="signin-email" type="email" autoComplete="email" placeholder="Enter your email" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading} className="bg-[hsl(var(--home-bg))] text-gray-900 placeholder-gray-700 border-gray-300" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signin-password">Password</Label>
-                    <Input id="signin-password" type="password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading} className="bg-[hsl(var(--home-bg))] text-gray-900 placeholder-gray-700 border-gray-300" />
+                    <Input id="signin-password" type="password" autoComplete="current-password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading} className="bg-[hsl(var(--home-bg))] text-gray-900 placeholder-gray-700 border-gray-300" />
                 </div>
                 <Button type="submit" className="w-full hover:opacity-90" disabled={isLoading}>
                   {isLoading ? "Signing in..." : "Se connecter"}
@@ -191,11 +191,11 @@ export default function Auth() {
               <form onSubmit={handleSignUp} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label htmlFor="signup-email">Email</Label>
-                    <Input id="signup-email" type="email" placeholder="Enter your email" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading} className="bg-[hsl(var(--home-bg))] text-gray-900 placeholder-gray-700 border-gray-300" />
+                    <Input id="signup-email" type="email" autoComplete="email" placeholder="Enter your email" value={email} onChange={e => setEmail(e.target.value)} disabled={isLoading} className="bg-[hsl(var(--home-bg))] text-gray-900 placeholder-gray-700 border-gray-300" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-password">Password</Label>
-                    <Input id="signup-password" type="password" placeholder="Create a password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading} className="bg-[hsl(var(--home-bg))] text-gray-900 placeholder-gray-700 border-gray-300" />
+                    <Input id="signup-password" type="password" autoComplete="new-password" placeholder="Create a password" value={password} onChange={e => setPassword(e.target.value)} disabled={isLoading} className="bg-[hsl(var(--home-bg))] text-gray-900 placeholder-gray-700 border-gray-300" />
                 </div>
                 <Button type="submit" className="w-full hover:opacity-90" disabled={isLoading}>
                   {isLoading ? "Creating account..." : "S’inscrire"}

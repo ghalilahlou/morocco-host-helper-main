@@ -82,7 +82,6 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
                 mode="single"
                 selected={checkInDate}
                 onSelect={handleCheckInChange}
-                disabled={(date) => date < new Date()}
                 initialFocus
                 className="p-3 pointer-events-auto"
               />
@@ -118,8 +117,7 @@ export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsS
                 selected={checkOutDate}
                 onSelect={handleCheckOutChange}
                 disabled={(date) => 
-                  date < new Date() || 
-                  (checkInDate && date <= checkInDate)
+                  checkInDate && date <= checkInDate
                 }
                 initialFocus
                 className="p-3 pointer-events-auto"

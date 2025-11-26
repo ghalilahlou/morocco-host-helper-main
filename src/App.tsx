@@ -192,7 +192,12 @@ const App = () => (
         <AdminProvider>
           <Toaster />
           <Sonner />
-          <BrowserRouter>
+          <BrowserRouter
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true
+            }}
+          >
           <Routes>
           {/* Guest verification routes - no layout needed for external users */}
           <Route path="/welcome/:propertyId/:token" element={

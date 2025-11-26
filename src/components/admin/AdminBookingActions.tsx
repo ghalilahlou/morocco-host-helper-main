@@ -124,6 +124,8 @@ export const AdminBookingActions: React.FC<AdminBookingActionsProps> = ({ bookin
   const confirmDelete = async () => {
     setIsLoading(true);
     try {
+      // ✅ AMÉLIORATION : Suppression directe - les subscriptions en temps réel vont automatiquement
+      // rafraîchir les données dans tous les composants qui utilisent useBookings()
       const { error } = await supabase
         .from('bookings')
         .delete()
@@ -137,6 +139,10 @@ export const AdminBookingActions: React.FC<AdminBookingActionsProps> = ({ bookin
       });
 
       setIsDeleteDialogOpen(false);
+      
+      // ✅ AMÉLIORATION : Le rafraîchissement est automatique via les subscriptions en temps réel
+      // dans useBookings(). On appelle quand même onUpdate() pour les composants qui en dépendent
+      // (comme AdminBookings qui a sa propre logique de chargement)
       onUpdate();
     } catch (error) {
       console.error('Error deleting booking:', error);

@@ -126,25 +126,23 @@ export const GuestVerification = () => {
 
   // ✅ FONCTION UTILITAIRE: Validation des dates
   const validateDates = (checkIn: Date, checkOut: Date): { isValid: boolean; error?: string } => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const checkInDateStartOfDay = new Date(checkIn);
     checkInDateStartOfDay.setHours(0, 0, 0, 0);
     const checkOutDateStartOfDay = new Date(checkOut);
     checkOutDateStartOfDay.setHours(0, 0, 0, 0);
     
-    if (checkInDateStartOfDay < today) {
-      return { isValid: false, error: t('validation.dateFuture.desc') };
-    }
+    // ✅ SUPPRESSION : Plus de restriction sur les dates passées
+    // Les utilisateurs peuvent réserver n'importe quelle date (passée ou future)
 
     if (checkOutDateStartOfDay <= checkInDateStartOfDay) {
       return { isValid: false, error: t('validation.checkoutAfterCheckin.desc') };
     }
 
-    const daysDifference = Math.ceil((checkOutDateStartOfDay.getTime() - checkInDateStartOfDay.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysDifference > 30) {
-      return { isValid: false, error: "La durée maximale du séjour est de 30 jours" };
-    }
+    // ✅ SUPPRESSION : Plus de limite de durée maximale
+    // const daysDifference = Math.ceil((checkOutDateStartOfDay.getTime() - checkInDateStartOfDay.getTime()) / (1000 * 60 * 60 * 24));
+    // if (daysDifference > 30) {
+    //   return { isValid: false, error: "La durée maximale du séjour est de 30 jours" };
+    // }
 
     return { isValid: true };
   };
@@ -2297,17 +2295,9 @@ export const GuestVerification = () => {
                         size="lg"
                         className="px-8 py-3 bg-brand-teal hover:bg-brand-teal/90 transition-transform hover:scale-105 active:scale-95"
                       >
-                        {isLoading ? (
-                          <>
-                            <div className="w-5 h-5 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            {t('guest.cta.processing')}
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-5 h-5 mr-2" />
-                            {t('guest.cta.sendInfo')}
-                          </>
-                        )}
+                        {/* ✅ CORRIGÉ : Toujours afficher le texte normal, même pendant le traitement */}
+                        <Sparkles className="w-5 h-5 mr-2" />
+                        {t('guest.cta.sendInfo')}
                       </Button>
                     </div>
                   </div>

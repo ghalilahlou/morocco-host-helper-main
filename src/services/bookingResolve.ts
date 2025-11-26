@@ -100,13 +100,8 @@ export function validateBookingDates(checkIn: string, checkOut: string): boolean
       return false;
     }
     
-    // Pas trop dans le futur (limite raisonnable)
-    const maxFuture = new Date();
-    maxFuture.setFullYear(maxFuture.getFullYear() + 2);
-    
-    if (end > maxFuture) {
-      return false;
-    }
+    // ✅ SUPPRESSION : Plus de restriction sur les dates passées ou futures
+    // Les utilisateurs peuvent réserver n'importe quelle date
     
     return true;
   } catch {

@@ -70,7 +70,7 @@ export interface RecentBooking {
   booking_reference?: string;
   check_in_date: string;
   check_out_date: string;
-  status: 'pending' | 'completed' | 'archived';
+  status: 'pending' | 'completed' | 'archived' | 'draft';
   guest_name?: string;
   property?: {
     name: string;

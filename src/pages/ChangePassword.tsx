@@ -103,6 +103,7 @@ export const ChangePassword: React.FC = () => {
                 <Input
                   id="currentPassword"
                   type={showCurrentPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
                   value={formData.currentPassword}
                   onChange={(e) => handleInputChange('currentPassword', e.target.value)}
                   placeholder="Votre mot de passe actuel"
@@ -130,6 +131,7 @@ export const ChangePassword: React.FC = () => {
                 <Input
                   id="newPassword"
                   type={showNewPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   value={formData.newPassword}
                   onChange={(e) => handleInputChange('newPassword', e.target.value)}
                   placeholder="Votre nouveau mot de passe"
@@ -160,6 +162,7 @@ export const ChangePassword: React.FC = () => {
                 <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
                   value={formData.confirmPassword}
                   onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
                   placeholder="Confirmez votre nouveau mot de passe"

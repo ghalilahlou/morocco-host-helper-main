@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect, Component, ErrorInfo, ReactNode } from 'react';
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -86,6 +86,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   }, []);
   
   const [currentStep, setCurrentStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false); // ✅ PROTECTION : État pour empêcher les clics multiples
   const [formData, setFormData] = useState<BookingFormData>({
     checkInDate: editingBooking?.checkInDate || '',
     checkOutDate: editingBooking?.checkOutDate || '',
@@ -138,6 +139,20 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   };
 
   const handleSubmit = async () => {
+    // ✅ PROTECTION CRITIQUE : Empêcher les clics multiples
+    if (isSubmitting) {
+      console.warn('⚠️ Tentative de soumission multiple ignorée - traitement déjà en cours');
+      return;
+    }
+
+    setIsSubmitting(true); // Marquer comme en cours de traitement
+
+    // ✅ FEEDBACK VISUEL : Afficher un toast de chargement
+    const loadingToast = toast({
+      title: "Création en cours...",
+      description: "Veuillez patienter, la réservation est en cours de création.",
+    });
+
     try {
       // ✅ VALIDATION CRITIQUE : Vérifier propertyId obligatoire
       if (!propertyId) {
@@ -147,8 +162,12 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           description: "Impossible de créer une réservation sans propriété sélectionnée. Veuillez rafraîchir la page.",
           variant: "destructive"
         });
+        setIsSubmitting(false);
         return;
       }
+
+      // ✅ Dismiss le toast de chargement une fois la validation passée
+      // (il sera remplacé par les toasts de succès/erreur)
 
       // ✅ VALIDATION SESSION : Vérifier que l'utilisateur est toujours connecté
       const { data: { session } } = await supabase.auth.getSession();
@@ -200,19 +219,19 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             p_exclude_booking_id: null
           });
 
-          if (conflictError) {
+        if (conflictError) {
             console.warn('⚠️ Fonction check_booking_conflicts non disponible, continuation sans vérification:', conflictError.message);
             // Continue quand même si la fonction RPC n'existe pas encore
           } else if (conflictingBookings && Array.isArray(conflictingBookings) && conflictingBookings.length > 0) {
             console.error('❌ Conflit détecté avec réservations existantes:', conflictingBookings);
-            toast({
-              title: "Conflit de réservation",
+          toast({
+            title: "Conflit de réservation",
               description: `Une ou plusieurs réservations existent déjà pour ces dates (${conflictingBookings.length} conflit(s) détecté(s)). Veuillez choisir d'autres dates.`,
-              variant: "destructive"
-            });
-            return;
+            variant: "destructive"
+          });
+          return;
           } else {
-            console.log('✅ Aucun conflit détecté, création de la réservation...');
+        console.log('✅ Aucun conflit détecté, création de la réservation...');
           }
         } catch (rpcError) {
           console.warn('⚠️ Erreur lors de la vérification des conflits (non bloquant):', rpcError);
@@ -262,7 +281,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
         console.log('✅ [DIAGNOSTIC] Propriété vérifiée:', propertyCheck.name);
 
-        // 1. Insert booking
+        // ✅ NOUVEAU : Créer la réservation avec statut 'draft' initialement
+        // Elle ne sera validée (passage à 'pending'/'completed') qu'après génération complète des documents
         const { data: bookingData, error: bookingError } = await supabase
           .from('bookings')
           .insert({
@@ -274,7 +294,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             number_of_guests: formData.numberOfGuests,
             booking_reference: formData.bookingReference || null,
             guest_name: primaryGuestName || null,
-            status: formData.guests.length > 0 ? 'completed' : 'pending',
+            status: 'pending' as any, // ✅ TEMPORAIRE : Utiliser 'pending' si 'draft' n'existe pas encore dans l'ENUM
+            // TODO: Changer en 'draft' une fois la migration add_draft_status_to_bookings.sql appliquée
             documents_generated: {
               policeForm: false,
               contract: false
@@ -340,7 +361,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             }
 
             return {
-              booking_id: bookingData.id,
+          booking_id: bookingData.id,
               full_name: guest.fullName || '',
               date_of_birth: dateOfBirth,
               document_number: guest.documentNumber || '',
@@ -378,63 +399,63 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
             try {
               console.log('🔄 [AUTO-GEN] Tentative génération via host_direct...');
-              const mainGuest = formData.guests[0];
-              const guestInfo = {
-                firstName: mainGuest.fullName.split(' ')[0] || mainGuest.fullName,
-                lastName: mainGuest.fullName.split(' ').slice(1).join(' ') || '',
-                email: mainGuest.email || '',
-                phone: '',
-                nationality: mainGuest.nationality || '',
-                idType: mainGuest.documentType === 'passport' ? 'passport' : 'national_id',
-                idNumber: mainGuest.documentNumber || '',
-                dateOfBirth: typeof mainGuest.dateOfBirth === 'string' 
-                  ? mainGuest.dateOfBirth 
-                  : mainGuest.dateOfBirth?.toString() || ''
-              };
+            const mainGuest = formData.guests[0];
+            const guestInfo = {
+              firstName: mainGuest.fullName.split(' ')[0] || mainGuest.fullName,
+              lastName: mainGuest.fullName.split(' ').slice(1).join(' ') || '',
+              email: mainGuest.email || '',
+              phone: '',
+              nationality: mainGuest.nationality || '',
+              idType: mainGuest.documentType === 'passport' ? 'passport' : 'national_id',
+              idNumber: mainGuest.documentNumber || '',
+              dateOfBirth: typeof mainGuest.dateOfBirth === 'string' 
+                ? mainGuest.dateOfBirth 
+                : mainGuest.dateOfBirth?.toString() || ''
+            };
 
-              const idDocuments = await Promise.all(
-                formData.uploadedDocuments.map(async (doc) => {
-                  const { DocumentStorageService } = await import('@/services/documentStorageService');
-                  const uploadResult = await DocumentStorageService.storeDocument(doc.file, {
+            const idDocuments = await Promise.all(
+              formData.uploadedDocuments.map(async (doc) => {
+                const { DocumentStorageService } = await import('@/services/documentStorageService');
+                const uploadResult = await DocumentStorageService.storeDocument(doc.file, {
                     bookingId: bookingId,
-                    fileName: doc.file.name,
+                  fileName: doc.file.name,
                     extractedData: doc.extractedData
-                  });
+                });
 
                   if (!uploadResult.success || !uploadResult.filePath) {
-                    throw new Error(`Échec upload document: ${doc.file.name}`);
-                  }
+                  throw new Error(`Échec upload document: ${doc.file.name}`);
+                }
 
                   const { data: signedData, error: signedError } = await supabase.storage
                     .from('guest-documents')
                     .createSignedUrl(uploadResult.filePath, 3600);
-
+  
                   if (signedError || !signedData?.signedUrl) {
                     throw new Error(`Impossible de signer l'URL du document: ${doc.file.name}`);
-                  }
-
-                  return {
-                    name: doc.file.name,
-                    url: signedData.signedUrl,
-                    type: doc.file.type,
-                    size: doc.file.size
-                  };
-                })
-              );
-
-              const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
-                body: {
-                  action: 'host_direct',
-                  bookingId: bookingId,
-                  guestInfo,
-                  idDocuments,
-                  bookingData: {
-                    checkIn: formData.checkInDate,
-                    checkOut: formData.checkOutDate,
-                    numberOfGuests: formData.numberOfGuests
-                  }
                 }
-              });
+
+                return {
+                  name: doc.file.name,
+                    url: signedData.signedUrl,
+                  type: doc.file.type,
+                  size: doc.file.size
+                };
+              })
+            );
+
+            const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+              body: {
+                action: 'host_direct',
+                  bookingId: bookingId,
+                guestInfo,
+                idDocuments,
+                bookingData: {
+                  checkIn: formData.checkInDate,
+                  checkOut: formData.checkOutDate,
+                  numberOfGuests: formData.numberOfGuests
+                }
+              }
+            });
 
               if (!error && data) {
                 result.contractUrl = data.contractUrl;
@@ -444,21 +465,21 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               }
             } catch (error) {
               console.warn('⚠️ [AUTO-GEN] host_direct a échoué, passage au fallback:', error);
-            }
+          }
           }
 
           // Méthode 2 (Fallback) : Générer contrat et police séparément
           console.log('🔄 [AUTO-GEN] Génération séparée contrat + police...');
-          
+              
           // Générer le contrat
           try {
-            const { data: contractData, error: contractError } = await supabase.functions.invoke('submit-guest-info-unified', {
-              body: {
-                action: 'generate_contract_only',
+              const { data: contractData, error: contractError } = await supabase.functions.invoke('submit-guest-info-unified', {
+                body: {
+                  action: 'generate_contract_only',
                 bookingId: bookingId
-              }
-            });
-            
+                }
+              });
+
             if (!contractError && contractData?.contractUrl) {
               result.contractUrl = contractData.contractUrl;
               console.log('✅ [AUTO-GEN] Contrat généré avec succès');
@@ -471,19 +492,19 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
           // Générer la police
           try {
-            const { data: policeData, error: policeError } = await supabase.functions.invoke('submit-guest-info-unified', {
-              body: {
-                action: 'generate_police_only',
+                  const { data: policeData, error: policeError } = await supabase.functions.invoke('submit-guest-info-unified', {
+                    body: {
+                      action: 'generate_police_only',
                 bookingId: bookingId
-              }
-            });
-            
+                    }
+                  });
+
             if (!policeError && policeData?.policeUrl) {
               result.policeUrl = policeData.policeUrl;
               console.log('✅ [AUTO-GEN] Police générée avec succès');
-            } else {
+                  } else {
               console.warn('⚠️ [AUTO-GEN] Échec génération police:', policeError?.message);
-            }
+                  }
           } catch (error) {
             console.warn('⚠️ [AUTO-GEN] Erreur génération police:', error);
           }
@@ -511,17 +532,29 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               policeUrl: documentsResult.policeUrl || undefined
             };
 
-            await supabase
-              .from('bookings')
-              .update({
+            // ✅ VALIDATION COMPLÈTE : Passer de 'draft' à 'pending'/'completed' seulement si les documents sont générés
+            const hasAllDocuments = documentsResult.contractUrl && documentsResult.policeUrl;
+            const finalStatus = hasAllDocuments ? 'completed' : 'pending';
+            
+            console.log('✅ [VALIDATION] Validation réservation:', {
+              bookingId: bookingData.id,
+              hasContract: !!documentsResult.contractUrl,
+              hasPolice: !!documentsResult.policeUrl,
+              finalStatus,
+              wasDraft: (bookingData.status as any) === 'draft'
+            });
+
+                await supabase
+                  .from('bookings')
+                  .update({
                 documents_generated: updatedDocumentsGenerated,
-                status: documentsResult.contractUrl && documentsResult.policeUrl ? 'completed' : 'pending',
+                status: finalStatus, // ✅ Passer de 'draft' à 'pending' ou 'completed' après validation
                 guest_name: (formData.guests[0]?.fullName || primaryGuestName || '').trim() || null
-              })
-              .eq('id', bookingData.id);
+                  })
+                  .eq('id', bookingData.id);
 
             await refreshBookings();
-
+            
             // Message de succès adapté selon ce qui a été généré
             const generatedDocs = [];
             if (documentsResult.contractUrl) generatedDocs.push('contrat');
@@ -533,18 +566,20 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
                 description: `${generatedDocs.join(' et ')} généré${generatedDocs.length > 1 ? 's' : ''} automatiquement.`,
               });
             } else {
-              toast({
-                title: "Réservation créée",
+            toast({
+              title: "Réservation créée",
                 description: "La réservation a été créée. Les documents seront générés automatiquement en arrière-plan.",
               });
             }
           } catch (error) {
             console.error('❌ [AUTO-GEN] Erreur lors de la génération automatique:', error);
-            // Ne pas afficher d'erreur à l'utilisateur, juste continuer
+            // ✅ AMÉLIORATION : Ne pas bloquer le processus même si la génération échoue
+            // La réservation est déjà créée, les documents pourront être générés manuellement plus tard
             await refreshBookings();
             toast({
               title: "Réservation créée",
-              description: "La réservation a été créée. Les documents seront disponibles dans quelques instants.",
+              description: "La réservation a été créée avec succès. Les documents pourront être générés depuis la vue de la réservation.",
+              variant: "default"
             });
           }
         } else if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
@@ -608,7 +643,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
                 date_of_birth: dateOfBirth,
                 document_number: guest.documentNumber || '',
                 nationality: guest.nationality || 'Non spécifiée',
-                place_of_birth: guest.placeOfBirth || '',
+              place_of_birth: guest.placeOfBirth || '',
                 document_type: (guest.documentType || 'passport') as 'passport' | 'national_id'
               };
             })
@@ -643,7 +678,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
                 }
 
                 return {
-                  booking_id: editingBooking.id,
+                booking_id: editingBooking.id,
                   full_name: guest.fullName || '',
                   date_of_birth: dateOfBirth,
                   document_number: guest.documentNumber || '',
@@ -707,11 +742,13 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         });
       }
 
-      // ✅ CRITIQUE : Attendre que refreshBookings() termine et laisser le temps aux subscriptions de se mettre à jour
-      console.log('⏳ [DIAGNOSTIC] Attente finale avant fermeture du modal...');
-      await refreshBookings();
-      // Attendre un court délai pour que les subscriptions en temps réel se mettent à jour
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // ✅ AMÉLIORATION : Le rafraîchissement est maintenant automatique via :
+      // 1. Mise à jour optimiste immédiate dans addBooking()/updateBooking()
+      // 2. Subscription en temps réel qui va confirmer le changement
+      // Plus besoin d'attendre longtemps - juste un court délai pour que l'UI se mette à jour
+      console.log('✅ [DIAGNOSTIC] Réservation créée/mise à jour - rafraîchissement automatique en cours...');
+      // Petit délai pour que l'UI se mette à jour visuellement
+      await new Promise(resolve => setTimeout(resolve, 200));
       console.log('✅ [DIAGNOSTIC] Fermeture du modal après rafraîchissement');
 
       onClose();
@@ -722,6 +759,9 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         description: "Une erreur est survenue lors de l'enregistrement.",
         variant: "destructive",
       });
+    } finally {
+      // ✅ CRITIQUE : Toujours réinitialiser l'état de soumission, même en cas d'erreur
+      setIsSubmitting(false);
     }
   };
 
@@ -729,11 +769,11 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
     if (typeof updates === 'function') {
       // Si updates est une fonction, l'appeler avec l'état précédent
       console.log('🔄 [BookingWizard] updateFormData appelé avec FONCTION');
-      setFormData(prev => {
+    setFormData(prev => {
         const result = updates(prev);
         console.log('🔄 [BookingWizard] Résultat fonction:', result);
         return { ...prev, ...result };
-      });
+    });
     } else {
       // Si updates est un objet, faire un merge simple
       console.log('🔄 [BookingWizard] updateFormData appelé avec OBJET:', updates);
@@ -757,7 +797,12 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
                 Étape {currentStep + 1} sur {steps.length}: {steps[currentStep].title}
               </p>
             </div>
-            <Button variant="ghost" onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <Button 
+              variant="ghost" 
+              onClick={onClose} 
+              disabled={isSubmitting}
+              className="text-muted-foreground hover:text-foreground"
+            >
               ✕
             </Button>
           </div>
@@ -780,7 +825,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             <Button
               variant="outline"
               onClick={handlePrevious}
-              disabled={currentStep === 0}
+              disabled={currentStep === 0 || isSubmitting}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Précédent
@@ -788,10 +833,15 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             
             <Button
               onClick={handleNext}
-              disabled={!isStepValid}
+              disabled={!isStepValid || isSubmitting}
               variant={currentStep === steps.length - 1 ? "success" : "professional"}
             >
-              {currentStep === steps.length - 1 ? (
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {currentStep === steps.length - 1 ? 'Création en cours...' : 'Traitement...'}
+                </>
+              ) : currentStep === steps.length - 1 ? (
                 <>
                   <Check className="w-4 h-4 mr-2" />
                   {editingBooking ? 'Mettre à jour' : 'Créer la réservation'}

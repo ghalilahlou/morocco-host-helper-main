@@ -127,19 +127,31 @@ export const DocumentPreviewDialog = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full overflow-hidden flex flex-col p-0 gap-0">
+        <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
           <div className="flex items-center justify-between">
-            <DialogTitle>
+            <DialogTitle className="text-xl">
               {documentType === 'police' ? 'Aperçu - Fiche de Police' : 'Aperçu - Contrat de Location'}
             </DialogTitle>
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="w-4 h-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              {documentUrl && !isGenerating && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(documentUrl, '_blank')}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Télécharger
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" onClick={onClose}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden border rounded-lg bg-gray-50">
+        <div className="flex-1 overflow-hidden bg-gray-50 min-h-0">
           {isGenerating ? (
             <div className="flex flex-col items-center justify-center h-full space-y-4">
               <Loader2 className="w-12 h-12 animate-spin text-brand-teal" />
@@ -158,29 +170,11 @@ export const DocumentPreviewDialog = ({
           ) : documentUrl ? (
             <iframe
               src={documentUrl}
-              className="w-full h-full"
+              className="w-full h-full border-0"
               title={documentType === 'police' ? 'Aperçu Fiche de Police' : 'Aperçu Contrat'}
             />
           ) : null}
         </div>
-
-        {documentUrl && !isGenerating && (
-          <div className="flex justify-between items-center pt-4 border-t">
-            <p className="text-sm text-muted-foreground">
-              ✅ Document généré avec le format officiel de l'Edge Function
-            </p>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => window.open(documentUrl, '_blank')}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Télécharger
-              </Button>
-              <Button onClick={onClose}>Fermer</Button>
-            </div>
-          </div>
-        )}
       </DialogContent>
     </Dialog>
   );

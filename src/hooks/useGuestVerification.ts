@@ -33,21 +33,21 @@ function cleanGuestNameForUrl(guestName: string): string {
   
   for (const pattern of unwantedPatterns) {
     if (pattern.test(cleanedName)) {
-      console.log('🧹 Nom nettoyé pour URL - pattern indésirable détecté:', cleanedName);
+      // Log masqué en production
       return ''; // Retourner vide si le nom contient des éléments indésirables
     }
   }
   
   // Vérifier que le nom contient au moins des lettres
   if (!/[a-zA-Z]/.test(cleanedName)) {
-    console.log('🧹 Nom nettoyé pour URL - pas de lettres détectées:', cleanedName);
+    // Log masqué en production
     return '';
   }
   
   // Nettoyer les espaces multiples et les retours à la ligne
   cleanedName = cleanedName.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
   
-  console.log('✅ Nom nettoyé pour URL avec succès:', cleanedName);
+  // Log masqué en production
   return cleanedName;
 }
 
@@ -63,7 +63,7 @@ export const useGuestVerification = () => {
     if (!user) return { valid: false, error: 'User not authenticated' };
 
     try {
-      console.log('🔐 Validating Airbnb code:', { propertyId, codeLength: password.length });
+      // Log masqué en production
       
       // Utiliser issue-guest-link avec action 'resolve'
       const { data, error } = await supabase.functions.invoke('issue-guest-link', {
@@ -76,12 +76,12 @@ export const useGuestVerification = () => {
       });
 
       if (error) {
-        console.error('❌ Error calling issue-guest-link (resolve):', error);
+        // Erreur masquée en production
         return { valid: false, error: error.message || "Erreur de validation" };
       }
 
       if (!data || !data.success) {
-        console.error('❌ Function returned error:', data);
+        // Erreur masquée en production
         
         // Gestion des erreurs spécifiques
         if (data?.error === 'code_required') {
@@ -95,14 +95,14 @@ export const useGuestVerification = () => {
         return { valid: false, error: data?.error || "Réponse invalide du serveur" };
       }
 
-      console.log('✅ Airbnb code validation successful');
+      // Log masqué en production
       return { 
         valid: true, 
         token: token, // Retourner le token original
         error: undefined 
       };
     } catch (error) {
-      console.error('❌ Error validating Airbnb code:', error);
+      // Erreur masquée en production
       return { valid: false, error: "Erreur lors de la validation" };
     }
   };
@@ -110,7 +110,7 @@ export const useGuestVerification = () => {
   // ✅ NOUVEAU : Valider un token avec résolution (pour GuestVerification.tsx)
   const validateTokenWithResolution = async (propertyId: string, token: string, airbnbCode?: string) => {
     try {
-      console.log('🔍 Validating token with resolution:', { propertyId, hasCode: !!airbnbCode });
+      // Log masqué en production
       
       const { data, error } = await supabase.functions.invoke('issue-guest-link', {
         body: {
@@ -122,7 +122,7 @@ export const useGuestVerification = () => {
       });
 
       if (error) {
-        console.error('❌ Token resolution error:', error);
+        // Erreur masquée en production
         return { isValid: false, error: error.message };
       }
 
@@ -153,7 +153,7 @@ export const useGuestVerification = () => {
         }
       }
 
-      console.log('✅ Token validated successfully');
+      // Log masqué en production
       return { 
         isValid: true, 
         requiresCode: data.requiresCode,
@@ -162,7 +162,7 @@ export const useGuestVerification = () => {
       };
 
     } catch (error) {
-      console.error('❌ Validation error:', error);
+      // Erreur masquée en production
       return { isValid: false, error: 'Erreur de validation' };
     }
   };
@@ -188,7 +188,7 @@ export const useGuestVerification = () => {
     try {
       setIsLoading(true);
       
-      console.log('🔗 Generating verification URL via Edge Function:', { propertyId, airbnbBookingId });
+      // Log masqué en production (sauf le lien final)
       
       // ✅ UNIFIÉ : Toujours utiliser ics_direct avec dates pré-remplies
       // Si pas de reservationData, créer un objet minimal avec les dates disponibles
@@ -211,7 +211,7 @@ export const useGuestVerification = () => {
       });
 
       if (error) {
-        console.error('❌ Error calling issue-guest-link function:', error);
+        // Erreur masquée en production
         toast({
           title: "Erreur",
           description: error.message || "Impossible de créer le lien de vérification",
@@ -221,7 +221,7 @@ export const useGuestVerification = () => {
       }
 
       if (!data || !data.success) {
-        console.error('❌ Function returned error:', data);
+        // Erreur masquée en production
         const errorMessage = data?.error || "Réponse invalide du serveur";
         const errorDetails = data?.details ? ` (${JSON.stringify(data.details)})` : '';
         toast({
@@ -233,7 +233,7 @@ export const useGuestVerification = () => {
       }
 
       if (!data.token) {
-        console.error('❌ No token returned from Edge Function:', data);
+        // Erreur masquée en production
         toast({
           title: "Erreur",
           description: "Aucun token généré",
@@ -279,18 +279,9 @@ export const useGuestVerification = () => {
         
         const clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?${urlParams}`;
         
-        // ✅ LOGS AMÉLIORÉS : Afficher le lien complet dans la console
-        console.log('🔗 [UNIFIÉ] Lien généré avec dates pré-remplies:', { 
-          propertyId, 
-          token: data.token, 
-          airbnbCode,
-          fullUrl: clientUrl,
-          dates: `${startDate} → ${endDate}`,
-          workflow: 'Dates automatiquement remplies dans l\'URL → Accès direct à GuestVerification'
-        });
-        // ✅ CRITIQUE : Afficher le lien complet dans la console pour faciliter la copie manuelle
-        console.log('📋 [LIEN COMPLET À COPIER]:', clientUrl);
-        console.log('📋 [LIEN COMPLET À COPIER - URL seule]:', clientUrl);
+        // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation
+        // Ce log est toujours visible car il est nécessaire pour copier le lien
+        console.log('🔗 [LIEN DE RÉSERVATION]:', clientUrl);
         
         // ✅ COPIE ROBUSTE : Utiliser copyToClipboard avec fallback
         let copySuccess = false;
@@ -299,13 +290,13 @@ export const useGuestVerification = () => {
           copySuccess = await copyToClipboard(clientUrl);
           
           if (copySuccess) {
-            console.log('✅ Lien copié avec succès dans le presse-papiers');
+            // Log masqué en production
             toast({
               title: "Lien copié !",
               description: "Le lien de vérification a été copié dans le presse-papiers",
             });
           } else {
-            console.warn('⚠️ La copie a échoué, affichage du lien dans le toast');
+            // Log masqué en production
             toast({
               title: "Lien généré",
               description: `Le lien a été généré. Copiez-le manuellement : ${clientUrl}`,
@@ -313,8 +304,8 @@ export const useGuestVerification = () => {
             });
           }
         } catch (copyError) {
-          console.error('❌ Erreur lors de la copie:', copyError);
-          console.log('📋 [LIEN À COPIER MANUELLEMENT]:', clientUrl);
+          // Erreur masquée en production
+          // Le lien est déjà affiché dans le toast
           toast({
             title: "Lien généré",
             description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
@@ -326,15 +317,8 @@ export const useGuestVerification = () => {
       } else {
         // Fallback : Si pas de dates, rediriger vers GuestVerification sans dates (l'utilisateur devra les saisir)
         const clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
-        console.warn('⚠️ [UNIFIÉ] Lien généré sans dates (fallback):', { 
-          propertyId, 
-          token: data.token,
-          fullUrl: clientUrl,
-          workflow: 'Pas de dates disponibles → L\'utilisateur devra les saisir manuellement'
-        });
-        // ✅ CRITIQUE : Afficher le lien complet dans la console
-        console.log('📋 [LIEN COMPLET À COPIER]:', clientUrl);
-        console.log('📋 [LIEN COMPLET À COPIER - URL seule]:', clientUrl);
+        // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation (fallback)
+        console.log('🔗 [LIEN DE RÉSERVATION]:', clientUrl);
         
         // ✅ COPIE ROBUSTE : Utiliser copyToClipboard avec fallback
         let copySuccess = false;
@@ -343,13 +327,13 @@ export const useGuestVerification = () => {
           copySuccess = await copyToClipboard(clientUrl);
           
           if (copySuccess) {
-            console.log('✅ Lien copié avec succès dans le presse-papiers');
+            // Log masqué en production
             toast({
               title: "Lien copié !",
               description: "Le lien de vérification a été copié dans le presse-papiers",
             });
           } else {
-            console.warn('⚠️ La copie a échoué, affichage du lien dans le toast');
+            // Log masqué en production
             toast({
               title: "Lien généré",
               description: `Le lien a été généré. Copiez-le manuellement : ${clientUrl}`,
@@ -357,8 +341,8 @@ export const useGuestVerification = () => {
             });
           }
         } catch (copyError) {
-          console.error('❌ Erreur lors de la copie:', copyError);
-          console.log('📋 [LIEN À COPIER MANUELLEMENT]:', clientUrl);
+          // Erreur masquée en production
+          // Le lien est déjà affiché dans le toast
           toast({
             title: "Lien généré",
             description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
@@ -369,7 +353,7 @@ export const useGuestVerification = () => {
         return clientUrl;
       }
     } catch (error) {
-      console.error('❌ Error generating verification URL:', error);
+      // Erreur masquée en production (utiliser le toast pour l'utilisateur)
       toast({
         title: "Erreur",
         description: "Erreur lors de la génération du lien",
@@ -402,13 +386,13 @@ export const useGuestVerification = () => {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error loading verification tokens:', error);
+        // Erreur masquée en production
         return;
       }
 
       setTokens(data || []);
     } catch (error) {
-      console.error('Error loading verification tokens:', error);
+      // Erreur masquée en production
     } finally {
       setIsLoading(false);
     }
@@ -426,7 +410,7 @@ export const useGuestVerification = () => {
         .eq('user_id', user.id);
 
       if (propsError || !userProperties?.length) {
-        console.error('Error loading user properties:', propsError);
+        // Erreur masquée en production
         setSubmissions([]);
         return;
       }
@@ -441,7 +425,7 @@ export const useGuestVerification = () => {
           });
 
           if (error) {
-            console.error('Error loading guest submissions for property:', property.id, error);
+            // Erreur masquée en production
             continue;
           }
 
@@ -475,13 +459,13 @@ export const useGuestVerification = () => {
 
           allSubmissions.push(...propertySubmissions);
         } catch (edgeError) {
-          console.error('Error calling get-guest-documents-unified for property:', property.id, edgeError);
+          // Erreur masquée en production
         }
       }
       
       setSubmissions(allSubmissions);
     } catch (error) {
-      console.error('Error loading guest submissions:', error);
+      // Erreur masquée en production
     }
   };
 
@@ -495,7 +479,7 @@ export const useGuestVerification = () => {
         .eq('id', tokenId);
 
       if (error) {
-        console.error('Error deactivating token:', error);
+        // Erreur masquée en production
         toast({
           title: "Error",
           description: "Failed to deactivate verification link",
@@ -512,7 +496,7 @@ export const useGuestVerification = () => {
       await loadVerificationTokens();
       return true;
     } catch (error) {
-      console.error('Error deactivating token:', error);
+      // Erreur masquée en production
       return false;
     }
   };
@@ -534,7 +518,7 @@ export const useGuestVerification = () => {
         .eq('id', submissionId);
 
       if (error) {
-        console.error('Error updating submission status:', error);
+        // Erreur masquée en production
         toast({
           title: "Error",
           description: "Failed to update submission status",
@@ -551,7 +535,7 @@ export const useGuestVerification = () => {
       await loadGuestSubmissions();
       return true;
     } catch (error) {
-      console.error('Error updating submission status:', error);
+      // Erreur masquée en production
       return false;
     }
   };
