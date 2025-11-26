@@ -4,7 +4,7 @@
  * Route: Utilisé par CalendarView pour afficher les détails de réservation
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -78,25 +78,6 @@ export const UnifiedBookingModal = ({
   const isAirbnb = booking ? ('source' in booking && booking.source === 'airbnb') : false;
   const isEnriched = booking ? ('hasRealSubmissions' in booking) : false;
   
-  // ✅ NOUVEAU : Détecter si c'est une réservation issue d'un fichier ICS (non supprimable)
-  // Une réservation ICS est identifiée par :
-  // - Status 'pending'
-  // - booking_reference existe et n'est pas 'INDEPENDENT_BOOKING' (code Airbnb)
-  // - Pas de guests complets (pas de full_name, document_number, nationality pour tous les guests)
-  const bookingTyped = booking as Booking;
-  const hasCompleteGuestsForICS = bookingTyped?.guests && bookingTyped.guests.length > 0 && 
-    bookingTyped.guests.every(guest => 
-      guest.fullName && 
-      guest.documentNumber && 
-      guest.nationality
-    );
-  const isICSReservation = !isAirbnb && 
-    bookingTyped && 
-    status === 'pending' && 
-    bookingTyped.bookingReference && 
-    bookingTyped.bookingReference !== 'INDEPENDENT_BOOKING' &&
-    !hasCompleteGuestsForICS; // Pas de guests complets = réservation ICS non complétée
-  
   // ✅ EXTRACTION : Données unifiées pour tous les types (avec vérification null)
   const bookingCode = booking 
     ? (isAirbnb 
@@ -121,6 +102,29 @@ export const UnifiedBookingModal = ({
         ? 'pending' 
         : (booking as Booking).status || 'pending')
     : 'pending';
+  
+  // ✅ NOUVEAU : Détecter si c'est une réservation issue d'un fichier ICS (non supprimable)
+  // Une réservation ICS est identifiée par :
+  // - Status 'pending'
+  // - booking_reference existe et n'est pas 'INDEPENDENT_BOOKING' (code Airbnb)
+  // - Pas de guests complets (pas de full_name, document_number, nationality pour tous les guests)
+  // ✅ CORRIGÉ : Utiliser useMemo pour éviter les problèmes d'ordre d'initialisation et références circulaires
+  const bookingTyped = booking as Booking;
+  const isICSReservation = useMemo(() => {
+    if (isAirbnb || !bookingTyped || status !== 'pending') return false;
+    if (!bookingTyped.bookingReference || bookingTyped.bookingReference === 'INDEPENDENT_BOOKING') return false;
+    
+    // Vérifier si tous les guests sont complets
+    const hasCompleteGuests = bookingTyped.guests && bookingTyped.guests.length > 0 && 
+      bookingTyped.guests.every(guest => 
+        guest.fullName && 
+        guest.documentNumber && 
+        guest.nationality
+      );
+    
+    // C'est une réservation ICS si pas de guests complets
+    return !hasCompleteGuests;
+  }, [isAirbnb, booking, status]); // ✅ CORRIGÉ : Utiliser booking au lieu de bookingTyped pour éviter les problèmes de référence
 
   // ✅ PROPERTY ID : Priorité propertyId > booking.propertyId > booking.property?.id
   const propertyId = propPropertyId || 
