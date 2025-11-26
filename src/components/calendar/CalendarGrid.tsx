@@ -111,30 +111,38 @@ export const CalendarGrid = ({
                     
                     // ✅ DIAGNOSTIC EXHAUSTIF : Log détaillé pour chaque barre
                     if (arrayIndex === 0) {
-                      const booking = bookingData.booking as Booking;
-                      const expectedDay = week.find(d => {
-                        const dDate = new Date(d.date.getFullYear(), d.date.getMonth(), d.date.getDate(), 0, 0, 0, 0);
-                        const checkIn = new Date(booking.checkInDate);
-                        const checkInNorm = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate(), 0, 0, 0, 0);
-                        return dDate.getTime() === checkInNorm.getTime();
-                      });
+                      // ✅ CORRIGÉ : Vérifier le type de booking avant d'accéder aux propriétés
+                      const isAirbnbBooking = 'source' in bookingData.booking && bookingData.booking.source === 'airbnb';
+                      const booking = isAirbnbBooking 
+                        ? null // Ne pas traiter les réservations Airbnb ici
+                        : (bookingData.booking as Booking);
                       
-                      console.log(`📊 [RENDU BARRE] Semaine ${weekIndex}, première barre:`, {
-                        bookingId: booking.id.substring(0, 8),
-                        startDayIndex: bookingData.startDayIndex,
-                        span: bookingData.span,
-                        layer,
-                        gridColumn: `${bookingData.startDayIndex + 1} / span ${bookingData.span}`,
-                        checkIn: booking.checkInDate,
-                        checkOut: booking.checkOutDate,
-                        cellHeight,
-                        weekDayNumbers: week.map(d => d.dayNumber),
-                        expectedDayNumber: expectedDay?.dayNumber,
-                        actualDayNumber: week[bookingData.startDayIndex]?.dayNumber,
-                        alignmentMatch: expectedDay?.dayNumber === week[bookingData.startDayIndex]?.dayNumber,
-                        hasBooking: !!bookingData.booking,
-                        bookingType: 'source' in bookingData.booking ? 'airbnb' : 'manual'
-                      });
+                      // ✅ CORRIGÉ : Ne faire le log que pour les réservations Booking (pas Airbnb)
+                      if (booking) {
+                        const expectedDay = week.find(d => {
+                          const dDate = new Date(d.date.getFullYear(), d.date.getMonth(), d.date.getDate(), 0, 0, 0, 0);
+                          const checkIn = new Date(booking.checkInDate);
+                          const checkInNorm = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate(), 0, 0, 0, 0);
+                          return dDate.getTime() === checkInNorm.getTime();
+                        });
+                        
+                        console.log(`📊 [RENDU BARRE] Semaine ${weekIndex}, première barre:`, {
+                          bookingId: booking.id.substring(0, 8),
+                          startDayIndex: bookingData.startDayIndex,
+                          span: bookingData.span,
+                          layer,
+                          gridColumn: `${bookingData.startDayIndex + 1} / span ${bookingData.span}`,
+                          checkIn: booking.checkInDate,
+                          checkOut: booking.checkOutDate,
+                          cellHeight,
+                          weekDayNumbers: week.map(d => d.dayNumber),
+                          expectedDayNumber: expectedDay?.dayNumber,
+                          actualDayNumber: week[bookingData.startDayIndex]?.dayNumber,
+                          alignmentMatch: expectedDay?.dayNumber === week[bookingData.startDayIndex]?.dayNumber,
+                          hasBooking: !!bookingData.booking,
+                          bookingType: 'manual'
+                        });
+                      }
                     }
                     
                     // ✅ CALCUL PRÉCIS : Valeurs pour le positionnement
