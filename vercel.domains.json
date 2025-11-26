@@ -1,0 +1,50 @@
+{
+  "domains": [
+    {
+      "domain": "checky.ma",
+      "type": "apex",
+      "configuration": {
+        "dns": {
+          "type": "A",
+          "name": "@",
+          "value": "216.198.79.1"
+        },
+        "vercelDns": {
+          "enabled": true,
+          "recommended": true
+        }
+      },
+      "notes": "Domaine principal - Configuration via DNS A record ou Vercel DNS"
+    },
+    {
+      "domain": "www.checky.ma",
+      "type": "subdomain",
+      "configuration": {
+        "dns": {
+          "type": "CNAME",
+          "name": "www",
+          "value": "cname.vercel-dns.com"
+        },
+        "redirect": {
+          "enabled": false,
+          "target": "checky.ma",
+          "type": "307"
+        },
+        "environment": "production"
+      },
+      "notes": "Sous-domaine www - Peut être redirigé vers le domaine principal ou connecté à Production"
+    }
+  ],
+  "instructions": {
+    "step1": "Configurer les enregistrements DNS dans votre hébergeur (heberjahiz.com)",
+    "step2": "Attendre la propagation DNS (24-72h)",
+    "step3": "Vérifier dans Vercel Dashboard → Settings → Domains",
+    "step4": "Mettre à jour src/config/runtime.ts avec les nouveaux domaines"
+  },
+  "dnsProvider": {
+    "name": "heberjahiz.com",
+    "url": "https://heberjahiz.com",
+    "instructions": "Aller dans 'Mon domaine' → 'DNS' pour configurer les enregistrements"
+  }
+}
+

@@ -51,12 +51,13 @@ export const CalendarGrid = ({
           // ✅ CALCULER les valeurs une seule fois par semaine pour cohérence
           const layersInWeek = bookingLayout[weekIndex] ? 
             Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1 : 1;
-          const baseHeight = isMobile ? 24 : 32;
-          const spacing = isMobile ? 10 : 14;
-          const headerSpace = isMobile ? 35 : 45; // Espace pour le numéro de jour + padding
-          const padding = isMobile ? 20 : 25;
+          // ✅ MOBILE-FRIENDLY : Augmenter l'espacement pour mobile
+          const baseHeight = isMobile ? 28 : 32; // Augmenté de 24 à 28
+          const spacing = isMobile ? 12 : 14; // Augmenté de 10 à 12
+          const headerSpace = isMobile ? 42 : 45; // Augmenté de 35 à 42
+          const padding = isMobile ? 24 : 25; // Augmenté de 20 à 24
           const calculatedHeight = headerSpace + (layersInWeek * (baseHeight + spacing)) + padding;
-          const minHeight = isMobile ? 100 : 150;
+          const minHeight = isMobile ? 120 : 150; // Augmenté de 100 à 120
           const cellHeight = Math.max(minHeight, calculatedHeight);
           
           return (
@@ -70,7 +71,7 @@ export const CalendarGrid = ({
                     <div
                       key={dayIndex}
                       className={`
-                        border-r border-b border-slate-100 p-2 sm:p-3 bg-white relative
+                        border-r border-b border-slate-100 p-3 sm:p-4 bg-white relative
                         ${!day.isCurrentMonth ? 'bg-slate-50 text-slate-400' : 'bg-white'}
                         ${isToday ? 'bg-cyan-50 border-cyan-200 z-10' : ''}
                         ${dayIndex === 6 ? 'border-r-0' : ''}
@@ -81,7 +82,7 @@ export const CalendarGrid = ({
                       }}
                     >
                       <div className={`
-                        text-sm sm:text-base font-semibold mb-1 sm:mb-2
+                        text-base sm:text-lg font-semibold mb-2 sm:mb-3
                         ${isToday ? 'text-cyan-700' : 'text-slate-700'}
                         ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
                       `}>

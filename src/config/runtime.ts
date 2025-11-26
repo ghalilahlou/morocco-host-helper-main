@@ -164,7 +164,9 @@ export const corsConfig = {
   production: [
     'https://*.vercel.app',
     'https://morocco-host-helper.vercel.app',
-    // Ajoutez vos domaines personnalisés ici
+    'https://checky.ma',           // ✅ Domaine personnalisé principal
+    'https://www.checky.ma',      // ✅ Sous-domaine www
+    // Ajoutez d'autres domaines personnalisés ici si nécessaire
   ],
 } as const;
 
