@@ -5400,11 +5400,13 @@ async function generatePoliceFormsPDF(client: any, booking: any, isPreview: bool
             }
           }
           
-          const maxWidth = 180;
-          const maxHeight = 60;
+          // ✅ CORRIGÉ : Dimensions augmentées pour éviter le crop de la signature
+          const maxWidth = 250; // Augmenté de 180 à 250
+          const maxHeight = 80;  // Augmenté de 60 à 80
           const scale = Math.min(
             maxWidth / signatureImage.width,
-            maxHeight / signatureImage.height
+            maxHeight / signatureImage.height,
+            1.0 // ✅ NOUVEAU : Ne jamais agrandir la signature au-delà de sa taille originale
           );
           const width = signatureImage.width * scale;
           const height = signatureImage.height * scale;

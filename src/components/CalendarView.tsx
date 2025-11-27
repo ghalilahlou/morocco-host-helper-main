@@ -503,7 +503,7 @@ const handleManualRefresh = useCallback(async () => {
         if (window.innerWidth >= 768) {
           toast({
             title: "Synchronisation réussie",
-            description: `${result.count || 0} réservations synchronisées.`
+            description: `${result.count || 0} réservations synchronisées. Naviguez dans le calendrier pour voir toutes les réservations.`
           });
         }
         
