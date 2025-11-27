@@ -90,8 +90,8 @@ export const PropertyDetail = () => {
 
     try {
       // ✅ SIMPLIFIÉ : Le lien est automatiquement copié dans le hook
-      // ✅ PRÉSERVER L'ÉVÉNEMENT UTILISATEUR pour la copie
-      const userEvent = event?.nativeEvent || undefined;
+      // ✅ MOBILE-OPTIMIZED : Préserver l'événement utilisateur complet pour la copie mobile
+      const userEvent = event || undefined;
       await generatePropertyVerificationUrl(property.id, undefined, {
         userEvent: userEvent
       });

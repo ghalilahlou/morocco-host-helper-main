@@ -56,8 +56,8 @@ export const AirbnbReservationModal = ({
     setIsGeneratingLocal(true);
     console.log('🟡 Génération de lien démarrée...');
     
-    // ✅ PRÉSERVER L'ÉVÉNEMENT UTILISATEUR pour la copie
-    const userEvent = event?.nativeEvent || undefined;
+    // ✅ MOBILE-OPTIMIZED : Préserver l'événement utilisateur complet pour la copie mobile
+    const userEvent = event || undefined;
 
     // Extract the actual booking code from raw event if needed
     const rawEvent = reservation.rawEvent || '';

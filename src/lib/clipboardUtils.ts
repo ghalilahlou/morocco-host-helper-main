@@ -1,25 +1,39 @@
 /**
  * Utility functions for clipboard operations with robust HTTP/local support
  * Compatible with localhost, local IP addresses, and HTTPS
+ * ✅ MOBILE-OPTIMIZED : Optimisé pour iOS et Android
  */
+
+import { isMobileDevice, copyToClipboardMobile } from './mobileClipboard';
 
 /**
  * Copies text to clipboard with robust fallback for HTTP/local contexts
+ * ✅ MOBILE-OPTIMIZED : Utilise la fonction optimisée pour mobile
  * @param text - The text to copy to clipboard
+ * @param event - L'événement utilisateur (optionnel, recommandé pour mobile)
  * @returns Promise<boolean> - true if copy succeeded, false otherwise
  */
-export const copyToClipboard = async (text: string): Promise<boolean> => {
+export const copyToClipboard = async (
+  text: string,
+  event?: Event | React.SyntheticEvent
+): Promise<boolean> => {
   console.log('📋 copyToClipboard appelé', { 
     textLength: text.length, 
     isSecureContext: window.isSecureContext, 
     hasClipboard: !!navigator.clipboard,
+    isMobile: isMobileDevice(),
     url: window.location.href
   });
   
-  // ✅ ÉTAPE 1 : Essayer l'API Clipboard moderne (si disponible)
+  // ✅ MOBILE-FIRST : Sur mobile, utiliser la fonction optimisée
+  if (isMobileDevice()) {
+    return copyToClipboardMobile(text, event);
+  }
+  
+  // ✅ ÉTAPE 1 : Essayer l'API Clipboard moderne (si disponible) - Desktop
   if (navigator.clipboard && window.isSecureContext) {
     try {
-      console.log('📋 Tentative avec Clipboard API...');
+      console.log('📋 Tentative avec Clipboard API (desktop)...');
       await navigator.clipboard.writeText(text);
       console.log('✅ Copié avec Clipboard API');
       return true;

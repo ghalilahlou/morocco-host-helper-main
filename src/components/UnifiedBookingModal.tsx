@@ -200,7 +200,8 @@ export const UnifiedBookingModal = ({
     }
 
     setIsGeneratingLocal(true);
-    const userEvent = event?.nativeEvent || undefined;
+    // ✅ MOBILE-OPTIMIZED : Préserver l'événement utilisateur complet pour la copie mobile
+    const userEvent = event || undefined;
 
     try {
       // ✅ ENRICHIE : Pour les réservations Airbnb, inclure les dates pré-remplies

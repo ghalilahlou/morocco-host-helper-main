@@ -1,6 +1,6 @@
 /**
  * ✅ SIMPLIFIÉ : Page de redirection automatique vers GuestVerification
- * Route: /verify/:token
+ * Route: /verify/:token ou /v/:token (URL courte)
  * Workflow: Redirection automatique vers GuestVerification avec dates pré-remplies
  * 
  * Cette page ne fait que résoudre le token et rediriger vers GuestVerification
@@ -37,13 +37,17 @@ export function VerifyToken() {
       try {
         console.log('🔄 [VerifyToken] Résolution automatique du token et redirection vers GuestVerification...');
         
-        // Appeler resolve-guest-link pour obtenir le propertyId
-        const { data, error } = await supabase.functions.invoke('resolve-guest-link', {
-          body: { token }
-        });
+        // ✅ Récupérer le propertyId et les métadonnées directement depuis la base de données
+        // Note: La colonne metadata peut ne pas exister dans tous les environnements
+        const { data: tokenData, error: tokenError } = await supabase
+          .from('property_verification_tokens')
+          .select('property_id')
+          .eq('token', token)
+          .eq('is_active', true)
+          .maybeSingle();
 
-        if (error) {
-          console.error('❌ [VerifyToken] Erreur lors de la résolution du token:', error);
+        if (tokenError || !tokenData) {
+          console.error('❌ [VerifyToken] Erreur lors de la récupération du token:', tokenError);
           toast({
             title: "Erreur",
             description: "Impossible de résoudre le lien de vérification",
@@ -53,20 +57,30 @@ export function VerifyToken() {
           return;
         }
 
-        if (data && data.success && data.propertyId) {
-          console.log('✅ [VerifyToken] Token résolu, redirection vers GuestVerification:', data.propertyId);
-          // ✅ Rediriger vers GuestVerification avec le propertyId et le token
-          // Les dates sont déjà pré-remplies dans le lien (logique ICS direct)
-          navigate(`/guest-verification/${data.propertyId}/${token}`, { replace: true });
-        } else {
-          console.error('❌ [VerifyToken] Réponse invalide de resolve-guest-link:', data);
-          toast({
-            title: "Erreur",
-            description: "Impossible de résoudre le lien de vérification",
-            variant: "destructive",
+        const propertyId = tokenData.property_id;
+
+        // ✅ Essayer de récupérer les métadonnées via l'Edge Function qui les retourne
+        let reservationData: any = null;
+        try {
+          const { data: resolveData, error: resolveError } = await supabase.functions.invoke('resolve-guest-link', {
+            body: { token }
           });
-          setIsRedirecting(false);
+          
+          if (!resolveError && resolveData?.success) {
+            // Les métadonnées sont stockées dans le token mais pas toujours accessibles via RLS
+            // Pour l'instant, on redirige sans les paramètres - ils seront récupérés côté serveur
+            console.log('✅ [VerifyToken] Token résolu via Edge Function');
+          }
+        } catch (e) {
+          console.warn('⚠️ [VerifyToken] Impossible de récupérer les métadonnées via Edge Function:', e);
         }
+
+        console.log('✅ [VerifyToken] Token résolu, redirection vers GuestVerification:', propertyId);
+        
+        // ✅ URL COURTE : Rediriger vers GuestVerification
+        // Les métadonnées seront récupérées côté serveur lors de la soumission
+        const redirectUrl = `/guest-verification/${propertyId}/${token}`;
+        navigate(redirectUrl, { replace: true });
       } catch (error) {
         console.error('❌ [VerifyToken] Erreur lors de la résolution automatique:', error);
         toast({

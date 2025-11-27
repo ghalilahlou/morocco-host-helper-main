@@ -180,7 +180,7 @@ export const useGuestVerification = () => {
         guestName?: string;
         numberOfGuests?: number;
       };
-      userEvent?: Event; // ✅ NOUVEAU : Préserver le contexte utilisateur
+      userEvent?: Event | React.SyntheticEvent; // ✅ MOBILE-OPTIMIZED : Préserver l'événement utilisateur pour iOS/Android
     }
   ): Promise<string | null> => {
     if (!user) return null;
@@ -277,17 +277,21 @@ export const useGuestVerification = () => {
           urlParams += `&guestName=${guestName}`;
         }
         
-        const clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?${urlParams}`;
+        // ✅ URL COURTE : Utiliser seulement le token (les données sont dans les métadonnées)
+        // Format: /v/{token} au lieu de /guest-verification/{propertyId}/{token}?{longParams}
+        const shortUrl = `${runtime.urls.app.base}/v/${data.token}`;
+        const fullUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?${urlParams}`;
         
-        // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation
-        // Ce log est toujours visible car il est nécessaire pour copier le lien
-        console.log('🔗 [LIEN DE RÉSERVATION]:', clientUrl);
+        // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation (version courte)
+        console.log('🔗 [LIEN DE RÉSERVATION]:', shortUrl);
         
-        // ✅ COPIE ROBUSTE : Utiliser copyToClipboard avec fallback
+        // ✅ COPIE ROBUSTE : Utiliser copyToClipboard avec l'URL courte et l'événement utilisateur
         let copySuccess = false;
         try {
           const { copyToClipboard } = await import('@/lib/clipboardUtils');
-          copySuccess = await copyToClipboard(clientUrl);
+          // ✅ IMPORTANT : Passer l'événement utilisateur pour iOS/Android
+          const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
+          copySuccess = await copyToClipboard(shortUrl, userEvent);
           
           if (copySuccess) {
             // Log masqué en production
@@ -299,7 +303,7 @@ export const useGuestVerification = () => {
             // Log masqué en production
             toast({
               title: "Lien généré",
-              description: `Le lien a été généré. Copiez-le manuellement : ${clientUrl}`,
+              description: `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
               duration: 10000,
             });
           }
@@ -308,23 +312,25 @@ export const useGuestVerification = () => {
           // Le lien est déjà affiché dans le toast
           toast({
             title: "Lien généré",
-            description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
+            description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${shortUrl}`,
             duration: 10000,
           });
         }
         
-        return clientUrl;
+        return shortUrl; // ✅ Retourner l'URL courte
       } else {
-        // Fallback : Si pas de dates, rediriger vers GuestVerification sans dates (l'utilisateur devra les saisir)
-        const clientUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}`;
+        // Fallback : Si pas de dates, utiliser l'URL courte
+        const shortUrl = `${runtime.urls.app.base}/v/${data.token}`;
         // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation (fallback)
-        console.log('🔗 [LIEN DE RÉSERVATION]:', clientUrl);
+        console.log('🔗 [LIEN DE RÉSERVATION]:', shortUrl);
         
-        // ✅ COPIE ROBUSTE : Utiliser copyToClipboard avec fallback
+        // ✅ COPIE ROBUSTE : Utiliser copyToClipboard avec l'URL courte et l'événement utilisateur
         let copySuccess = false;
         try {
           const { copyToClipboard } = await import('@/lib/clipboardUtils');
-          copySuccess = await copyToClipboard(clientUrl);
+          // ✅ IMPORTANT : Passer l'événement utilisateur pour iOS/Android
+          const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
+          copySuccess = await copyToClipboard(shortUrl, userEvent);
           
           if (copySuccess) {
             // Log masqué en production
@@ -336,7 +342,7 @@ export const useGuestVerification = () => {
             // Log masqué en production
             toast({
               title: "Lien généré",
-              description: `Le lien a été généré. Copiez-le manuellement : ${clientUrl}`,
+              description: `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
               duration: 10000,
             });
           }
@@ -345,12 +351,12 @@ export const useGuestVerification = () => {
           // Le lien est déjà affiché dans le toast
           toast({
             title: "Lien généré",
-            description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${clientUrl}`,
+            description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${shortUrl}`,
             duration: 10000,
           });
         }
         
-        return clientUrl;
+        return shortUrl; // ✅ Retourner l'URL courte
       }
     } catch (error) {
       // Erreur masquée en production (utiliser le toast pour l'utilisateur)

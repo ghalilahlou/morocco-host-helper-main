@@ -222,6 +222,14 @@ const App = () => (
               </GuestLayout>
             </GuestLocaleProvider>
           } />
+          {/* ✅ URL COURTE : Route courte pour les liens de réservation */}
+          <Route path="/v/:token" element={
+            <GuestLocaleProvider>
+              <GuestLayout>
+                <VerifyToken />
+              </GuestLayout>
+            </GuestLocaleProvider>
+          } />
           <Route path="/guest-verification/:propertyId/:token/:airbnbBookingId" element={<GuestVerificationPage />} />
           <Route path="/contract-signing/:propertyId/:token" element={
             <GuestLocaleProvider>
