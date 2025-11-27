@@ -4631,11 +4631,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   drawParagraph(`Fait à ${city}, le ${fmtFR(new Date().toISOString())}`);
   
   // ✅ Informations légales supplémentaires si disponibles
-  if (host.company_name || host.ice) {
+  if (host.company_name || host.ice || host.registration) {
     y -= 15;
     let legalInfo = '';
     if (host.company_name) {
       legalInfo += `Entreprise : ${host.company_name}`;
+    }
+    if (host.registration) {
+      legalInfo += legalInfo ? ` - RC : ${host.registration}` : `RC : ${host.registration}`;
     }
     if (host.ice) {
       legalInfo += legalInfo ? ` - ICE : ${host.ice}` : `ICE : ${host.ice}`;
