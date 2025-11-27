@@ -212,8 +212,8 @@ export const CalendarGrid = ({
                                 height: `${baseHeight}px`,
                                 zIndex: 100 + layer, // ✅ AUGMENTÉ : Z-index plus élevé pour être au-dessus
                                 left: '0px',
-                                right: '0px',
-                                width: '100%',
+                                right: bookingData.span < 7 ? '-12px' : '0px', // ✅ NOUVEAU : Dépasser de 12px vers la droite pour montrer le checkout
+                                width: bookingData.span < 7 ? 'calc(100% + 12px)' : '100%', // ✅ NOUVEAU : Étendre légèrement si pas toute la semaine
                                 opacity: 1,
                                 pointerEvents: 'auto', // ✅ CRITIQUE : Activer les événements uniquement sur la barre
                               }}

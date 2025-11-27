@@ -159,30 +159,39 @@ export const getUnifiedBookingDisplayText = (
   }
   
   // PRIORITÉ 2: Vérifier le guest_name (peut être validé via ICS ou mise à jour)
-  // ✅ CORRIGÉ : Pour les réservations Airbnb, ne pas afficher le guestName si pas de booking associé
-  // (c'est-à-dire si la réservation a été supprimée, le guestName peut persister mais ne doit pas être affiché)
+  // ✅ AMÉLIORÉ : Afficher TOUJOURS le guestName s'il contient des lettres (assouplissement de la validation)
   const guestName = isAirbnb 
     ? airbnbReservation?.guestName 
     : regularBooking?.guest_name;
   
-  // ✅ AMÉLIORÉ : Nettoyer le guestName avant validation pour éviter les blocages
-  // ✅ CORRIGÉ : Pour les réservations Airbnb, vérifier qu'elles ont des soumissions réelles ou un booking associé
-  // Si une réservation Airbnb n'a pas de soumissions réelles, ne pas afficher le guestName même s'il existe
-  // (car cela signifie probablement que la réservation a été supprimée et le guestName persiste)
   if (guestName) {
-    // Pour les réservations Airbnb, ne pas afficher le guestName si pas de soumissions réelles
-    // (cela évite d'afficher des noms de guests supprimés)
-    if (isAirbnb && !enrichedBooking.hasRealSubmissions) {
-      // Ne pas afficher le guestName pour les réservations Airbnb sans soumissions réelles
-      // Passer à la priorité suivante (code de réservation)
-    } else {
-      const cleanedGuestName = cleanGuestName(guestName);
-      if (cleanedGuestName && isValidGuestName(cleanedGuestName)) {
+    const cleanedGuestName = cleanGuestName(guestName);
+    
+    // ✅ ASSOUPLISSEMENT : Validation moins stricte - juste vérifier qu'il y a des lettres
+    const hasLetters = cleanedGuestName && /[A-Za-zÀ-ÿ]{2,}/.test(cleanedGuestName);
+    const isNotOnlyCode = cleanedGuestName && !/^[A-Z0-9]{6,}$/.test(cleanedGuestName); // Pas un code
+    const isNotUID = cleanedGuestName && !cleanedGuestName.startsWith('UID:'); // Pas un UID
+    
+    if (hasLetters && isNotOnlyCode && isNotUID) {
+      // Si c'est un nom "parfait" (2+ mots avec voyelles), utiliser formatGuestDisplayName
+      if (isValidGuestName(cleanedGuestName)) {
         const firstName = getFirstName(cleanedGuestName);
         const totalGuests = isAirbnb 
           ? (airbnbReservation?.numberOfGuests || 1)
           : (regularBooking?.guests?.length || 1);
         return formatGuestDisplayName(firstName, totalGuests);
+      } else {
+        // Sinon, afficher le nom nettoyé tel quel (même s'il n'a qu'un mot)
+        // ✅ NOUVEAU : Capitaliser et afficher le nom même s'il ne passe pas la validation stricte
+        const capitalized = cleanedGuestName.charAt(0).toUpperCase() + cleanedGuestName.slice(1).toLowerCase();
+        const totalGuests = isAirbnb 
+          ? (airbnbReservation?.numberOfGuests || 1)
+          : (regularBooking?.guests?.length || 1);
+        
+        if (totalGuests > 1) {
+          return `${capitalized} +${totalGuests - 1}`;
+        }
+        return capitalized;
       }
     }
   }
