@@ -25,8 +25,11 @@ interface ExtendedUploadedDocument extends UploadedDocument {
 }
 
 export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadStepProps) => {
-  // ✅ TEST MODIFICATION - Ce log confirme que le code modifié est chargé
-  console.log('🟢 [DocumentUploadStep] Chargé - Version du ' + new Date().toISOString());
+  useEffect(() => {
+    console.log('✨ [DocumentUploadStep] Mounted');
+    return () => console.log('🗑️ [DocumentUploadStep] Unmounted');
+  }, []);
+  console.log('🔄 [DocumentUploadStep] Rendered - Version du ' + new Date().toISOString());
   
   const { toast } = useToast();
   const [editingGuest, setEditingGuest] = useState<Guest | null>(null);

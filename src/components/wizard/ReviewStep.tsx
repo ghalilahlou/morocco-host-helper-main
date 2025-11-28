@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { BookingFormData, BookingFormUpdate } from '../BookingWizard';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { DocumentPreviewDialog } from './DocumentPreviewDialog';
 
@@ -17,6 +17,11 @@ interface ReviewStepProps {
 }
 
 export const ReviewStep = ({ formData, bookingId, propertyId }: ReviewStepProps) => {
+  useEffect(() => {
+    console.log('✨ [ReviewStep] Mounted');
+    return () => console.log('🗑️ [ReviewStep] Unmounted');
+  }, []);
+  console.log('🔄 [ReviewStep] Rendered - Version du ' + new Date().toISOString());
   const { toast } = useToast();
   const [previewDocument, setPreviewDocument] = useState<'police' | 'contract' | null>(null);
   const calculateNights = () => {

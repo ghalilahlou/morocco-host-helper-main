@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { BookingFormData, BookingFormUpdate } from '../BookingWizard';
+import { useEffect } from 'react';
 
 interface BookingDetailsStepProps {
   formData: BookingFormData;
@@ -16,8 +17,12 @@ interface BookingDetailsStepProps {
   bookingId?: string; // Optionnel pour compatibilité avec BookingWizard
 }
 
-export const BookingDetailsStep = ({ formData, updateFormData }: BookingDetailsStepProps) => {
-  console.log('🟣 [PORTAL FIX] BookingDetailsStep chargé avec SafePopover (sans Portal) - Version du ' + new Date().toISOString());
+export const BookingDetailsStep = ({ formData, updateFormData, propertyId }: BookingDetailsStepProps) => {
+  useEffect(() => {
+    console.log('✨ [BookingDetailsStep] Mounted');
+    return () => console.log('🗑️ [BookingDetailsStep] Unmounted');
+  }, []);
+  console.log('🔄 [BookingDetailsStep] Rendered - Version du ' + new Date().toISOString());
   
   const handleCheckInChange = (date: Date | undefined) => {
     if (date) {
