@@ -812,7 +812,10 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         </CardHeader>
 
         <CardContent className="p-6">
+          {/* ✅ CRITIQUE : Key stable pour forcer la recréation du composant à chaque changement d'étape */}
+          {/* Cela évite les erreurs removeChild lors de la transition entre les étapes */}
           <CurrentStepComponent
+            key={`step-${currentStep}-${editingBooking?.id || 'new'}`}
             formData={formData}
             updateFormData={updateFormData}
             propertyId={propertyId}
