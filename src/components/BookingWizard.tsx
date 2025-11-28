@@ -125,17 +125,23 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   }, [currentStep, formData.checkInDate, formData.checkOutDate, formData.numberOfGuests, formData.guests.length, propertyId]);
 
   const handleNext = () => {
-    if (currentStep < steps.length - 1) {
-      setCurrentStep(currentStep + 1);
-    } else {
-      handleSubmit();
-    }
+    setCurrentStep(prev => {
+      if (prev < steps.length - 1) {
+        return prev + 1;
+      } else {
+        handleSubmit();
+        return prev; // Ne pas changer l'étape si on soumet
+      }
+    });
   };
 
   const handlePrevious = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-    }
+    setCurrentStep(prev => {
+      if (prev > 0) {
+        return prev - 1;
+      }
+      return prev;
+    });
   };
 
   const handleSubmit = async () => {
