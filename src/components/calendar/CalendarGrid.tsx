@@ -152,9 +152,9 @@ export const CalendarGrid = ({
                     const dayNumberMargin = isMobile ? 4 : 8; // mb-1 (4px) ou mb-2 (8px)
                     const spaceAfterNumber = dayNumberHeight + dayNumberMargin;
                     
-                    // ✅ ESPACEMENT : Calcul dynamique entre les couches
-                    const minSpacing = isMobile ? 6 : 8;
-                    const idealSpacing = isMobile ? 10 : 14;
+                    // ✅ ESPACEMENT AMÉLIORÉ : Augmenté pour mieux délimiter les barres
+                    const minSpacing = isMobile ? 8 : 12; // Augmenté de 6->8 et 8->12
+                    const idealSpacing = isMobile ? 14 : 18; // Augmenté de 10->14 et 14->18
                     const availableSpace = cellHeight - cellPadding - spaceAfterNumber - cellPadding;
                     const totalRequiredSpace = maxLayers * baseHeight + (maxLayers > 1 ? (maxLayers - 1) * idealSpacing : 0);
                     
@@ -210,34 +210,18 @@ export const CalendarGrid = ({
                               style={{
                                 top: `${topOffset}px`,
                                 height: `${baseHeight}px`,
-                                zIndex: 100 + layer, // ✅ AUGMENTÉ : Z-index plus élevé pour être au-dessus
-                                left: '0px',
-                                right: bookingData.span < 7 ? '-12px' : '0px', // ✅ NOUVEAU : Dépasser de 12px vers la droite pour montrer le checkout
-                                width: bookingData.span < 7 ? 'calc(100% + 12px)' : '100%', // ✅ NOUVEAU : Étendre légèrement si pas toute la semaine
+                                zIndex: 100 + layer,
+                                left: '2px', // ✅ NOUVEAU : Marge gauche pour délimiter
+                                right: '2px', // ✅ NOUVEAU : Marge droite pour délimiter
+                                width: 'calc(100% - 4px)', // ✅ AMÉLIORÉ : Réduire de 4px total (2px chaque côté)
                                 opacity: 1,
-                                pointerEvents: 'auto', // ✅ CRITIQUE : Activer les événements uniquement sur la barre
+                                pointerEvents: 'auto',
                               }}
                               onClick={(e) => {
-                                // ✅ DIAGNOSTIC : Log du clic
-                                console.log('🖱️ [CLIC BARRE]', {
-                                  bookingId: bookingData.booking.id,
-                                  bookingType: 'source' in bookingData.booking ? 'airbnb' : 'manual',
-                                  layer,
-                                  weekIndex,
-                                  arrayIndex
-                                });
-                                
-                                // ✅ CRITIQUE : Empêcher la propagation pour éviter les clics multiples
                                 e.stopPropagation();
                                 
-                                // ✅ CRITIQUE : Vérifier que booking existe avant d'appeler
                                 if (bookingData.booking && onBookingClick) {
                                   onBookingClick(bookingData.booking);
-                                } else {
-                                  console.error('❌ [CLIC BARRE] Erreur:', {
-                                    hasBooking: !!bookingData.booking,
-                                    hasOnClick: !!onBookingClick
-                                  });
                                 }
                               }}
                             >

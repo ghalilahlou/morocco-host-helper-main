@@ -116,24 +116,10 @@ export const CalendarBookingBar = memo(({
         pointerEvents: 'auto', // ✅ CRITIQUE : S'assurer que les événements sont activés
       }}
       onClick={(e) => {
-        // ✅ DIAGNOSTIC : Log du clic
-        console.log('🖱️ [CalendarBookingBar] Clic sur barre:', {
-          bookingId: bookingData.booking.id,
-          displayLabel,
-          isConflict
-        });
-        
-        // ✅ CRITIQUE : Empêcher la propagation
         e.stopPropagation();
         
-        // ✅ CRITIQUE : Vérifier que booking existe avant d'appeler
         if (bookingData.booking && onBookingClick) {
           onBookingClick(bookingData.booking);
-        } else {
-          console.error('❌ [CalendarBookingBar] Erreur onClick:', {
-            hasBooking: !!bookingData.booking,
-            hasOnClick: !!onBookingClick
-          });
         }
       }}
       title={displayLabel}

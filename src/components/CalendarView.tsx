@@ -561,17 +561,15 @@ const handleOpenConfig = useCallback(() => {
     const allReservationsForConflictDetection = [...bookings, ...airbnbReservations];
     const detectedConflicts = detectBookingConflicts(bookings, allReservationsForConflictDetection);
     
-    // ✅ CORRIGÉ : Logger les conflits seulement si le nombre a changé (éviter le spam)
-    const conflictKey = `${detectedConflicts.length}-${detectedConflicts.sort().join(',')}`;
-    if (detectedConflicts.length > 0) {
+    // ✅ PRODUCTION : Ne logger QUE en mode développement
+    if (process.env.NODE_ENV === 'development' && detectedConflicts.length > 0) {
+      const conflictKey = `${detectedConflicts.length}-${detectedConflicts.sort().join(',')}`;
       if (!(window as any).__lastConflictLogKey || (window as any).__lastConflictLogKey !== conflictKey) {
-      console.warn(`⚠️ ${detectedConflicts.length} conflit(s) de réservation détecté(s) dans le calendrier`);
+        console.warn(`⚠️ ${detectedConflicts.length} conflit(s) détecté(s)`);
         (window as any).__lastConflictLogKey = conflictKey;
       }
-    } else {
-      if ((window as any).__lastConflictLogKey) {
-        delete (window as any).__lastConflictLogKey;
-      }
+    } else if (detectedConflicts.length === 0 && (window as any).__lastConflictLogKey) {
+      delete (window as any).__lastConflictLogKey;
     }
     
     return detectedConflicts;

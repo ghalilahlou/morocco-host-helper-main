@@ -242,11 +242,14 @@ export const calculateBookingLayout = (
       // For manual bookings, determine color based on status and Airbnb matching
       const manualBooking = booking as Booking;
       
+      // ✅ SIMPLIFIÉ : Ne plus détecter les conflits ici car c'est fait par detectBookingConflicts()
+      // La couleur sera appliquée par CalendarBookingBar selon le résultat de detectBookingConflicts()
+      
       // Priority 1: Confirmed/completed bookings appear green
       if (manualBooking.status === 'confirmed' || manualBooking.status === 'completed') {
         color = 'bg-success'; // Green for confirmed/completed bookings
       } else {
-        // Priority 2: Check for Airbnb match
+        // Priority 2: Check for Airbnb match (dates exactes)
         const hasAirbnbMatch = bookings.some(b => {
           if (!('source' in b) || b.source !== 'airbnb') return false;
           const airbnb = b as unknown as AirbnbReservation;
@@ -262,20 +265,9 @@ export const calculateBookingLayout = (
         if (hasAirbnbMatch) {
           color = 'bg-success'; // Green for matched bookings
         } else {
-          // Priority 3: Check for conflicts with Airbnb bookings
-          const hasConflict = bookings.some(b => {
-          if (!('source' in b) || b.source !== 'airbnb') return false;
-          const airbnb = b as unknown as AirbnbReservation;
-          const manualStart = new Date(manualBooking.checkInDate);
-          const manualEnd = new Date(manualBooking.checkOutDate);
-          const airbnbStart = new Date(airbnb.startDate);
-          const airbnbEnd = new Date(airbnb.endDate);
-          
-          return manualStart < airbnbEnd && manualEnd > airbnbStart;
-        });
-        
-          // ✅ CORRIGÉ : Red ONLY for conflicts, blue for normal bookings
-          color = hasConflict ? 'bg-destructive' : CONSTANT_BOOKING_COLORS.manual.tailwind;
+          // ✅ CORRIGÉ : Utiliser la couleur par défaut (gris/bleu)
+          // Les conflits seront gérés par detectBookingConflicts() et CalendarBookingBar
+          color = CONSTANT_BOOKING_COLORS.manual.tailwind;
         }
       }
     }
@@ -537,49 +529,28 @@ export const detectBookingConflicts = (
       const overlaps = start1 < end2 && start2 < end1;
       
       if (overlaps) {
-        // ✅ NOUVEAU : Un conflit n'est valide QUE SI les DEUX réservations sont "enregistrées"
-        // Une réservation est "enregistrée" si elle a des guests (documents d'identité + contrat + police)
+        // ✅ AMÉLIORÉ : Un conflit n'est valide QUE SI les DEUX réservations sont "validées" ET complètes
+        // Une réservation est "validée" si elle a des guests ET des documents générés
         const res1IsValidated = res1.isValidated === true;
         const res2IsValidated = res2.isValidated === true;
         
         // ✅ CRITIQUE : Ignorer les conflits si au moins UNE des réservations n'est pas validée
         // Cela empêche les réservations ICS (pending, sans guests) d'être marquées en rouge
+        // ET empêche les faux positifs pour les réservations avec guests mais sans conflit réel
         if (!res1IsValidated || !res2IsValidated) {
-          console.log('ℹ️ Chevauchement ignoré (réservation(s) non validée(s)):', {
-            res1: { 
-              id: res1.id, 
-              reference: res1.bookingReference,
-              validated: res1IsValidated
-            },
-            res2: { 
-              id: res2.id, 
-              reference: res2.bookingReference,
-              validated: res2IsValidated
-            }
-          });
-          continue; // Ignorer ce conflit, au moins une réservation n'est pas validée
+          continue; // Ignorer ce conflit silencieusement
         }
         
-        // ✅ Si on arrive ici, les DEUX réservations sont validées ET se chevauchent = VRAI CONFLIT
-        console.log('🚨 VRAI CONFLIT (2 réservations validées qui se chevauchent):', {
-          res1: { 
-            id: res1.id, 
-            start: start1.toISOString().split('T')[0], 
-            end: end1.toISOString().split('T')[0],
-            reference: res1.bookingReference,
-            status: res1.status,
-            validated: res1IsValidated
-          },
-          res2: { 
-            id: res2.id, 
-            start: start2.toISOString().split('T')[0], 
-            end: end2.toISOString().split('T')[0],
-            reference: res2.bookingReference,
-            status: res2.status,
-            validated: res2IsValidated
-          }
-        });
+        // ✅ VÉRIFICATION SUPPLÉMENTAIRE : Vérifier que les dates se chevauchent vraiment
+        // Une réservation qui se termine le jour où l'autre commence n'est PAS un conflit
+        const res1EndsBeforeRes2Starts = end1.getTime() <= start2.getTime();
+        const res2EndsBeforeRes1Starts = end2.getTime() <= start1.getTime();
         
+        if (res1EndsBeforeRes2Starts || res2EndsBeforeRes1Starts) {
+          continue; // Pas de conflit réel, juste des dates adjacentes
+        }
+        
+        // ✅ Si on arrive ici, les DEUX réservations sont validées ET se chevauchent vraiment = VRAI CONFLIT
         if (!conflicts.includes(res1.id)) {
           conflicts.push(res1.id);
         }
@@ -590,17 +561,14 @@ export const detectBookingConflicts = (
     }
   }
   
-  // ✅ CORRIGÉ : Logger seulement si c'est un nouveau conflit ou si le nombre a changé
-  // (Utiliser un Set pour éviter les doublons dans les logs)
-  if (conflicts.length > 0) {
-    // Logger seulement une fois par session pour éviter le spam
+  // ✅ PRODUCTION : Ne logger QUE en mode développement
+  if (conflicts.length > 0 && process.env.NODE_ENV === 'development') {
     const conflictKey = conflicts.sort().join(',');
     if (!(window as any).__lastConflictKey || (window as any).__lastConflictKey !== conflictKey) {
-    console.log('✅ Total conflits détectés:', conflicts.length, conflicts);
+      console.warn(`⚠️ ${conflicts.length} conflit(s) détecté(s)`);
       (window as any).__lastConflictKey = conflictKey;
     }
-  } else {
-    // Réinitialiser si plus de conflits
+  } else if (conflicts.length === 0) {
     if ((window as any).__lastConflictKey) {
       delete (window as any).__lastConflictKey;
     }

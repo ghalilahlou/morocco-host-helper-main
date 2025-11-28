@@ -45,23 +45,14 @@ export const getBookingDocumentStatus = (booking: BookingLike | any) => {
     ?? rawDocuments?.police_forms;
   const hasPolice = normalizeDocumentFlag(policeField);
   
-  // ✅ NOUVEAU : Considérer une réservation comme validée si elle a des guests enregistrés
-  // (les guests ont des document_id, donc la réservation est complète)
+  // ✅ AMÉLIORÉ : Considérer une réservation comme validée si elle a des guests ET des documents
   const hasGuests = Array.isArray(booking?.guests) && booking.guests.length > 0;
   
-  // ✅ DEBUG : Logger pour diagnostiquer
-  if (booking?.id && hasGuests) {
-    console.log('✅ [bookingDocuments] Booking avec guests détecté:', {
-      bookingId: booking.id,
-      guestsCount: booking.guests?.length || 0,
-      guests: booking.guests?.map((g: any) => g.fullName || g.full_name) || []
-    });
-  }
-  
-  // Une réservation est validée si :
-  // 1. Elle a des guests enregistrés (document_id), OU
-  // 2. Elle a à la fois le contrat ET la fiche de police générés
-  const isValidated = hasGuests || (hasContract && hasPolice);
+  // ✅ VALIDATION STRICTE : Une réservation est validée UNIQUEMENT si :
+  // 1. Elle a des guests enregistrés (avec données complètes), ET
+  // 2. Elle a les documents générés (contrat + police)
+  // Cela évite les faux positifs pour les réservations partiellement complétées
+  const isValidated = hasGuests && hasContract && hasPolice;
   
   return {
     hasContract,
