@@ -62,6 +62,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
 
 // ✅ CORRIGÉ : Synchronisation automatique des guests depuis les documents
 // Ce useEffect garantit que les guests créés dans handleFileUpload sont bien synchronisés
+// MAIS : Il ne doit PAS entrer en conflit avec la mise à jour directe dans handleFileUpload
 useEffect(() => {
   if (!uploadedDocs.length) {
     return;
@@ -70,6 +71,15 @@ useEffect(() => {
   const docsWithGuests = uploadedDocs.filter(doc => doc.createdGuestId && doc.extractedData);
   
   if (docsWithGuests.length === 0) {
+    // ✅ Vérifier quand même que numberOfGuests est correct
+    updateFormData(prev => {
+      const guestCount = Math.max(prev.numberOfGuests, prev.guests.length);
+      if (guestCount !== prev.numberOfGuests && prev.guests.length > 0) {
+        console.log('🔧 [SYNC] Correction numberOfGuests:', prev.numberOfGuests, '→', guestCount);
+        return { numberOfGuests: guestCount };
+      }
+      return prev;
+    });
     return;
   }
 
@@ -90,9 +100,10 @@ useEffect(() => {
       }));
 
     if (newGuests.length === 0) {
-      // Aucun nouveau guest, mais on s'assure que numberOfGuests est correct
+      // ✅ Aucun nouveau guest, mais on s'assure que numberOfGuests est correct
       const guestCount = Math.max(prev.numberOfGuests, prev.guests.length);
       if (guestCount !== prev.numberOfGuests) {
+        console.log('🔧 [SYNC] Correction numberOfGuests (pas de nouveaux guests):', prev.numberOfGuests, '→', guestCount);
         return { numberOfGuests: guestCount };
       }
       return prev;
@@ -104,7 +115,9 @@ useEffect(() => {
     console.log('✅ [SYNC] Synchronisation guests:', {
       nouveaux: newGuests.length,
       total: guests.length,
-      numberOfGuests: guestCount
+      numberOfGuests: guestCount,
+      prevGuests: prev.guests.length,
+      prevNumberOfGuests: prev.numberOfGuests
     });
 
     return {
@@ -250,7 +263,9 @@ useEffect(() => {
               documentsUpdated: updatedDocs.length
             });
             
+            // ✅ FORCER le re-render en retournant un nouvel objet avec toutes les propriétés
             return {
+              ...prev, // ✅ Préserver toutes les autres propriétés (checkInDate, checkOutDate, etc.)
               uploadedDocuments: updatedDocs,
               guests,
               numberOfGuests: guestCount
