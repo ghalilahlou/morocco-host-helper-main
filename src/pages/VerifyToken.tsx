@@ -59,27 +59,65 @@ export function VerifyToken() {
 
         const propertyId = tokenData.property_id;
 
-        // ✅ Essayer de récupérer les métadonnées via l'Edge Function qui les retourne
-        let reservationData: any = null;
+        // ✅ RÉCUPÉRATION MÉTADONNÉES : Essayer de récupérer les dates depuis les métadonnées
+        let urlParams = '';
         try {
-          const { data: resolveData, error: resolveError } = await supabase.functions.invoke('resolve-guest-link', {
-            body: { token }
-          });
-          
-          if (!resolveError && resolveData?.success) {
-            // Les métadonnées sont stockées dans le token mais pas toujours accessibles via RLS
-            // Pour l'instant, on redirige sans les paramètres - ils seront récupérés côté serveur
-            console.log('✅ [VerifyToken] Token résolu via Edge Function');
+          // Récupérer les métadonnées directement depuis la table
+          const { data: metadataResult, error: metadataError } = await supabase
+            .from('property_verification_tokens')
+            .select('metadata')
+            .eq('token', token)
+            .eq('is_active', true)
+            .maybeSingle();
+
+          if (!metadataError && metadataResult?.metadata) {
+            const metadata = metadataResult.metadata as any;
+            console.log('📦 [VerifyToken] Métadonnées récupérées:', metadata);
+
+            // Extraire reservationData depuis metadata
+            const reservationData = metadata.reservationData || metadata;
+            
+            if (reservationData?.startDate && reservationData?.endDate) {
+              // ✅ CORRECTION : Passer les dates en paramètres d'URL pour pré-remplir le formulaire
+              const startDate = typeof reservationData.startDate === 'string' 
+                ? reservationData.startDate 
+                : new Date(reservationData.startDate).toISOString().split('T')[0];
+              const endDate = typeof reservationData.endDate === 'string' 
+                ? reservationData.endDate 
+                : new Date(reservationData.endDate).toISOString().split('T')[0];
+              
+              const guests = reservationData.numberOfGuests || 1;
+              const airbnbCode = reservationData.airbnbCode || 'INDEPENDENT_BOOKING';
+              const guestName = reservationData.guestName || '';
+
+              // Construire les paramètres d'URL
+              urlParams = `?startDate=${startDate}&endDate=${endDate}&guests=${guests}&airbnbCode=${airbnbCode}`;
+              
+              if (guestName && guestName.trim() !== '') {
+                urlParams += `&guestName=${encodeURIComponent(guestName)}`;
+              }
+
+              console.log('✅ [VerifyToken] Dates extraites pour pré-remplissage:', {
+                startDate,
+                endDate,
+                guests,
+                airbnbCode,
+                guestName: guestName ? '✓' : '✗'
+              });
+            } else {
+              console.warn('⚠️ [VerifyToken] Pas de dates dans les métadonnées');
+            }
+          } else {
+            console.warn('⚠️ [VerifyToken] Impossible de récupérer les métadonnées:', metadataError);
           }
         } catch (e) {
-          console.warn('⚠️ [VerifyToken] Impossible de récupérer les métadonnées via Edge Function:', e);
+          console.warn('⚠️ [VerifyToken] Erreur lors de la récupération des métadonnées:', e);
         }
 
         console.log('✅ [VerifyToken] Token résolu, redirection vers GuestVerification:', propertyId);
         
-        // ✅ URL COURTE : Rediriger vers GuestVerification
-        // Les métadonnées seront récupérées côté serveur lors de la soumission
-        const redirectUrl = `/guest-verification/${propertyId}/${token}`;
+        // ✅ REDIRECTION AVEC DATES : Rediriger vers GuestVerification avec les dates en paramètres
+        const redirectUrl = `/guest-verification/${propertyId}/${token}${urlParams}`;
         navigate(redirectUrl, { replace: true });
       } catch (error) {
         console.error('❌ [VerifyToken] Erreur lors de la résolution automatique:', error);
