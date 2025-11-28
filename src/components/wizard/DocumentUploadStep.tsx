@@ -222,18 +222,36 @@ useEffect(() => {
 
           console.log('🔗 Creating guest from document:', doc.id, '->', newGuestId);
           
-          // Update document with guest reference
-          updateUploadedDocuments(prev => prev.map(d => 
-            d.id === doc.id 
-              ? { ...d, extractedData, processingStatus: 'completed', createdGuestId: newGuestId }
-              : d
-          ));
-
-          // Inject guest immediately into form state
+          // ✅ CORRIGÉ : Mettre à jour le document ET le guest en UNE SEULE opération
+          // Cela garantit la cohérence et évite les problèmes de timing
           updateFormData(prev => {
+            // Vérifier si le guest existe déjà (éviter doublons)
+            const guestExists = prev.guests.some(g => g.id === newGuestId);
+            if (guestExists) {
+              console.log('⚠️ [GUEST] Guest déjà présent, skip:', newGuestId);
+              return prev;
+            }
+            
+            // Mettre à jour le document avec createdGuestId
+            const updatedDocs = (prev.uploadedDocuments || []).map(d => 
+              d.id === doc.id 
+                ? { ...d, extractedData, processingStatus: 'completed' as const, createdGuestId: newGuestId }
+                : d
+            );
+            
+            // Ajouter le guest
             const guests = [...prev.guests, newGuest];
             const guestCount = Math.max(prev.numberOfGuests, guests.length);
+            
+            console.log('✅ [GUEST] Guest ajouté avec document mis à jour:', {
+              guestId: newGuestId,
+              totalGuests: guests.length,
+              numberOfGuests: guestCount,
+              documentsUpdated: updatedDocs.length
+            });
+            
             return {
+              uploadedDocuments: updatedDocs,
               guests,
               numberOfGuests: guestCount
             };
