@@ -21,6 +21,11 @@ export const DocumentPreviewDialog = ({
   formData,
   propertyId
 }: DocumentPreviewDialogProps) => {
+  useEffect(() => {
+    console.log(`✨ [DocumentPreviewDialog] Mounted for ${documentType}`);
+    return () => console.log(`🗑️ [DocumentPreviewDialog] Unmounted for ${documentType}`);
+  }, [documentType]);
+  console.log(`🔄 [DocumentPreviewDialog] Rendered for ${documentType}, isOpen: ${isOpen}`);
   const { toast } = useToast();
   const [isGenerating, setIsGenerating] = useState(false);
   const [documentUrl, setDocumentUrl] = useState<string | null>(null);
@@ -29,7 +34,11 @@ export const DocumentPreviewDialog = ({
   
   // ✅ Générer l'aperçu en appelant l'Edge Function
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      console.log('🚫 [PREVIEW] Dialog not open, skipping generation');
+      setDocumentUrl(null); // Clear URL when dialog closes
+      return;
+    }
 
     const generatePreview = async () => {
       setIsGenerating(true);
