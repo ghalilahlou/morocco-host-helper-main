@@ -171,12 +171,19 @@ export const CalendarGrid = ({
                     // ✅ POSITION VERTICALE : Depuis le haut de la cellule (inclut le padding)
                     const topOffset = cellPadding + spaceAfterNumber + (layer * (baseHeight + actualSpacing));
 
-                    // ✅ CRITIQUE : Utiliser un ID unique pour la clé
-                    const bookingId = bookingData.booking.id || `unknown-${arrayIndex}`;
+                    // ✅ CRITIQUE : Clé stable et unique pour éviter les erreurs removeChild
+                    const bookingId = bookingData.booking?.id || `unknown-${arrayIndex}`;
+                    const stableKey = `${bookingId}-${weekIndex}-${bookingData.startDayIndex}-${bookingData.span}-${layer}`;
+                    
+                    // ✅ PROTECTION : Vérifier que booking existe avant de rendre
+                    if (!bookingData.booking) {
+                      console.warn('⚠️ [CalendarGrid] Booking manquant, skip rendu');
+                      return null;
+                    }
                     
                     return (
                       <div
-                        key={`${bookingId}-${weekIndex}-${arrayIndex}`}
+                        key={stableKey}
                         className="absolute z-30"
                         style={{
                           // ✅ CRITIQUE : Position dans la grille correspondant exactement aux cellules

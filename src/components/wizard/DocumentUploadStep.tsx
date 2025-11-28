@@ -60,15 +60,23 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     });
   }, [updateFormData]);
 
+// ✅ CORRIGÉ : Synchronisation automatique des guests depuis les documents
+// Ce useEffect garantit que les guests créés dans handleFileUpload sont bien synchronisés
 useEffect(() => {
   if (!uploadedDocs.length) {
     return;
   }
 
+  const docsWithGuests = uploadedDocs.filter(doc => doc.createdGuestId && doc.extractedData);
+  
+  if (docsWithGuests.length === 0) {
+    return;
+  }
+
   updateFormData(prev => {
     const existingIds = new Set(prev.guests.map(g => g.id));
-    const docsWithGuests = uploadedDocs.filter(doc => doc.createdGuestId && doc.extractedData);
-
+    
+    // Filtrer uniquement les nouveaux guests qui n'existent pas encore
     const newGuests = docsWithGuests
       .filter(doc => !existingIds.has(doc.createdGuestId!))
       .map(doc => ({
@@ -82,11 +90,22 @@ useEffect(() => {
       }));
 
     if (newGuests.length === 0) {
+      // Aucun nouveau guest, mais on s'assure que numberOfGuests est correct
+      const guestCount = Math.max(prev.numberOfGuests, prev.guests.length);
+      if (guestCount !== prev.numberOfGuests) {
+        return { numberOfGuests: guestCount };
+      }
       return prev;
     }
 
     const guests = [...prev.guests, ...newGuests];
     const guestCount = Math.max(prev.numberOfGuests, guests.length);
+
+    console.log('✅ [SYNC] Synchronisation guests:', {
+      nouveaux: newGuests.length,
+      total: guests.length,
+      numberOfGuests: guestCount
+    });
 
     return {
       guests,
