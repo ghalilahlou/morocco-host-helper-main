@@ -162,7 +162,7 @@ export const DocumentPreviewDialog = ({
 
         <div className="flex-1 overflow-hidden bg-gray-50 min-h-0">
           {isGenerating ? (
-            <div className="flex flex-col items-center justify-center h-full space-y-4">
+            <div key="loading-state" className="flex flex-col items-center justify-center h-full space-y-4">
               <Loader2 className="w-12 h-12 animate-spin text-brand-teal" />
               <p className="text-lg font-medium">Génération du document en cours...</p>
               <p className="text-sm text-muted-foreground">
@@ -170,7 +170,7 @@ export const DocumentPreviewDialog = ({
               </p>
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center h-full space-y-4 p-8">
+            <div key="error-state" className="flex flex-col items-center justify-center h-full space-y-4 p-8">
               <AlertCircle className="w-12 h-12 text-destructive" />
               <p className="text-lg font-medium text-destructive">Erreur de génération</p>
               <p className="text-sm text-muted-foreground text-center">{error}</p>
@@ -178,6 +178,7 @@ export const DocumentPreviewDialog = ({
             </div>
           ) : documentUrl ? (
             <iframe
+              key="document-iframe"
               src={documentUrl}
               className="w-full h-full border-0"
               title={documentType === 'police' ? 'Aperçu Fiche de Police' : 'Aperçu Contrat'}
