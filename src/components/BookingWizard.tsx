@@ -92,7 +92,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
     checkOutDate: editingBooking?.checkOutDate || '',
     numberOfGuests: editingBooking?.numberOfGuests || 1,
     bookingReference: editingBooking?.bookingReference || '',
-    guests: editingBooking?.guests || [],
+    guests: Array.isArray(editingBooking?.guests) ? editingBooking.guests : [],
     uploadedDocuments: []
   });
 
@@ -776,14 +776,54 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       // Si updates est une fonction, l'appeler avec l'état précédent
       console.log('🔄 [BookingWizard] updateFormData appelé avec FONCTION');
     setFormData(prev => {
-        const result = updates(prev);
+        // ✅ DÉFENSIF : S'assurer que prev.guests est toujours un tableau
+        const safePrev = {
+          ...prev,
+          guests: Array.isArray(prev.guests) ? prev.guests : []
+        };
+        
+        const result = updates(safePrev);
         console.log('🔄 [BookingWizard] Résultat fonction:', result);
-        return { ...prev, ...result };
+        
+        // ✅ DÉFENSIF : S'assurer que result.guests est toujours un tableau si présent
+        const safeResult = result.guests !== undefined 
+          ? { ...result, guests: Array.isArray(result.guests) ? result.guests : [] }
+          : result;
+        
+        const finalState = { ...safePrev, ...safeResult };
+        
+        console.log('🔄 [BookingWizard] État final après mise à jour:', {
+          guestsCount: finalState.guests.length,
+          numberOfGuests: finalState.numberOfGuests,
+          hasGuests: finalState.guests.length > 0
+        });
+        
+        return finalState;
     });
     } else {
       // Si updates est un objet, faire un merge simple
       console.log('🔄 [BookingWizard] updateFormData appelé avec OBJET:', updates);
-      setFormData(prev => ({ ...prev, ...updates }));
+      setFormData(prev => {
+        // ✅ DÉFENSIF : S'assurer que prev.guests et updates.guests sont des tableaux
+        const safePrev = {
+          ...prev,
+          guests: Array.isArray(prev.guests) ? prev.guests : []
+        };
+        
+        const safeUpdates = updates.guests !== undefined
+          ? { ...updates, guests: Array.isArray(updates.guests) ? updates.guests : [] }
+          : updates;
+        
+        const finalState = { ...safePrev, ...safeUpdates };
+        
+        console.log('🔄 [BookingWizard] État final après mise à jour (objet):', {
+          guestsCount: finalState.guests.length,
+          numberOfGuests: finalState.numberOfGuests,
+          hasGuests: finalState.guests.length > 0
+        });
+        
+        return finalState;
+      });
     }
   }, []);
 
