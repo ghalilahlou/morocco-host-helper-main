@@ -220,9 +220,18 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       console.log('🔍 PropertyId validé pour création booking:', propertyId);
       
       const bookingId = editingBooking?.id || uuidv4();
-      const primaryGuestName = formData.guests.length > 0
-        ? (formData.guests[0].fullName || '').trim()
+      // ✅ DÉFENSIF : Vérifier que formData.guests est un tableau valide
+      const currentGuests = Array.isArray(formData.guests) ? formData.guests : [];
+      const primaryGuestName = currentGuests.length > 0
+        ? (currentGuests[0].fullName || '').trim()
         : null;
+      
+      console.log('📊 [DIAGNOSTIC] État guests au début de handleSubmit:', {
+        guestsCount: currentGuests.length,
+        isArray: Array.isArray(formData.guests),
+        primaryGuestName,
+        guestsList: currentGuests.map(g => ({ id: g.id, fullName: g.fullName }))
+      });
       
 
       if (!editingBooking) {
@@ -282,7 +291,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           checkIn: formData.checkInDate,
           checkOut: formData.checkOutDate,
           guests: formData.numberOfGuests,
-          hasGuests: formData.guests.length > 0
+          hasGuests: currentGuests.length > 0,
+          guestsCount: currentGuests.length
         });
 
         // Vérifier que l'utilisateur est bien propriétaire de la propriété
@@ -384,8 +394,17 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         });
 
         // 2. Insert guests
-        if (formData.guests.length > 0) {
-          const guestsData = formData.guests.map(guest => {
+        // ✅ DÉFENSIF : Vérifier que formData.guests est un tableau valide
+        const guestsToInsert = Array.isArray(formData.guests) ? formData.guests : [];
+        
+        console.log('📊 [DIAGNOSTIC] Vérification guests avant insertion:', {
+          guestsCount: guestsToInsert.length,
+          isArray: Array.isArray(formData.guests),
+          guestsList: guestsToInsert.map(g => ({ id: g.id, fullName: g.fullName }))
+        });
+        
+        if (guestsToInsert.length > 0) {
+          const guestsData = guestsToInsert.map(guest => {
             // ✅ CORRECTION : Convertir date_of_birth en string si c'est une Date
             let dateOfBirth: string | null = null;
             if (guest.dateOfBirth) {
@@ -435,7 +454,13 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
             try {
               console.log('🔄 [AUTO-GEN] Tentative génération via host_direct...');
-            const mainGuest = formData.guests[0];
+            // ✅ DÉFENSIF : Utiliser currentGuests au lieu de formData.guests directement
+            const guestsForGeneration = Array.isArray(formData.guests) ? formData.guests : [];
+            if (guestsForGeneration.length === 0) {
+              console.warn('⚠️ [AUTO-GEN] Aucun guest disponible pour la génération');
+              return result;
+            }
+            const mainGuest = guestsForGeneration[0];
             const guestInfo = {
               firstName: mainGuest.fullName.split(' ')[0] || mainGuest.fullName,
               lastName: mainGuest.fullName.split(' ').slice(1).join(' ') || '',
@@ -549,8 +574,11 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         };
 
         // Générer les documents automatiquement si des guests sont présents
-        if (formData.guests.length > 0) {
+        // ✅ DÉFENSIF : Vérifier que formData.guests est un tableau valide
+        const guestsForDocGeneration = Array.isArray(formData.guests) ? formData.guests : [];
+        if (guestsForDocGeneration.length > 0) {
           console.log('🚀 [AUTO-GEN] Démarrage génération automatique des documents...');
+          console.log('📊 [AUTO-GEN] Guests disponibles:', guestsForDocGeneration.length);
           
           try {
             const documentsResult = await generateDocumentsRobustly(bookingData.id);
@@ -585,7 +613,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
                   .update({
                 documents_generated: updatedDocumentsGenerated,
                 status: finalStatus, // ✅ Passer de 'draft' à 'pending' ou 'completed' après validation
-                guest_name: (formData.guests[0]?.fullName || primaryGuestName || '').trim() || null
+                guest_name: (guestsForDocGeneration[0]?.fullName || primaryGuestName || '').trim() || null
                   })
                   .eq('id', bookingData.id);
 
@@ -769,7 +797,9 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       }
 
       // ✅ Toast de succès uniquement si pas déjà affiché par le workflow host
-      if (editingBooking || !formData.uploadedDocuments || formData.uploadedDocuments.length === 0 || formData.guests.length === 0) {
+      // ✅ DÉFENSIF : Vérifier que formData.guests est un tableau valide
+      const finalGuestsCheck = Array.isArray(formData.guests) ? formData.guests : [];
+      if (editingBooking || !formData.uploadedDocuments || formData.uploadedDocuments.length === 0 || finalGuestsCheck.length === 0) {
         toast({
           title: editingBooking ? "Réservation mise à jour" : "Réservation créée",
           description: editingBooking 
