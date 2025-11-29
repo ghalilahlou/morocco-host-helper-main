@@ -31,10 +31,12 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
   const uploadedDocs = formData.uploadedDocuments || [];
   
   // 🔍 LOG DE DÉBOGAGE : Tracer l'état
+  const guestsArray = Array.isArray(formData.guests) ? formData.guests : [];
   console.log('📊 [DocumentUploadStep] État actuel:', {
     uploadedDocs: uploadedDocs.length,
-    guests: formData.guests.length,
-    numberOfGuests: formData.numberOfGuests
+    guests: guestsArray.length,
+    numberOfGuests: formData.numberOfGuests,
+    guestsList: guestsArray.map(g => ({ id: g.id, fullName: g.fullName }))
   });
 
   useEffect(() => {
@@ -171,11 +173,23 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           // ✅ CORRIGÉ : Mettre à jour le document ET le guest en UNE SEULE opération
           // Cela garantit la cohérence et évite les problèmes de timing
           updateFormData(prev => {
+            // ✅ DÉFENSIF : S'assurer que prev.guests est toujours un tableau
+            const currentGuests = Array.isArray(prev.guests) ? prev.guests : [];
+            
             // Vérifier si le guest existe déjà (éviter doublons)
-            const guestExists = prev.guests.some(g => g.id === newGuestId);
+            const guestExists = currentGuests.some(g => g.id === newGuestId);
             if (guestExists) {
               console.log('⚠️ [GUEST] Guest déjà présent, skip:', newGuestId);
-              return prev;
+              // Mettre à jour quand même le document
+              const updatedDocs = (prev.uploadedDocuments || []).map(d => 
+                d.id === doc.id 
+                  ? { ...d, extractedData, processingStatus: 'completed' as const, createdGuestId: newGuestId } as UploadedDocument
+                  : d
+              );
+              return {
+                ...prev,
+                uploadedDocuments: updatedDocs
+              };
             }
             
             // Mettre à jour le document avec createdGuestId
@@ -186,25 +200,35 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
             );
             
             // Ajouter le guest
-            const guests = [...prev.guests, newGuest];
-            const guestCount = Math.max(prev.numberOfGuests, guests.length);
+            const guests = [...currentGuests, newGuest];
+            const guestCount = Math.max(prev.numberOfGuests || 1, guests.length);
             
             console.log('✅ [GUEST] Guest ajouté avec document mis à jour:', {
               guestId: newGuestId,
+              guestName: newGuest.fullName,
+              previousGuestsCount: currentGuests.length,
               totalGuests: guests.length,
               numberOfGuests: guestCount,
               documentsUpdated: updatedDocs.length,
-              // ✅ NOUVEAU LOG : Vérifier les invités après modification
               guestsAfterUpdate: guests.map(g => ({ id: g.id, fullName: g.fullName }))
             });
             
             // ✅ FORCER le re-render en retournant un nouvel objet avec toutes les propriétés
-            return {
+            const updatedState = {
               ...prev, // ✅ Préserver toutes les autres propriétés (checkInDate, checkOutDate, etc.)
               uploadedDocuments: updatedDocs,
               guests,
               numberOfGuests: guestCount
             };
+            
+            console.log('✅ [GUEST] État final retourné:', {
+              guestsCount: updatedState.guests.length,
+              numberOfGuests: updatedState.numberOfGuests,
+              hasGuests: updatedState.guests.length > 0,
+              firstGuest: updatedState.guests[0] ? { id: updatedState.guests[0].id, fullName: updatedState.guests[0].fullName } : null
+            });
+            
+            return updatedState;
           });
         } else {
           console.warn('No valid guest data extracted from document:', extractedData);
@@ -506,7 +530,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">
-            Clients enregistrés ({formData.guests.length}/{formData.numberOfGuests})
+            Clients enregistrés ({Array.isArray(formData.guests) ? formData.guests.length : 0}/{formData.numberOfGuests || 1})
           </h3>
           <Button onClick={addManualGuest} variant="outline" size="sm">
             <Edit className="w-4 h-4 mr-2" />
@@ -514,14 +538,14 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           </Button>
         </div>
 
-        {formData.guests.length === 0 ? (
+        {guestsArray.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>Aucun client enregistré</p>
             <p className="text-sm">Uploadez des documents ou ajoutez manuellement</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {formData.guests.map((guest) => (
+            {guestsArray.map((guest) => (
               <Card key={guest.id}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
