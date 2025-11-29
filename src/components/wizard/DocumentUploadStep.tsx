@@ -46,10 +46,14 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
 
   useEffect(() => {
     return () => {
+      // Nettoyer les états de la modale d'édition et de prévisualisation
       setEditingGuest(null);
       setShowPreview(null);
+      
+      // Révoquer toutes les URLs de prévisualisation des documents lors du démontage
+      uploadedDocs.forEach(doc => URL.revokeObjectURL(doc.preview));
     };
-  }, []);
+  }, [uploadedDocs]); // Dépendance à uploadedDocs pour s'assurer que toutes les URLs sont révoquées
 
   const updateUploadedDocuments = useCallback((updater: (docs: UploadedDocument[]) => UploadedDocument[]) => {
     console.log('📝 [updateUploadedDocuments] Mise à jour des documents...');
