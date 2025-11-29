@@ -107,7 +107,7 @@ export function VerifyToken() {
             } else {
               console.warn('⚠️ [VerifyToken] Pas de dates dans les métadonnées');
             }
-          } else {
+        } else {
             console.warn('⚠️ [VerifyToken] Impossible de récupérer les métadonnées:', metadataError);
           }
         } catch (e) {

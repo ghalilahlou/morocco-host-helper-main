@@ -1,27 +1,20 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Upload, FileText, Loader2, Check, X, Eye, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { SafeSelect, SafeSelectContent, SafeSelectItem, SafeSelectTrigger, SafeSelectValue } from '@/components/ui/safe-select';
 import { Badge } from '@/components/ui/badge';
 import { SimpleModal, SimpleModalHeader, SimpleModalTitle, SimpleModalDescription } from '@/components/ui/simple-modal';
 import { useToast } from '@/hooks/use-toast';
-import { BookingFormData, BookingFormUpdate } from '../BookingWizard';
+import { BookingFormData } from '../BookingWizard';
 import { UploadedDocument, Guest } from '@/types/booking';
+import { GuestEditDialog } from './GuestEditDialog';
 import { v4 as uuidv4 } from 'uuid';
 
 interface DocumentUploadStepProps {
   formData: BookingFormData;
-  updateFormData: (updates: BookingFormUpdate) => void;
+  updateFormData: (updates: Partial<BookingFormData> | ((prev: BookingFormData) => Partial<BookingFormData>)) => void;
   propertyId?: string; // Optionnel pour compatibilité avec BookingWizard
   bookingId?: string; // Optionnel pour compatibilité avec BookingWizard
-}
-
-// Type étendu pour les documents avec statut de traitement
-interface ExtendedUploadedDocument extends UploadedDocument {
-  processingStatus?: 'processing' | 'completed' | 'error';
 }
 
 export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadStepProps) => {
@@ -83,14 +76,14 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
       updateFormData({ numberOfGuests: resultingGuests });
     }
     
-    const newDocs: ExtendedUploadedDocument[] = [];
+    const newDocs: UploadedDocument[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
       console.log(`📄 [UPLOAD] Traitement du fichier ${i + 1}/${files.length}:`, file.name, 'Type:', file.type, 'Taille:', Math.round(file.size / 1024), 'KB');
       
-      if (!file.type.match(/^image\/(jpeg|jpg|png|gif)$/)) {
+      if (!file.type.match(/^image\/(jpeg|jpg|png|gif)$/i)) {
         console.error('❌ [UPLOAD] Format non supporté:', file.type);
         toast({
           title: "Format non supporté",
@@ -102,7 +95,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
 
       try {
         const preview = URL.createObjectURL(file);
-      const doc: ExtendedUploadedDocument = {
+      const doc: UploadedDocument = {
         id: uuidv4(),
         file,
           preview,
@@ -188,7 +181,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
             // Mettre à jour le document avec createdGuestId
             const updatedDocs = (prev.uploadedDocuments || []).map(d => 
               d.id === doc.id 
-                ? { ...d, extractedData, processingStatus: 'completed' as const, createdGuestId: newGuestId }
+                ? { ...d, extractedData, processingStatus: 'completed' as const, createdGuestId: newGuestId } as UploadedDocument
                 : d
             );
             
@@ -200,7 +193,9 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
               guestId: newGuestId,
               totalGuests: guests.length,
               numberOfGuests: guestCount,
-              documentsUpdated: updatedDocs.length
+              documentsUpdated: updatedDocs.length,
+              // ✅ NOUVEAU LOG : Vérifier les invités après modification
+              guestsAfterUpdate: guests.map(g => ({ id: g.id, fullName: g.fullName }))
             });
             
             // ✅ FORCER le re-render en retournant un nouvel objet avec toutes les propriétés
@@ -217,7 +212,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           // Still mark as completed even if no guest data
           updateUploadedDocuments(prev => prev.map(d => 
             d.id === doc.id 
-              ? { ...d, extractedData, processingStatus: 'completed' as const }
+              ? { ...d, extractedData, processingStatus: 'completed' as const } as UploadedDocument
               : d
           ));
         }
@@ -228,7 +223,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
         
         updateUploadedDocuments(prev => prev.map(d => 
           d.id === doc.id 
-            ? { ...d, processingStatus: 'error' as const }
+            ? { ...d, processingStatus: 'error' as const } as UploadedDocument
             : d
         ));
         
@@ -290,9 +285,21 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
       const guests = exists
         ? prev.guests.map(g => g.id === guest.id ? guest : g)
         : [...prev.guests, guest];
+      
+      const guestCount = Math.max(prev.numberOfGuests, guests.length);
+      
+      console.log('✅ [GUEST] Guest enregistré manuellement:', {
+        guestId: guest.id,
+        fullName: guest.fullName,
+        totalGuests: guests.length,
+        numberOfGuests: guestCount,
+        // ✅ NOUVEAU LOG : Vérifier les invités après modification
+        guestsAfterUpdate: guests.map(g => ({ id: g.id, fullName: g.fullName }))
+      });
+      
       return {
         guests,
-        numberOfGuests: Math.max(prev.numberOfGuests, guests.length)
+        numberOfGuests: guestCount
       };
     });
     setEditingGuest(null);
@@ -309,9 +316,22 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     ));
     
     // Remove guest from form data
-    updateFormData(prev => ({
-      guests: prev.guests.filter(g => g.id !== guestId)
-    }));
+    updateFormData(prev => {
+      const updatedGuests = prev.guests.filter(g => g.id !== guestId);
+      const newGuestCount = Math.max(1, updatedGuests.length);
+      
+      console.log('🗑️ [GUEST] Guest supprimé:', {
+        guestId: guestId,
+        totalGuests: updatedGuests.length,
+        numberOfGuests: newGuestCount,
+        guestsAfterUpdate: updatedGuests.map(g => ({ id: g.id, fullName: g.fullName }))
+      });
+      
+      return {
+        guests: updatedGuests,
+        numberOfGuests: newGuestCount
+      };
+    });
   };
 
   const removeDocument = (docId: string) => {
@@ -336,13 +356,22 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     // Remove associated guest if exists
     if (docToRemove.createdGuestId) {
       console.log('✂️ REMOVING GUEST:', docToRemove.createdGuestId);
-      updateFormData(prev => ({
-        guests: prev.guests.filter(g => {
-          const keep = g.id !== docToRemove.createdGuestId;
-          console.log(`Guest ${g.fullName} (${g.id}): ${keep ? 'KEEP' : 'REMOVE'}`);
-          return keep;
-        })
-      }));
+      updateFormData(prev => {
+        const updatedGuests = prev.guests.filter(g => g.id !== docToRemove.createdGuestId);
+        const newGuestCount = Math.max(1, updatedGuests.length);
+        
+        console.log('✂️ [GUEST] Guest supprimé via document:', {
+          guestId: docToRemove.createdGuestId,
+          totalGuests: updatedGuests.length,
+          numberOfGuests: newGuestCount,
+          guestsAfterUpdate: updatedGuests.map(g => ({ id: g.id, fullName: g.fullName }))
+        });
+        
+        return {
+          guests: updatedGuests,
+          numberOfGuests: newGuestCount
+        };
+      });
     }
   };
 
@@ -501,7 +530,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
                       <div className="flex space-x-4 text-sm text-muted-foreground">
                         <span>{guest.nationality}</span>
                         <span>{guest.documentNumber}</span>
-                        <span>{guest.dateOfBirth}</span>
+                        <span>{guest.dateOfBirth ? (typeof guest.dateOfBirth === 'string' ? guest.dateOfBirth : guest.dateOfBirth.toISOString().split('T')[0]) : ''}</span>
                       </div>
                     </div>
                     <div className="flex space-x-1">
@@ -530,13 +559,20 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
 
       {/* Guest Edit Dialog - Rendu conditionnel avec key pour éviter les erreurs de portal */}
       {editingGuest && (
-      <GuestEditDialog
+        <GuestEditDialog
           key={`guest-edit-${editingGuest.id}`}
-        guest={editingGuest}
+          guest={editingGuest}
           open={true}
-        onSave={saveGuest}
-        onClose={() => setEditingGuest(null)}
-      />
+          onSave={saveGuest}
+          onClose={() => setEditingGuest(null)}
+          uploadedDocuments={uploadedDocs.filter(doc => doc.createdGuestId === editingGuest.id)}
+          onDocumentsUpdate={(docs) => {
+            updateUploadedDocuments(prev => {
+              const otherDocs = prev.filter(d => d.createdGuestId !== editingGuest.id);
+              return [...otherDocs, ...docs];
+            });
+          }}
+        />
       )}
 
       {/* Preview Modal - Utilise SimpleModal sans portal pour éviter les erreurs */}
@@ -566,114 +602,5 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
         </SimpleModal>
       )}
     </div>
-  );
-};
-
-interface GuestEditDialogProps {
-  guest: Guest | null;
-  open: boolean;
-  onSave: (guest: Guest) => void;
-  onClose: () => void;
-}
-
-const GuestEditDialog = ({ guest, open, onSave, onClose }: GuestEditDialogProps) => {
-  const [formData, setFormData] = useState<Guest | null>(guest);
-
-  useEffect(() => {
-    setFormData(guest);
-  }, [guest]);
-
-  // Ne rien rendre si pas de guest ou pas ouvert (évite les erreurs de portal)
-  if (!formData || !open) return null;
-
-  const handleSave = () => {
-    if (!formData.fullName.trim()) {
-      return;
-    }
-    onSave(formData);
-  };
-
-  return (
-    <SimpleModal
-      open={open}
-      onOpenChange={(value) => {
-      if (!value) onClose();
-      }}
-    >
-      <SimpleModalHeader>
-        <SimpleModalTitle>Informations du client</SimpleModalTitle>
-      </SimpleModalHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Nom complet *</Label>
-            <Input
-              value={formData.fullName}
-              onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-              placeholder="Nom complet"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Date de naissance</Label>
-              <Input
-                type="date"
-                value={formData.dateOfBirth}
-                onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Nationalité</Label>
-              <Input
-                value={formData.nationality}
-                onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
-                placeholder="Ex: FRANÇAIS"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Type de document</Label>
-              <SafeSelect
-                value={formData.documentType}
-                onValueChange={(value: 'passport' | 'national_id') => 
-                  setFormData({ ...formData, documentType: value })
-                }
-              >
-                <SafeSelectTrigger>
-                  <SafeSelectValue />
-                </SafeSelectTrigger>
-                <SafeSelectContent>
-                  <SafeSelectItem value="passport">Passeport</SafeSelectItem>
-                  <SafeSelectItem value="national_id">Carte d'identité</SafeSelectItem>
-                </SafeSelectContent>
-              </SafeSelect>
-            </div>
-            <div className="space-y-2">
-              <Label>Numéro de document</Label>
-              <Input
-                value={formData.documentNumber}
-                onChange={(e) => setFormData({ ...formData, documentNumber: e.target.value })}
-                placeholder="Numéro du document"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Lieu de naissance</Label>
-            <Input
-              value={formData.placeOfBirth || ''}
-              onChange={(e) => setFormData({ ...formData, placeOfBirth: e.target.value })}
-              placeholder="Lieu de naissance (optionnel)"
-            />
-          </div>
-        </div>
-        <div className="flex justify-end space-x-2 pt-4">
-          <Button variant="outline" onClick={onClose}>
-            Annuler
-          </Button>
-          <Button onClick={handleSave} disabled={!formData.fullName.trim()}>
-            Enregistrer
-          </Button>
-        </div>
-    </SimpleModal>
   );
 };

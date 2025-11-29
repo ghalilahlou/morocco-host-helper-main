@@ -90,7 +90,7 @@ class Logger {
     
     // ✅ SÉCURITÉ : Ne pas afficher les logs info en production
     if (import.meta.env.DEV) {
-      console.info(this.formatMessage(LogLevel.INFO, message, context));
+    console.info(this.formatMessage(LogLevel.INFO, message, context));
     }
   }
 
@@ -108,7 +108,7 @@ class Logger {
     
     // ✅ SÉCURITÉ : Ne pas afficher les warnings en production (sauf si critiques)
     if (import.meta.env.DEV) {
-      console.warn(this.formatMessage(LogLevel.WARN, message, context));
+    console.warn(this.formatMessage(LogLevel.WARN, message, context));
     }
   }
 
