@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, startTransition } from 'react';
 import { Upload, FileText, Loader2, Check, X, Eye, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -349,71 +349,119 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
   const deleteGuest = (guestId: string) => {
     console.log('🗑️ Deleting guest:', guestId);
     
-    // Remove the guest from uploaded docs if it was created from a document
-    updateUploadedDocuments(prev => prev.map(doc => 
-      doc.createdGuestId === guestId 
-        ? { ...doc, createdGuestId: undefined }
-        : doc
-    ));
-    
-    // Remove guest from form data
-    updateFormData(prev => {
-      const updatedGuests = prev.guests.filter(g => g.id !== guestId);
-      const newGuestCount = Math.max(1, updatedGuests.length);
-      
-      console.log('🗑️ [GUEST] Guest supprimé:', {
-        guestId: guestId,
-        totalGuests: updatedGuests.length,
-        numberOfGuests: newGuestCount,
-        guestsAfterUpdate: updatedGuests.map(g => ({ id: g.id, fullName: g.fullName }))
+    // ✅ CRITIQUE : Combiner les deux mises à jour d'état en UNE SEULE opération atomique
+    // Utiliser startTransition pour éviter les conflits de rendu
+    startTransition(() => {
+      updateFormData(prev => {
+        // ✅ DÉFENSIF : S'assurer que prev.guests est toujours un tableau
+        const currentGuests = Array.isArray(prev.guests) ? prev.guests : [];
+        const currentDocs = Array.isArray(prev.uploadedDocuments) ? prev.uploadedDocuments : [];
+        
+        // ✅ VÉRIFICATION : S'assurer que le guest existe avant de le supprimer
+        const guestExists = currentGuests.some(g => g.id === guestId);
+        if (!guestExists) {
+          console.warn('⚠️ [deleteGuest] Guest non trouvé:', guestId);
+          return prev; // Ne rien changer si le guest n'existe pas
+        }
+        
+        // Filtrer le guest
+        const updatedGuests = currentGuests.filter(g => g.id !== guestId);
+        const newGuestCount = Math.max(1, updatedGuests.length);
+        
+        // Retirer la référence au guest dans les documents associés
+        const updatedDocs = currentDocs.map(doc => 
+          doc.createdGuestId === guestId 
+            ? { ...doc, createdGuestId: undefined }
+            : doc
+        );
+        
+        console.log('🗑️ [GUEST] Guest supprimé:', {
+          guestId: guestId,
+          totalGuests: updatedGuests.length,
+          numberOfGuests: newGuestCount,
+          guestsAfterUpdate: updatedGuests.map(g => ({ id: g.id, fullName: g.fullName }))
+        });
+        
+        // ✅ RETOURNER UN NOUVEL OBJET avec toutes les propriétés pour forcer le re-render
+        return {
+          ...prev, // Préserver toutes les autres propriétés
+          guests: updatedGuests,
+          numberOfGuests: newGuestCount,
+          uploadedDocuments: updatedDocs
+        };
       });
-      
-      return {
-        guests: updatedGuests,
-        numberOfGuests: newGuestCount
-      };
     });
   };
 
   const removeDocument = (docId: string) => {
     console.log('🗑️ REMOVING DOCUMENT:', docId);
     
-    // Find the document
+    // ✅ DÉFENSIF : Vérifier que le document existe avant de continuer
     const docToRemove = uploadedDocs.find(d => d.id === docId);
-    if (!docToRemove) return;
+    if (!docToRemove) {
+      console.warn('⚠️ [removeDocument] Document non trouvé:', docId);
+      return;
+    }
     
     console.log('📄 Document found:', docToRemove.file.name, 'Guest ID:', docToRemove.createdGuestId);
     
-    // Clean up preview URL
-    URL.revokeObjectURL(docToRemove.preview);
+    // ✅ NETTOYAGE SÉCURISÉ : Révoquer l'URL de prévisualisation avec gestion d'erreur
+    try {
+      if (docToRemove.preview && docToRemove.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(docToRemove.preview);
+      }
+    } catch (error) {
+      console.warn('⚠️ [removeDocument] Erreur lors de la révocation de l\'URL:', error);
+    }
     
-    // Remove document from list
-    updateUploadedDocuments(prev => {
-      const filtered = prev.filter(d => d.id !== docId);
-      console.log('📋 Documents after removal:', filtered.length);
-      return filtered;
-    });
+    // ✅ CRITIQUE : Combiner les deux mises à jour d'état en UNE SEULE opération atomique
+    // Cela évite les conflits de rendu qui causent l'erreur removeChild
+    const guestIdToRemove = docToRemove.createdGuestId;
     
-    // Remove associated guest if exists
-    if (docToRemove.createdGuestId) {
-      console.log('✂️ REMOVING GUEST:', docToRemove.createdGuestId);
+    // Utiliser startTransition pour marquer cette mise à jour comme non-urgente
+    // Cela permet à React de gérer les transitions de manière plus sûre
+    startTransition(() => {
       updateFormData(prev => {
-        const updatedGuests = prev.guests.filter(g => g.id !== docToRemove.createdGuestId);
-        const newGuestCount = Math.max(1, updatedGuests.length);
+        // ✅ DÉFENSIF : S'assurer que prev.guests est toujours un tableau
+        const currentGuests = Array.isArray(prev.guests) ? prev.guests : [];
+        const currentDocs = Array.isArray(prev.uploadedDocuments) ? prev.uploadedDocuments : [];
         
-        console.log('✂️ [GUEST] Guest supprimé via document:', {
-          guestId: docToRemove.createdGuestId,
-          totalGuests: updatedGuests.length,
-          numberOfGuests: newGuestCount,
-          guestsAfterUpdate: updatedGuests.map(g => ({ id: g.id, fullName: g.fullName }))
-        });
+        // Filtrer le document à supprimer
+        const filteredDocs = currentDocs.filter(d => d.id !== docId);
+        console.log('📋 Documents after removal:', filteredDocs.length);
         
+        // Filtrer le guest associé si nécessaire
+        let updatedGuests = currentGuests;
+        let newGuestCount = prev.numberOfGuests || 1;
+        
+        if (guestIdToRemove) {
+          // ✅ VÉRIFICATION : S'assurer que le guest existe avant de le supprimer
+          const guestExists = currentGuests.some(g => g.id === guestIdToRemove);
+          if (guestExists) {
+            console.log('✂️ REMOVING GUEST:', guestIdToRemove);
+            updatedGuests = currentGuests.filter(g => g.id !== guestIdToRemove);
+            newGuestCount = Math.max(1, updatedGuests.length);
+            
+            console.log('✂️ [GUEST] Guest supprimé via document:', {
+              guestId: guestIdToRemove,
+              totalGuests: updatedGuests.length,
+              numberOfGuests: newGuestCount,
+              guestsAfterUpdate: updatedGuests.map(g => ({ id: g.id, fullName: g.fullName }))
+            });
+          } else {
+            console.warn('⚠️ [removeDocument] Guest associé non trouvé:', guestIdToRemove);
+          }
+        }
+        
+        // ✅ RETOURNER UN NOUVEL OBJET avec toutes les propriétés pour forcer le re-render
         return {
+          ...prev, // Préserver toutes les autres propriétés
+          uploadedDocuments: filteredDocs,
           guests: updatedGuests,
           numberOfGuests: newGuestCount
         };
       });
-    }
+    });
   };
 
   return (
@@ -487,8 +535,8 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
         <div className="space-y-4">
           <h3 className="text-lg font-medium">Documents uploadés</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {uploadedDocs.map((doc) => (
-              <Card key={doc.id} className="relative">
+            {uploadedDocs.map((doc, index) => (
+              <Card key={`doc-${doc.id}-${index}`} className="relative">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
@@ -562,8 +610,8 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           </div>
         ) : (
           <div className="space-y-3">
-            {guestsArray.map((guest) => (
-              <Card key={guest.id}>
+            {guestsArray.map((guest, index) => (
+              <Card key={`guest-${guest.id}-${index}`}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">

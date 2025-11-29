@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect, Component, ErrorInfo, ReactNode } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, Component, ErrorInfo, ReactNode, startTransition } from 'react';
 import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -158,32 +158,48 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
     // ✅ NOUVEAU : Marquer la transition comme en cours
     setIsTransitioning(true);
     
-    // ✅ PROTECTION : Attendre que toutes les mises à jour d'état soient terminées avant de changer d'étape
-    // Utiliser requestAnimationFrame pour s'assurer que React a terminé son cycle de rendu
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        setCurrentStep(prev => {
-          if (prev < steps.length - 1) {
-            console.log(`✅ [BookingWizard] Transition de l'étape ${prev} vers ${prev + 1}`);
-            // ✅ NOUVEAU : Réinitialiser l'état de transition après un délai supplémentaire
-            setTimeout(() => setIsTransitioning(false), 200);
-            return prev + 1;
-          } else {
-            setIsTransitioning(false);
-            handleSubmit();
-            return prev; // Ne pas changer l'étape si on soumet
-          }
-        });
-      }, 100); // Délai augmenté pour laisser plus de temps à React
+    // ✅ CRITIQUE : Utiliser startTransition pour marquer le changement d'étape comme non-urgent
+    // Cela permet à React de gérer les transitions de manière plus sûre et évite les erreurs removeChild
+    startTransition(() => {
+      // ✅ PROTECTION : Attendre que toutes les mises à jour d'état soient terminées avant de changer d'étape
+      // Utiliser requestAnimationFrame pour s'assurer que React a terminé son cycle de rendu
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          setCurrentStep(prev => {
+            if (prev < steps.length - 1) {
+              console.log(`✅ [BookingWizard] Transition de l'étape ${prev} vers ${prev + 1}`);
+              // ✅ NOUVEAU : Réinitialiser l'état de transition après un délai supplémentaire
+              setTimeout(() => setIsTransitioning(false), 200);
+              return prev + 1;
+            } else {
+              setIsTransitioning(false);
+              handleSubmit();
+              return prev; // Ne pas changer l'étape si on soumet
+            }
+          });
+        }, 100); // Délai augmenté pour laisser plus de temps à React
+      });
     });
   };
 
   const handlePrevious = () => {
-    setCurrentStep(prev => {
-      if (prev > 0) {
-        return prev - 1;
-      }
-      return prev;
+    // ✅ PROTECTION : Empêcher les transitions multiples simultanées
+    if (isTransitioning) {
+      console.warn('⚠️ [BookingWizard] Transition déjà en cours, ignorée');
+      return;
+    }
+    
+    // ✅ CRITIQUE : Utiliser startTransition pour marquer le changement d'étape comme non-urgent
+    setIsTransitioning(true);
+    startTransition(() => {
+      setCurrentStep(prev => {
+        if (prev > 0) {
+          setTimeout(() => setIsTransitioning(false), 200);
+          return prev - 1;
+        }
+        setIsTransitioning(false);
+        return prev;
+      });
     });
   };
 
@@ -439,16 +455,40 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             };
           });
 
-          const { error: guestsError } = await supabase
+          const { error: guestsError, data: insertedGuests } = await supabase
             .from('guests')
-            .insert(guestsData);
+            .insert(guestsData)
+            .select();
 
           if (guestsError) {
             console.error('❌ [DIAGNOSTIC] Erreur insertion guests:', guestsError);
             throw guestsError;
           }
           
-          console.log('✅ [DIAGNOSTIC] Guests insérés avec succès');
+          console.log('✅ [DIAGNOSTIC] Guests insérés avec succès:', {
+            count: insertedGuests?.length || 0,
+            guests: insertedGuests?.map(g => ({ id: g.id, full_name: g.full_name }))
+          });
+          
+          // ✅ CRITIQUE : Attendre un peu pour s'assurer que les guests sont bien visibles dans la base
+          // Cela évite les problèmes de timing lors de la génération des documents
+          console.log('⏳ [DIAGNOSTIC] Attente de 500ms pour garantir la visibilité des guests en base...');
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // ✅ VÉRIFICATION : Vérifier que les guests sont bien en base avant de continuer
+          const { data: verifyGuests, error: verifyError } = await supabase
+            .from('guests')
+            .select('id, full_name')
+            .eq('booking_id', bookingData.id);
+          
+          if (verifyError) {
+            console.warn('⚠️ [DIAGNOSTIC] Erreur vérification guests:', verifyError);
+          } else {
+            console.log('✅ [DIAGNOSTIC] Vérification guests en base:', {
+              count: verifyGuests?.length || 0,
+              guests: verifyGuests?.map(g => ({ id: g.id, full_name: g.full_name }))
+            });
+          }
         }
 
         // ✅ CRITIQUE : Rafraîchir immédiatement après création pour que la réservation s'affiche
@@ -517,6 +557,17 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               })
             );
 
+            console.log('📤 [AUTO-GEN] Appel Edge Function host_direct avec:', {
+              bookingId,
+              guestInfo: { ...guestInfo, email: guestInfo.email ? '***' : null },
+              idDocumentsCount: idDocuments.length,
+              bookingData: {
+                checkIn: formData.checkInDate,
+                checkOut: formData.checkOutDate,
+                numberOfGuests: formData.numberOfGuests
+              }
+            });
+            
             const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
               body: {
                 action: 'host_direct',
@@ -531,11 +582,30 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               }
             });
 
-              if (!error && data) {
+            console.log('📥 [AUTO-GEN] Réponse Edge Function host_direct:', {
+              hasError: !!error,
+              errorMessage: error?.message,
+              hasData: !!data,
+              hasContractUrl: !!data?.contractUrl,
+              hasPoliceUrl: !!data?.policeUrl,
+              dataKeys: data ? Object.keys(data) : []
+            });
+
+              if (error) {
+                console.error('❌ [AUTO-GEN] Erreur Edge Function host_direct:', error);
+                throw error;
+              }
+              
+              if (data) {
                 result.contractUrl = data.contractUrl;
                 result.policeUrl = data.policeUrl;
-                console.log('✅ [AUTO-GEN] Génération réussie via host_direct');
+                console.log('✅ [AUTO-GEN] Génération réussie via host_direct:', {
+                  hasContract: !!result.contractUrl,
+                  hasPolice: !!result.policeUrl
+                });
                 return result;
+              } else {
+                console.warn('⚠️ [AUTO-GEN] Aucune donnée retournée par host_direct');
               }
             } catch (error) {
               console.warn('⚠️ [AUTO-GEN] host_direct a échoué, passage au fallback:', error);
