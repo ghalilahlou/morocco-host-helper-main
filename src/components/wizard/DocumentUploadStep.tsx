@@ -383,8 +383,9 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           onChange={handleFileInput}
           className="hidden"
         />
-      <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+      <label
+          htmlFor="file-upload"
+          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer block ${
             isDragging 
               ? 'border-primary bg-primary/10 scale-105' 
               : 'border-border hover:border-primary/50'
@@ -393,17 +394,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
         onDragOver={(e) => e.preventDefault()}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
-          onClick={() => {
-            console.log('🖱️ [CLICK] Zone de upload cliquée');
-            const fileInput = document.getElementById('file-upload') as HTMLInputElement;
-            if (fileInput) {
-              console.log('✅ [CLICK] Input trouvé, déclenchement du clic');
-              fileInput.click();
-            } else {
-              console.error('❌ [CLICK] Input file-upload non trouvé !');
-            }
-          }}
-      >
+        >
         <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
         <h3 className="text-lg font-medium text-foreground mb-2">
           Glissez-déposez vos documents ici
@@ -414,7 +405,7 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
         <p className="text-xs text-muted-foreground">
           Formats supportés: JPG, PNG, GIF (max 10MB)
         </p>
-        </div>
+      </label>
       </div>
 
       {/* Uploaded Documents */}
