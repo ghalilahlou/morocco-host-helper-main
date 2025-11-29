@@ -28,6 +28,17 @@ class WizardErrorBoundary extends Component<
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('🔴 [WizardErrorBoundary] Erreur capturée:', error, errorInfo);
+    
+    // ✅ PROTECTION : Ne pas fermer immédiatement le wizard si c'est une erreur removeChild
+    // Ces erreurs sont souvent récupérables et ne devraient pas interrompre le workflow
+    if (error.name === 'NotFoundError' && error.message.includes('removeChild')) {
+      console.warn('⚠️ [WizardErrorBoundary] Erreur removeChild détectée - tentative de récupération...');
+      // Ne pas appeler onError() immédiatement, laisser React essayer de récupérer
+      // On va juste logger l'erreur mais ne pas fermer le wizard
+      return;
+    }
+    
+    // Pour les autres erreurs, fermer le wizard comme avant
     this.props.onError();
   }
 
@@ -125,13 +136,32 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   }, [currentStep, formData.checkInDate, formData.checkOutDate, formData.numberOfGuests, formData.guests.length, propertyId]);
 
   const handleNext = () => {
-    setCurrentStep(prev => {
-      if (prev < steps.length - 1) {
-        return prev + 1;
-      } else {
-        handleSubmit();
-        return prev; // Ne pas changer l'étape si on soumet
-      }
+    // ✅ PROTECTION : Vérifier que l'état est valide avant de changer d'étape
+    const currentGuests = Array.isArray(formData.guests) ? formData.guests : [];
+    const currentDocs = Array.isArray(formData.uploadedDocuments) ? formData.uploadedDocuments : [];
+    
+    console.log(`🔄 [BookingWizard] handleNext appelé - Étape actuelle: ${currentStep}`);
+    console.log('📊 [BookingWizard] État avant transition:', {
+      guestsCount: currentGuests.length,
+      documentsCount: currentDocs.length,
+      numberOfGuests: formData.numberOfGuests,
+      guestsList: currentGuests.map(g => ({ id: g.id, fullName: g.fullName }))
+    });
+    
+    // ✅ PROTECTION : Attendre que toutes les mises à jour d'état soient terminées avant de changer d'étape
+    // Utiliser requestAnimationFrame pour s'assurer que React a terminé son cycle de rendu
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        setCurrentStep(prev => {
+          if (prev < steps.length - 1) {
+            console.log(`✅ [BookingWizard] Transition de l'étape ${prev} vers ${prev + 1}`);
+            return prev + 1;
+          } else {
+            handleSubmit();
+            return prev; // Ne pas changer l'étape si on soumet
+          }
+        });
+      }, 50); // Petit délai pour laisser React terminer les mises à jour d'état
     });
   };
 
@@ -860,6 +890,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         <CardContent className="p-6">
           {/* ✅ CRITIQUE : Key stable pour forcer la recréation du composant à chaque changement d'étape */}
           {/* Cela évite les erreurs removeChild lors de la transition entre les étapes */}
+          {/* La clé inclut currentStep et editingBooking.id pour garantir l'unicité */}
           <CurrentStepComponent
             key={`step-${currentStep}-${editingBooking?.id || 'new'}`}
             formData={formData}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Upload, FileText, Loader2, Check, X, Eye, Edit, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,14 +39,31 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     guestsList: guestsArray.map(g => ({ id: g.id, fullName: g.fullName }))
   });
 
+  // ✅ NETTOYAGE SÉCURISÉ : Utiliser un ref pour éviter les erreurs si le composant est déjà démonté
+  const isMountedRef = useRef(true);
+  
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
-      // Nettoyer les états de la modale d'édition et de prévisualisation
-      setEditingGuest(null);
-      setShowPreview(null);
+      isMountedRef.current = false;
+      // Nettoyer les états de la modale d'édition et de prévisualisation de manière sécurisée
+      if (isMountedRef.current) {
+        setEditingGuest(null);
+        setShowPreview(null);
+      }
       
       // Révoquer toutes les URLs de prévisualisation des documents lors du démontage
-      uploadedDocs.forEach(doc => URL.revokeObjectURL(doc.preview));
+      // Utiliser un try-catch pour éviter les erreurs si l'URL est déjà révoquée
+      uploadedDocs.forEach(doc => {
+        try {
+          if (doc.preview && doc.preview.startsWith('blob:')) {
+            URL.revokeObjectURL(doc.preview);
+          }
+        } catch (error) {
+          // Ignorer les erreurs de révocation (URL déjà révoquée ou invalide)
+          console.warn('⚠️ [DocumentUploadStep] Erreur lors de la révocation de l\'URL:', error);
+        }
+      });
     };
   }, [uploadedDocs]); // Dépendance à uploadedDocs pour s'assurer que toutes les URLs sont révoquées
 
