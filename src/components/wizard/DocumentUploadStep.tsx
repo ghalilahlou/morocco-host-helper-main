@@ -14,10 +14,10 @@ interface DocumentUploadStepProps {
   formData: BookingFormData;
   updateFormData: (updates: Partial<BookingFormData> | ((prev: BookingFormData) => Partial<BookingFormData>)) => void;
   propertyId?: string; // Optionnel pour compatibilité avec BookingWizard
-  bookingId?: string; // Optionnel pour compatibilité avec BookingWizard
+  bookingId?: string; // Optionnel pour compatibilité avec BookingWizard - Si disponible, stocker immédiatement
 }
 
-export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadStepProps) => {
+export const DocumentUploadStep = ({ formData, updateFormData, bookingId }: DocumentUploadStepProps) => {
   useEffect(() => {
     console.log('✨ [DocumentUploadStep] Mounted');
     return () => console.log('🗑️ [DocumentUploadStep] Unmounted');
@@ -41,41 +41,45 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
 
   // ✅ NETTOYAGE SÉCURISÉ : Utiliser un ref pour éviter les erreurs si le composant est déjà démonté
   const isMountedRef = useRef(true);
+  // ✅ CRITIQUE : Référence pour stocker les URLs blob actives et éviter leur révocation prématurée
+  const activeBlobUrlsRef = useRef<Set<string>>(new Set());
   
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       // Nettoyer les états de la modale d'édition et de prévisualisation de manière sécurisée
-      if (isMountedRef.current) {
-        setEditingGuest(null);
-        setShowPreview(null);
-      }
+      setEditingGuest(null);
+      setShowPreview(null);
       
-      // Révoquer toutes les URLs de prévisualisation des documents lors du démontage
-      // Utiliser un try-catch pour éviter les erreurs si l'URL est déjà révoquée
-      uploadedDocs.forEach(doc => {
+      // ✅ CRITIQUE : Révoquer UNIQUEMENT au démontage du composant, pas à chaque changement de uploadedDocs
+      // Révoquer toutes les URLs blob actives
+      activeBlobUrlsRef.current.forEach(blobUrl => {
         try {
-          if (doc.preview && doc.preview.startsWith('blob:')) {
-            URL.revokeObjectURL(doc.preview);
-          }
+          URL.revokeObjectURL(blobUrl);
         } catch (error) {
           // Ignorer les erreurs de révocation (URL déjà révoquée ou invalide)
           console.warn('⚠️ [DocumentUploadStep] Erreur lors de la révocation de l\'URL:', error);
         }
       });
+      activeBlobUrlsRef.current.clear();
     };
-  }, [uploadedDocs]); // Dépendance à uploadedDocs pour s'assurer que toutes les URLs sont révoquées
+  }, []); // ✅ CRITIQUE : Pas de dépendance à uploadedDocs pour éviter la révocation prématurée
 
   const updateUploadedDocuments = useCallback((updater: (docs: UploadedDocument[]) => UploadedDocument[]) => {
     console.log('📝 [updateUploadedDocuments] Mise à jour des documents...');
-    updateFormData(prev => {
-      const currentDocs = prev.uploadedDocuments || [];
-      const newDocs = updater(currentDocs);
-      console.log('📝 [updateUploadedDocuments] Documents:', currentDocs.length, '→', newDocs.length);
-      return {
-        uploadedDocuments: newDocs
-      };
+    // ✅ CRITIQUE : Utiliser startTransition pour éviter les erreurs removeChild
+    startTransition(() => {
+      updateFormData(prev => {
+        const currentDocs = Array.isArray(prev.uploadedDocuments) ? prev.uploadedDocuments : [];
+        const newDocs = updater(currentDocs);
+        console.log('📝 [updateUploadedDocuments] Documents:', currentDocs.length, '→', newDocs.length);
+        // ✅ CRITIQUE : Retourner un nouvel objet complet pour éviter les conflits de rendu
+        return {
+          ...prev,
+          uploadedDocuments: newDocs
+        };
+      });
     });
   }, [updateFormData]);
 
@@ -113,16 +117,20 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
       }
 
       try {
+        // ✅ CRITIQUE : Créer une URL blob temporaire pour la prévisualisation immédiate
         const preview = URL.createObjectURL(file);
-      const doc: UploadedDocument = {
-        id: uuidv4(),
-        file,
+        // ✅ CRITIQUE : Ajouter l'URL blob à la liste des URLs actives
+        activeBlobUrlsRef.current.add(preview);
+        
+        const doc: UploadedDocument = {
+          id: uuidv4(),
+          file,
           preview,
-        processingStatus: 'processing'
-      };
+          processingStatus: 'processing'
+        };
 
-        console.log('✅ [UPLOAD] Document créé avec ID:', doc.id);
-      newDocs.push(doc);
+        console.log('✅ [UPLOAD] Document créé avec ID:', doc.id, 'Blob URL:', preview.substring(0, 50));
+        newDocs.push(doc);
       } catch (error) {
         console.error('❌ [UPLOAD] Erreur création document:', error);
         toast({
@@ -168,6 +176,53 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
           console.log('📝 Raw text extracted by AI OCR:', extractedText);
           extractedData = await AILocrService.parseGuestInfo(extractedText);
           console.log('✅ AI OCR parsing complete:', extractedData);
+        }
+        
+        // ✅ NOUVEAU : Si bookingId est disponible, stocker immédiatement le document dans Storage
+        let storageUrl: string | undefined = undefined;
+        let storagePath: string | undefined = undefined;
+        
+        if (bookingId) {
+          try {
+            console.log('💾 [STORAGE] Stockage immédiat du document pour bookingId:', bookingId);
+            const { DocumentStorageService } = await import('@/services/documentStorageService');
+            const storageResult = await DocumentStorageService.storeDocument(doc.file, {
+              bookingId: bookingId,
+              fileName: doc.file.name,
+              extractedData: extractedData
+            });
+            
+            if (storageResult.success && storageResult.documentUrl) {
+              storageUrl = storageResult.documentUrl;
+              storagePath = storageResult.filePath;
+              console.log('✅ [STORAGE] Document stocké avec succès:', {
+                url: storageUrl.substring(0, 50) + '...',
+                path: storagePath
+              });
+              
+              // ✅ CRITIQUE : Remplacer l'URL blob par l'URL réelle du Storage pour la prévisualisation
+              // Révoquer l'URL blob temporaire
+              try {
+                URL.revokeObjectURL(doc.preview);
+              } catch (e) {
+                console.warn('⚠️ Erreur révocation URL blob:', e);
+              }
+              
+              // Mettre à jour le document avec l'URL réelle
+              updateUploadedDocuments(prev => prev.map(d => 
+                d.id === doc.id 
+                  ? { ...d, preview: storageUrl!, extractedData, processingStatus: 'completed' as const } as UploadedDocument
+                  : d
+              ));
+            } else {
+              console.warn('⚠️ [STORAGE] Échec stockage document:', storageResult.error);
+            }
+          } catch (storageError) {
+            console.error('❌ [STORAGE] Erreur stockage document:', storageError);
+            // Continuer même si le stockage échoue - le document sera stocké lors de la soumission
+          }
+        } else {
+          console.log('ℹ️ [STORAGE] bookingId non disponible - stockage différé jusqu\'à la soumission');
         }
         
         // Mark as processing completed but don't duplicate the state update
@@ -407,8 +462,16 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
     
     // ✅ NETTOYAGE SÉCURISÉ : Révoquer l'URL de prévisualisation avec gestion d'erreur
     try {
-      if (docToRemove.preview && docToRemove.preview.startsWith('blob:')) {
-        URL.revokeObjectURL(docToRemove.preview);
+      if (docToRemove.preview) {
+        // Si c'est une URL blob, la révoquer et la retirer de la liste active
+        if (docToRemove.preview.startsWith('blob:')) {
+          URL.revokeObjectURL(docToRemove.preview);
+          activeBlobUrlsRef.current.delete(docToRemove.preview);
+        }
+        // Si c'est l'URL actuellement affichée dans la prévisualisation, fermer la modale
+        if (showPreview === docToRemove.preview) {
+          setShowPreview(null);
+        }
       }
     } catch (error) {
       console.warn('⚠️ [removeDocument] Erreur lors de la révocation de l\'URL:', error);
@@ -548,7 +611,30 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6"
-                        onClick={() => setShowPreview(doc.preview)}
+                        onClick={() => {
+                          // ✅ CRITIQUE : Vérifier que l'URL blob est toujours valide avant d'afficher
+                          if (doc.preview) {
+                            // Si c'est une URL blob, vérifier qu'elle est toujours dans la liste active
+                            if (doc.preview.startsWith('blob:') && !activeBlobUrlsRef.current.has(doc.preview)) {
+                              // Régénérer l'URL blob si elle a été révoquée
+                              try {
+                                const newPreview = URL.createObjectURL(doc.file);
+                                activeBlobUrlsRef.current.add(newPreview);
+                                // Mettre à jour le document avec la nouvelle URL
+                                updateUploadedDocuments(prev => prev.map(d => 
+                                  d.id === doc.id ? { ...d, preview: newPreview } : d
+                                ));
+                                setShowPreview(newPreview);
+                                console.log('🔄 [PREVIEW] URL blob régénérée avant affichage');
+                              } catch (error) {
+                                console.error('❌ [PREVIEW] Impossible de régénérer URL blob:', error);
+                                setShowPreview(doc.preview); // Essayer quand même avec l'ancienne URL
+                              }
+                            } else {
+                              setShowPreview(doc.preview);
+                            }
+                          }
+                        }}
                       >
                         <Eye className="w-3 h-3" />
                       </Button>
@@ -682,11 +768,47 @@ export const DocumentUploadStep = ({ formData, updateFormData }: DocumentUploadS
             </SimpleModalDescription>
           </SimpleModalHeader>
           <div className="flex justify-center">
+            {showPreview ? (
               <img
                 src={showPreview}
                 alt="Prévisualisation du document"
                 className="max-w-full max-h-96 object-contain"
+                onError={(e) => {
+                  console.error('❌ [PREVIEW] Erreur chargement image:', showPreview);
+                  // Si l'URL blob a expiré, essayer de régénérer depuis le fichier
+                  const doc = uploadedDocs.find(d => d.preview === showPreview || d.id === showPreview);
+                  if (doc && doc.file) {
+                    try {
+                      // Révoquer l'ancienne URL si c'est un blob et la retirer de la liste active
+                      if (showPreview && showPreview.startsWith('blob:')) {
+                        try {
+                          URL.revokeObjectURL(showPreview);
+                          activeBlobUrlsRef.current.delete(showPreview);
+                        } catch (revokeError) {
+                          // Ignorer si déjà révoquée
+                        }
+                      }
+                      // Créer une nouvelle URL blob
+                      const newPreview = URL.createObjectURL(doc.file);
+                      activeBlobUrlsRef.current.add(newPreview);
+                      setShowPreview(newPreview);
+                      console.log('🔄 [PREVIEW] URL blob régénérée depuis le fichier');
+                    } catch (regenerateError) {
+                      console.error('❌ [PREVIEW] Impossible de régénérer la prévisualisation:', regenerateError);
+                      // Afficher un message d'erreur à l'utilisateur
+                      setShowPreview(null);
+                    }
+                  } else {
+                    console.error('❌ [PREVIEW] Document non trouvé pour régénération');
+                    setShowPreview(null);
+                  }
+                }}
               />
+            ) : (
+              <div className="flex items-center justify-center p-8 text-muted-foreground">
+                <p>Impossible de charger la prévisualisation</p>
+              </div>
+            )}
           </div>
         </SimpleModal>
       )}

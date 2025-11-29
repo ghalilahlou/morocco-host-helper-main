@@ -1,4 +1,15 @@
 import { useState, useCallback, useMemo, useRef, useEffect, Component, ErrorInfo, ReactNode, startTransition } from 'react';
+
+// Helper function to normalize names for comparison
+function normName(s?: string): string {
+  return (s ?? '')
+    .toString()
+    .normalize('NFKD')
+    .replace(/[^\p{L}\s'-]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
 import { ArrowLeft, ArrowRight, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,12 +40,30 @@ class WizardErrorBoundary extends Component<
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('🔴 [WizardErrorBoundary] Erreur capturée:', error, errorInfo);
     
-    // ✅ PROTECTION : Ne pas fermer immédiatement le wizard si c'est une erreur removeChild
+    // ✅ PROTECTION RENFORCÉE : Ne pas fermer le wizard pour les erreurs removeChild/insertBefore
     // Ces erreurs sont souvent récupérables et ne devraient pas interrompre le workflow
-    if (error.name === 'NotFoundError' && error.message.includes('removeChild')) {
-      console.warn('⚠️ [WizardErrorBoundary] Erreur removeChild détectée - tentative de récupération...');
-      // Ne pas appeler onError() immédiatement, laisser React essayer de récupérer
-      // On va juste logger l'erreur mais ne pas fermer le wizard
+    const errorMessage = error?.message || '';
+    const errorStack = errorInfo?.componentStack || '';
+    
+    const isPortalOrDOMError = 
+      error.name === 'NotFoundError' ||
+      errorMessage.includes('removeChild') ||
+      errorMessage.includes('insertBefore') ||
+      errorMessage.includes('not a child of this node') ||
+      errorMessage.includes('The node to be removed') ||
+      errorMessage.includes('The node before which') ||
+      errorStack.includes('removeChild') ||
+      errorStack.includes('insertBefore');
+    
+    if (isPortalOrDOMError) {
+      console.warn('⚠️ [WizardErrorBoundary] Erreur DOM/Portal détectée - tentative de récupération...');
+      // ✅ CRITIQUE : Ne pas changer l'état immédiatement pour éviter les re-renders qui causent plus d'erreurs
+      // Réinitialiser l'état d'erreur après un court délai pour permettre la récupération
+      setTimeout(() => {
+        if (this.state.hasError) {
+          this.setState({ hasError: false, error: null });
+        }
+      }, 100);
       return;
     }
     
@@ -422,6 +451,61 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           status: bookingData.status
         });
 
+        // ✅ CRITIQUE : Stocker immédiatement les documents uploadés dans Storage maintenant qu'on a le bookingId
+        // Note: On stocke AVANT l'insertion des guests pour pouvoir les lier ensuite
+        if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
+          console.log('💾 [STORAGE] Stockage immédiat des documents uploadés pour bookingId:', bookingData.id);
+          const { DocumentStorageService } = await import('@/services/documentStorageService');
+          
+          for (const doc of formData.uploadedDocuments) {
+            try {
+              // Vérifier si le document a déjà une URL Storage (cas d'édition)
+              const hasStorageUrl = doc.preview && (doc.preview.startsWith('http://') || doc.preview.startsWith('https://'));
+              
+              if (!hasStorageUrl) {
+                // Stocker le document dans Storage
+                const storageResult = await DocumentStorageService.storeDocument(doc.file, {
+                  bookingId: bookingData.id,
+                  fileName: doc.file.name,
+                  extractedData: doc.extractedData
+                  // Note: guestId sera mis à jour après l'insertion des guests
+                });
+                
+                if (storageResult.success && storageResult.documentUrl) {
+                  console.log('✅ [STORAGE] Document stocké:', {
+                    fileName: doc.file.name,
+                    url: storageResult.documentUrl.substring(0, 50) + '...',
+                    path: storageResult.filePath
+                  });
+                  
+                  // ✅ CRITIQUE : Mettre à jour formData avec l'URL Storage réelle pour la prévisualisation
+                  // Cela remplace l'URL blob temporaire par l'URL permanente
+                  const updatedDocs = formData.uploadedDocuments.map(d => 
+                    d.id === doc.id 
+                      ? { ...d, preview: storageResult.documentUrl! } as typeof doc
+                      : d
+                  );
+                  
+                  // Mettre à jour le state (même si on est en train de soumettre, cela aide pour les futurs re-renders)
+                  updateFormData(prev => ({
+                    ...prev,
+                    uploadedDocuments: updatedDocs
+                  }));
+                  
+                  console.log('✅ [STORAGE] Document mis à jour avec URL Storage dans formData');
+                } else {
+                  console.warn('⚠️ [STORAGE] Échec stockage document:', doc.file.name, storageResult.error);
+                }
+              } else {
+                console.log('ℹ️ [STORAGE] Document déjà stocké:', doc.file.name);
+              }
+            } catch (storageError) {
+              console.error('❌ [STORAGE] Erreur stockage document:', doc.file.name, storageError);
+              // Ne pas bloquer le processus si le stockage échoue
+            }
+          }
+        }
+
         // 2. Insert guests
         // ✅ DÉFENSIF : Vérifier que formData.guests est un tableau valide
         const guestsToInsert = Array.isArray(formData.guests) ? formData.guests : [];
@@ -488,6 +572,37 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               count: verifyGuests?.length || 0,
               guests: verifyGuests?.map(g => ({ id: g.id, full_name: g.full_name }))
             });
+            
+            // ✅ CRITIQUE : Mettre à jour les documents avec les guestId réels maintenant qu'ils sont en base
+            if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0 && verifyGuests && verifyGuests.length > 0) {
+              console.log('🔗 [STORAGE] Liaison des documents aux guests...');
+              for (const doc of formData.uploadedDocuments) {
+                if (doc.createdGuestId && doc.extractedData?.fullName) {
+                  // Trouver le guest correspondant par nom (car createdGuestId est un UUID temporaire)
+                  const docGuestName = doc.extractedData.fullName;
+                  const matchingGuest = verifyGuests.find(g => {
+                    return normName(g.full_name) === normName(docGuestName);
+                  });
+                  
+                  if (matchingGuest) {
+                    // Mettre à jour le document dans uploaded_documents avec le guestId réel
+                    const { error: updateError } = await supabase
+                      .from('uploaded_documents')
+                      .update({ guest_id: matchingGuest.id })
+                      .eq('booking_id', bookingData.id)
+                      .eq('file_name', doc.file.name);
+                    
+                    if (updateError) {
+                      console.warn('⚠️ [STORAGE] Erreur liaison document-guest:', updateError);
+                    } else {
+                      console.log('✅ [STORAGE] Document lié au guest:', doc.file.name, '->', matchingGuest.id);
+                    }
+                  } else {
+                    console.warn('⚠️ [STORAGE] Guest correspondant non trouvé pour:', docGuestName);
+                  }
+                }
+              }
+            }
           }
         }
 
@@ -1004,13 +1119,17 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           {/* ✅ CRITIQUE : Wrapper avec état de transition pour éviter les erreurs removeChild */}
           {/* Utiliser un div wrapper avec une clé stable pour forcer React à bien gérer la transition */}
           {isTransitioning ? (
-            <div className="flex items-center justify-center py-8">
+            <div key="transition-loader" className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div key={`step-wrapper-${currentStep}-${editingBooking?.id || 'new'}`}>
+            <div 
+              key={`step-wrapper-${currentStep}-${editingBooking?.id || 'new'}`}
+              // ✅ CRITIQUE : Ajouter un style pour forcer le re-render propre et éviter les conflits DOM
+              style={{ minHeight: '200px' }}
+            >
               <CurrentStepComponent
-                key={`step-${currentStep}-${editingBooking?.id || 'new'}`}
+                key={`step-${currentStep}-${editingBooking?.id || 'new'}-${isTransitioning ? 'transitioning' : 'stable'}`}
                 formData={formData}
                 updateFormData={updateFormData}
                 propertyId={propertyId}
@@ -1033,25 +1152,35 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             
             <Button
               onClick={handleNext}
-              disabled={!isStepValid || isSubmitting}
+              disabled={!isStepValid || isSubmitting || isTransitioning}
               variant={currentStep === steps.length - 1 ? "success" : "professional"}
+              key={`next-button-${currentStep}-${isSubmitting ? 'submitting' : 'idle'}-${editingBooking ? 'edit' : 'new'}`}
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  {currentStep === steps.length - 1 ? 'Création en cours...' : 'Traitement...'}
-                </>
-              ) : currentStep === steps.length - 1 ? (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  {editingBooking ? 'Mettre à jour' : 'Créer la réservation'}
-                </>
-              ) : (
-                <>
-                  Suivant
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
-              )}
+              {/* ✅ CRITIQUE : Utiliser un fragment avec key pour stabiliser le contenu conditionnel */}
+              {(() => {
+                if (isSubmitting) {
+                  return (
+                    <span key="submitting-content">
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      {currentStep === steps.length - 1 ? 'Création en cours...' : 'Traitement...'}
+                    </span>
+                  );
+                }
+                if (currentStep === steps.length - 1) {
+                  return (
+                    <span key="final-step-content">
+                      <Check className="w-4 h-4 mr-2" />
+                      {editingBooking ? 'Mettre à jour' : 'Créer la réservation'}
+                    </span>
+                  );
+                }
+                return (
+                  <span key="next-content">
+                    Suivant
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </span>
+                );
+              })()}
             </Button>
           </div>
         </div>
