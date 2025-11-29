@@ -98,6 +98,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false); // ✅ PROTECTION : État pour empêcher les clics multiples
+  const [isTransitioning, setIsTransitioning] = useState(false); // ✅ NOUVEAU : État pour gérer les transitions
   const [formData, setFormData] = useState<BookingFormData>({
     checkInDate: editingBooking?.checkInDate || '',
     checkOutDate: editingBooking?.checkOutDate || '',
@@ -136,6 +137,12 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   }, [currentStep, formData.checkInDate, formData.checkOutDate, formData.numberOfGuests, formData.guests.length, propertyId]);
 
   const handleNext = () => {
+    // ✅ PROTECTION : Empêcher les transitions multiples simultanées
+    if (isTransitioning) {
+      console.warn('⚠️ [BookingWizard] Transition déjà en cours, ignorée');
+      return;
+    }
+    
     // ✅ PROTECTION : Vérifier que l'état est valide avant de changer d'étape
     const currentGuests = Array.isArray(formData.guests) ? formData.guests : [];
     const currentDocs = Array.isArray(formData.uploadedDocuments) ? formData.uploadedDocuments : [];
@@ -148,6 +155,9 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       guestsList: currentGuests.map(g => ({ id: g.id, fullName: g.fullName }))
     });
     
+    // ✅ NOUVEAU : Marquer la transition comme en cours
+    setIsTransitioning(true);
+    
     // ✅ PROTECTION : Attendre que toutes les mises à jour d'état soient terminées avant de changer d'étape
     // Utiliser requestAnimationFrame pour s'assurer que React a terminé son cycle de rendu
     requestAnimationFrame(() => {
@@ -155,13 +165,16 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         setCurrentStep(prev => {
           if (prev < steps.length - 1) {
             console.log(`✅ [BookingWizard] Transition de l'étape ${prev} vers ${prev + 1}`);
+            // ✅ NOUVEAU : Réinitialiser l'état de transition après un délai supplémentaire
+            setTimeout(() => setIsTransitioning(false), 200);
             return prev + 1;
           } else {
+            setIsTransitioning(false);
             handleSubmit();
             return prev; // Ne pas changer l'étape si on soumet
           }
         });
-      }, 50); // Petit délai pour laisser React terminer les mises à jour d'état
+      }, 100); // Délai augmenté pour laisser plus de temps à React
     });
   };
 
@@ -918,16 +931,23 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         </CardHeader>
 
         <CardContent className="p-6">
-          {/* ✅ CRITIQUE : Key stable pour forcer la recréation du composant à chaque changement d'étape */}
-          {/* Cela évite les erreurs removeChild lors de la transition entre les étapes */}
-          {/* La clé inclut currentStep et editingBooking.id pour garantir l'unicité */}
-          <CurrentStepComponent
-            key={`step-${currentStep}-${editingBooking?.id || 'new'}`}
-            formData={formData}
-            updateFormData={updateFormData}
-            propertyId={propertyId}
-            bookingId={editingBooking?.id}
-          />
+          {/* ✅ CRITIQUE : Wrapper avec état de transition pour éviter les erreurs removeChild */}
+          {/* Utiliser un div wrapper avec une clé stable pour forcer React à bien gérer la transition */}
+          {isTransitioning ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div key={`step-wrapper-${currentStep}-${editingBooking?.id || 'new'}`}>
+              <CurrentStepComponent
+                key={`step-${currentStep}-${editingBooking?.id || 'new'}`}
+                formData={formData}
+                updateFormData={updateFormData}
+                propertyId={propertyId}
+                bookingId={editingBooking?.id}
+              />
+            </div>
+          )}
         </CardContent>
 
         <div className="border-t border-border p-4 bg-muted/20">
