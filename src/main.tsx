@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
+import './styles/mobile.css'
 
 // ✅ Intercepteur Portal global AVANT le render de React
 // Cela garantit que l'intercepteur est actif dès le début, avant que React ne charge

@@ -31,6 +31,8 @@ import {
 } from '@/components/ui/alert-dialog';
 import { UnifiedDocumentService } from '@/services/unifiedDocumentService';
 import { ContractService } from '@/services/contractService';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { cn } from '@/lib/utils';
 
 interface UnifiedBookingModalProps {
   booking: Booking | EnrichedBooking | AirbnbReservation | null;
@@ -73,6 +75,7 @@ export const UnifiedBookingModal = ({
   const [isGeneratingContract, setIsGeneratingContract] = useState(false);
   const [isGeneratingPolice, setIsGeneratingPolice] = useState(false);
   const [hasGuestData, setHasGuestData] = useState(false); // ✅ NOUVEAU : Vérifier si la réservation a des données clients
+  const isMobile = useIsMobile();
 
   // ✅ DÉTECTION : Identifier le type de réservation (avant le useEffect)
   const isAirbnb = booking ? ('source' in booking && booking.source === 'airbnb') : false;
@@ -635,10 +638,19 @@ export const UnifiedBookingModal = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
+      <DialogContent className={cn(
+        "max-h-[90vh] overflow-y-auto",
+        isMobile ? "max-w-full w-full h-full m-0 rounded-none" : "max-w-4xl w-[95vw] sm:w-full"
+      )}>
+        <DialogHeader className={cn(isMobile ? "p-4" : "")}>
+          <div className={cn(
+            "flex items-center justify-between",
+            isMobile ? "flex-col gap-3" : ""
+          )}>
+            <DialogTitle className={cn(
+              "flex items-center gap-2",
+              isMobile ? "text-lg" : ""
+            )}>
               <div className="w-3 h-3 rounded-full" style={{
                 backgroundColor: status === 'completed' ? '#10b981' : 
                                 status === 'pending' ? BOOKING_COLORS.pending.hex : 
@@ -647,44 +659,69 @@ export const UnifiedBookingModal = ({
               {getTitle()}
               {getStatusBadge()}
             </DialogTitle>
-            <div className="flex items-center gap-2">
+            <div className={cn(
+              "flex items-center gap-2",
+              isMobile ? "w-full justify-end" : ""
+            )}>
               {/* ✅ BOUTON SUPPRESSION : Uniquement pour les réservations non-Airbnb et non-ICS */}
               {!isAirbnb && !isICSReservation && 'id' in booking && (
                 <Button 
                   variant="ghost" 
-                  size="icon" 
+                  size={isMobile ? "sm" : "icon"}
                   onClick={() => setShowDeleteDialog(true)}
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                   title="Supprimer la réservation"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className={cn(isMobile ? "h-3 w-3" : "h-4 w-4")} />
+                  {isMobile && <span className="ml-1 text-xs">Supprimer</span>}
                 </Button>
               )}
-              <Button variant="ghost" size="icon" onClick={onClose}>
-                <X className="h-4 w-4" />
+              <Button 
+                variant="ghost" 
+                size={isMobile ? "sm" : "icon"} 
+                onClick={onClose}
+                className={isMobile ? "w-full sm:w-auto" : ""}
+              >
+                <X className={cn(isMobile ? "h-3 w-3" : "h-4 w-4")} />
+                {isMobile && <span className="ml-1 text-xs">Fermer</span>}
               </Button>
             </div>
           </div>
-          <DialogDescription>
+          <DialogDescription className={cn(isMobile ? "text-xs" : "")}>
             Détails et actions pour la réservation du {formatDate(checkIn)} au {formatDate(checkOut)}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className={cn(
+          "space-y-4 sm:space-y-6",
+          isMobile ? "p-4" : ""
+        )}>
           {/* ✅ UNIFIÉ : Section Référence */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Référence</CardTitle>
+            <CardHeader className={cn(isMobile ? "p-4" : "")}>
+              <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>Référence</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className={cn(
+              "space-y-3 sm:space-y-4",
+              isMobile ? "p-4 pt-0" : ""
+            )}>
               <div>
-                <p className="font-medium text-sm">Code réservation {isAirbnb ? 'Airbnb' : ''}</p>
-                <p className="text-lg font-mono">
+                <p className={cn(
+                  "font-medium",
+                  isMobile ? "text-xs" : "text-sm"
+                )}>Code réservation {isAirbnb ? 'Airbnb' : ''}</p>
+                <p className={cn(
+                  "font-mono break-all",
+                  isMobile ? "text-base" : "text-lg"
+                )}>
                   {getReservationCode()}
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className={cn(
+                "grid gap-3 sm:gap-4",
+                isMobile ? "grid-cols-1" : "grid-cols-2"
+              )}>
                 <div className="flex items-center space-x-3">
                   <Calendar className="w-5 h-5 text-muted-foreground" />
                   <div>
@@ -730,18 +767,36 @@ export const UnifiedBookingModal = ({
                 ) : (
                   <>
                 {/* Contrat */}
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className={cn(
+                  "bg-gray-50 rounded-lg border border-gray-200",
+                  isMobile ? "p-3 flex-col gap-3" : "p-4 flex items-center justify-between"
+                )}>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-brand-teal" />
+                    <div className={cn(
+                      "rounded-lg bg-brand-teal/10 flex items-center justify-center flex-shrink-0",
+                      isMobile ? "w-8 h-8" : "w-10 h-10"
+                    )}>
+                      <FileText className={cn(
+                        "text-brand-teal",
+                        isMobile ? "w-4 h-4" : "w-5 h-5"
+                      )} />
                     </div>
-                    <div>
-                          <p className="font-semibold text-gray-900">Contrat {status === 'completed' ? 'signé' : ''}</p>
-                          <p className="text-sm text-gray-600">Document contractuel {status === 'completed' ? 'signé' : 'à signer physiquement'}</p>
+                    <div className="flex-1 min-w-0">
+                          <p className={cn(
+                            "font-semibold text-gray-900",
+                            isMobile ? "text-sm" : ""
+                          )}>Contrat {status === 'completed' ? 'signé' : ''}</p>
+                          <p className={cn(
+                            "text-gray-600",
+                            isMobile ? "text-xs" : "text-sm"
+                          )}>Document contractuel {status === 'completed' ? 'signé' : 'à signer physiquement'}</p>
                     </div>
                   </div>
                   {documents.contractUrl ? (
-                    <div className="flex gap-2">
+                    <div className={cn(
+                      "flex gap-2",
+                      isMobile ? "w-full" : ""
+                    )}>
                       <Button
                         variant="outline"
                         size="sm"

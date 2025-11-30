@@ -24,6 +24,8 @@ import { fetchAirbnbCalendarEvents, fetchAllCalendarEvents, CalendarEvent } from
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { cn } from '@/lib/utils';
 
 interface CalendarViewProps {
   bookings: EnrichedBooking[];
@@ -118,6 +120,7 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
   const [refreshInterval, setRefreshInterval] = useState(30000); // 30 secondes
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const isMobile = useIsMobile();
 
   // Check for debug mode from URL
   useEffect(() => {
@@ -860,12 +863,18 @@ const handleOpenConfig = useCallback(() => {
   }, [matchedBookings, bookings]);
 
   return (
-    <div className="space-y-4">
+    <div className={cn(
+      "space-y-3 sm:space-y-4",
+      isMobile && "px-2"
+    )}>
       {/* Conflicts Alert */}
       {conflicts.length > 0 && (
-        <Alert className="border-destructive">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>
+        <Alert className={cn(
+          "border-destructive",
+          isMobile && "p-3 text-sm"
+        )}>
+          <AlertTriangle className={cn(isMobile ? "h-3 w-3" : "h-4 w-4")} />
+          <AlertDescription className={cn(isMobile && "text-xs")}>
             <strong>{conflicts.length} conflit(s) détecté(s)</strong> - Des réservations se chevauchent
           </AlertDescription>
         </Alert>
@@ -875,53 +884,83 @@ const handleOpenConfig = useCallback(() => {
       <motion.div 
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-4 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-950/20 dark:to-teal-950/20 p-3 rounded-lg border border-cyan-200 dark:border-cyan-800"
+        className={cn(
+          "mb-4 bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-950/20 dark:to-teal-950/20 rounded-lg border border-cyan-200 dark:border-cyan-800",
+          isMobile ? "p-2 flex-col gap-2" : "p-3 flex items-center justify-between"
+        )}
       >
-        <div className="flex items-center space-x-3">
+        <div className={cn(
+          "flex items-center",
+          isMobile ? "flex-wrap gap-2" : "space-x-3"
+        )}>
           <div className="flex items-center space-x-2">
             {isOnline ? (
-              <Wifi className="h-4 w-4 text-green-600" />
+              <Wifi className={cn(isMobile ? "h-3 w-3" : "h-4 w-4", "text-green-600")} />
             ) : (
-              <WifiOff className="h-4 w-4 text-red-600" />
+              <WifiOff className={cn(isMobile ? "h-3 w-3" : "h-4 w-4", "text-red-600")} />
             )}
-            <span className="text-sm text-muted-foreground">
+            <span className={cn(
+              "text-muted-foreground",
+              isMobile ? "text-xs" : "text-sm"
+            )}>
               {isOnline ? 'Connecté' : 'Hors ligne'}
             </span>
           </div>
           
           <div className="flex items-center space-x-2">
-            <div className={`h-2 w-2 rounded-full ${isRefreshing ? 'bg-cyan-500 animate-pulse' : 'bg-green-500'}`} />
-            <span className="text-sm text-muted-foreground">
+            <div className={cn(
+              "rounded-full",
+              isMobile ? "h-1.5 w-1.5" : "h-2 w-2",
+              isRefreshing ? 'bg-cyan-500 animate-pulse' : 'bg-green-500'
+            )} />
+            <span className={cn(
+              "text-muted-foreground",
+              isMobile ? "text-xs" : "text-sm"
+            )}>
               {isRefreshing ? 'Mise à jour...' : `Dernière MAJ: ${lastRefresh.toLocaleTimeString()}`}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className={cn(
+          "flex items-center",
+          isMobile ? "flex-wrap gap-2 w-full" : "space-x-2"
+        )}>
           <Button
             variant="outline"
-            size="sm"
+            size={isMobile ? "sm" : "sm"}
             onClick={handleManualRefresh}
             disabled={isRefreshing || !isOnline}
-            className="flex items-center space-x-2"
+            className={cn(
+              "flex items-center space-x-2",
+              isMobile && "flex-1 text-xs"
+            )}
           >
             <motion.div
               animate={{ rotate: isRefreshing ? 360 : 0 }}
               transition={{ duration: 0.5, repeat: isRefreshing ? Infinity : 0 }}
             >
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className={cn(isMobile ? "h-3 w-3" : "h-4 w-4")} />
             </motion.div>
-            <span>Actualiser</span>
+            <span className={isMobile ? "text-xs" : ""}>Actualiser</span>
           </Button>
 
           <Button
             variant="ghost"
-            size="sm"
+            size={isMobile ? "sm" : "sm"}
             onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
-            className={`flex items-center space-x-2 ${autoRefreshEnabled ? 'text-green-600' : 'text-gray-500'}`}
+            className={cn(
+              "flex items-center space-x-2",
+              isMobile && "flex-1 text-xs",
+              autoRefreshEnabled ? 'text-green-600' : 'text-gray-500'
+            )}
           >
-            <div className={`h-2 w-2 rounded-full ${autoRefreshEnabled ? 'bg-green-500' : 'bg-gray-400'}`} />
-            <span className="text-sm">
+            <div className={cn(
+              "rounded-full",
+              isMobile ? "h-1.5 w-1.5" : "h-2 w-2",
+              autoRefreshEnabled ? 'bg-green-500' : 'bg-gray-400'
+            )} />
+            <span className={cn(isMobile ? "text-xs" : "text-sm")}>
               Auto-refresh {autoRefreshEnabled ? 'ON' : 'OFF'}
             </span>
           </Button>

@@ -10,6 +10,9 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getContractPdfUrl } from '@/services/contractService';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { MobilePdfViewer } from '@/components/MobilePdfViewer';
+import { cn } from '@/lib/utils';
 
 interface ContractSignatureProps {
   bookingData: any;
@@ -28,6 +31,7 @@ export const ContractSignature: React.FC<ContractSignatureProps> = ({
   onBack,
   onSignatureComplete
 }) => {
+  const isMobile = useIsMobile();
   const [isAgreed, setIsAgreed] = useState(false);
   const [isSignatureModeActive, setIsSignatureModeActive] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
@@ -472,7 +476,15 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 {t('contractSignature.generating')}
               </div>
             ) : contractUrl ? (
-              <iframe src={contractUrl} title="Contrat" className="w-full h-[600px] border rounded-lg" />
+              isMobile ? (
+                <MobilePdfViewer
+                  url={contractUrl}
+                  title="Contrat de location"
+                  className="rounded-lg"
+                />
+              ) : (
+                <iframe src={contractUrl} title="Contrat" className="w-full h-[600px] border rounded-lg" />
+              )
             ) : contractError ? (
               <div className="border rounded-lg p-4 text-sm">
                 <p className="mb-2">{contractError}</p>
@@ -538,7 +550,16 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         ref={canvasRef}
                         width={500}
                         height={200}
-                        className="w-full border rounded bg-background cursor-crosshair"
+                        className={cn(
+                          "w-full border rounded bg-background cursor-crosshair",
+                          isMobile && "touch-none h-[150px]"
+                        )}
+                        style={{
+                          touchAction: 'none',
+                          WebkitTouchCallout: 'none',
+                          WebkitUserSelect: 'none',
+                          userSelect: 'none'
+                        }}
                       />
                     </div>
                     

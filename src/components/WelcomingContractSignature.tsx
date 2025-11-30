@@ -31,6 +31,9 @@ import { getContractPdfUrl } from '@/services/contractService';
 import { ApiService } from '@/services/apiService';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { MobilePdfViewer } from '@/components/MobilePdfViewer';
+import { cn } from '@/lib/utils';
 
 interface WelcomingContractSignatureProps {
   bookingData: any;
@@ -101,6 +104,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const { toast } = useToast();
   const location = useLocation();
   const t = useT();
+  const isMobile = useIsMobile();
 
   
   
@@ -812,7 +816,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         </motion.div>
       </div>
 
-      <div className="relative z-10 max-w-5xl mx-auto px-4 py-8">
+      <div className={cn(
+        "relative z-10 mx-auto",
+        isMobile ? "px-2 py-4 max-w-full" : "px-4 py-8 max-w-5xl"
+      )}>
         <ErrorBoundary>
           {/* ✅ SIMPLIFIÉ : Une seule page avec contrat + signature */}
           {currentStep === 'review' && (
@@ -820,60 +827,115 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               key="review"
               className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300"
             >
-              <div className="text-center space-y-3">
-                <div className="inline-flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-brand-teal/10 to-teal-100 rounded-full text-brand-teal font-semibold border-2 border-brand-teal/20 shadow-sm">
-                  <FileText className="w-5 h-5" />
-                  Signature du contrat
+              <div className="text-center space-y-2 sm:space-y-3">
+                <div className={cn(
+                  "inline-flex items-center gap-2 sm:gap-3 rounded-full text-brand-teal font-semibold border-2 border-brand-teal/20 shadow-sm",
+                  isMobile ? "px-3 py-2 text-sm" : "px-6 py-3",
+                  "bg-gradient-to-r from-brand-teal/10 to-teal-100"
+                )}>
+                  <FileText className={cn(isMobile ? "w-4 h-4" : "w-5 h-5")} />
+                  <span className={isMobile ? "text-xs" : ""}>Signature du contrat</span>
                 </div>
-                <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
+                <h2 className={cn(
+                  "font-bold text-gray-900",
+                  isMobile ? "text-xl" : "text-2xl md:text-3xl"
+                )}>
                   Votre contrat de location
                 </h2>
-                <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                <p className={cn(
+                  "text-gray-600 max-w-2xl mx-auto",
+                  isMobile ? "text-sm px-2" : "text-lg"
+                )}>
                   Lisez le contrat ci-dessous, acceptez les conditions et signez
                 </p>
               </div>
 
               {/* Contrat en haut */}
-              <Card className="shadow-xl border-2 border-gray-200 bg-white rounded-xl">
-                <CardHeader className="bg-gradient-to-r from-brand-teal/10 via-cyan-50 to-teal-50 border-b-2 border-brand-teal/20">
-                  <CardTitle className="flex items-center gap-3 text-xl font-bold text-gray-900">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-teal to-teal-600 flex items-center justify-center shadow-md">
-                      <FileText className="w-5 h-5 text-white" />
+              <Card className={cn(
+                "shadow-xl border-2 border-gray-200 bg-white",
+                isMobile ? "rounded-lg" : "rounded-xl"
+              )}>
+                <CardHeader className={cn(
+                  "bg-gradient-to-r from-brand-teal/10 via-cyan-50 to-teal-50 border-b-2 border-brand-teal/20",
+                  isMobile ? "p-3" : "p-6"
+                )}>
+                  <CardTitle className={cn(
+                    "flex items-center gap-2 sm:gap-3 font-bold text-gray-900",
+                    isMobile ? "text-base" : "text-xl"
+                  )}>
+                    <div className={cn(
+                      "rounded-full bg-gradient-to-br from-brand-teal to-teal-600 flex items-center justify-center shadow-md flex-shrink-0",
+                      isMobile ? "w-6 h-6" : "w-8 h-8"
+                    )}>
+                      <FileText className={cn(
+                        "text-white",
+                        isMobile ? "w-3 h-3" : "w-5 h-5"
+                      )} />
                     </div>
-                    Contrat de location saisonnière
+                    <span className={isMobile ? "text-sm" : ""}>Contrat de location saisonnière</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   {loadingContract ? (
-                    <div className="h-96 w-full flex flex-col items-center justify-center space-y-4">
+                    <div className={cn(
+                      "w-full flex flex-col items-center justify-center space-y-4",
+                      isMobile ? "h-[300px]" : "h-96"
+                    )}>
                       <motion.div
                         animate={{ rotate: 360 }}
                         transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        className="w-12 h-12 border-4 border-brand-teal border-t-transparent rounded-full"
+                        className={cn(
+                          "border-4 border-brand-teal border-t-transparent rounded-full",
+                          isMobile ? "w-8 h-8" : "w-12 h-12"
+                        )}
                       />
-                      <p className="text-lg text-gray-600">Génération de votre contrat...</p>
+                      <p className={cn(
+                        "text-gray-600",
+                        isMobile ? "text-sm" : "text-lg"
+                      )}>Génération de votre contrat...</p>
                     </div>
                   ) : contractUrl ? (
-                    <iframe 
-                      src={contractUrl} 
-                      title="Contrat de location" 
-                      className="w-full h-[400px] rounded-b-lg" 
-                    />
+                    isMobile ? (
+                      <MobilePdfViewer
+                        url={contractUrl}
+                        title="Contrat de location"
+                        className="rounded-b-lg"
+                      />
+                    ) : (
+                      <iframe 
+                        src={contractUrl} 
+                        title="Contrat de location" 
+                        className="w-full h-[400px] rounded-b-lg" 
+                      />
+                    )
                   ) : contractError ? (
-                    <div className="p-8 text-center">
-                      <div className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 rounded-full text-red-800 mb-4">
-                        <AlertDescription className="font-medium">{contractError}</AlertDescription>
+                    <div className={cn(
+                      "text-center",
+                      isMobile ? "p-4" : "p-8"
+                    )}>
+                      <div className={cn(
+                        "inline-flex items-center gap-2 rounded-full text-red-800 mb-4",
+                        isMobile ? "px-3 py-1.5 text-xs" : "px-4 py-2"
+                      )}>
+                        <AlertDescription className={cn(
+                          "font-medium",
+                          isMobile ? "text-xs" : ""
+                        )}>{contractError}</AlertDescription>
                       </div>
                       <Button 
                         variant="outline" 
                         onClick={loadContract}
+                        size={isMobile ? "sm" : "default"}
                         className="mt-4"
                       >
                         Réessayer
                       </Button>
                     </div>
                   ) : (
-                    <div className="h-96 w-full flex items-center justify-center text-gray-500">
+                    <div className={cn(
+                      "w-full flex items-center justify-center text-gray-500",
+                      isMobile ? "h-[300px] text-sm" : "h-96"
+                    )}>
                       Préparation du contrat...
                     </div>
                   )}
@@ -881,23 +943,38 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               </Card>
 
               {/* Zone de signature et acceptation */}
-              <Card className="shadow-xl border-2 border-gray-200 bg-white rounded-xl">
-                <CardContent className="p-6 space-y-6">
+              <Card className={cn(
+                "shadow-xl border-2 border-gray-200 bg-white",
+                isMobile ? "rounded-lg" : "rounded-xl"
+              )}>
+                <CardContent className={cn(
+                  "space-y-4 sm:space-y-6",
+                  isMobile ? "p-4" : "p-6"
+                )}>
                   {/* Accord préalable - toujours visible */}
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="flex items-start space-x-3 p-4 bg-gradient-to-r from-brand-teal/5 via-cyan-50 to-teal-50 rounded-lg border-2 border-brand-teal/30"
+                    className={cn(
+                      "flex items-start bg-gradient-to-r from-brand-teal/5 via-cyan-50 to-teal-50 rounded-lg border-2 border-brand-teal/30",
+                      isMobile ? "space-x-2 p-3" : "space-x-3 p-4"
+                    )}
                   >
                     <Checkbox 
                       id="agree" 
                       checked={isAgreed}
                       onCheckedChange={(checked) => setIsAgreed(checked as boolean)}
-                      className="mt-1"
+                      className={cn(
+                        "mt-1 flex-shrink-0",
+                        isMobile && "mt-0.5"
+                      )}
                     />
                     <label 
                       htmlFor="agree" 
-                      className="text-base leading-relaxed cursor-pointer text-gray-800 flex-1"
+                      className={cn(
+                        "leading-relaxed cursor-pointer text-gray-800 flex-1",
+                        isMobile ? "text-sm" : "text-base"
+                      )}
                     >
                       <span className="font-semibold text-gray-900">J'ai lu et j'accepte</span> toutes les conditions du contrat. 
                       Je confirme que toutes les informations sont exactes.
@@ -910,11 +987,17 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3 }}
-                      className="space-y-4"
+                      className="space-y-3 sm:space-y-4"
                     >
                       <div className="text-center">
-                        <h3 className="text-xl font-bold text-gray-900 mb-1">Votre signature</h3>
-                        <p className="text-sm text-gray-600">Dessinez votre signature ci-dessous</p>
+                        <h3 className={cn(
+                          "font-bold text-gray-900 mb-1",
+                          isMobile ? "text-lg" : "text-xl"
+                        )}>Votre signature</h3>
+                        <p className={cn(
+                          "text-gray-600",
+                          isMobile ? "text-xs" : "text-sm"
+                        )}>Dessinez votre signature ci-dessous</p>
                       </div>
 
                           <div className="relative">
@@ -953,18 +1036,18 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                 ref={canvasCallbackRef}
                                 width={600}
                                 height={250}
-                                className={`
-                                  w-full touch-none select-none rounded-lg
-                                  transition-all duration-200
-                                  ${isDrawing ? 'cursor-grabbing' : 'cursor-crosshair'}
-                                `}
+                                className={cn(
+                                  "w-full touch-none select-none rounded-lg transition-all duration-200",
+                                  isDrawing ? 'cursor-grabbing' : 'cursor-crosshair',
+                                  isMobile && "touch-pan-none"
+                                )}
                                 style={{ 
                                   touchAction: 'none',
                                   WebkitTouchCallout: 'none',
                                   WebkitUserSelect: 'none',
                                   userSelect: 'none',
                                   display: 'block',
-                                  height: '200px',
+                                  height: isMobile ? '150px' : '200px',
                                   backgroundColor: 'white',
                                   border: '1px solid #e5e7eb'
                                 }}
@@ -1002,15 +1085,24 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       </div>
 
                       {/* ✅ SIMPLIFIÉ : Un seul bouton principal */}
-                      <div className="flex gap-3 items-center">
+                      <div className={cn(
+                        "flex items-center",
+                        isMobile ? "flex-col gap-2" : "gap-3"
+                      )}>
                         {signature && (
                           <Button 
                             onClick={clearSignature}
                             variant="outline"
-                            size="lg"
-                            className="px-4 py-3 border-2 border-gray-300 hover:border-red-400 text-gray-700 hover:text-red-700 transition-all"
+                            size={isMobile ? "default" : "lg"}
+                            className={cn(
+                              "border-2 border-gray-300 hover:border-red-400 text-gray-700 hover:text-red-700 transition-all",
+                              isMobile ? "w-full px-3 py-2 text-sm" : "px-4 py-3"
+                            )}
                           >
-                            <X className="w-4 h-4 mr-1" />
+                            <X className={cn(
+                              "mr-1",
+                              isMobile ? "w-3 h-3" : "w-4 h-4"
+                            )} />
                             Effacer
                           </Button>
                         )}
@@ -1018,23 +1110,29 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         <Button 
                           onClick={handleSubmitSignature}
                           disabled={!signature || !isAgreed || isSubmitting}
-                          size="lg"
-                          className={`
-                            flex-1 py-4 rounded-xl text-base font-semibold transition-all duration-200
-                            ${signature && isAgreed && !isSubmitting
+                          size={isMobile ? "default" : "lg"}
+                          className={cn(
+                            "flex-1 rounded-xl font-semibold transition-all duration-200",
+                            isMobile ? "w-full py-3 text-sm" : "py-4 text-base",
+                            signature && isAgreed && !isSubmitting
                               ? 'bg-brand-teal hover:bg-brand-teal/90 text-white shadow-lg hover:shadow-xl'
                               : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                            }
-                          `}
+                          )}
                         >
                           {isSubmitting ? (
                             <>
-                              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                              Signature en cours...
+                              <Loader2 className={cn(
+                                "mr-2 animate-spin",
+                                isMobile ? "w-4 h-4" : "w-5 h-5"
+                              )} />
+                              <span className={isMobile ? "text-xs" : ""}>Signature en cours...</span>
                             </>
                           ) : (
                             <>
-                              <CheckCircle className="w-5 h-5 mr-2" />
+                              <CheckCircle className={cn(
+                                "mr-2",
+                                isMobile ? "w-4 h-4" : "w-5 h-5"
+                              )} />
                               Signer le contrat
                             </>
                           )}

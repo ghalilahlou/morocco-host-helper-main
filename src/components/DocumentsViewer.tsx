@@ -11,6 +11,9 @@ import { DocumentStorageService } from '@/services/documentStorageService';
 import { DocumentSynchronizationService } from '@/services/documentSynchronizationService';
 import { UnifiedDocument } from '@/types/document';
 import jsPDF from 'jspdf';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { MobilePdfViewer } from '@/components/MobilePdfViewer';
+import { cn } from '@/lib/utils';
 interface DocumentsViewerProps {
   booking: Booking;
   onClose: () => void;
@@ -38,6 +41,7 @@ export const DocumentsViewer = ({
   onClose,
   documentType = 'all'
 }: DocumentsViewerProps) => {
+  const isMobile = useIsMobile();
   const [documents, setDocuments] = useState<DocumentUrls>({
     guestDocuments: [],
     contract: null,
@@ -334,24 +338,46 @@ export const DocumentsViewer = ({
         </Card>
       </div>;
   }
-  return <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg sm:text-2xl flex items-center gap-2">
-                <FileText className="h-6 w-6" />
+  return <div className={cn(
+    "fixed inset-0 bg-black/50 flex items-center justify-center z-50",
+    isMobile ? "p-2" : "p-4"
+  )}>
+      <Card className={cn(
+        "w-full max-h-[90vh] overflow-y-auto",
+        isMobile ? "max-w-full" : "max-w-6xl"
+      )}>
+        <CardHeader className={cn(isMobile ? "p-4" : "p-6")}>
+          <div className={cn(
+            "flex items-center justify-between",
+            isMobile ? "flex-col gap-3" : ""
+          )}>
+            <div className={cn("flex-1", isMobile ? "w-full" : "")}>
+              <CardTitle className={cn(
+                "flex items-center gap-2",
+                isMobile ? "text-base" : "text-lg sm:text-2xl"
+              )}>
+                <FileText className={cn(isMobile ? "h-5 w-5" : "h-6 w-6")} />
                 Documents de la réservation
               </CardTitle>
-              <CardDescription>
+              <CardDescription className={cn(isMobile ? "text-xs mt-1" : "")}>
                 {booking.checkInDate} to {booking.checkOutDate} • {booking.numberOfGuests} guests
               </CardDescription>
             </div>
-            <Button variant="outline" onClick={onClose}>Fermer</Button>
+            <Button 
+              variant="outline" 
+              onClick={onClose}
+              size={isMobile ? "sm" : "default"}
+              className={cn(isMobile ? "w-full" : "")}
+            >
+              Fermer
+            </Button>
           </div>
         </CardHeader>
         
-        <CardContent className="space-y-6">
+        <CardContent className={cn(
+          "space-y-4 sm:space-y-6",
+          isMobile ? "p-4" : "p-6"
+        )}>
                      {/* Guest Documents (IDs) */}
            {(documentType === 'all' || documentType === 'id-documents') && <div>
                              <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
@@ -363,7 +389,10 @@ export const DocumentsViewer = ({
                  <strong>ℹ️ INFO:</strong> {documents.guestDocuments.length} document(s) d'identité disponible(s)
                </div>
               {/* ✅ AFFICHAGE CONDITIONNEL DES DOCUMENTS */}
-              {documents.guestDocuments && documents.guestDocuments.length > 0 ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {documents.guestDocuments && documents.guestDocuments.length > 0 ? <div className={cn(
+                "grid gap-3 sm:gap-4",
+                isMobile ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+              )}>
                   {documents.guestDocuments.map((doc, index) => <Card key={doc.id} className="p-6">
                       <div className="flex flex-col space-y-4">
                         <div className="flex items-center gap-3">
@@ -780,31 +809,85 @@ export const DocumentsViewer = ({
                 Contrat de location
                 {documents.contract && <Badge variant="secondary">Généré</Badge>}
               </h3>
-              {documents.contract ? <Card className="p-6 max-w-md">
-                  <div className="flex flex-col space-y-4">
-                    <div className="flex items-center gap-3">
-                      <FileText className="h-5 w-5 text-primary" />
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-base">
-                          Contrat de location
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          PDF - Contrat.pdf
-                        </p>
+              {documents.contract ? (
+                isMobile ? (
+                  <div className="space-y-3">
+                    <Card className="p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <FileText className="h-5 w-5 text-primary flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-semibold text-sm">
+                            Contrat de location
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            PDF - Contrat.pdf
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => {
+                            // Utiliser MobilePdfViewer pour mobile
+                            const viewer = document.createElement('div');
+                            viewer.className = 'fixed inset-0 z-[100] bg-black/90';
+                            viewer.innerHTML = `
+                              <div class="h-full w-full flex items-center justify-center p-4">
+                                <div class="relative w-full h-full max-w-4xl">
+                                  <button onclick="this.closest('.fixed').remove()" class="absolute top-2 right-2 z-10 bg-white/20 hover:bg-white/30 text-white rounded-full p-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                  </button>
+                                  <iframe src="${documents.contract}" class="w-full h-full rounded-lg" style="touch-action: pan-x pan-y pinch-zoom;"></iframe>
+                                </div>
+                              </div>
+                            `;
+                            document.body.appendChild(viewer);
+                          }}
+                          className="w-full"
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          Voir le contrat
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          onClick={() => downloadDocument(documents.contract!, `contract-${booking.bookingReference || booking.id.slice(0, 8)}.pdf`)} 
+                          className="w-full"
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Télécharger
+                        </Button>
+                      </div>
+                    </Card>
+                  </div>
+                ) : (
+                  <Card className="p-6 max-w-md">
+                    <div className="flex flex-col space-y-4">
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-primary" />
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-base">
+                            Contrat de location
+                          </h4>
+                          <p className="text-sm text-muted-foreground">
+                            PDF - Contrat.pdf
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" onClick={() => openDocument(documents.contract!)} className="flex-1 gap-1 min-w-0">
+                          <Eye className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate">Voir</span>
+                        </Button>
+                        <Button size="sm" onClick={() => downloadDocument(documents.contract!, `contract-${booking.bookingReference || booking.id.slice(0, 8)}.pdf`)} className="flex-1 gap-1 min-w-0">
+                          <Download className="h-4 w-4 flex-shrink-0" />
+                          <span className="truncate">Télécharger</span>
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => openDocument(documents.contract!)} className="flex-1 gap-1 min-w-0">
-                        <Eye className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">Voir</span>
-                      </Button>
-                      <Button size="sm" onClick={() => downloadDocument(documents.contract!, `contract-${booking.bookingReference || booking.id.slice(0, 8)}.pdf`)} className="flex-1 gap-1 min-w-0">
-                        <Download className="h-4 w-4 flex-shrink-0" />
-                        <span className="truncate">Télécharger</span>
-                      </Button>
-                    </div>
-                  </div>
-                </Card> : <div className="text-center py-8 text-muted-foreground">
+                  </Card>
+                )
+              ) : <div className="text-center py-8 text-muted-foreground">
                   <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
                   <p>Contrat non généré</p>
                 </div>}
