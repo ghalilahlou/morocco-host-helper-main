@@ -95,29 +95,30 @@ export const PropertyList = ({
       </>;
   }
   return <>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="space-y-4 sm:space-y-6 px-3 sm:px-4 md:px-6 py-4 sm:py-6">
+        <div className="flex items-center justify-between gap-3 sm:gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-semibold">Mes annonces</h1>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold">Mes annonces</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <Button onClick={() => setShowCreateDialog(true)} size="sm" className="gap-2">
-              <Plus className="h-4 w-4" />
-              <span className="hidden md:inline">Ajouter</span>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Button onClick={() => setShowCreateDialog(true)} size="sm" className="gap-2 h-9 sm:h-10 px-3 sm:px-4">
+              <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
+              <span className="hidden md:inline text-sm sm:text-base">Ajouter</span>
+              <span className="md:hidden text-sm">+</span>
             </Button>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border shadow-sm">
-          <div className="w-full">
-            <Table className="w-full">
+        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+          <div className="w-full overflow-x-auto">
+            <Table className="w-full min-w-[600px]">
               <TableHeader>
                 <TableRow className="border-b bg-gray-50/50">
-                  <TableHead className="font-semibold text-gray-900 py-2 sm:py-4 px-2 sm:px-3 md:px-6 text-xs sm:text-sm">Annonce</TableHead>
-                  <TableHead className="font-semibold text-gray-900 py-2 sm:py-4 px-2 sm:px-3 md:px-6 hidden sm:table-cell"></TableHead>
-                  <TableHead className="font-semibold text-gray-900 py-2 sm:py-4 px-2 sm:px-3 md:px-6 text-xs sm:text-sm">Lieu</TableHead>
-                  <TableHead className="font-semibold text-gray-900 py-2 sm:py-4 px-2 sm:px-3 md:px-6 text-xs sm:text-sm hidden md:table-cell">Capacité</TableHead>
-                  <TableHead className="py-2 sm:py-4 px-2 sm:px-3 md:px-6 w-20"></TableHead>
+                  <TableHead className="font-semibold text-gray-900 py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 text-sm sm:text-base">Annonce</TableHead>
+                  <TableHead className="font-semibold text-gray-900 py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 hidden sm:table-cell"></TableHead>
+                  <TableHead className="font-semibold text-gray-900 py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 text-sm sm:text-base">Lieu</TableHead>
+                  <TableHead className="font-semibold text-gray-900 py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 text-sm sm:text-base hidden md:table-cell">Capacité</TableHead>
+                  <TableHead className="py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 w-24 sm:w-32"></TableHead>
                 </TableRow>
               </TableHeader>
             <TableBody>
@@ -125,79 +126,80 @@ export const PropertyList = ({
               const stats = getPropertyStats(property.id, property);
               const isActive = stats.total > 0 || stats.hasAirbnbSync;
               return <TableRow key={property.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer relative" onClick={() => onPropertySelect(property)}>
-                    <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6">
-                      <div className="flex items-center gap-1 sm:gap-2 md:gap-4">
-                         {property.photo_url ? <div className="w-8 h-6 sm:w-12 sm:h-8 md:w-16 md:h-12 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg overflow-hidden flex-shrink-0">
+                    <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6">
+                      <div className="flex items-center gap-2 sm:gap-3 md:gap-4">
+                         {property.photo_url ? <div className="w-10 h-8 sm:w-14 sm:h-10 md:w-16 md:h-12 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg overflow-hidden flex-shrink-0">
                               <img src={property.photo_url} alt={property.name} className="w-full h-full object-cover" />
-                            </div> : <div className="w-8 h-6 sm:w-12 sm:h-8 md:w-16 md:h-12 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                              <Home className="w-3 h-3 sm:w-4 sm:h-4 md:w-6 md:h-6 text-primary" />
+                            </div> : <div className="w-10 h-8 sm:w-14 sm:h-10 md:w-16 md:h-12 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                              <Home className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-primary" />
                             </div>}
                          <div className="min-w-0 flex-1">
-                           <div className="font-semibold text-gray-900 text-xs sm:text-sm md:text-base truncate">{property.name}</div>
-                           <div className="sm:hidden flex items-center gap-1 text-xs text-gray-600 mt-1">
-                             <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                           <div className="font-semibold text-gray-900 text-sm sm:text-base md:text-lg truncate">{property.name}</div>
+                           <div className="sm:hidden flex items-center gap-1.5 text-xs sm:text-sm text-gray-600 mt-1">
+                             <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                              <span className="truncate">{property.address?.split(',')[0]?.trim() || 'Non spécifié'}</span>
                            </div>
                          </div>
                        </div>
                      </TableCell>
                      
-                     <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6 hidden sm:table-cell">
+                     <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6 hidden sm:table-cell">
                      </TableCell>
                      
-                     <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6 hidden sm:table-cell">
-                       <div className="flex items-center gap-1 md:gap-2">
-                         <MapPin className="w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5 text-gray-400 flex-shrink-0" />
-                         <span className="text-gray-600 text-xs sm:text-sm md:text-base truncate">{property.address?.split(',')[0]?.trim() || 'Non spécifié'}</span>
+                     <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6 hidden sm:table-cell">
+                       <div className="flex items-center gap-2 sm:gap-2.5">
+                         <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
+                         <span className="text-gray-600 text-sm sm:text-base truncate max-w-[200px] sm:max-w-[300px]">{property.address?.split(',')[0]?.trim() || 'Non spécifié'}</span>
                        </div>
                      </TableCell>
                      
-                     <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6 hidden md:table-cell">
-                       <div className="flex items-center gap-1 md:gap-2">
-                         <Users className="w-3 h-3 md:w-4 md:h-4 text-gray-400 flex-shrink-0" />
-                         <span className="text-gray-600 font-medium text-xs sm:text-sm md:text-base">{property.max_occupancy}</span>
+                     <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6 hidden md:table-cell">
+                       <div className="flex items-center gap-2">
+                         <Users className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
+                         <span className="text-gray-600 font-medium text-sm sm:text-base">{property.max_occupancy}</span>
                        </div>
                      </TableCell>
                      
-                     <TableCell className="py-2 sm:py-4 md:py-6 px-2 sm:px-3 md:px-6 relative">
-                       <div className="absolute top-1 sm:top-2 right-1 sm:right-2">
+                     <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6 relative">
+                       <div className="absolute top-2 sm:top-3 right-2 sm:right-3">
                          <DropdownMenu>
                            <DropdownMenuTrigger asChild>
-                             <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="w-5 h-5 sm:w-6 sm:h-6 p-0 hover:bg-gray-100">
-                               <MoreVertical className="w-3 h-3 sm:w-3 sm:h-3 md:w-4 md:h-4" />
+                             <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="w-8 h-8 sm:w-9 sm:h-9 p-0 hover:bg-gray-100 min-w-[32px]">
+                               <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
                              </Button>
                            </DropdownMenuTrigger>
-                           <DropdownMenuContent align="end" className="w-40 sm:w-48 bg-white z-50">
+                           <DropdownMenuContent align="end" className="w-44 sm:w-52 bg-white z-50">
                              <DropdownMenuItem onClick={e => {
                            e.stopPropagation();
                            setEditingProperty(property);
                            setShowCreateDialog(true);
-                         }} className="gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white focus:bg-[hsl(var(--teal-hover))] focus:text-white text-xs sm:text-sm">
-                               <Edit className="w-3 h-3 sm:w-4 sm:h-4" />
+                         }} className="gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white focus:bg-[hsl(var(--teal-hover))] focus:text-white text-sm sm:text-base py-2.5">
+                               <Edit className="w-4 h-4 sm:w-5 sm:h-5" />
                                Modifier
                              </DropdownMenuItem>
                              <DropdownMenuItem onClick={e => {
                            e.stopPropagation();
                            setPropertyToDelete(property);
                            setDeleteConfirmOpen(true);
-                         }} className="gap-2 text-red-600 focus:text-red-600 text-xs sm:text-sm">
-                               <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                         }} className="gap-2 text-red-600 focus:text-red-600 text-sm sm:text-base py-2.5">
+                               <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                                Supprimer
                              </DropdownMenuItem>
                            </DropdownMenuContent>
                          </DropdownMenu>
                        </div>
-                       <div className="flex items-center justify-end pr-8 sm:pr-12 md:pr-20">
+                       <div className="flex items-center justify-end gap-2 sm:gap-3 pr-10 sm:pr-14 md:pr-20">
                          <Button variant="outline" size="sm" onClick={e => {
                        e.stopPropagation();
                        onPropertySelect(property);
-                     }} className="gap-1 text-foreground hover:bg-[hsl(var(--teal-hover))] hover:text-white text-xs px-2 py-1">
-                           <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
-                           <span className="hidden sm:inline text-xs">Accéder</span>
+                     }} className="gap-1.5 text-foreground hover:bg-[hsl(var(--teal-hover))] hover:text-white text-xs sm:text-sm px-3 sm:px-4 py-2 h-8 sm:h-9 min-w-[80px] sm:min-w-[100px]">
+                           <Calendar className="w-4 h-4 sm:w-5 sm:h-5" />
+                           <span className="hidden sm:inline">Accéder</span>
+                           <span className="sm:hidden">Accès</span>
                          </Button>
-                         <div className="sm:hidden flex items-center ml-2 text-xs text-gray-600">
-                           <Users className="w-3 h-3 text-gray-400 mr-1" />
-                           {property.max_occupancy}
+                         <div className="sm:hidden flex items-center gap-1.5 text-xs text-gray-600">
+                           <Users className="w-4 h-4 text-gray-400" />
+                           <span className="font-medium">{property.max_occupancy}</span>
                          </div>
                        </div>
                      </TableCell>

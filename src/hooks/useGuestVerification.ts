@@ -285,14 +285,14 @@ export const useGuestVerification = () => {
         // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation (version courte)
         console.log('🔗 [LIEN DE RÉSERVATION]:', shortUrl);
         
-        // ✅ COPIE FLUIDE : Utiliser la fonction unifiée simple (sans modal)
+        // ✅ COPIE FLUIDE : Utiliser la fonction unifiée robuste
         try {
           const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
           const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
           
-          const copySuccess = await copyToClipboardSimple(shortUrl, userEvent);
+          const result = await copyToClipboardSimple(shortUrl, userEvent);
           
-          if (copySuccess) {
+          if (result.success) {
             toast({
               title: "Lien copié !",
               description: "Le lien a été copié dans le presse-papiers",
@@ -300,15 +300,15 @@ export const useGuestVerification = () => {
           } else {
             toast({
               title: "Lien généré",
-              description: `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
+              description: result.error || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
               duration: 10000,
             });
           }
-        } catch (copyError) {
+        } catch (copyError: any) {
           console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
           toast({
             title: "Lien généré",
-            description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${shortUrl}`,
+            description: copyError?.message || `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${shortUrl}`,
             duration: 10000,
           });
         }

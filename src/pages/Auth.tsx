@@ -211,7 +211,7 @@ export default function Auth() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full flex items-center justify-center gap-3 hover:bg-gray-50 border-2 border-gray-300 h-11"
+                  className="w-full flex items-center justify-center gap-2 sm:gap-3 hover:bg-gray-50 border-2 border-gray-300 h-11 sm:h-12 text-sm sm:text-base"
                   onClick={handleGoogleSignIn}
                   disabled={isGoogleLoading || isLoading}
                 >
@@ -261,7 +261,7 @@ export default function Auth() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full flex items-center justify-center gap-3 hover:bg-gray-50 border-2 border-gray-300 h-11"
+                  className="w-full flex items-center justify-center gap-2 sm:gap-3 hover:bg-gray-50 border-2 border-gray-300 h-11 sm:h-12 text-sm sm:text-base"
                   onClick={handleGoogleSignIn}
                   disabled={isGoogleLoading || isLoading}
                 >

@@ -24,10 +24,10 @@ export const Layout: React.FC<LayoutProps> = ({
     navigate('/auth');
   };
   return <div className="min-h-screen bg-white">
-      <header className="bg-white border-b shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 md:h-20">
-            <div className="flex items-center space-x-3">
+      <header className="bg-white border-b shadow-sm sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16 md:h-20">
+            <div className="flex items-center space-x-2 sm:space-x-3">
               <button 
                 onClick={() => navigate('/dashboard')} 
                 className="focus:outline-none transition-transform hover:scale-105"
@@ -36,7 +36,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 <img 
                   src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png" 
                   alt="Checky Logo" 
-                  className="w-32 h-32 md:w-48 md:h-48 object-contain cursor-pointer" 
+                  className="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 lg:w-40 lg:h-40 object-contain cursor-pointer" 
                 />
               </button>
             </div>
@@ -44,26 +44,26 @@ export const Layout: React.FC<LayoutProps> = ({
             <nav className="hidden md:flex items-center space-x-6">
             </nav>
 
-            <div className="flex items-center space-x-2 md:space-x-4">
+            <div className="flex items-center space-x-1.5 sm:space-x-2 md:space-x-4">
               {/* Mobile: Only icons, Desktop: Full text */}
               <Button 
                 variant="outline" 
                 onClick={() => setSubscriptionModalOpen(true)}
                 size="sm"
-                className="flex items-center space-x-1 md:space-x-2 text-primary border-primary hover:bg-primary hover:text-white"
+                className="flex items-center space-x-1 md:space-x-2 text-primary border-primary hover:bg-primary hover:text-white h-8 sm:h-9 md:h-10 px-2 sm:px-3 md:px-4"
               >
-                <Crown className="w-4 h-4" />
-                <span className="hidden sm:inline">Mon Abonnement</span>
+                <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5" />
+                <span className="hidden sm:inline text-xs sm:text-sm md:text-base">Mon Abonnement</span>
               </Button>
               
               <Button 
                 variant="outline" 
                 onClick={() => setContactModalOpen(true)}
                 size="sm"
-                className="flex items-center space-x-1 md:space-x-2 text-foreground border-primary/50 hover:bg-[hsl(var(--brand-2))] hover:text-white"
+                className="flex items-center space-x-1 md:space-x-2 text-foreground border-primary/50 hover:bg-[hsl(var(--brand-2))] hover:text-white h-8 sm:h-9 md:h-10 px-2 sm:px-3 md:px-4"
               >
-                <MessageCircle className="w-4 h-4" />
-                <span className="hidden sm:inline">Contact</span>
+                <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5" />
+                <span className="hidden sm:inline text-xs sm:text-sm md:text-base">Contact</span>
               </Button>
               
               <UserMenu onSignOut={handleSignOut} />
@@ -72,7 +72,7 @@ export const Layout: React.FC<LayoutProps> = ({
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 md:py-8 bg-white min-h-screen">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-3 sm:py-4 md:py-6 lg:py-8 bg-white min-h-screen">
         <div className="bg-white">
           {children || <Outlet />}
         </div>
