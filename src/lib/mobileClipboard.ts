@@ -93,178 +93,59 @@ export const copyToClipboardMobile = async (
     });
   }
 
-  // ✅ ÉTAPE 2 : Fallback avec input visible et interactif pour mobile
+  // ✅ ÉTAPE 2 : Fallback avec input invisible (pas de modal visible)
   return new Promise<boolean>((resolve) => {
     try {
-      // Créer un input temporaire VISIBLE pour mobile
+      // Créer un input temporaire INVISIBLE pour mobile
       const input = document.createElement('input');
       input.value = text;
-      input.readOnly = false; // Permettre la sélection manuelle
+      input.readOnly = true;
       input.style.fontSize = '16px'; // Empêche le zoom automatique sur iOS
       
-      // Style pour mobile : VISIBLE au centre de l'écran
+      // Style INVISIBLE mais présent dans le DOM
       input.style.position = 'fixed';
-      input.style.top = '50%';
-      input.style.left = '50%';
-      input.style.transform = 'translate(-50%, -50%)';
-      input.style.width = '85vw';
-      input.style.maxWidth = '500px';
-      input.style.padding = '16px';
-      input.style.border = '2px solid #0891b2';
-      input.style.borderRadius = '12px';
-      input.style.background = 'white';
-      input.style.color = '#1f2937';
-      input.style.fontSize = '16px';
-      input.style.zIndex = '999999';
-      input.style.boxShadow = '0 8px 24px rgba(0,0,0,0.3)';
-      input.style.outline = 'none';
+      input.style.top = '0';
+      input.style.left = '0';
+      input.style.width = '2px';
+      input.style.height = '2px';
+      input.style.padding = '0';
+      input.style.border = 'none';
+      input.style.opacity = '0';
+      input.style.pointerEvents = 'none';
+      input.style.zIndex = '-1';
       
-      // Créer un overlay sombre
-      const overlay = document.createElement('div');
-      overlay.style.position = 'fixed';
-      overlay.style.top = '0';
-      overlay.style.left = '0';
-      overlay.style.width = '100%';
-      overlay.style.height = '100%';
-      overlay.style.background = 'rgba(0,0,0,0.7)';
-      overlay.style.zIndex = '999998';
-      overlay.style.display = 'flex';
-      overlay.style.alignItems = 'center';
-      overlay.style.justifyContent = 'center';
-      overlay.style.flexDirection = 'column';
-      overlay.style.gap = '16px';
+      document.body.appendChild(input);
       
-      // Message d'instruction
-      const message = document.createElement('div');
-      message.textContent = 'Le lien est sélectionné. Appuyez longuement pour copier, ou utilisez le bouton ci-dessous.';
-      message.style.color = 'white';
-      message.style.fontSize = '14px';
-      message.style.textAlign = 'center';
-      message.style.padding = '0 20px';
-      message.style.maxWidth = '90vw';
+      // Focus et sélection
+      input.focus();
+      input.select();
+      input.setSelectionRange(0, text.length);
       
-      // Bouton de copie
-      const copyBtn = document.createElement('button');
-      copyBtn.textContent = '📋 Copier le lien';
-      copyBtn.style.padding = '12px 24px';
-      copyBtn.style.background = '#0891b2';
-      copyBtn.style.color = 'white';
-      copyBtn.style.border = 'none';
-      copyBtn.style.borderRadius = '8px';
-      copyBtn.style.fontSize = '16px';
-      copyBtn.style.cursor = 'pointer';
-      copyBtn.style.fontWeight = '600';
-      copyBtn.style.marginTop = '8px';
-      
-      // Bouton de fermeture
-      const closeBtn = document.createElement('button');
-      closeBtn.textContent = 'Fermer';
-      closeBtn.style.padding = '10px 20px';
-      closeBtn.style.background = 'transparent';
-      closeBtn.style.color = 'white';
-      closeBtn.style.border = '1px solid white';
-      closeBtn.style.borderRadius = '6px';
-      closeBtn.style.fontSize = '14px';
-      closeBtn.style.cursor = 'pointer';
-      
-      const removeElements = () => {
+      // Essayer execCommand immédiatement
+      setTimeout(() => {
         try {
-          if (document.body.contains(input)) document.body.removeChild(input);
-          if (document.body.contains(overlay)) document.body.removeChild(overlay);
-        } catch (e) {
-          // Ignorer si déjà retiré
-        }
-      };
-      
-      // Gestionnaire de copie sur le bouton
-      copyBtn.onclick = async (e) => {
-        e.stopPropagation();
-        try {
-          // Essayer navigator.clipboard d'abord
-          if (navigator.clipboard && window.isSecureContext) {
-            try {
-              await navigator.clipboard.writeText(text);
-              message.textContent = '✅ Lien copié avec succès !';
-              message.style.color = '#10b981';
-              setTimeout(removeElements, 1500);
-              resolve(true);
-              return;
-            } catch (clipError) {
-              console.warn('Clipboard API échoué sur bouton:', clipError);
-            }
-          }
-          
-          // Fallback avec execCommand
-          input.focus();
-          input.select();
-          input.setSelectionRange(0, text.length);
           const success = document.execCommand('copy');
+          document.body.removeChild(input);
+          
           if (success) {
-            message.textContent = '✅ Lien copié avec succès !';
-            message.style.color = '#10b981';
-            setTimeout(removeElements, 1500);
+            console.log('✅ [MOBILE CLIPBOARD] Copié avec execCommand (fallback invisible)');
             resolve(true);
           } else {
-            message.textContent = 'Sélectionnez le texte et copiez manuellement (Ctrl+C / Cmd+C)';
-            message.style.color = '#fbbf24';
+            console.warn('❌ [MOBILE CLIPBOARD] execCommand a échoué');
+            resolve(false);
           }
-        } catch (err) {
-          console.error('Erreur copie:', err);
-          message.textContent = 'Sélectionnez le texte et copiez manuellement';
-          message.style.color = '#fbbf24';
-        }
-      };
-      
-      closeBtn.onclick = removeElements;
-      overlay.onclick = (e) => {
-        if (e.target === overlay) removeElements();
-      };
-      
-      // Assembler l'overlay
-      overlay.appendChild(message);
-      overlay.appendChild(input);
-      overlay.appendChild(copyBtn);
-      overlay.appendChild(closeBtn);
-      document.body.appendChild(overlay);
-      
-      // Focus et sélection automatique
-      setTimeout(() => {
-        input.focus();
-        input.select();
-        input.setSelectionRange(0, text.length);
-        
-        // Essayer la copie automatique en arrière-plan
-        setTimeout(async () => {
+        } catch (error) {
           try {
-            if (navigator.clipboard && window.isSecureContext) {
-              try {
-                await navigator.clipboard.writeText(text);
-                message.textContent = '✅ Lien copié automatiquement !';
-                message.style.color = '#10b981';
-                setTimeout(removeElements, 2000);
-                resolve(true);
-                return;
-              } catch (autoError) {
-                console.log('Copie auto échouée, attente action utilisateur');
-              }
-            }
-            
-            // Essayer execCommand
-            const success = document.execCommand('copy');
-            if (success) {
-              message.textContent = '✅ Lien copié automatiquement !';
-              message.style.color = '#10b981';
-              setTimeout(removeElements, 2000);
-              resolve(true);
-            }
-          } catch (err) {
-            // Laisser l'utilisateur copier manuellement
-            console.log('Copie auto échouée, mode manuel activé');
+            document.body.removeChild(input);
+          } catch (e) {
+            // Ignorer si déjà retiré
           }
-        }, 300);
-      }, 100);
+          console.error('❌ [MOBILE CLIPBOARD] Erreur execCommand:', error);
+          resolve(false);
+        }
+      }, 10);
     } catch (error) {
-      console.error('❌ Erreur lors de la configuration du fallback mobile:', error);
+      console.error('❌ [MOBILE CLIPBOARD] Erreur lors de la configuration du fallback:', error);
       resolve(false);
     }
   });

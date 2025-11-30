@@ -8,7 +8,7 @@ import { isMobileDevice, copyToClipboardMobile } from './mobileClipboard';
 
 /**
  * Copies text to clipboard with robust fallback for HTTP/local contexts
- * ✅ MOBILE-OPTIMIZED : Utilise la fonction optimisée pour mobile
+ * ✅ MOBILE-OPTIMIZED : Utilise la fonction optimisée pour mobile (sans modal)
  * @param text - The text to copy to clipboard
  * @param event - L'événement utilisateur (optionnel, recommandé pour mobile)
  * @returns Promise<boolean> - true if copy succeeded, false otherwise
@@ -17,15 +17,15 @@ export const copyToClipboard = async (
   text: string,
   event?: Event | React.SyntheticEvent
 ): Promise<boolean> => {
-  console.log('📋 copyToClipboard appelé', { 
+  console.log('📋 [CLIPBOARD UTILS] copyToClipboard appelé', { 
     textLength: text.length, 
     isSecureContext: window.isSecureContext, 
     hasClipboard: !!navigator.clipboard,
     isMobile: isMobileDevice(),
-    url: window.location.href
+    hasEvent: !!event
   });
   
-  // ✅ MOBILE-FIRST : Sur mobile, utiliser la fonction optimisée
+  // ✅ MOBILE-FIRST : Sur mobile, utiliser la fonction optimisée (sans modal visible)
   if (isMobileDevice()) {
     return copyToClipboardMobile(text, event);
   }
