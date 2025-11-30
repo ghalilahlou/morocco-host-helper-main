@@ -12,6 +12,7 @@ import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { UnifiedBookingModal } from './UnifiedBookingModal';
 import { CalendarHeader } from './calendar/CalendarHeader';
 import { CalendarGrid } from './calendar/CalendarGrid';
+import { CalendarMobile } from './calendar/CalendarMobile';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { 
   generateCalendarDays, 
@@ -1012,26 +1013,35 @@ const handleOpenConfig = useCallback(() => {
           </motion.div>
         )}
         
-        {/* ✅ CORRIGÉ : AnimatePresence avec mode="wait" - un seul enfant avec clé stable */}
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={currentDate.getMonth()}
-            initial={{ opacity: 0, x: 30, scale: 0.95 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -30, scale: 0.95 }}
-            transition={{ duration: 0.4, ease: "easeInOut" }}
-            className="relative"
-          >
-            <CalendarGrid 
-              calendarDays={calendarDays}
-              bookingLayout={bookingLayout}
-              conflicts={conflicts}
-              onBookingClick={handleBookingClick}
-            />
-            
-            {/* ✅ SUPPRIMÉ : Indicateur qui causait des chevauchements avec le header */}
-          </motion.div>
-        </AnimatePresence>
+        {/* ✅ MOBILE : Utiliser CalendarMobile sur mobile, CalendarGrid sur desktop */}
+        {isMobile ? (
+          <CalendarMobile
+            calendarDays={calendarDays}
+            bookingLayout={bookingLayout}
+            conflicts={conflicts}
+            onBookingClick={handleBookingClick}
+            currentDate={currentDate}
+            onDateChange={setCurrentDate}
+          />
+        ) : (
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={currentDate.getMonth()}
+              initial={{ opacity: 0, x: 30, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: -30, scale: 0.95 }}
+              transition={{ duration: 0.4, ease: "easeInOut" }}
+              className="relative"
+            >
+              <CalendarGrid 
+                calendarDays={calendarDays}
+                bookingLayout={bookingLayout}
+                conflicts={conflicts}
+                onBookingClick={handleBookingClick}
+              />
+            </motion.div>
+          </AnimatePresence>
+        )}
       </motion.div>
 
       {/* ✅ UNIFIÉ : Modal unique pour toutes les réservations */}
