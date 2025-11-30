@@ -51,13 +51,13 @@ export const CalendarGrid = ({
           // ✅ CALCULER les valeurs une seule fois par semaine pour cohérence
           const layersInWeek = bookingLayout[weekIndex] ? 
             Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1 : 1;
-          // ✅ MOBILE-FRIENDLY : Augmenter l'espacement pour mobile
-          const baseHeight = isMobile ? 28 : 32; // Augmenté de 24 à 28
-          const spacing = isMobile ? 12 : 14; // Augmenté de 10 à 12
-          const headerSpace = isMobile ? 42 : 45; // Augmenté de 35 à 42
-          const padding = isMobile ? 24 : 25; // Augmenté de 20 à 24
+          // ✅ MOBILE-FRIENDLY : Augmenter significativement les tailles pour mobile
+          const baseHeight = isMobile ? 40 : 32; // Augmenté de 28 à 40 pour mobile
+          const spacing = isMobile ? 16 : 14; // Augmenté de 12 à 16 pour mobile
+          const headerSpace = isMobile ? 60 : 45; // Augmenté de 42 à 60 pour mobile
+          const padding = isMobile ? 32 : 25; // Augmenté de 24 à 32 pour mobile
           const calculatedHeight = headerSpace + (layersInWeek * (baseHeight + spacing)) + padding;
-          const minHeight = isMobile ? 120 : 150; // Augmenté de 100 à 120
+          const minHeight = isMobile ? 180 : 150; // Augmenté de 120 à 180 pour mobile
           const cellHeight = Math.max(minHeight, calculatedHeight);
           
           return (
@@ -71,7 +71,8 @@ export const CalendarGrid = ({
                     <div
                       key={dayIndex}
                       className={`
-                        border-r border-b border-slate-100 p-3 sm:p-4 bg-white relative
+                        border-r border-b border-slate-100 bg-white relative
+                        ${isMobile ? 'p-2' : 'p-3 sm:p-4'}
                         ${!day.isCurrentMonth ? 'bg-slate-50 text-slate-400' : 'bg-white'}
                         ${isToday ? 'bg-cyan-50 border-cyan-200 z-10' : ''}
                         ${dayIndex === 6 ? 'border-r-0' : ''}
@@ -82,7 +83,8 @@ export const CalendarGrid = ({
                       }}
                     >
                       <div className={`
-                        text-base sm:text-lg font-semibold mb-2 sm:mb-3
+                        font-semibold
+                        ${isMobile ? 'text-lg mb-2' : 'text-base sm:text-lg mb-2 sm:mb-3'}
                         ${isToday ? 'text-cyan-700' : 'text-slate-700'}
                         ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
                       `}>
@@ -146,15 +148,15 @@ export const CalendarGrid = ({
                       }
                     }
                     
-                    // ✅ CALCUL PRÉCIS : Valeurs pour le positionnement
+                    // ✅ CALCUL PRÉCIS : Valeurs pour le positionnement (augmentées pour mobile)
                     const cellPadding = isMobile ? 8 : 12; // p-2 (8px) ou p-3 (12px)
-                    const dayNumberHeight = isMobile ? 20 : 24; // Hauteur du numéro
-                    const dayNumberMargin = isMobile ? 4 : 8; // mb-1 (4px) ou mb-2 (8px)
+                    const dayNumberHeight = isMobile ? 28 : 24; // Augmenté de 20 à 28 pour mobile
+                    const dayNumberMargin = isMobile ? 8 : 8; // Augmenté de 4 à 8 pour mobile
                     const spaceAfterNumber = dayNumberHeight + dayNumberMargin;
                     
-                    // ✅ ESPACEMENT AMÉLIORÉ : Augmenté pour mieux délimiter les barres
-                    const minSpacing = isMobile ? 8 : 12; // Augmenté de 6->8 et 8->12
-                    const idealSpacing = isMobile ? 14 : 18; // Augmenté de 10->14 et 14->18
+                    // ✅ ESPACEMENT AMÉLIORÉ : Augmenté significativement pour mobile
+                    const minSpacing = isMobile ? 12 : 12; // Augmenté de 8 à 12 pour mobile
+                    const idealSpacing = isMobile ? 18 : 18; // Augmenté de 14 à 18 pour mobile
                     const availableSpace = cellHeight - cellPadding - spaceAfterNumber - cellPadding;
                     const totalRequiredSpace = maxLayers * baseHeight + (maxLayers > 1 ? (maxLayers - 1) * idealSpacing : 0);
                     
