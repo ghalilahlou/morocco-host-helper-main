@@ -39,28 +39,28 @@ export const AccountSettings: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center space-x-3">
-        <Settings className="h-8 w-8" />
+    <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6 px-3 sm:px-4 py-4 sm:py-6">
+      <div className="flex items-center space-x-2 sm:space-x-3">
+        <Settings className="h-6 w-6 sm:h-8 sm:w-8" />
         <div>
-          <h1 className="text-3xl font-bold">Paramètres du compte</h1>
-          <p className="text-muted-foreground">Gérez vos préférences et paramètres de sécurité</p>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Paramètres du compte</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">Gérez vos préférences et paramètres de sécurité</p>
         </div>
       </div>
 
-      <div className="grid gap-6">
+      <div className="grid gap-4 sm:gap-6">
         {/* Notifications */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Bell className="h-5 w-5" />
+          <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+            <CardTitle className="flex items-center space-x-2 text-lg sm:text-xl">
+              <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
               <span>Notifications</span>
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-sm sm:text-base">
               Choisissez comment vous souhaitez être notifié
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-4 sm:px-6 pb-4 sm:pb-6">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label>Notifications par email</Label>

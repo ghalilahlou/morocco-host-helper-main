@@ -186,18 +186,18 @@ export default function Auth() {
     }
   };
   return <div className="min-h-screen bg-white">
-      <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-6 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-4 sm:gap-6 p-3 sm:p-4 md:p-8">
         {/* Left: Auth form */}
-        <div className="bg-white border rounded-xl shadow-sm p-8 md:p-10 flex flex-col">
-          <Link to="/" className="mb-6 w-fit">
+        <div className="bg-white border rounded-xl shadow-sm p-4 sm:p-6 md:p-8 lg:p-10 flex flex-col">
+          <Link to="/" className="mb-4 sm:mb-6 w-fit">
             <img
               src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png"
               alt="Checky Logo"
-              className="w-28 h-28 object-contain hover:opacity-80 transition-opacity cursor-pointer"
+              className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-contain hover:opacity-80 transition-opacity cursor-pointer"
             />
           </Link>
 
-          <h1 className="text-3xl font-bold mb-6">Accédez à votre compte</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Accédez à votre compte</h1>
 
           <Tabs defaultValue="signin" className="w-full">
             <TabsList className="grid w-full grid-cols-2 rounded-lg bg-[hsl(var(--cta-basic)/0.2)] border border-[hsl(var(--cta-basic))] text-[hsl(var(--cta-basic))]">

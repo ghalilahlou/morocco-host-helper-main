@@ -101,33 +101,33 @@ export const Profile: React.FC = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center space-x-3">
-        <User className="h-8 w-8" />
+    <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 px-3 sm:px-4 py-4 sm:py-6">
+      <div className="flex items-center space-x-2 sm:space-x-3">
+        <User className="h-6 w-6 sm:h-8 sm:w-8" />
         <div>
-          <h1 className="text-3xl font-bold">Mon Profil</h1>
-          <p className="text-muted-foreground">Gérez vos informations personnelles</p>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Mon Profil</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">Gérez vos informations personnelles</p>
         </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Informations personnelles</CardTitle>
-          <CardDescription>
+        <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+          <CardTitle className="text-lg sm:text-xl">Informations personnelles</CardTitle>
+          <CardDescription className="text-sm sm:text-base">
             Mettez à jour vos informations de profil
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center space-x-4">
-            <Avatar className="h-20 w-20">
+        <CardContent className="space-y-4 sm:space-y-6 px-4 sm:px-6 pb-4 sm:pb-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-3 sm:space-y-0 sm:space-x-4">
+            <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
               <AvatarImage src={formData.avatarUrl} alt={userName} />
-              <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
+              <AvatarFallback className="bg-primary text-primary-foreground text-xl sm:text-2xl">
                 {userInitials}
               </AvatarFallback>
             </Avatar>
-            <Button variant="outline" className="flex items-center space-x-2">
+            <Button variant="outline" className="flex items-center space-x-2 w-full sm:w-auto">
               <Camera className="h-4 w-4" />
-              <span>Changer la photo</span>
+              <span className="text-sm sm:text-base">Changer la photo</span>
             </Button>
           </div>
 

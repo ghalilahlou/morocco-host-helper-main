@@ -52,12 +52,12 @@ export const Landing = () => {
   return <div className="min-h-screen" style={{ backgroundColor: 'hsl(var(--home-bg))' }}>
       {/* Header/Navigation */}
       <header className="fixed top-0 w-full bg-white/95 backdrop-blur-sm border-b border-gray-200 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16 sm:h-20">
             {/* Logo */}
             <div className="flex items-center">
               <button onClick={() => navigate('/')} className="focus:outline-none transition-transform hover:scale-105" aria-label="Retour à l'accueil">
-                <img src={checkyLogo} alt="Checky Logo" className="w-48 h-48 object-contain cursor-pointer" />
+                <img src={checkyLogo} alt="Checky Logo" className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 lg:w-48 lg:h-48 object-contain cursor-pointer" />
               </button>
             </div>
 
@@ -96,38 +96,38 @@ export const Landing = () => {
 
       <main>
         {/* Hero Section */}
-        <section className="pt-28 pb-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+        <section className="pt-20 sm:pt-24 md:pt-28 pb-12 sm:pb-16 md:pb-20 px-3 sm:px-4 md:px-6 lg:px-8 relative overflow-hidden">
           {/* Background Image */}
           <div className="absolute inset-0 z-0">
             <img src={heroLaptop} alt="Hero Background" className="w-full h-full object-cover opacity-20" />
             <div className="absolute inset-0 bg-gradient-to-r from-white/80 to-white/60"></div>
           </div>
           
-          <div className="max-w-4xl mx-auto text-center relative z-10">
-            <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
+          <div className="max-w-4xl mx-auto text-center relative z-10 px-2">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 sm:mb-6">
               Votre Assistant
               <span className="block text-primary">Check-in</span>
             </h1>
-            <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto leading-relaxed">Simplifiez la conformité de vos locations Airbnb au Maroc. Automatisez la collecte de pièces d'identité et la génération des documents légaux.</p>
-            <Button onClick={handleGetStarted} size="lg" className="text-lg px-8 py-3 bg-primary hover:bg-primary/90 shadow-lg hover:shadow-xl transition-all duration-300">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed px-2">Simplifiez la conformité de vos locations Airbnb au Maroc. Automatisez la collecte de pièces d'identité et la génération des documents légaux.</p>
+            <Button onClick={handleGetStarted} size="lg" className="text-base sm:text-lg px-6 sm:px-8 py-2.5 sm:py-3 bg-primary hover:bg-primary/90 shadow-lg hover:shadow-xl transition-all duration-300">
               Commencer maintenant
             </Button>
           </div>
         </section>
 
         {/* Services Section */}
-        <section id="services" className="py-20 relative overflow-hidden">
+        <section id="services" className="py-12 sm:py-16 md:py-20 relative overflow-hidden">
           {/* Background decoration */}
           
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="text-center mb-16">
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 relative z-10">
+            <div className="text-center mb-8 sm:mb-12 md:mb-16">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">
                 Nos Services
               </h2>
-              <p className="text-xl text-gray-600 max-w-2xl mx-auto">Une solution complète pour la gestion de vos obligations légales de loueur Airbnb</p>
+              <p className="text-base sm:text-lg md:text-xl text-gray-600 max-w-2xl mx-auto px-2">Une solution complète pour la gestion de vos obligations légales de loueur Airbnb</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
               {/* Service 1 */}
               <Card className="group hover:shadow-xl transition-all duration-300 border-0 shadow-lg bg-white/80 backdrop-blur-sm">
                 <CardHeader className="text-center pb-4">

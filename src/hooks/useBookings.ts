@@ -10,6 +10,8 @@ export const useBookings = () => {
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const loadingRef = useRef(false);
+  // ✅ NOUVEAU : Cache des IDs de bookings pour éviter les rafraîchissements inutiles
+  const lastBookingIdsRef = useRef<Set<string>>(new Set());
   const { user } = useAuth();
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export const useBookings = () => {
     // ✅ PROTECTION : Éviter les boucles infinies et les appels multiples
     let isProcessing = false;
     let debounceTimeout: NodeJS.Timeout | null = null;
-    const DEBOUNCE_DELAY = 300; // 300ms de debounce pour éviter les appels multiples
+    const DEBOUNCE_DELAY = 100; // ✅ OPTIMISÉ : Réduit de 300ms à 100ms pour une réactivité plus rapide
     
     const debouncedLoadBookings = () => {
       if (debounceTimeout) {
@@ -61,10 +63,70 @@ export const useBookings = () => {
           table: 'bookings'
         },
         (payload) => {
+          const bookingId = payload.new?.id || payload.old?.id;
+          const propertyId = payload.new?.property_id || payload.old?.property_id;
+          
           debug('Real-time: Changement détecté dans bookings', {
             event: payload.eventType,
-            id: payload.new?.id || payload.old?.id
+            id: bookingId,
+            propertyId: propertyId
           });
+          
+          // ✅ OPTIMISATION : Mise à jour optimiste immédiate pour INSERT
+          if (payload.eventType === 'INSERT' && payload.new) {
+            const newBooking = payload.new;
+            // Vérifier que c'est une nouvelle réservation (pas déjà dans le cache)
+            if (!lastBookingIdsRef.current.has(newBooking.id)) {
+              debug('Real-time: Nouvelle réservation détectée, mise à jour optimiste');
+              setBookings(prev => {
+                // Vérifier qu'elle n'est pas déjà présente
+                const exists = prev.some(b => b.id === newBooking.id);
+                if (exists) return prev;
+                
+                // Ajouter temporairement (sera remplacé par loadBookings complet)
+                const tempBooking: Booking = {
+                  id: newBooking.id,
+                  propertyId: newBooking.property_id,
+                  checkInDate: newBooking.check_in_date,
+                  checkOutDate: newBooking.check_out_date,
+                  numberOfGuests: newBooking.number_of_guests,
+                  bookingReference: newBooking.booking_reference,
+                  guest_name: newBooking.guest_name,
+                  status: newBooking.status as any,
+                  guests: [],
+                  createdAt: newBooking.created_at,
+                  documentsGenerated: { policeForm: false, contract: false }
+                };
+                lastBookingIdsRef.current.add(newBooking.id);
+                return [tempBooking, ...prev];
+              });
+            }
+          }
+          
+          // ✅ OPTIMISATION : Mise à jour optimiste pour UPDATE
+          if (payload.eventType === 'UPDATE' && payload.new) {
+            const updatedBooking = payload.new;
+            debug('Real-time: Réservation mise à jour, mise à jour optimiste');
+            setBookings(prev => prev.map(b => 
+              b.id === updatedBooking.id 
+                ? { ...b, 
+                    checkInDate: updatedBooking.check_in_date,
+                    checkOutDate: updatedBooking.check_out_date,
+                    numberOfGuests: updatedBooking.number_of_guests,
+                    status: updatedBooking.status as any
+                  }
+                : b
+            ));
+          }
+          
+          // ✅ OPTIMISATION : Suppression optimiste pour DELETE
+          if (payload.eventType === 'DELETE' && payload.old) {
+            debug('Real-time: Réservation supprimée, suppression optimiste');
+            setBookings(prev => prev.filter(b => b.id !== payload.old.id));
+            lastBookingIdsRef.current.delete(payload.old.id);
+          }
+          
+          // Rafraîchissement complet en arrière-plan pour obtenir les données complètes
           debouncedLoadBookings();
         }
       )
@@ -217,6 +279,7 @@ export const useBookings = () => {
           })) || [],
           status: booking.status as 'pending' | 'completed' | 'archived' | 'draft',
           createdAt: booking.created_at,
+          updated_at: booking.updated_at || booking.created_at,
           documentsGenerated: typeof booking.documents_generated === 'object' && booking.documents_generated !== null
             ? booking.documents_generated as { policeForm: boolean; contract: boolean; }
             : { policeForm: false, contract: false }
@@ -242,7 +305,39 @@ export const useBookings = () => {
         count: enrichedBookings.length,
         ids: enrichedBookings.map(b => b.id)
       });
-      setBookings(enrichedBookings);
+      
+      // ✅ OPTIMISATION : Mise à jour intelligente - fusionner avec les bookings existants
+      // pour préserver les mises à jour optimistes
+      setBookings(prev => {
+        const existingMap = new Map(prev.map(b => [b.id, b]));
+        const newMap = new Map(enrichedBookings.map(b => [b.id, b]));
+        
+        // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
+        const merged = enrichedBookings.map(newBooking => {
+          const existing = existingMap.get(newBooking.id);
+          // Si la réservation existante a été mise à jour récemment (< 1 seconde), la garder
+          if (existing && existing.updated_at && newBooking.updated_at) {
+            const existingTime = new Date(existing.updated_at).getTime();
+            const newTime = new Date(newBooking.updated_at).getTime();
+            if (existingTime > newTime - 1000) {
+              return existing; // Garder la version existante si plus récente
+            }
+          }
+          return newBooking;
+        });
+        
+        // Ajouter les nouvelles réservations qui n'existent pas encore
+        enrichedBookings.forEach(newBooking => {
+          if (!existingMap.has(newBooking.id)) {
+            merged.push(newBooking);
+          }
+        });
+        
+        // Mettre à jour le cache des IDs
+        lastBookingIdsRef.current = new Set(merged.map(b => b.id));
+        
+        return merged;
+      });
     } catch (error) {
       logError('Error loading bookings', error as Error);
     } finally {
@@ -336,13 +431,28 @@ export const useBookings = () => {
       const newBooking: Booking = {
         ...booking,
         id: bookingData.id,
-        createdAt: bookingData.created_at
+        createdAt: bookingData.created_at,
+        updated_at: bookingData.updated_at || bookingData.created_at
       };
-      setBookings(prevBookings => [newBooking, ...prevBookings]);
       
-      // Refresh bookings to get the complete data with relationships
+      // ✅ OPTIMISATION : Vérifier qu'elle n'existe pas déjà avant d'ajouter
+      setBookings(prevBookings => {
+        const exists = prevBookings.some(b => b.id === newBooking.id);
+        if (exists) {
+          // Mettre à jour si elle existe déjà
+          return prevBookings.map(b => b.id === newBooking.id ? newBooking : b);
+        }
+        return [newBooking, ...prevBookings];
+      });
+      
+      // Mettre à jour le cache
+      lastBookingIdsRef.current.add(newBooking.id);
+      
+      // ✅ OPTIMISATION : Rafraîchissement en arrière-plan (non-bloquant)
       // La subscription en temps réel va aussi déclencher un refresh, mais on le fait immédiatement pour UX
-      await loadBookings();
+      loadBookings().catch(err => {
+        console.warn('Background refresh failed, but optimistic update succeeded', err);
+      });
     } catch (error) {
       logError('Error adding booking', error as Error);
     }

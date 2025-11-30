@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { copyToClipboard } from '@/lib/clipboardUtils';
+import { copyToClipboardSimple } from '@/lib/clipboardSimple';
 import { Copy, Check, X, AlertCircle } from 'lucide-react';
 
 export const TestVerification = () => {
@@ -43,7 +43,9 @@ export const TestVerification = () => {
 
       // Test de copie
       console.log('🔵 Début de la copie...');
-      const success = await copyToClipboard(testUrl);
+      // ✅ Utiliser copyToClipboardSimple avec un événement simulé pour mobile
+      const mockEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+      const success = await copyToClipboardSimple(testUrl, mockEvent);
       const endTime = Date.now();
       const duration = endTime - startTime;
 
@@ -159,15 +161,15 @@ export const TestVerification = () => {
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
+    <div className="container mx-auto p-3 sm:p-4 md:p-6 max-w-4xl">
       <Card>
-        <CardHeader>
-          <CardTitle>🧪 Test de Copie-Coller</CardTitle>
-          <CardDescription>
+        <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+          <CardTitle className="text-lg sm:text-xl">🧪 Test de Copie-Coller</CardTitle>
+          <CardDescription className="text-sm sm:text-base">
             Testez la fonctionnalité de copie de lien dans le presse-papier
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4 sm:space-y-6 px-4 sm:px-6 pb-4 sm:pb-6">
           {/* URL de test */}
           <div className="space-y-2">
             <Label htmlFor="test-url">URL à tester</Label>

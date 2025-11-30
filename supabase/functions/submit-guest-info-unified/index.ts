@@ -103,15 +103,23 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: any) {
   const timestamp = new Date().toISOString();
   const prefix = `[${timestamp}] [${FUNCTION_NAME}]`;
   
+  // ✅ AMÉLIORATION : Toujours logger, même sans données
+  const logMessage = `${prefix} ${message}`;
+  const logData = data ? JSON.stringify(data, null, 2) : '';
+  
   switch (level) {
     case 'info':
-      console.log(`✅ ${prefix} ${message}`, data ? JSON.stringify(data, null, 2) : '');
+      console.log(`✅ ${logMessage}`, logData);
+      // ✅ FORCER l'affichage dans les logs Supabase
+      console.log(JSON.stringify({ level: 'info', message, data, timestamp, function: FUNCTION_NAME }));
       break;
     case 'warn':
-      console.warn(`⚠️ ${prefix} ${message}`, data ? JSON.stringify(data, null, 2) : '');
+      console.warn(`⚠️ ${logMessage}`, logData);
+      console.warn(JSON.stringify({ level: 'warn', message, data, timestamp, function: FUNCTION_NAME }));
       break;
     case 'error':
-      console.error(`❌ ${prefix} ${message}`, data ? JSON.stringify(data, null, 2) : '');
+      console.error(`❌ ${logMessage}`, logData);
+      console.error(JSON.stringify({ level: 'error', message, data, timestamp, function: FUNCTION_NAME }));
       break;
   }
 }
@@ -1868,54 +1876,6 @@ async function generatePoliceFormsInternal(bookingId: string): Promise<string> {
   }, 'Génération fiche de police');
 }
 
-// ÉTAPE 5: Génération des documents d'identité formatés
-async function generateIdentityDocumentsInternal(bookingId: string): Promise<string> {
-  log('info', 'ÉTAPE 5: Démarrage génération documents d\'identité', { bookingId });
-
-  return await withRetry(async () => {
-    const supabaseClient = await getServerClient();
-
-    // 1. Récupérer les données du booking depuis la base
-    log('info', 'Construction du contexte documents d\'identité');
-    const { data: booking, error } = await supabaseClient
-      .from('bookings')
-      .select(`
-        *,
-        property:properties(*),
-        guests(*)
-      `)
-      .eq('id', bookingId)
-      .single();
-
-    if (error) {
-      log('error', 'Erreur récupération booking pour documents identité', { error });
-      throw new Error(`Erreur base de données: ${error.message}`);
-    }
-
-    if (!booking) {
-      throw new Error('Booking non trouvé');
-    }
-
-    // 2. Validation des données invités
-    const guests = booking.guests || [];
-    if (guests.length === 0) {
-      throw new Error('Aucun invité trouvé pour générer les documents d\'identité');
-    }
-
-    log('info', `Génération documents d'identité pour ${guests.length} invités`);
-
-    // 3. Générer le PDF des documents d'identité
-    const identityUrl = await generateIdentityDocumentsPDF(supabaseClient, booking);
-    
-    // 4. Sauvegarder le document en base
-    await saveDocumentToDatabase(supabaseClient, bookingId, 'identity', identityUrl);
-
-    log('info', 'Documents d\'identité générés avec succès', { identityUrl });
-    return identityUrl;
-
-  }, 'Génération documents d\'identité');
-}
-
 // ÉTAPE 5: Envoi de l'email avec gestion d'erreur
 async function sendGuestContractInternal(
   guestInfo: GuestInfo, 
@@ -3083,6 +3043,28 @@ serve(async (req) => {
         // ✅ Pour host_direct, on continue avec la sauvegarde des documents et la génération
         // Les guests ont déjà été créés par le front-end, donc on va juste sauvegarder les documents uploadés
         log('info', '🔄 [HOST_DIRECT] Continuation avec sauvegarde documents et génération contrat/police');
+        
+        // ✅ CRITIQUE : Vérifier que les guests sont bien en base avant de générer les documents
+        const supabaseCheck = await getServerClient();
+        const { data: verifyGuests, error: verifyError } = await supabaseCheck
+          .from('guests')
+          .select('id, full_name, document_number, nationality')
+          .eq('booking_id', bookingId);
+        
+        if (verifyError) {
+          log('error', '❌ [HOST_DIRECT] Erreur vérification guests:', { error: verifyError });
+          throw new Error(`Erreur vérification guests: ${verifyError.message}`);
+        }
+        
+        log('info', '✅ [HOST_DIRECT] Vérification guests en base:', {
+          count: verifyGuests?.length || 0,
+          guests: verifyGuests?.map(g => ({ id: g.id, full_name: g.full_name }))
+        });
+        
+        if (!verifyGuests || verifyGuests.length === 0) {
+          log('error', '❌ [HOST_DIRECT] Aucun guest trouvé en base pour ce booking!', { bookingId });
+          throw new Error('Aucun guest trouvé en base de données. Les guests doivent être créés avant la génération des documents.');
+        }
       }
       // ✅ NOUVEAU : Gestion de l'action create_ics_booking
       else if (requestBody.action === 'create_ics_booking') {
@@ -3321,7 +3303,7 @@ serve(async (req) => {
       if (requestBody.action === 'host_direct') {
         log('info', '🔄 [HOST_DIRECT] Skipping saveGuestDataInternal - guests et documents déjà créés par le front-end');
         // Les documents ont déjà été uploadés via DocumentStorageService dans le front-end
-        // bookingId a déjà été défini lors de la récupération de la réservation (ligne 2845)
+        // bookingId a déjà été défini lors de la récupération de la réservation
         // On passe directement à la génération du contrat et de la fiche de police
         log('info', '🔄 [HOST_DIRECT] BookingId déjà défini:', { bookingId });
         
@@ -3396,8 +3378,22 @@ serve(async (req) => {
       log('info', '✅ Documents générés:', {
         hasContract: !!contractUrl,
         hasPolice: !!policeUrl,
-        hasIdentity: !!identityUrl
+        hasIdentity: !!identityUrl,
+        contractUrlLength: contractUrl?.length || 0,
+        policeUrlLength: policeUrl?.length || 0,
+        contractUrlPreview: contractUrl ? contractUrl.substring(0, 100) + '...' : null,
+        policeUrlPreview: policeUrl ? policeUrl.substring(0, 100) + '...' : null
       });
+      
+      // ✅ VALIDATION CRITIQUE : Vérifier que les documents ont bien été générés
+      if (!contractUrl) {
+        log('error', '❌ [CRITICAL] Contrat non généré!', { bookingId });
+        throw new Error('Échec génération du contrat');
+      }
+      
+      if (!policeUrl && !requestBody.skipPolice) {
+        log('warn', '⚠️ [WARNING] Fiche de police non générée', { bookingId });
+      }
 
       // ÉTAPE 5: Envoi de l'email (optionnel et conditionnel)
       if (!requestBody.skipEmail && !requestBody.generateOnly) {
@@ -5500,262 +5496,6 @@ async function generatePoliceFormsPDF(client: any, booking: any, isPreview: bool
 // =====================================================
 
 // Generate identity documents PDF - Format professionnel
-async function generateIdentityDocumentsPDF(client: any, booking: any): Promise<string> {
-  log('info', 'Création PDF documents d\'identité format professionnel...');
-  
-  const guests = booking.guests || [];
-  const property = booking.property || {};
-  
-  // Configuration PDF - Format A4
-  const pageWidth = 595.28; // A4 width
-  const pageHeight = 841.89; // A4 height
-  const margin = 50;
-  const fontSize = 11;
-  const titleFontSize = 14;
-  const fieldHeight = 22;
-
-  // Créer le document PDF
-  const pdfDoc = await PDFDocument.create();
-  
-  // Fonts
-  let font, boldFont;
-  try {
-    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  } catch (e) {
-    log('warn', 'Font loading failed, using defaults');
-    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  }
-
-  // Helper function to format dates
-  function formatDate(dateStr: string): string {
-    if (!dateStr) return '';
-    try {
-      const date = new Date(dateStr);
-      return isNaN(date.getTime()) ? '' : date.toLocaleDateString('fr-FR');
-    } catch {
-      return '';
-    }
-  }
-
-  // Générer une page par invité avec format professionnel
-  for (const guest of guests) {
-    const page = pdfDoc.addPage([pageWidth, pageHeight]);
-    let yPosition = pageHeight - 50;
-    
-    // ✅ EN-TÊTE PROFESSIONNEL
-    page.drawText('Document d\'Identité / Identity Document', {
-      x: (pageWidth - boldFont.widthOfTextAtSize('Document d\'Identité / Identity Document', titleFontSize)) / 2,
-      y: yPosition,
-      size: titleFontSize,
-      font: boldFont
-    });
-    yPosition -= 30;
-    
-    // ✅ INFORMATIONS DU LOGEMENT
-    page.drawText('Informations du Logement / Property Information', {
-      x: margin,
-      y: yPosition,
-      size: fontSize + 2,
-      font: boldFont
-    });
-    yPosition -= 25;
-    
-    page.drawText(`Propriété: ${property.name || 'Non spécifié'}`, {
-      x: margin,
-      y: yPosition,
-      size: fontSize,
-      font: font
-    });
-    yPosition -= 20;
-    
-    if (property.address) {
-      page.drawText(`Adresse: ${property.address}`, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font
-      });
-      yPosition -= 20;
-    }
-    
-    const checkInDate = formatDate(booking.check_in_date);
-    const checkOutDate = formatDate(booking.check_out_date);
-    
-    page.drawText(`Période: ${checkInDate} - ${checkOutDate}`, {
-      x: margin,
-      y: yPosition,
-      size: fontSize,
-      font: font
-    });
-    yPosition -= 40;
-    
-    // ✅ INFORMATIONS DE L'INVITÉ
-    page.drawText('Informations de l\'Invité / Guest Information', {
-      x: margin,
-      y: yPosition,
-      size: fontSize + 2,
-      font: boldFont
-    });
-    yPosition -= 25;
-    
-    // Nom complet
-    page.drawText(`Nom complet: ${guest.full_name || 'Non spécifié'}`, {
-      x: margin,
-      y: yPosition,
-      size: fontSize,
-      font: font
-    });
-    yPosition -= 20;
-    
-    // Date de naissance
-    const birthDate = formatDate(guest.date_of_birth);
-    if (birthDate) {
-      page.drawText(`Date de naissance: ${birthDate}`, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font
-      });
-      yPosition -= 20;
-    }
-    
-    // Nationalité
-    if (guest.nationality) {
-      page.drawText(`Nationalité: ${guest.nationality}`, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font
-      });
-      yPosition -= 20;
-    }
-    
-    // Type de document
-    const docType = guest.document_type === 'passport' ? 'Passeport' : 'Carte d\'identité';
-    page.drawText(`Type de document: ${docType}`, {
-      x: margin,
-      y: yPosition,
-      size: fontSize,
-      font: font
-    });
-    yPosition -= 20;
-    
-    // Numéro de document
-    if (guest.document_number) {
-      page.drawText(`Numéro de document: ${guest.document_number}`, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font
-      });
-      yPosition -= 20;
-    }
-    
-    // Lieu de naissance
-    if (guest.place_of_birth) {
-      page.drawText(`Lieu de naissance: ${guest.place_of_birth}`, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font
-      });
-      yPosition -= 20;
-    }
-    
-    // Profession
-    if (guest.profession) {
-      page.drawText(`Profession: ${guest.profession}`, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font
-      });
-      yPosition -= 20;
-    }
-    
-    // Motif de séjour
-    if (guest.motif_sejour) {
-      page.drawText(`Motif de séjour: ${guest.motif_sejour}`, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font
-      });
-      yPosition -= 20;
-    }
-    
-    // Adresse personnelle
-    if (guest.adresse_personnelle) {
-      page.drawText(`Adresse personnelle: ${guest.adresse_personnelle}`, {
-        x: margin,
-        y: yPosition,
-        size: fontSize,
-        font: font
-      });
-      yPosition -= 20;
-    }
-    
-    yPosition -= 30;
-    
-    // ✅ SIGNATURE SECTION
-    page.drawText('Signature de l\'invité / Guest Signature', {
-      x: margin,
-      y: yPosition,
-      size: fontSize + 1,
-      font: boldFont
-    });
-    yPosition -= 40;
-    
-    // Zone de signature
-    page.drawRectangle({
-      x: margin,
-      y: yPosition - 60,
-      width: 200,
-      height: 60,
-      borderColor: rgb(0, 0, 0),
-      borderWidth: 1
-    });
-    
-    page.drawText('Signature:', {
-      x: margin + 10,
-      y: yPosition - 20,
-      size: fontSize,
-      font: font
-    });
-    
-    page.drawText('Date:', {
-      x: margin + 10,
-      y: yPosition - 40,
-      size: fontSize,
-      font: font
-    });
-    
-    // ✅ Footer CHECKY
-    const footerY = 30;
-    const checkyText = 'CHECKY';
-    const checkyX = pageWidth - margin - boldFont.widthOfTextAtSize(checkyText, fontSize + 4);
-    
-    page.drawText(checkyText, {
-      x: checkyX,
-      y: footerY,
-      size: fontSize + 4,
-      font: boldFont,
-      color: rgb(0.0, 0.6, 0.6) // Couleur turquoise CHECKY
-    });
-  }
-
-  log('info', 'PDF documents d\'identité généré format professionnel', {
-    pages: guests.length,
-    guests: guests.length
-  });
-
-  const pdfBytes = await pdfDoc.save();
-  
-  // Upload to Storage and return URL with correct document type
-  const documentUrl = await uploadPdfToStorage(client, booking.id, pdfBytes, 'identity');
-  
-  log('info', 'Identity documents PDF generated and uploaded successfully - Format professionnel');
-  return documentUrl;
-}
+// ❌ SUPPRIMÉ : Fonction generateIdentityDocumentsPDF - Code mort (258 lignes)
+// Cette fonction n'était jamais appelée car la génération automatique des documents d'identité
+// a été désactivée (ligne 3371). On utilise uniquement les documents uploadés par l'invité.

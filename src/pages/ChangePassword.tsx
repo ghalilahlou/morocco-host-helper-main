@@ -76,26 +76,26 @@ export const ChangePassword: React.FC = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center space-x-3">
-        <Key className="h-8 w-8" />
+    <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 px-3 sm:px-4 py-4 sm:py-6">
+      <div className="flex items-center space-x-2 sm:space-x-3">
+        <Key className="h-6 w-6 sm:h-8 sm:w-8" />
         <div>
-          <h1 className="text-3xl font-bold">Changer le mot de passe</h1>
-          <p className="text-muted-foreground">Mettez à jour votre mot de passe pour sécuriser votre compte</p>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Changer le mot de passe</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">Mettez à jour votre mot de passe pour sécuriser votre compte</p>
         </div>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Shield className="h-5 w-5" />
+        <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+          <CardTitle className="flex items-center space-x-2 text-lg sm:text-xl">
+            <Shield className="h-4 w-4 sm:h-5 sm:w-5" />
             <span>Nouveau mot de passe</span>
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-sm sm:text-base">
             Choisissez un mot de passe fort pour protéger votre compte
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="currentPassword">Mot de passe actuel</Label>

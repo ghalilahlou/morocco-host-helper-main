@@ -1862,24 +1862,24 @@ export const GuestVerification = () => {
   const currentStepIndex = ['booking', 'documents', 'signature'].indexOf(currentStep);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-turquoise/10 py-8">
-      <div className="container mx-auto px-4 max-w-5xl">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-turquoise/10 py-4 sm:py-8">
+      <div className="container mx-auto px-3 sm:px-4 max-w-5xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
           <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
-            <CardHeader className="bg-gradient-to-r from-brand-cyan/5 to-brand-turquoise/5 border-b border-gray-100">
+            <CardHeader className="bg-gradient-to-r from-brand-cyan/5 to-brand-turquoise/5 border-b border-gray-100 px-4 sm:px-6 py-4 sm:py-6">
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
               >
-                <CardTitle className="text-3xl font-bold text-center text-gray-900">
+                <CardTitle className="text-xl sm:text-2xl md:text-3xl font-bold text-center text-gray-900">
                   {t('guest.verification.title')}
                 </CardTitle>
-                <CardDescription className="text-center text-lg mt-2 text-gray-600">
+                <CardDescription className="text-center text-sm sm:text-base md:text-lg mt-2 text-gray-600 px-2">
                   {t('guest.verification.subtitle', { propertyName })}
                 </CardDescription>
               </motion.div>
@@ -1888,7 +1888,7 @@ export const GuestVerification = () => {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.4 }}
-                className="mt-8"
+                className="mt-4 sm:mt-8"
               >
                 <AnimatedStepper
                   steps={steps}
@@ -1898,7 +1898,7 @@ export const GuestVerification = () => {
               </motion.div>
             </CardHeader>
             
-            <CardContent className="p-8">
+            <CardContent className="p-4 sm:p-6 md:p-8">
               {/* ✅ CORRIGÉ : Retirer ErrorBoundary car il causait des doubles rendus visuels */}
               {/* L'intercepteur global d'erreurs window.onerror gère déjà les erreurs Portal */}
                 {/* ✅ CORRIGÉ : Retirer AnimatePresence pour éviter les conflits avec les Portals Radix UI */}
