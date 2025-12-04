@@ -323,11 +323,6 @@ export const AirbnbReservationModal = ({
                         <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
                         <span>Génération...</span>
                       </>
-                    ) : isMobileDevice() ? (
-                      <>
-                        <Share2 className="w-4 h-4 mr-2" />
-                        <span>Partager le lien</span>
-                      </>
                     ) : (
                       <>
                         <Copy className="w-4 h-4 mr-2" />

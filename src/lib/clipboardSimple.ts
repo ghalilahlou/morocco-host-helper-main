@@ -106,7 +106,7 @@ export const copyToClipboardSimple = async (
     }
   }
 
-  // ✅ ÉTAPE 2 : Fallback avec textarea visible/sélectionnable (compatible iOS Safari)
+  // ✅ ÉTAPE 2 : Fallback avec textarea invisible (SANS overlay bloquant)
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
     try {
       // Créer un textarea (pas input) pour meilleure compatibilité
@@ -115,142 +115,53 @@ export const copyToClipboardSimple = async (
       textarea.readOnly = true; // Empêche la modification
       textarea.style.fontSize = '16px'; // Empêche le zoom automatique sur iOS
       
-      // ✅ CRITIQUE : Élément VISIBLE et SÉLECTIONNABLE (pas display: none)
-      // Sur mobile, l'élément DOIT être visible pour que execCommand('copy') fonctionne
+      // ✅ MOBILE : Textarea invisible (PAS d'overlay bloquant)
+      // On utilise le partage natif sur mobile, donc pas besoin d'overlay
       if (isMobile) {
-        // Style VISIBLE mais discret pour mobile
+        // Textarea invisible mais dans le DOM
         textarea.style.position = 'fixed';
-        textarea.style.top = '50%';
-        textarea.style.left = '50%';
-        textarea.style.transform = 'translate(-50%, -50%)';
-        textarea.style.width = '85vw';
-        textarea.style.maxWidth = '400px';
-        textarea.style.height = '60px';
-        textarea.style.padding = '12px 16px';
-        textarea.style.border = '2px solid #10b981';
-        textarea.style.borderRadius = '8px';
-        textarea.style.outline = 'none';
-        textarea.style.boxShadow = '0 4px 12px rgba(0,0,0,0.25)';
-        textarea.style.background = '#ffffff';
-        textarea.style.opacity = '1';
-        textarea.style.zIndex = '999999';
-        textarea.style.pointerEvents = 'auto';
-        textarea.style.color = '#1f2937';
-        textarea.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-        textarea.style.textAlign = 'center';
-        textarea.style.lineHeight = '1.5';
-        textarea.style.overflow = 'hidden';
-        textarea.style.textOverflow = 'ellipsis';
-        textarea.style.whiteSpace = 'nowrap';
+        textarea.style.top = '-9999px';
+        textarea.style.left = '-9999px';
+        textarea.style.width = '1px';
+        textarea.style.height = '1px';
+        textarea.style.padding = '0';
+        textarea.style.border = 'none';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        textarea.style.zIndex = '-1';
         
-        // Overlay sombre pour mettre en évidence
-        const overlay = document.createElement('div');
-        overlay.style.position = 'fixed';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.background = 'rgba(0,0,0,0.4)';
-        overlay.style.zIndex = '999998';
-        overlay.style.display = 'flex';
-        overlay.style.alignItems = 'center';
-        overlay.style.justifyContent = 'center';
-        overlay.style.flexDirection = 'column';
-        overlay.style.gap = '16px';
+        document.body.appendChild(textarea);
         
-        // Message d'instruction
-        const message = document.createElement('div');
-        message.textContent = 'Appuyez longuement sur le texte pour copier';
-        message.style.color = '#ffffff';
-        message.style.fontSize = '15px';
-        message.style.textAlign = 'center';
-        message.style.padding = '0 20px';
-        message.style.fontWeight = '500';
-        message.style.lineHeight = '1.4';
-        
-        // Bouton de fermeture
-        const closeBtn = document.createElement('button');
-        closeBtn.textContent = 'Fermer';
-        closeBtn.style.padding = '12px 24px';
-        closeBtn.style.background = '#10b981';
-        closeBtn.style.color = '#ffffff';
-        closeBtn.style.border = 'none';
-        closeBtn.style.borderRadius = '6px';
-        closeBtn.style.fontSize = '15px';
-        closeBtn.style.cursor = 'pointer';
-        closeBtn.style.fontWeight = '500';
-        closeBtn.style.minHeight = '44px'; // Touch target minimum iOS
-        
-        const removeElements = () => {
+        // Essayer la copie
+        setTimeout(() => {
           try {
-            if (document.body.contains(textarea)) document.body.removeChild(textarea);
-            if (document.body.contains(overlay)) document.body.removeChild(overlay);
-          } catch (e) {
-            // Ignorer si déjà retiré
-          }
-        };
-        
-        closeBtn.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          removeElements();
-        };
-        
-        overlay.onclick = (e) => {
-          if (e.target === overlay) {
-            removeElements();
-          }
-        };
-        
-        overlay.appendChild(message);
-        overlay.appendChild(textarea);
-        overlay.appendChild(closeBtn);
-        document.body.appendChild(overlay);
-        
-        // ✅ Essayer la copie automatique après un court délai
-        setTimeout(async () => {
-          try {
-            // Focus et sélection
             textarea.focus();
             textarea.select();
             textarea.setSelectionRange(0, text.length);
             
-            // Essayer execCommand plusieurs fois
-            let successful = false;
-            for (let attempt = 0; attempt < 3; attempt++) {
-              try {
-                successful = document.execCommand('copy');
-                if (successful) {
-                  console.log(`✅ [CLIPBOARD] Copié avec execCommand (mobile) - tentative ${attempt + 1}`);
-                  message.textContent = '✅ Lien copié ! Vous pouvez fermer cette fenêtre.';
-                  message.style.color = '#10b981';
-                  resolve({ success: true });
-                  return;
-                }
-              } catch (e: any) {
-                console.warn(`⚠️ [CLIPBOARD] Tentative ${attempt + 1} échouée:`, e);
-                if (attempt < 2) {
-                  await new Promise(resolve => setTimeout(resolve, 100));
-                }
-              }
-            }
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textarea);
             
-            if (!successful) {
-              console.log('ℹ️ [CLIPBOARD] Copie automatique échouée, sélection manuelle disponible');
-              // Laisser l'input visible pour copie manuelle
+            if (successful) {
+              console.log('✅ [CLIPBOARD] Copié avec execCommand (mobile)');
+              resolve({ success: true });
+            } else {
+              console.log('ℹ️ [CLIPBOARD] Copie automatique échouée sur mobile');
+              // ✅ Retourner false SANS overlay bloquant
               resolve({ 
                 success: false, 
-                error: 'La copie automatique a échoué. Veuillez appuyer longuement sur le texte pour copier manuellement.' 
+                error: 'Utilisez le bouton "Partager" pour envoyer le lien' 
               });
             }
           } catch (error: any) {
+            try { document.body.removeChild(textarea); } catch (e) {}
             console.error('❌ [CLIPBOARD] Erreur lors de la copie (mobile):', error);
             resolve({ 
               success: false, 
-              error: error.message || 'Erreur lors de la copie sur mobile' 
+              error: 'Utilisez le bouton "Partager" pour envoyer le lien' 
             });
           }
-        }, 150);
+        }, 50);
       } else {
         // ✅ DESKTOP : Textarea invisible mais présent dans le DOM
         textarea.style.position = 'fixed';

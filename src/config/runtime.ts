@@ -9,8 +9,10 @@ const env = {
   SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL || '',
   SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
   
-  // Application
-  APP_URL: import.meta.env.VITE_PUBLIC_APP_URL || 'http://localhost:3000',
+  // Application - ✅ FORCÉ : Utiliser cheki.ma en production
+  APP_URL: import.meta.env.PROD 
+    ? 'https://cheki.ma' 
+    : (import.meta.env.VITE_PUBLIC_APP_URL || 'http://localhost:3000'),
   MODE: import.meta.env.MODE || 'development',
   DEV: import.meta.env.DEV || false,
   PROD: import.meta.env.PROD || false,
@@ -162,11 +164,9 @@ export const corsConfig = {
     'http://localhost:54321', // Supabase local
   ],
   production: [
-    'https://*.vercel.app',
-    'https://morocco-host-helper.vercel.app',
-    'https://checky.ma',           // ✅ Domaine personnalisé principal
-    'https://www.checky.ma',      // ✅ Sous-domaine www
-    // Ajoutez d'autres domaines personnalisés ici si nécessaire
+    'https://cheki.ma',           // ✅ Domaine principal
+    'https://www.cheki.ma',       // ✅ Sous-domaine www
+    'https://*.vercel.app',       // Fallback Vercel (preview deployments)
   ],
 } as const;
 

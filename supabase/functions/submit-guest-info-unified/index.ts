@@ -5475,11 +5475,11 @@ async function generatePoliceFormsPDF(client: any, booking: any, isPreview: bool
         yPosition -= 50;
       } else {
         log('warn', '[Police] No host signature or name available for police form', {
-          hasHostSignature: !!hostSignature,
-          signatureType: hostSignature ? typeof hostSignature : 'none',
+        hasHostSignature: !!hostSignature,
+        signatureType: hostSignature ? typeof hostSignature : 'none',
           signatureValue: hostSignature ? hostSignature.substring(0, 100) : 'none',
           hasLandlordName: !!landlordName
-        });
+      });
       }
     }
     
