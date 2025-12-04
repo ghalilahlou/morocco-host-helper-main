@@ -5444,11 +5444,43 @@ async function generatePoliceFormsPDF(client: any, booking: any, isPreview: bool
         // Continue sans la signature
       }
     } else {
-      log('warn', '[Police] No host signature available for police form', {
-        hasHostSignature: !!hostSignature,
-        signatureType: hostSignature ? typeof hostSignature : 'none',
-        signatureValue: hostSignature ? hostSignature.substring(0, 100) : 'none'
-      });
+      // ✅ CORRIGÉ : Fallback - afficher le nom du loueur en texte (comme dans le contrat)
+      const landlordName = contractTemplate.landlord_name || 
+                           property.contact_info?.ownerName || 
+                           property.owner_name ||
+                           booking.host?.name ||
+                           '';
+      
+      if (landlordName) {
+        log('info', '[Police] Utilisation du nom comme signature fallback:', { landlordName });
+        
+        // Dessiner le nom en italique/cursive
+        page.drawText(landlordName, {
+          x: margin,
+          y: yPosition - 20,
+          size: fontSize + 2,
+          font: font
+        });
+        
+        // Ajouter mention "signature électronique" si signature SVG
+        if (hostSignature && hostSignature.startsWith('data:image/svg')) {
+          page.drawText("(signature électronique)", {
+            x: margin,
+            y: yPosition - 35,
+            size: fontSize - 1,
+            font: font
+          });
+        }
+        
+        yPosition -= 50;
+      } else {
+        log('warn', '[Police] No host signature or name available for police form', {
+          hasHostSignature: !!hostSignature,
+          signatureType: hostSignature ? typeof hostSignature : 'none',
+          signatureValue: hostSignature ? hostSignature.substring(0, 100) : 'none',
+          hasLandlordName: !!landlordName
+        });
+      }
     }
     
     // ✅ Footer CHECKY - Position exacte comme le modèle

@@ -53,14 +53,54 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
   // Simple PDF.js canvas renderer to avoid Chrome PDF plugin restrictions in nested iframes
   const PdfCanvas = ({ url }: { url: string }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    
     useEffect(() => {
       let destroyed = false;
+      setError(null);
+      setLoading(true);
+      
       (async () => {
         try {
-          const res = await fetch(url);
-          const arrayBuffer = await res.arrayBuffer();
+          if (!url) {
+            throw new Error('URL non fournie');
+          }
+          
+          let arrayBuffer: ArrayBuffer;
+          
+          // ✅ AMÉLIORATION : Gestion des différents types d'URL
+          if (url.startsWith('data:application/pdf;base64,')) {
+            // Convertir base64 en ArrayBuffer directement
+            const base64Data = url.split(',')[1];
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            arrayBuffer = bytes.buffer;
+          } else if (url.startsWith('blob:') || url.startsWith('http')) {
+            const res = await fetch(url);
+            if (!res.ok) {
+              throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+            arrayBuffer = await res.arrayBuffer();
+          } else {
+            throw new Error('Format URL non supporté');
+          }
+          
+          if (destroyed) return;
+          
           const loadingTask = (getDocument as any)({ data: arrayBuffer });
           const pdf = await loadingTask.promise;
+          
+          if (destroyed) return;
+          
+          // Effacer le contenu précédent
+          if (containerRef.current) {
+            containerRef.current.innerHTML = '';
+          }
+          
           for (let pageNum = 1; pageNum <= pdf.numPages && !destroyed; pageNum++) {
             const page = await pdf.getPage(pageNum);
             const viewport = page.getViewport({ scale: 1.2 });
@@ -70,13 +110,21 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
             canvas.width = viewport.width;
             // @ts-ignore
             canvas.height = viewport.height;
+            canvas.style.marginBottom = '10px';
             containerRef.current?.appendChild(canvas);
             await page.render({ canvasContext: ctx, viewport }).promise;
           }
-        } catch (e) {
+          
+          setLoading(false);
+        } catch (e: any) {
           console.error('PDF render error', e);
+          if (!destroyed) {
+            setError(e?.message || 'Erreur lors du chargement du PDF');
+            setLoading(false);
+          }
         }
       })();
+      
       return () => {
         destroyed = true;
         if (containerRef.current) {
@@ -84,7 +132,27 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
         }
       };
     }, [url]);
-    return <div ref={containerRef} className="w-full rounded border overflow-auto" />;
+    
+    if (error) {
+      return (
+        <div className="border rounded-lg p-4 bg-red-50 text-red-700 text-sm">
+          <p className="font-medium">Erreur de chargement du PDF</p>
+          <p className="text-xs mt-1">{error}</p>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="relative">
+        {loading && (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm mb-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Chargement du PDF...
+          </div>
+        )}
+        <div ref={containerRef} className="w-full rounded border overflow-auto" />
+      </div>
+    );
   };
 
   useEffect(() => {

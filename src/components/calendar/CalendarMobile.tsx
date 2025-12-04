@@ -1,14 +1,22 @@
-import React, { useState, useMemo } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Users } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, isSameMonth, addMonths, subMonths } from 'date-fns';
+import { 
+  format, 
+  startOfMonth, 
+  endOfMonth, 
+  eachDayOfInterval, 
+  isToday, 
+  isSameMonth, 
+  addMonths, 
+  startOfWeek,
+  endOfWeek
+} from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
@@ -28,214 +36,457 @@ interface CalendarMobileProps {
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
   currentDate: Date;
   onDateChange: (date: Date) => void;
+  // ✅ NOUVEAU : Toutes les réservations pour affichage multi-mois
+  allReservations?: (Booking | AirbnbReservation)[];
 }
 
-const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+// Jours de la semaine format Airbnb (première lettre)
+const dayNamesShort = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+
+// Générer les initiales pour l'avatar
+const getInitials = (name: string): string => {
+  if (!name || name.length === 0) return '?';
+  
+  const words = name.trim().split(/\s+/);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return name.substring(0, 2).toUpperCase();
+};
+
+// Vérifier si un nom est valide (pas un code)
+const isValidGuestName = (value: string): boolean => {
+  if (!value || value.trim().length === 0) return false;
+  
+  const trimmed = value.trim();
+  const lower = trimmed.toLowerCase();
+  
+  if (lower === 'réservation' || lower === 'airbnb') return false;
+  if (/^(UID|HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9\-:]+/i.test(trimmed)) return false;
+  
+  const condensed = trimmed.replace(/\s+/g, '');
+  if (/^[A-Z0-9\-]{5,}$/.test(condensed) && !/[a-z]/.test(trimmed)) return false;
+  if (!/[a-z]/.test(trimmed) && !trimmed.includes(' ') && /^[A-Z0-9]+$/.test(condensed) && condensed.length >= 4) return false;
+  if (!/[a-zA-ZÀ-ÿ]/.test(trimmed)) return false;
+  if (trimmed.length < 2 || trimmed.length > 50) return false;
+  
+  const forbiddenWords = ['phone', 'airbnb', 'reservation', 'guest', 'client', 'booking'];
+  if (forbiddenWords.some(word => lower.includes(word))) return false;
+  
+  return true;
+};
+
+interface BookingBarData {
+  booking: Booking | AirbnbReservation;
+  startDate: Date;
+  endDate: Date;
+  guestName: string;
+  guestCount: number;
+  isValidName: boolean;
+  color: string;
+  textColor: string;
+  isConflict: boolean;
+  photoUrl?: string;
+}
 
 export const CalendarMobile: React.FC<CalendarMobileProps> = ({
-  calendarDays,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  calendarDays: _calendarDays,
   bookingLayout,
   conflicts,
   onBookingClick,
-  currentDate,
-  onDateChange
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  currentDate: _currentDate,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onDateChange: _onDateChange,
+  allReservations = [],
 }) => {
-  const [viewMode, setViewMode] = useState<'calendar' | 'list'>('calendar');
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-
-  // Récupérer toutes les réservations
-  const allBookings = useMemo(() => {
-    const bookings: Array<{ booking: Booking | AirbnbReservation; date: Date }> = [];
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  
+  // Générer les mois à afficher (mois actuel + 11 mois suivants)
+  const monthsToShow = useMemo(() => {
+    const months: Date[] = [];
+    const startMonth = startOfMonth(new Date());
     
+    for (let i = 0; i < 12; i++) {
+      months.push(addMonths(startMonth, i));
+    }
+    
+    return months;
+  }, []);
+
+  // ✅ CORRIGÉ : Utiliser allReservations directement si disponible, sinon extraire de bookingLayout
+  const allBookings = useMemo(() => {
+    const bookingsMap = new Map<string, BookingBarData>();
+    
+    // ✅ SOURCE 1 : Utiliser allReservations passées en prop (multi-mois)
+    if (allReservations && allReservations.length > 0) {
+      allReservations.forEach((booking) => {
+        if (!bookingsMap.has(booking.id)) {
+          const isAirbnb = 'source' in booking && booking.source === 'airbnb';
+          
+          const startDate = isAirbnb
+            ? new Date((booking as AirbnbReservation).startDate)
+            : new Date((booking as Booking).checkInDate);
+          
+          const endDate = isAirbnb
+            ? new Date((booking as AirbnbReservation).endDate)
+            : new Date((booking as Booking).checkOutDate);
+          
+          const displayText = getUnifiedBookingDisplayText(booking, true);
+          const isValidName = isValidGuestName(displayText);
+          
+          const guestCount = isAirbnb
+            ? (booking as AirbnbReservation).numberOfGuests || 1
+            : (booking as Booking).numberOfGuests || 1;
+          
+          const isConflict = conflicts.includes(booking.id);
+          let color: string;
+          let textColor: string;
+          
+          if (isConflict) {
+            color = BOOKING_COLORS.conflict.hex;
+            textColor = 'text-white';
+          } else if (isValidName) {
+            color = BOOKING_COLORS.completed.hex;
+            textColor = 'text-teal-900';
+          } else {
+            color = BOOKING_COLORS.pending.hex;
+            textColor = 'text-white';
+          }
+          
+          bookingsMap.set(booking.id, {
+            booking,
+            startDate,
+            endDate,
+            guestName: displayText,
+            guestCount,
+            isValidName,
+            color,
+            textColor,
+            isConflict,
+            photoUrl: undefined
+          });
+        }
+      });
+    }
+    
+    // ✅ SOURCE 2 : Fallback sur bookingLayout (compatibilité)
     Object.values(bookingLayout).forEach((weekBookings) => {
       weekBookings.forEach((bookingData) => {
-        if (bookingData.booking) {
+        if (bookingData.booking && !bookingsMap.has(bookingData.booking.id)) {
           const isAirbnb = 'source' in bookingData.booking && bookingData.booking.source === 'airbnb';
-          const date = isAirbnb
-            ? (bookingData.booking as AirbnbReservation).startDate
+          
+          const startDate = isAirbnb
+            ? new Date((bookingData.booking as AirbnbReservation).startDate)
             : new Date((bookingData.booking as Booking).checkInDate);
-          bookings.push({ booking: bookingData.booking, date });
+          
+          const endDate = isAirbnb
+            ? new Date((bookingData.booking as AirbnbReservation).endDate)
+            : new Date((bookingData.booking as Booking).checkOutDate);
+          
+          const displayText = getUnifiedBookingDisplayText(bookingData.booking, true);
+          const isValidName = isValidGuestName(displayText);
+          
+          const guestCount = isAirbnb
+            ? (bookingData.booking as AirbnbReservation).numberOfGuests || 1
+            : (bookingData.booking as Booking).numberOfGuests || 1;
+          
+          const isConflict = conflicts.includes(bookingData.booking.id);
+          let color: string;
+          let textColor: string;
+          
+          if (isConflict) {
+            color = BOOKING_COLORS.conflict.hex;
+            textColor = 'text-white';
+          } else if (isValidName) {
+            color = BOOKING_COLORS.completed.hex;
+            textColor = 'text-teal-900';
+          } else {
+            color = BOOKING_COLORS.pending.hex;
+            textColor = 'text-white';
+          }
+          
+          bookingsMap.set(bookingData.booking.id, {
+            booking: bookingData.booking,
+            startDate,
+            endDate,
+            guestName: displayText,
+            guestCount,
+            isValidName,
+            color,
+            textColor,
+            isConflict,
+            photoUrl: undefined
+          });
         }
       });
     });
     
-    return bookings.sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [bookingLayout]);
+    return Array.from(bookingsMap.values());
+  }, [allReservations, bookingLayout, conflicts]);
 
-  // Filtrer les réservations pour la date sélectionnée
-  const bookingsForSelectedDate = useMemo(() => {
-    if (!selectedDate) return [];
-    return allBookings.filter(({ booking, date }) => {
-      const isAirbnb = 'source' in booking && booking.source === 'airbnb';
-      const checkIn = isAirbnb
-        ? (booking as AirbnbReservation).startDate
-        : new Date((booking as Booking).checkInDate);
-      const checkOut = isAirbnb
-        ? (booking as AirbnbReservation).endDate
-        : new Date((booking as Booking).checkOutDate);
-      
-      return isSameDay(checkIn, selectedDate) || 
-             (selectedDate >= checkIn && selectedDate <= checkOut);
-    });
-  }, [selectedDate, allBookings]);
-
-  // Navigation mois
-  const previousMonth = () => {
-    onDateChange(subMonths(currentDate, 1));
-  };
-
-  const nextMonth = () => {
-    onDateChange(addMonths(currentDate, 1));
-  };
-
-  // Obtenir les réservations pour un jour donné
-  const getBookingsForDay = (day: Date) => {
-    const dayIndex = calendarDays.findIndex(d => isSameDay(d.date, day));
-    if (dayIndex === -1) return [];
-    
-    const weekIndex = Math.floor(dayIndex / 7);
-    return bookingLayout[weekIndex]?.filter(b => {
-      const startIndex = calendarDays.findIndex(d => {
-        const isAirbnb = 'source' in b.booking && b.booking.source === 'airbnb';
-        const checkIn = isAirbnb
-          ? (b.booking as AirbnbReservation).startDate
-          : new Date((b.booking as Booking).checkInDate);
-        return isSameDay(d.date, checkIn);
-      });
-      return startIndex === dayIndex;
-    }) || [];
-  };
-
-  // Vue Calendrier Compact
-  const CalendarView = () => {
-    const weeks: Date[][] = [];
-    const firstDay = startOfMonth(currentDate);
-    const lastDay = endOfMonth(currentDate);
-    const days = eachDayOfInterval({ start: firstDay, end: lastDay });
-    
-    // Ajouter les jours du mois précédent pour compléter la première semaine
-    const firstDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; // Lundi = 0
-    const startDate = new Date(firstDay);
-    startDate.setDate(startDate.getDate() - firstDayOfWeek);
-    
-    const allDays = eachDayOfInterval({ 
-      start: startDate, 
-      end: lastDay 
-    });
-    
-    for (let i = 0; i < allDays.length; i += 7) {
-      weeks.push(allDays.slice(i, i + 7));
+  // Gérer le scroll
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      setShowScrollTop(scrollContainerRef.current.scrollTop > 300);
     }
+  };
 
+  const scrollToTop = () => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Générer les semaines pour un mois donné
+  const getWeeksForMonth = (monthDate: Date) => {
+    const firstDay = startOfMonth(monthDate);
+    const lastDay = endOfMonth(monthDate);
+    
+    // Commencer la première semaine au dimanche précédent
+    const start = startOfWeek(firstDay, { weekStartsOn: 0 });
+    // Terminer la dernière semaine au samedi suivant
+    const end = endOfWeek(lastDay, { weekStartsOn: 0 });
+    
+    const days = eachDayOfInterval({ start, end });
+    const weeks: Date[][] = [];
+    
+    for (let i = 0; i < days.length; i += 7) {
+      weeks.push(days.slice(i, i + 7));
+    }
+    
+    return weeks;
+  };
+
+  // Obtenir les réservations qui chevauchent une semaine donnée
+  const getBookingsForWeek = (week: Date[]): { booking: BookingBarData; startCol: number; span: number }[] => {
+    const weekStart = week[0];
+    const weekEnd = week[6];
+    
+    const result: { booking: BookingBarData; startCol: number; span: number }[] = [];
+    
+    allBookings.forEach(bookingData => {
+      const bookingStart = new Date(bookingData.startDate.getFullYear(), bookingData.startDate.getMonth(), bookingData.startDate.getDate());
+      const bookingEnd = new Date(bookingData.endDate.getFullYear(), bookingData.endDate.getMonth(), bookingData.endDate.getDate());
+      
+      // Vérifier si la réservation chevauche cette semaine
+      const weekStartNorm = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
+      const weekEndNorm = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
+      
+      // La réservation chevauche si elle commence avant la fin de la semaine ET se termine après le début
+      if (bookingStart <= weekEndNorm && bookingEnd > weekStartNorm) {
+        // Calculer la colonne de départ (0-6)
+        let startCol = 0;
+        for (let i = 0; i < 7; i++) {
+          const dayNorm = new Date(week[i].getFullYear(), week[i].getMonth(), week[i].getDate());
+          if (dayNorm.getTime() >= bookingStart.getTime()) {
+            startCol = i;
+            break;
+          }
+          if (i === 6) startCol = 0; // La réservation commence avant cette semaine
+        }
+        
+        // Si la réservation commence avant cette semaine
+        if (bookingStart < weekStartNorm) {
+          startCol = 0;
+        }
+        
+        // Calculer le span (nombre de jours dans cette semaine)
+        let span = 0;
+        for (let i = startCol; i < 7; i++) {
+          const dayNorm = new Date(week[i].getFullYear(), week[i].getMonth(), week[i].getDate());
+          // Inclure le jour si il est >= début ET < fin (exclusif)
+          if (dayNorm >= bookingStart && dayNorm < bookingEnd) {
+            span++;
+          }
+        }
+        
+        // S'assurer qu'on a au moins 1 jour
+        if (span > 0) {
+          result.push({ booking: bookingData, startCol, span });
+        }
+      }
+    });
+    
+    // Trier par date de début puis par durée
+    return result.sort((a, b) => {
+      if (a.startCol !== b.startCol) return a.startCol - b.startCol;
+      return b.span - a.span;
+    });
+  };
+
+  // Composant pour afficher un mois
+  const MonthView = ({ monthDate }: { monthDate: Date }) => {
+    const weeks = getWeeksForMonth(monthDate);
+    const monthName = format(monthDate, 'MMMM', { locale: fr });
+    const year = format(monthDate, 'yyyy');
+    const currentYear = new Date().getFullYear();
+    const monthYear = monthDate.getFullYear();
+    const showYear = monthYear !== currentYear || monthDate.getMonth() === 0; // Montrer l'année si différente ou janvier
+    
     return (
-      <div className="space-y-4">
-        {/* En-tête du mois */}
-        <div className="flex items-center justify-between px-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={previousMonth}
-            className="h-10 w-10"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          
-          <div className="text-center">
-            <h2 className="text-lg font-bold text-gray-900">
-              {format(currentDate, 'MMMM yyyy', { locale: fr })}
-            </h2>
-          </div>
-          
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={nextMonth}
-            className="h-10 w-10"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </Button>
+      <div className="mb-4">
+        {/* En-tête du mois - Style Airbnb */}
+        <div className="pb-2 pt-5">
+          <h2 className="text-base font-bold text-gray-900 capitalize">
+            {monthName}{showYear && <span className="font-normal text-gray-400 ml-1">{year}</span>}
+          </h2>
         </div>
 
-        {/* Jours de la semaine */}
-        <div className="grid grid-cols-7 gap-1 px-2">
-          {dayNames.map((day) => (
-            <div
-              key={day}
-              className="text-center text-xs font-semibold text-gray-600 py-2"
-            >
-              {day}
-            </div>
-          ))}
-        </div>
-
-        {/* Grille du calendrier */}
-        <div className="grid grid-cols-7 gap-1 px-2">
-          {weeks.flat().map((day, index) => {
-            const isCurrentMonthDay = isSameMonth(day, currentDate);
-            const isTodayDay = isToday(day);
-            const dayBookings = getBookingsForDay(day);
-            const hasConflict = dayBookings.some(b => conflicts.includes(b.booking.id));
+        {/* Semaines */}
+        <div className="border-t border-gray-200">
+          {weeks.map((week, weekIndex) => {
+            const bookingsInWeek = getBookingsForWeek(week);
+            // Calculer la hauteur basée sur le nombre de réservations
+            const bookingRowsCount = Math.max(0, bookingsInWeek.length);
+            const baseHeight = 32; // Hauteur pour les numéros de jour
+            const bookingHeight = 32; // Hauteur par réservation
+            const totalHeight = baseHeight + (bookingRowsCount * bookingHeight) + 4;
             
             return (
-              <button
-                key={index}
-                onClick={() => {
-                  if (isCurrentMonthDay) {
-                    setSelectedDate(day);
-                    if (dayBookings.length > 0) {
-                      setViewMode('list');
-                    }
-                  }
-                }}
-                className={cn(
-                  "relative aspect-square rounded-lg border-2 transition-all",
-                  "flex flex-col items-center justify-start p-1.5",
-                  !isCurrentMonthDay && "opacity-40",
-                  isTodayDay && "border-cyan-500 bg-cyan-50",
-                  !isTodayDay && isCurrentMonthDay && "border-gray-200 bg-white",
-                  !isCurrentMonthDay && "border-gray-100 bg-gray-50",
-                  dayBookings.length > 0 && "border-brand-teal/50 bg-brand-teal/5",
-                  hasConflict && "border-red-400 bg-red-50",
-                  "active:scale-95"
-                )}
-              >
-                <span
-                  className={cn(
-                    "text-sm font-semibold mb-0.5",
-                    isTodayDay && "text-cyan-700",
-                    !isTodayDay && isCurrentMonthDay && "text-gray-900",
-                    !isCurrentMonthDay && "text-gray-400"
-                  )}
-                >
-                  {format(day, 'd')}
-                </span>
-                
-                {/* Indicateurs de réservations */}
-                {dayBookings.length > 0 && (
-                  <div className="flex flex-wrap gap-0.5 justify-center w-full mt-0.5">
-                    {dayBookings.slice(0, 3).map((bookingData, idx) => {
-                      const isAirbnb = 'source' in bookingData.booking && bookingData.booking.source === 'airbnb';
-                      const status = isAirbnb ? 'pending' : (bookingData.booking as Booking).status || 'pending';
-                      const color = status === 'completed' 
-                        ? BOOKING_COLORS.completed.hex 
-                        : BOOKING_COLORS.pending.hex;
+              <div key={`${monthDate.getTime()}-week-${weekIndex}`} className="relative border-b border-gray-100" style={{ minHeight: `${totalHeight}px` }}>
+                {/* ✅ Grille des jours avec bordures visibles */}
+                <div className="grid grid-cols-7 relative">
+                  {week.map((day, dayIndex) => {
+                    const isCurrentMonthDay = isSameMonth(day, monthDate);
+                    const isTodayDay = isToday(day);
+                    
+                    return (
+                      <div
+                        key={`${day.getTime()}-${dayIndex}`}
+                        className={cn(
+                          "relative flex items-start justify-center pt-1.5",
+                          "border-r border-gray-100 last:border-r-0",
+                          !isCurrentMonthDay && "bg-gray-50/50"
+                        )}
+                        style={{ minHeight: `${totalHeight}px` }}
+                      >
+                        <span
+                          className={cn(
+                            "text-sm font-medium z-20 relative",
+                            isTodayDay && "bg-black text-white rounded-full w-6 h-6 flex items-center justify-center text-xs",
+                            !isTodayDay && isCurrentMonthDay && "text-gray-900",
+                            !isCurrentMonthDay && "text-gray-300"
+                          )}
+                        >
+                          {format(day, 'd')}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Barres de réservation - Style Airbnb */}
+                {bookingsInWeek.length > 0 && (
+                  <div 
+                    className="absolute left-0 right-0 pointer-events-none"
+                    style={{ top: '28px' }}
+                  >
+                    {bookingsInWeek.map((item, idx) => {
+                      const { booking: bookingData, startCol, span } = item;
+                      const isStartOfBooking = week.some(d => {
+                        const dayNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                        const bookingStartNorm = new Date(
+                          bookingData.startDate.getFullYear(),
+                          bookingData.startDate.getMonth(),
+                          bookingData.startDate.getDate()
+                        );
+                        return dayNorm.getTime() === bookingStartNorm.getTime();
+                      });
+                      
+                      // ✅ CORRIGÉ : La fin de la réservation = dernier jour INCLUS (checkout - 1)
+                      const lastNightDate = new Date(
+                        bookingData.endDate.getFullYear(),
+                        bookingData.endDate.getMonth(),
+                        bookingData.endDate.getDate() - 1
+                      );
+                      
+                      const isEndOfBooking = week.some(d => {
+                        const dayNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                        return dayNorm.getTime() === lastNightDate.getTime();
+                      });
+                      
+                      // ✅ Calculer les positions avec extension vers la date de sortie
+                      const cellWidth = 100 / 7; // ~14.28% par cellule
+                      const leftPercent = startCol * cellWidth;
+                      // ✅ Étendre la barre jusqu'au BORD DROIT de la dernière cellule
+                      const widthPercent = span * cellWidth;
+                      
+                      // ✅ Style de bordure arrondie - arrondi seulement aux extrémités
+                      let borderRadius = '0';
+                      if (isStartOfBooking && isEndOfBooking) {
+                        borderRadius = '14px';
+                      } else if (isStartOfBooking) {
+                        borderRadius = '14px 0 0 14px';
+                      } else if (isEndOfBooking) {
+                        borderRadius = '0 14px 14px 0';
+                      }
                       
                       return (
                         <div
-                          key={idx}
-                          className="h-1.5 w-full rounded-full"
-                          style={{ backgroundColor: color }}
-                        />
+                          key={`${bookingData.booking.id}-${weekIndex}-${idx}`}
+                          className="absolute h-7 pointer-events-auto cursor-pointer"
+                          style={{
+                            left: `calc(${leftPercent}% + 1px)`,
+                            width: `calc(${widthPercent}% - 2px)`,
+                            top: `${idx * 30}px`,
+                          }}
+                          onClick={() => onBookingClick(bookingData.booking)}
+                        >
+                          <div
+                            className={cn(
+                              "h-full flex items-center gap-1.5 px-2",
+                              "shadow-sm transition-all duration-200",
+                              "hover:shadow-md active:scale-[0.99]",
+                              bookingData.isConflict && "ring-2 ring-red-400"
+                            )}
+                            style={{ 
+                              backgroundColor: bookingData.color,
+                              borderRadius,
+                            }}
+                          >
+                            {/* ✅ Avatar avec initiales ou photo (seulement au début si nom valide) */}
+                            {isStartOfBooking && bookingData.isValidName && (
+                              <div
+                                className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden bg-white/20"
+                              >
+                                {bookingData.photoUrl ? (
+                                  <img 
+                                    src={bookingData.photoUrl} 
+                                    alt={bookingData.guestName}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <span className={cn("text-[9px] font-bold", bookingData.textColor)}>
+                                    {getInitials(bookingData.guestName)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                            
+                            {/* ✅ Nom OU Code de réservation (pas de "?") */}
+                            {isStartOfBooking && (
+                              <div className={cn("flex items-center gap-1 min-w-0 flex-1", bookingData.textColor)}>
+                                <span className="text-[11px] font-semibold truncate">
+                                  {bookingData.isValidName 
+                                    ? bookingData.guestName.split(' ')[0]
+                                    : bookingData.guestName.substring(0, 12) + (bookingData.guestName.length > 12 ? '...' : '')
+                                  }
+                                </span>
+                                {bookingData.guestCount > 1 && (
+                                  <span className="text-[10px] font-medium opacity-80 flex-shrink-0">
+                                    + {bookingData.guestCount - 1}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       );
                     })}
-                    {dayBookings.length > 3 && (
-                      <span className="text-[8px] text-gray-600 font-medium">
-                        +{dayBookings.length - 3}
-                      </span>
-                    )}
                   </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -243,245 +494,57 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     );
   };
 
-  // Vue Liste des réservations
-  const ListView = () => {
-    return (
-      <div className="space-y-3">
-        {/* En-tête avec retour */}
-        <div className="flex items-center justify-between px-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setViewMode('calendar');
-              setSelectedDate(null);
-            }}
-            className="flex items-center gap-2"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Retour
-          </Button>
-          
-          {selectedDate && (
-            <div className="text-sm font-semibold text-gray-700">
-              {format(selectedDate, 'EEEE d MMMM yyyy', { locale: fr })}
-            </div>
-          )}
-        </div>
-
-        {/* Liste des réservations */}
-        <div className="space-y-2 px-2">
-          {selectedDate ? (
-            bookingsForSelectedDate.length > 0 ? (
-              <AnimatePresence>
-                {bookingsForSelectedDate.map(({ booking }) => {
-                  const isAirbnb = 'source' in booking && booking.source === 'airbnb';
-                  const checkIn = isAirbnb
-                    ? (booking as AirbnbReservation).startDate
-                    : new Date((booking as Booking).checkInDate);
-                  const checkOut = isAirbnb
-                    ? (booking as AirbnbReservation).endDate
-                    : new Date((booking as Booking).checkOutDate);
-                  const status = isAirbnb ? 'pending' : (booking as Booking).status || 'pending';
-                  const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
-                  const displayText = getUnifiedBookingDisplayText(booking, false);
-                  const color = status === 'completed' 
-                    ? BOOKING_COLORS.completed.hex 
-                    : BOOKING_COLORS.pending.hex;
-                  
-                  return (
-                    <motion.div
-                      key={booking.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      onClick={() => onBookingClick(booking)}
-                    >
-                      <Card className="border-l-4 shadow-sm active:scale-[0.98] transition-transform">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-2">
-                                <div
-                                  className="w-3 h-3 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: color }}
-                                />
-                                <h3 className="font-semibold text-base text-gray-900 truncate">
-                                  {displayText}
-                                </h3>
-                              </div>
-                              
-                              <div className="space-y-1.5 text-sm text-gray-600">
-                                <div className="flex items-center gap-2">
-                                  <CalendarIcon className="h-4 w-4 text-gray-400" />
-                                  <span>
-                                    {format(checkIn, 'd MMM', { locale: fr })} - {format(checkOut, 'd MMM yyyy', { locale: fr })}
-                                  </span>
-                                </div>
-                                
-                                <div className="flex items-center gap-2">
-                                  <Clock className="h-4 w-4 text-gray-400" />
-                                  <span>{nights} nuit{nights > 1 ? 's' : ''}</span>
-                                </div>
-                                
-                                {!isAirbnb && (booking as Booking).numberOfGuests && (
-                                  <div className="flex items-center gap-2">
-                                    <Users className="h-4 w-4 text-gray-400" />
-                                    <span>{(booking as Booking).numberOfGuests} invité{(booking as Booking).numberOfGuests! > 1 ? 's' : ''}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            
-                            <Badge
-                              variant="secondary"
-                              style={{ backgroundColor: color, color: 'white' }}
-                              className="flex-shrink-0"
-                            >
-                              {status === 'completed' ? 'Terminé' : 'En attente'}
-                            </Badge>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Calendar className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-sm">Aucune réservation pour cette date</p>
-              </div>
-            )
-          ) : (
-            // Vue de toutes les réservations
-            allBookings.length > 0 ? (
-              <AnimatePresence>
-                {allBookings.map(({ booking, date }) => {
-                  const isAirbnb = 'source' in booking && booking.source === 'airbnb';
-                  const checkIn = isAirbnb
-                    ? (booking as AirbnbReservation).startDate
-                    : new Date((booking as Booking).checkInDate);
-                  const checkOut = isAirbnb
-                    ? (booking as AirbnbReservation).endDate
-                    : new Date((booking as Booking).checkOutDate);
-                  const status = isAirbnb ? 'pending' : (booking as Booking).status || 'pending';
-                  const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
-                  const displayText = getUnifiedBookingDisplayText(booking, false);
-                  const color = status === 'completed' 
-                    ? BOOKING_COLORS.completed.hex 
-                    : BOOKING_COLORS.pending.hex;
-                  
-                  return (
-                    <motion.div
-                      key={booking.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      onClick={() => onBookingClick(booking)}
-                    >
-                      <Card className="border-l-4 shadow-sm active:scale-[0.98] transition-transform">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-2">
-                                <div
-                                  className="w-3 h-3 rounded-full flex-shrink-0"
-                                  style={{ backgroundColor: color }}
-                                />
-                                <h3 className="font-semibold text-base text-gray-900 truncate">
-                                  {displayText}
-                                </h3>
-                              </div>
-                              
-                              <div className="space-y-1.5 text-sm text-gray-600">
-                                <div className="flex items-center gap-2">
-                                  <CalendarIcon className="h-4 w-4 text-gray-400" />
-                                  <span>
-                                    {format(checkIn, 'd MMM', { locale: fr })} - {format(checkOut, 'd MMM yyyy', { locale: fr })}
-                                  </span>
-                                </div>
-                                
-                                <div className="flex items-center gap-2">
-                                  <Clock className="h-4 w-4 text-gray-400" />
-                                  <span>{nights} nuit{nights > 1 ? 's' : ''}</span>
-                                </div>
-                                
-                                {!isAirbnb && (booking as Booking).numberOfGuests && (
-                                  <div className="flex items-center gap-2">
-                                    <Users className="h-4 w-4 text-gray-400" />
-                                    <span>{(booking as Booking).numberOfGuests} invité{(booking as Booking).numberOfGuests! > 1 ? 's' : ''}</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            
-                            <Badge
-                              variant="secondary"
-                              style={{ backgroundColor: color, color: 'white' }}
-                              className="flex-shrink-0"
-                            >
-                              {status === 'completed' ? 'Terminé' : 'En attente'}
-                            </Badge>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <Calendar className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-sm">Aucune réservation</p>
-              </div>
-            )
-          )}
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="w-full bg-white rounded-xl shadow-sm border border-border/50 p-4">
-      {/* Toggle vue */}
-      <div className="flex items-center justify-center gap-2 mb-4">
-        <Button
-          variant={viewMode === 'calendar' ? 'default' : 'ghost'}
-          size="sm"
-          onClick={() => setViewMode('calendar')}
-          className="flex-1"
-        >
-          <Calendar className="h-4 w-4 mr-2" />
-          Calendrier
-        </Button>
-        <Button
-          variant={viewMode === 'list' ? 'default' : 'ghost'}
-          size="sm"
-          onClick={() => {
-            setViewMode('list');
-            setSelectedDate(null);
-          }}
-          className="flex-1"
-        >
-          <CalendarIcon className="h-4 w-4 mr-2" />
-          Liste
-        </Button>
+    <div className="w-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
+      {/* En-tête fixe avec jours de la semaine */}
+      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-3">
+        <div className="grid grid-cols-7">
+          {dayNamesShort.map((day, index) => (
+            <div
+              key={`header-${index}`}
+              className="text-center text-xs font-semibold text-gray-500 py-2.5 border-r border-gray-100 last:border-r-0"
+            >
+              {day}
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      {/* Container scrollable */}
+      <div 
+        ref={scrollContainerRef}
+        className="h-[calc(100vh-220px)] overflow-y-auto px-3 scroll-smooth"
+        onScroll={handleScroll}
+      >
+        {/* Mois */}
+        {monthsToShow.map((month) => (
+          <MonthView key={month.getTime()} monthDate={month} />
+        ))}
+        
+        {/* Espace en bas */}
+        <div className="h-24" />
       </div>
 
-      {/* Contenu selon la vue */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={viewMode}
-          initial={{ opacity: 0, x: viewMode === 'list' ? 20 : -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: viewMode === 'list' ? -20 : 20 }}
-          transition={{ duration: 0.2 }}
-        >
-          {viewMode === 'calendar' ? <CalendarView /> : <ListView />}
-        </motion.div>
+      {/* Bouton scroll to top - Style Airbnb */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 20 }}
+            className="absolute bottom-6 right-4 z-40"
+          >
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={scrollToTop}
+              className="rounded-full shadow-lg bg-white border-gray-200 hover:bg-gray-50 h-10 w-10"
+            >
+              <ChevronUp className="h-5 w-5 text-gray-700" />
+            </Button>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );
 };
-

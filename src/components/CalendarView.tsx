@@ -1022,6 +1022,7 @@ const handleOpenConfig = useCallback(() => {
             onBookingClick={handleBookingClick}
             currentDate={currentDate}
             onDateChange={setCurrentDate}
+            allReservations={allReservations}
           />
         ) : (
           <AnimatePresence mode="wait" initial={false}>
