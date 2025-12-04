@@ -146,6 +146,11 @@ export const UnifiedBookingModal = ({
        (booking as Booking).property?.name || 
        '')
     : '';
+  
+  // ✅ DISPLAY NAME : Nom d'affichage pour la réservation (guest name ou code)
+  const displayName = booking 
+    ? getUnifiedBookingDisplayText(booking as Booking | AirbnbReservation, true)
+    : '';
 
   // ✅ STATUS BADGE : Couleur selon le statut
   const getStatusBadge = () => {
