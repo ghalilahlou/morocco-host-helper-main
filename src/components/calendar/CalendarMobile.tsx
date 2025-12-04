@@ -40,8 +40,8 @@ interface CalendarMobileProps {
   allReservations?: (Booking | AirbnbReservation)[];
 }
 
-// Jours de la semaine format Airbnb (première lettre)
-const dayNamesShort = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+// Jours de la semaine format Airbnb (première lettre) - Lundi à Dimanche
+const dayNamesShort = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
 // Générer les initiales pour l'avatar
 const getInitials = (name: string): string => {
@@ -243,10 +243,10 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     const firstDay = startOfMonth(monthDate);
     const lastDay = endOfMonth(monthDate);
     
-    // Commencer la première semaine au dimanche précédent
-    const start = startOfWeek(firstDay, { weekStartsOn: 0 });
-    // Terminer la dernière semaine au samedi suivant
-    const end = endOfWeek(lastDay, { weekStartsOn: 0 });
+    // ✅ CORRIGÉ : Commencer la première semaine au lundi précédent
+    const start = startOfWeek(firstDay, { weekStartsOn: 1 });
+    // ✅ CORRIGÉ : Terminer la dernière semaine au dimanche suivant
+    const end = endOfWeek(lastDay, { weekStartsOn: 1 });
     
     const days = eachDayOfInterval({ start, end });
     const weeks: Date[][] = [];

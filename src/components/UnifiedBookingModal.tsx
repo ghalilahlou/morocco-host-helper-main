@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Calendar, X, Copy, FileText, Shield, CreditCard, Trash2 } from 'lucide-react';
+import { Calendar, X, Copy, FileText, Shield, CreditCard, Trash2, Share2 } from 'lucide-react';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
@@ -33,6 +33,8 @@ import { UnifiedDocumentService } from '@/services/unifiedDocumentService';
 import { ContractService } from '@/services/contractService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import { ShareModal } from '@/components/ShareModal';
+import { isMobile as isMobileDevice } from '@/lib/shareUtils';
 
 interface UnifiedBookingModalProps {
   booking: Booking | EnrichedBooking | AirbnbReservation | null;
@@ -76,6 +78,10 @@ export const UnifiedBookingModal = ({
   const [isGeneratingPolice, setIsGeneratingPolice] = useState(false);
   const [hasGuestData, setHasGuestData] = useState(false); // ✅ NOUVEAU : Vérifier si la réservation a des données clients
   const isMobile = useIsMobile();
+  
+  // ✅ NOUVEAU : État pour le modal de partage mobile
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareModalUrl, setShareModalUrl] = useState<string>('');
 
   // ✅ DÉTECTION : Identifier le type de réservation (avant le useEffect)
   const isAirbnb = booking ? ('source' in booking && booking.source === 'airbnb') : false;
@@ -207,10 +213,12 @@ export const UnifiedBookingModal = ({
     const userEvent = event || undefined;
 
     try {
+      let generatedUrl: string | undefined;
+      
       // ✅ ENRICHIE : Pour les réservations Airbnb, inclure les dates pré-remplies
       if (isAirbnb) {
         const airbnbRes = booking as AirbnbReservation;
-        await generatePropertyVerificationUrl(propertyId, airbnbRes.airbnbBookingId, {
+        generatedUrl = await generatePropertyVerificationUrl(propertyId, airbnbRes.airbnbBookingId, {
           linkType: 'ics_direct',
           reservationData: {
             airbnbCode: airbnbRes.airbnbBookingId,
@@ -224,7 +232,7 @@ export const UnifiedBookingModal = ({
       } else {
         // ✅ ENRICHIE : Pour les réservations manuelles, inclure les dates avec linkType ics_direct
         const manualBooking = booking as Booking;
-        await generatePropertyVerificationUrl(propertyId, manualBooking.id, {
+        generatedUrl = await generatePropertyVerificationUrl(propertyId, manualBooking.id, {
           linkType: 'ics_direct', // ✅ FORCÉ : Toujours utiliser ics_direct
           reservationData: {
             airbnbCode: manualBooking.bookingReference || 'INDEPENDENT_BOOKING',
@@ -236,7 +244,40 @@ export const UnifiedBookingModal = ({
         });
       }
       
-      console.log('✅ Lien généré avec succès');
+      console.log('✅ Lien généré avec succès:', generatedUrl);
+      
+      // ✅ NOUVEAU : Sur mobile, déclencher le partage natif iOS/Android directement
+      if (isMobileDevice() && generatedUrl) {
+        // Essayer le partage natif en premier (menu iOS/Android)
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: `Lien de réservation${propertyName ? ` - ${propertyName}` : ''}`,
+              text: `Cliquez ici pour compléter votre réservation`,
+              url: generatedUrl
+            });
+            console.log('✅ Partage natif réussi');
+            toast({
+              title: "✅ Lien partagé !",
+              description: "Le lien a été partagé avec succès",
+            });
+          } catch (shareError: any) {
+            // Si l'utilisateur annule, ce n'est pas une erreur
+            if (shareError.name === 'AbortError') {
+              console.log('📱 Partage annulé par l\'utilisateur');
+            } else {
+              console.warn('⚠️ Partage natif échoué, fallback au modal:', shareError);
+              // Fallback : ouvrir le modal de partage personnalisé
+              setShareModalUrl(generatedUrl);
+              setShareModalOpen(true);
+            }
+          }
+        } else {
+          // Fallback : navigateur sans support Web Share API
+          setShareModalUrl(generatedUrl);
+          setShareModalOpen(true);
+        }
+      }
     } catch (error) {
       console.error('❌ Erreur lors de la génération du lien:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
@@ -981,6 +1022,11 @@ export const UnifiedBookingModal = ({
                         <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
                         <span>Génération...</span>
                       </>
+                    ) : isMobileDevice() ? (
+                      <>
+                        <Share2 className="w-4 h-4 mr-2" />
+                        <span>Partager le lien</span>
+                      </>
                     ) : (
                       <>
                         <Copy className="w-4 h-4 mr-2" />
@@ -991,7 +1037,10 @@ export const UnifiedBookingModal = ({
                 </Button>
                 
                 <p className="text-xs text-muted-foreground mt-2">
-                  Génère et copie automatiquement le lien de vérification client avec les dates de cette réservation pré-remplies
+                  {isMobileDevice() 
+                    ? 'Génère le lien et ouvre les options de partage (WhatsApp, SMS, Email...)'
+                    : 'Génère et copie automatiquement le lien de vérification client avec les dates de cette réservation pré-remplies'
+                  }
                 </p>
               </CardContent>
             </Card>
@@ -1020,6 +1069,17 @@ export const UnifiedBookingModal = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ✅ NOUVEAU : Modal de partage pour mobile */}
+      <ShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        url={shareModalUrl}
+        propertyName={propertyName}
+        guestName={displayName || undefined}
+        checkIn={formatDate(checkIn)}
+        checkOut={formatDate(checkOut)}
+      />
     </Dialog>
   );
 };

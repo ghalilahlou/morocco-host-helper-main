@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Calendar, Users, MapPin, Building, Clock, Link as LinkIcon, Mail, X, Copy, Trash2 } from 'lucide-react';
+import { Calendar, Users, MapPin, Building, Clock, Link as LinkIcon, Mail, X, Copy, Trash2, Share2 } from 'lucide-react';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
 import { useToast } from '@/hooks/use-toast';
@@ -12,6 +12,8 @@ import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { supabase } from '@/integrations/supabase/client';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
+import { isMobile as isMobileDevice } from '@/lib/shareUtils';
+import { ShareModal } from '@/components/ShareModal';
 interface AirbnbReservationModalProps {
   reservation: AirbnbReservation | null;
   isOpen: boolean;
@@ -31,6 +33,10 @@ export const AirbnbReservationModal = ({
   const { toast } = useToast(); // ✅ Utiliser le hook
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isGeneratingLocal, setIsGeneratingLocal] = useState(false); // ✅ State local pour bloquer immédiatement
+  
+  // ✅ NOUVEAU : État pour le modal de partage mobile (fallback)
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareModalUrl, setShareModalUrl] = useState<string>('');
 
   // Function to generate guest verification link with Airbnb booking ID (sans validation de code)
   const handleGenerateGuestLink = async (event?: React.MouseEvent) => {
@@ -99,7 +105,33 @@ export const AirbnbReservationModal = ({
       });
       
       console.log('✅ Lien généré avec succès:', url);
-      // Le toast de succès est déjà affiché dans le hook
+      
+      // ✅ NOUVEAU : Sur mobile, déclencher le partage natif iOS/Android
+      if (isMobileDevice() && url) {
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: `Lien de réservation - ${bookingCode}`,
+              text: `Cliquez ici pour compléter votre réservation`,
+              url: url
+            });
+            console.log('✅ Partage natif réussi');
+            toast({
+              title: "✅ Lien partagé !",
+              description: "Le lien a été partagé avec succès",
+            });
+          } catch (shareError: any) {
+            if (shareError.name !== 'AbortError') {
+              console.warn('⚠️ Partage natif échoué, fallback au modal:', shareError);
+              setShareModalUrl(url);
+              setShareModalOpen(true);
+            }
+          }
+        } else {
+          setShareModalUrl(url);
+          setShareModalOpen(true);
+        }
+      }
     } catch (error) {
       console.error('❌ Erreur lors de la génération du lien:', error);
       toast({
@@ -265,6 +297,11 @@ export const AirbnbReservationModal = ({
                         <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
                         <span>Génération...</span>
                       </>
+                    ) : isMobileDevice() ? (
+                      <>
+                        <Share2 className="w-4 h-4 mr-2" />
+                        <span>Partager le lien</span>
+                      </>
                     ) : (
                       <>
                         <Copy className="w-4 h-4 mr-2" />
@@ -276,7 +313,10 @@ export const AirbnbReservationModal = ({
                 
 
                 <p className="text-xs text-muted-foreground mt-2">
-                  Génère et copie automatiquement le lien de vérification client avec les dates de cette réservation Airbnb pré-remplies
+                  {isMobileDevice() 
+                    ? 'Génère le lien et ouvre le menu de partage natif (Messages, WhatsApp, Mail...)'
+                    : 'Génère et copie automatiquement le lien de vérification client avec les dates de cette réservation Airbnb pré-remplies'
+                  }
                 </p>
               </CardContent>
             </Card>}
@@ -308,5 +348,16 @@ export const AirbnbReservationModal = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      {/* ✅ Modal de partage (fallback si partage natif non disponible) */}
+      <ShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        url={shareModalUrl}
+        title={`Lien de réservation - ${reservation?.airbnbBookingId || ''}`}
+        guestName={reservation?.guestName}
+        checkIn={reservation?.startDate ? reservation.startDate.toLocaleDateString('fr-FR') : undefined}
+        checkOut={reservation?.endDate ? reservation.endDate.toLocaleDateString('fr-FR') : undefined}
+      />
     </Dialog>;
 };
