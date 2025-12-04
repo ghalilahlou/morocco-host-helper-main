@@ -139,6 +139,13 @@ export const UnifiedBookingModal = ({
   const propertyId = propPropertyId || 
     (booking ? ((booking as Booking).propertyId || 
     (booking as EnrichedBooking).property?.id) : undefined);
+  
+  // ✅ PROPERTY NAME : Extraire le nom de la propriété si disponible
+  const propertyName = booking 
+    ? ((booking as EnrichedBooking).property?.name || 
+       (booking as Booking).property?.name || 
+       '')
+    : '';
 
   // ✅ STATUS BADGE : Couleur selon le statut
   const getStatusBadge = () => {
