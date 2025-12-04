@@ -246,34 +246,63 @@ export const UnifiedBookingModal = ({
       
       console.log('✅ Lien généré avec succès:', generatedUrl);
       
-      // ✅ NOUVEAU : Sur mobile, déclencher le partage natif iOS/Android directement
+      // ✅ PARTAGE NATIF iOS/Android - Compatible avec les deux plateformes
       if (isMobileDevice() && generatedUrl) {
-        // Essayer le partage natif en premier (menu iOS/Android)
-        if (navigator.share) {
+        // Vérifier si Web Share API est disponible
+        if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
           try {
-            await navigator.share({
-              title: `Lien de réservation${propertyName ? ` - ${propertyName}` : ''}`,
-              text: `Cliquez ici pour compléter votre réservation`,
+            // Préparer les données de partage
+            // Android: certaines versions ne supportent pas text+url ensemble
+            const shareTitle = `Lien de réservation${propertyName ? ` - ${propertyName}` : ''}`;
+            let shareData: ShareData = {
+              title: shareTitle,
+              text: 'Cliquez ici pour compléter votre réservation',
               url: generatedUrl
-            });
+            };
+            
+            // Vérifier avec canShare si disponible (iOS Safari, Chrome moderne)
+            if (navigator.canShare) {
+              if (!navigator.canShare(shareData)) {
+                // Fallback Android : essayer sans text
+                console.log('📱 [SHARE] Fallback Android: URL seule');
+                shareData = { title: shareTitle, url: generatedUrl };
+                
+                if (!navigator.canShare(shareData)) {
+                  // Dernier recours : juste l'URL
+                  shareData = { url: generatedUrl };
+                }
+              }
+            }
+            
+            console.log('📱 [SHARE] Tentative de partage natif:', shareData);
+            await navigator.share(shareData);
+            
             console.log('✅ Partage natif réussi');
             toast({
               title: "✅ Lien partagé !",
               description: "Le lien a été partagé avec succès",
             });
           } catch (shareError: any) {
-            // Si l'utilisateur annule, ce n'est pas une erreur
+            // AbortError = utilisateur a annulé (normal, pas d'erreur)
             if (shareError.name === 'AbortError') {
               console.log('📱 Partage annulé par l\'utilisateur');
-            } else {
-              console.warn('⚠️ Partage natif échoué, fallback au modal:', shareError);
-              // Fallback : ouvrir le modal de partage personnalisé
+            } 
+            // NotAllowedError = problème de contexte sécurisé
+            else if (shareError.name === 'NotAllowedError') {
+              console.warn('⚠️ Partage non autorisé, ouverture du modal de fallback');
+              setShareModalUrl(generatedUrl);
+              setShareModalOpen(true);
+            }
+            // Autre erreur : fallback au modal
+            else {
+              console.warn('⚠️ Partage natif échoué, fallback au modal:', shareError.message || shareError);
               setShareModalUrl(generatedUrl);
               setShareModalOpen(true);
             }
           }
         } else {
-          // Fallback : navigateur sans support Web Share API
+          // Navigateur sans Web Share API : ouvrir le modal
+          console.log('📱 [SHARE] Web Share API non disponible, ouverture du modal');
           setShareModalUrl(generatedUrl);
           setShareModalOpen(true);
         }

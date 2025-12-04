@@ -11,11 +11,16 @@
 
 /**
  * Détecte si le navigateur supporte le Web Share API
+ * Note: Sur Android Chrome, navigator.canShare peut ne pas exister
+ * même si navigator.share fonctionne
  */
 export const canShare = (): boolean => {
-  return typeof navigator !== 'undefined' && 
-         typeof navigator.share === 'function' &&
-         navigator.canShare !== undefined;
+  if (typeof navigator === 'undefined') return false;
+  if (typeof navigator.share !== 'function') return false;
+  
+  // Sur iOS Safari et Android Chrome moderne, share() est supporté
+  // canShare() n'est pas toujours disponible mais share() peut fonctionner quand même
+  return true;
 };
 
 /**
@@ -65,6 +70,12 @@ export interface ShareResult {
  * 📱 SOLUTION 1 : Web Share API (Partage natif)
  * Ouvre le menu de partage natif du système (iOS/Android)
  * L'utilisateur peut choisir l'app de destination (Airbnb, WhatsApp, etc.)
+ * 
+ * Compatibilité:
+ * - iOS Safari 12.2+ ✅
+ * - Chrome Android 61+ ✅
+ * - Samsung Internet ✅
+ * - Firefox Android (partiel)
  */
 export const shareNative = async (options: ShareOptions): Promise<ShareResult> => {
   const { title, text, url, guestName, propertyName, checkIn, checkOut } = options;
@@ -93,22 +104,31 @@ export const shareNative = async (options: ShareOptions): Promise<ShareResult> =
   }
 
   try {
-    const shareData: ShareData = {
+    // Android: Certaines versions ne supportent que url, pas text+url ensemble
+    // On essaie d'abord avec tout, puis fallback sur url seul
+    let shareData: ShareData = {
       title: shareTitle,
       text: shareText,
       url: url
     };
 
-    // Vérifier si les données sont partageables
-    if (navigator.canShare && !navigator.canShare(shareData)) {
-      console.warn('📱 [SHARE] Données non partageables:', shareData);
-      return {
-        success: false,
-        method: 'webshare',
-        error: 'Les données ne peuvent pas être partagées'
-      };
+    // Vérifier si les données sont partageables (si canShare existe)
+    if (navigator.canShare) {
+      if (!navigator.canShare(shareData)) {
+        // Fallback: essayer sans le text (certains Android)
+        console.log('📱 [SHARE] Tentative avec URL seule (Android compatibility)');
+        shareData = { title: shareTitle, url: url };
+        
+        if (!navigator.canShare(shareData)) {
+          // Dernier fallback: juste l'URL
+          shareData = { url: url };
+        }
+      }
     }
 
+    console.log('📱 [SHARE] Données de partage:', shareData);
+    console.log('📱 [SHARE] Plateforme:', isIOS() ? 'iOS' : isAndroid() ? 'Android' : 'Autre');
+    
     await navigator.share(shareData);
     console.log('✅ [SHARE] Partage natif réussi');
     return { success: true, method: 'webshare' };
@@ -117,6 +137,16 @@ export const shareNative = async (options: ShareOptions): Promise<ShareResult> =
     if (error.name === 'AbortError') {
       console.log('📱 [SHARE] Partage annulé par l\'utilisateur');
       return { success: false, method: 'webshare', error: 'Partage annulé' };
+    }
+    
+    // NotAllowedError = pas dans un contexte sécurisé ou pas déclenché par un geste utilisateur
+    if (error.name === 'NotAllowedError') {
+      console.warn('📱 [SHARE] NotAllowedError - contexte non autorisé');
+      return {
+        success: false,
+        method: 'webshare',
+        error: 'Partage non autorisé dans ce contexte'
+      };
     }
     
     console.error('❌ [SHARE] Erreur Web Share:', error);

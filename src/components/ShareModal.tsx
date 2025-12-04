@@ -80,10 +80,11 @@ export const ShareModal = ({
     }
   }, [url]);
 
-  // Partage natif (Web Share API)
+  // Partage natif (Web Share API) - Compatible iOS + Android
   const handleNativeShare = useCallback(async () => {
     setIsSharing(true);
     try {
+      console.log('📱 [ShareModal] Tentative de partage natif...');
       const result = await shareNative(shareOptions);
       if (result.success) {
         toast({
@@ -92,10 +93,10 @@ export const ShareModal = ({
         });
         onClose();
       } else if (result.error !== 'Partage annulé') {
+        console.warn('📱 [ShareModal] Erreur partage:', result.error);
         toast({
-          title: 'Erreur de partage',
-          description: result.error,
-          variant: 'destructive',
+          title: 'Partage non disponible',
+          description: 'Utilisez une des autres options ci-dessous',
         });
       }
     } finally {
@@ -277,7 +278,7 @@ export const ShareModal = ({
           {isMobile() && (
             <div className="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
               <p className="text-xs text-blue-700 dark:text-blue-300">
-                💡 <strong>Astuce mobile :</strong> Utilisez le bouton "Partager..." pour envoyer directement le lien vers une application (Airbnb, Notes, etc.)
+                💡 <strong>Astuce :</strong> Le bouton "Partager..." ouvre le menu natif de votre téléphone (Messages, WhatsApp, Airbnb, Notes...). Si ce bouton n'apparaît pas, utilisez les options ci-dessus.
               </p>
             </div>
           )}

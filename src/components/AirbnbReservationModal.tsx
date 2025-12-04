@@ -106,28 +106,54 @@ export const AirbnbReservationModal = ({
       
       console.log('✅ Lien généré avec succès:', url);
       
-      // ✅ NOUVEAU : Sur mobile, déclencher le partage natif iOS/Android
+      // ✅ PARTAGE NATIF iOS/Android - Compatible avec les deux plateformes
       if (isMobileDevice() && url) {
-        if (navigator.share) {
+        if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
           try {
-            await navigator.share({
-              title: `Lien de réservation - ${bookingCode}`,
-              text: `Cliquez ici pour compléter votre réservation`,
+            // Préparer les données de partage (compatible Android + iOS)
+            const shareTitle = `Lien de réservation - ${bookingCode}`;
+            let shareData: ShareData = {
+              title: shareTitle,
+              text: 'Cliquez ici pour compléter votre réservation',
               url: url
-            });
+            };
+            
+            // Vérifier avec canShare si disponible
+            if (navigator.canShare) {
+              if (!navigator.canShare(shareData)) {
+                // Fallback Android : essayer sans text
+                console.log('📱 [SHARE] Fallback Android: URL seule');
+                shareData = { title: shareTitle, url: url };
+                
+                if (!navigator.canShare(shareData)) {
+                  shareData = { url: url };
+                }
+              }
+            }
+            
+            console.log('📱 [SHARE] Tentative de partage natif:', shareData);
+            await navigator.share(shareData);
+            
             console.log('✅ Partage natif réussi');
             toast({
               title: "✅ Lien partagé !",
               description: "Le lien a été partagé avec succès",
             });
           } catch (shareError: any) {
-            if (shareError.name !== 'AbortError') {
-              console.warn('⚠️ Partage natif échoué, fallback au modal:', shareError);
+            if (shareError.name === 'AbortError') {
+              console.log('📱 Partage annulé par l\'utilisateur');
+            } else if (shareError.name === 'NotAllowedError') {
+              console.warn('⚠️ Partage non autorisé, ouverture du modal');
+              setShareModalUrl(url);
+              setShareModalOpen(true);
+            } else {
+              console.warn('⚠️ Partage natif échoué, fallback au modal:', shareError.message || shareError);
               setShareModalUrl(url);
               setShareModalOpen(true);
             }
           }
         } else {
+          console.log('📱 [SHARE] Web Share API non disponible, ouverture du modal');
           setShareModalUrl(url);
           setShareModalOpen(true);
         }
