@@ -170,7 +170,7 @@ export function VerifyToken() {
             
             <Button 
               variant="outline"
-              onClick={() => window.location.href = 'https://cheki.ma'}
+              onClick={() => window.location.href = 'https://checky.ma'}
               className="w-full"
             >
               <Home className="w-4 h-4 mr-2" />

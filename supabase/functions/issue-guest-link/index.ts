@@ -273,8 +273,8 @@ serve(async (req) => {
         const tokenAge = Date.now() - new Date(existingActiveToken.created_at).getTime();
         if (tokenAge < 5000) { // 5 secondes
           console.log('✅ Token actif récent trouvé (idempotence), réutilisation:', existingActiveToken.id);
-          const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'http://localhost:3000';
-          const guestLink = `${baseUrl}/verify/${existingActiveToken.token}`;
+          const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'https://checky.ma';
+          const guestLink = `${baseUrl}/v/${existingActiveToken.token}`;
           
           return new Response(JSON.stringify({
             success: true,
@@ -649,9 +649,9 @@ serve(async (req) => {
       // Don't fail token creation for this error
     }
 
-    // ✅ CORRECTION : Construire l'URL du lien invité (nouvelle route avec booking-resolve)
-    const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'http://localhost:3000';
-    const guestLink = `${baseUrl}/verify/${newToken.token}`;
+    // ✅ CORRECTION : Construire l'URL du lien invité (route courte /v/ pour mobile)
+    const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'https://checky.ma';
+    const guestLink = `${baseUrl}/v/${newToken.token}`;
 
     console.log('🔗 Lien invité généré:', guestLink);
     console.log('📅 Token expires at:', newToken.expires_at);
