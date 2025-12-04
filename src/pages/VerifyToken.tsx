@@ -22,10 +22,20 @@ export function VerifyToken() {
   const [isRedirecting, setIsRedirecting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [debugInfo, setDebugInfo] = useState<string>('');
+
+  // ✅ Debug : Log au chargement
+  useEffect(() => {
+    console.log('🔍 [VerifyToken] Composant monté', { token, url: window.location.href });
+    setDebugInfo(`Token: ${token || 'N/A'}, URL: ${window.location.href}`);
+  }, [token]);
 
   // ✅ Redirection automatique vers GuestVerification avec dates pré-remplies
   useEffect(() => {
+    console.log('🔄 [VerifyToken] useEffect déclenché', { token, retryCount });
+    
     if (!token) {
+      console.error('❌ [VerifyToken] Token manquant');
       setError("Le lien de vérification est invalide ou malformé");
       setIsRedirecting(false);
       return;
@@ -186,13 +196,19 @@ export function VerifyToken() {
     );
   }
 
-  // ✅ Afficher un loader pendant la redirection
+  // ✅ Afficher un loader pendant la redirection avec info de debug
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-      <div className="text-center">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+      <div className="text-center max-w-md">
         <EnhancedLoader />
-        <p className="mt-4 text-slate-600">Chargement en cours...</p>
+        <p className="mt-4 text-slate-600 font-medium">Chargement en cours...</p>
         <p className="mt-2 text-sm text-slate-400">Vérification de votre lien de réservation</p>
+        {process.env.NODE_ENV === 'development' && debugInfo && (
+          <p className="mt-4 text-xs text-slate-300 font-mono break-all">{debugInfo}</p>
+        )}
+        <p className="mt-6 text-xs text-slate-400">
+          Si cette page reste affichée, vérifiez votre connexion internet.
+        </p>
       </div>
     </div>
   );
