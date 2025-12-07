@@ -5,10 +5,12 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173', // Vite default port
   'http://localhost:54321', // Supabase local
   
-  // Production Vercel
+  // Production - ✅ DOMAINE PRINCIPAL
+  'https://checky.ma',
+  'https://www.checky.ma',
+  // Fallback Vercel (preview deployments uniquement)
+  'https://*.vercel.app',
   'https://morocco-host-helper.vercel.app',
-  // Ajoutez vos domaines personnalisés ici
-  // 'https://votre-domaine.com',
 ];
 
 // Headers CORS dynamiques basés sur l'origine
@@ -17,7 +19,7 @@ export function getCorsHeaders(request: Request): Record<string, string> {
   const isAllowedOrigin = origin && ALLOWED_ORIGINS.includes(origin);
   
   return {
-    'Access-Control-Allow-Origin': isAllowedOrigin ? origin : 'https://morocco-host-helper.vercel.app',
+    'Access-Control-Allow-Origin': isAllowedOrigin ? origin : 'https://checky.ma',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Credentials': 'true',
@@ -27,7 +29,7 @@ export function getCorsHeaders(request: Request): Record<string, string> {
 
 // Headers CORS statiques pour compatibilité (⚠️ moins sécurisé)
 export const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://morocco-host-helper.vercel.app',
+  'Access-Control-Allow-Origin': 'https://checky.ma',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Credentials': 'true',

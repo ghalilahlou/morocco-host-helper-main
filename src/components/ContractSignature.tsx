@@ -13,6 +13,7 @@ import { useT } from '@/i18n/GuestLocaleProvider';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { MobilePdfViewer } from '@/components/MobilePdfViewer';
 import { cn } from '@/lib/utils';
+import { urls } from '@/config/runtime';
 
 interface ContractSignatureProps {
   bookingData: any;
@@ -405,7 +406,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       try {
         const ownerEmail = propertyData?.contact_info?.email;
         if (ownerEmail) {
-          const dashboardUrl = `${window.location.origin}/dashboard/property/${propertyData?.id}`;
+          const dashboardUrl = `${urls.app.base}/dashboard/property/${propertyData?.id}`;
           const guestName = guestData?.guests?.[0]?.fullName || bookingData?.guestName || 'Invité';
           const checkIn = bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'N/A';
           const checkOut = bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'N/A';

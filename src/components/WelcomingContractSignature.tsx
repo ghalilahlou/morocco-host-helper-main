@@ -30,6 +30,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { getContractPdfUrl } from '@/services/contractService';
 import { ApiService } from '@/services/apiService';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { urls } from '@/config/runtime';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { MobilePdfViewer } from '@/components/MobilePdfViewer';
@@ -712,7 +713,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         try {
           const ownerEmail = propertyData?.contact_info?.email;
           if (ownerEmail) {
-            const dashboardUrl = `${window.location.origin}/dashboard/property/${propertyData?.id}`;
+            const dashboardUrl = `${urls.app.base}/dashboard/property/${propertyData?.id}`;
             const guestName = guestData?.guests?.[0]?.fullName || bookingData?.guestName || 'Invité';
             const checkIn = bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'N/A';
             const checkOut = bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'N/A';
