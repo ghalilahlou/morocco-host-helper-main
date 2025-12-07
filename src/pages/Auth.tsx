@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import authImage from '@/assets/hero-laptop.jpg';
+import { urls } from '@/config/runtime';
 export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +42,7 @@ export default function Auth() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${urls.app.base}/auth/callback`,
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -85,7 +86,7 @@ export default function Auth() {
         email,
         password,
         options: {
-          emailRedirectTo: `https://morocco-host-helper-main.vercel.app/auth/callback`,
+          emailRedirectTo: `${urls.app.base}/auth/callback`,
           data: {
             email_confirm: false
           }
