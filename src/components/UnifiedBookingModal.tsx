@@ -851,7 +851,9 @@ export const UnifiedBookingModal = ({
                 {/* Contrat */}
                 <div className={cn(
                   "bg-gray-50 rounded-lg border border-gray-200",
-                  isMobile ? "p-3 flex-col gap-3" : "p-4 flex items-center justify-between"
+                  isMobile ? "p-3" : "p-4",
+                  "flex",
+                  isMobile ? "flex-col gap-3" : "items-center justify-between"
                 )}>
                   <div className="flex items-center gap-3">
                     <div className={cn(
@@ -877,13 +879,16 @@ export const UnifiedBookingModal = ({
                   {documents.contractUrl ? (
                     <div className={cn(
                       "flex gap-2",
-                      isMobile ? "w-full" : ""
+                      isMobile ? "w-full justify-end" : ""
                     )}>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => window.open(documents.contractUrl!, '_blank')}
-                        className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                        className={cn(
+                          "border-2 border-brand-teal/30 hover:border-brand-teal/50",
+                          isMobile && "flex-1"
+                        )}
                       >
                         <FileText className="w-4 h-4 mr-2" />
                         Voir
@@ -897,54 +902,87 @@ export const UnifiedBookingModal = ({
                           link.download = `contrat-${getReservationCode()}.pdf`;
                           link.click();
                         }}
-                        className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                        className={cn(
+                          "border-2 border-brand-teal/30 hover:border-brand-teal/50",
+                          isMobile && "flex-1"
+                        )}
                       >
                         Télécharger
                       </Button>
                     </div>
                   ) : hasGuestData ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleGenerateContract}
-                      disabled={isGeneratingContract}
-                      className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
-                    >
-                      {isGeneratingContract ? (
-                        <>
-                          <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-                          Génération...
-                        </>
-                      ) : (
-                        <>
-                          <FileText className="w-4 h-4 mr-2" />
-                          Générer
-                        </>
-                      )}
-                    </Button>
+                    <div className={cn(isMobile && "w-full flex justify-end")}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleGenerateContract}
+                        disabled={isGeneratingContract}
+                        className={cn(
+                          "border-2 border-brand-teal/30 hover:border-brand-teal/50",
+                          isMobile && "w-full sm:w-auto"
+                        )}
+                      >
+                        {isGeneratingContract ? (
+                          <>
+                            <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="w-4 h-4 mr-2" />
+                            Générer
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   ) : (
-                    <span className="text-sm text-gray-400">En attente des informations clients</span>
+                    <div className={cn(isMobile && "w-full text-right")}>
+                      <span className="text-sm text-gray-400">En attente des informations clients</span>
+                    </div>
                   )}
                 </div>
 
                 {/* Police */}
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className={cn(
+                  "bg-gray-50 rounded-lg border border-gray-200",
+                  isMobile ? "p-3" : "p-4",
+                  "flex",
+                  isMobile ? "flex-col gap-3" : "items-center justify-between"
+                )}>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
-                      <Shield className="w-5 h-5 text-brand-teal" />
+                    <div className={cn(
+                      "rounded-lg bg-brand-teal/10 flex items-center justify-center flex-shrink-0",
+                      isMobile ? "w-8 h-8" : "w-10 h-10"
+                    )}>
+                      <Shield className={cn(
+                        "text-brand-teal",
+                        isMobile ? "w-4 h-4" : "w-5 h-5"
+                      )} />
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">Fiche de police</p>
-                          <p className="text-sm text-gray-600">Formulaire de déclaration de police</p>
+                    <div className="flex-1 min-w-0">
+                      <p className={cn(
+                        "font-semibold text-gray-900",
+                        isMobile ? "text-sm" : ""
+                      )}>Fiche de police</p>
+                      <p className={cn(
+                        "text-gray-600",
+                        isMobile ? "text-xs" : "text-sm"
+                      )}>Formulaire de déclaration de police</p>
                     </div>
                   </div>
                   {documents.policeUrl ? (
-                    <div className="flex gap-2">
+                    <div className={cn(
+                      "flex gap-2",
+                      isMobile ? "w-full justify-end" : ""
+                    )}>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => window.open(documents.policeUrl!, '_blank')}
-                        className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                        className={cn(
+                          "border-2 border-brand-teal/30 hover:border-brand-teal/50",
+                          isMobile && "flex-1"
+                        )}
                       >
                         <Shield className="w-4 h-4 mr-2" />
                         Voir
@@ -958,62 +996,95 @@ export const UnifiedBookingModal = ({
                           link.download = `police-${getReservationCode()}.pdf`;
                           link.click();
                         }}
-                        className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                        className={cn(
+                          "border-2 border-brand-teal/30 hover:border-brand-teal/50",
+                          isMobile && "flex-1"
+                        )}
                       >
                         Télécharger
                       </Button>
                     </div>
                   ) : hasGuestData ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleGeneratePolice}
-                      disabled={isGeneratingPolice}
-                      className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
-                    >
-                      {isGeneratingPolice ? (
-                        <>
-                          <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-                          Génération...
-                        </>
-                      ) : (
-                        <>
-                          <Shield className="w-4 h-4 mr-2" />
-                          Générer
-                        </>
-                      )}
-                    </Button>
-                  ) : (
-                    <span className="text-sm text-gray-400">En attente des informations clients</span>
-                  )}
+                    <div className={cn(isMobile && "w-full flex justify-end")}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleGeneratePolice}
+                        disabled={isGeneratingPolice}
+                        className={cn(
+                          "border-2 border-brand-teal/30 hover:border-brand-teal/50",
+                          isMobile && "w-full sm:w-auto"
+                        )}
+                      >
+                        {isGeneratingPolice ? (
+                          <>
+                            <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Shield className="w-4 h-4 mr-2" />
+                            Générer
+                          </>
+                        )}
+                      </Button>
                     </div>
+                  ) : (
+                    <div className={cn(isMobile && "w-full text-right")}>
+                      <span className="text-sm text-gray-400">En attente des informations clients</span>
+                    </div>
+                  )}
+                </div>
 
                     {/* Pièces d'identité */}
                     {documents.identityDocuments.length > 0 && (
                       <>
                         {documents.identityDocuments.map((identityDoc, index) => (
-                          <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <div key={index} className={cn(
+                            "bg-gray-50 rounded-lg border border-gray-200",
+                            isMobile ? "p-3" : "p-4",
+                            "flex",
+                            isMobile ? "flex-col gap-3" : "items-center justify-between"
+                          )}>
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
-                                <CreditCard className="w-5 h-5 text-brand-teal" />
+                              <div className={cn(
+                                "rounded-lg bg-brand-teal/10 flex items-center justify-center flex-shrink-0",
+                                isMobile ? "w-8 h-8" : "w-10 h-10"
+                              )}>
+                                <CreditCard className={cn(
+                                  "text-brand-teal",
+                                  isMobile ? "w-4 h-4" : "w-5 h-5"
+                                )} />
                               </div>
-                              <div>
-                                <p className="font-semibold text-gray-900">
+                              <div className="flex-1 min-w-0">
+                                <p className={cn(
+                                  "font-semibold text-gray-900",
+                                  isMobile ? "text-sm" : ""
+                                )}>
                                   Pièce d'identité {documents.identityDocuments.length > 1 ? `#${index + 1}` : ''}
                                 </p>
-                                <p className="text-sm text-gray-600">
+                                <p className={cn(
+                                  "text-gray-600",
+                                  isMobile ? "text-xs" : "text-sm"
+                                )}>
                                   {identityDoc.guestName || 'Invité'}
                                   {identityDoc.documentNumber && ` • ${identityDoc.documentNumber}`}
                                 </p>
                               </div>
                             </div>
                             {identityDoc.url ? (
-                              <div className="flex gap-2">
+                              <div className={cn(
+                                "flex gap-2",
+                                isMobile ? "w-full justify-end" : ""
+                              )}>
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={() => window.open(identityDoc.url, '_blank')}
-                                  className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                                  className={cn(
+                                    "border-2 border-brand-teal/30 hover:border-brand-teal/50",
+                                    isMobile && "flex-1"
+                                  )}
                                 >
                                   <CreditCard className="w-4 h-4 mr-2" />
                                   Voir
@@ -1027,7 +1098,10 @@ export const UnifiedBookingModal = ({
                                     link.download = `piece-identite-${identityDoc.guestName?.replace(/\s+/g, '-') || 'invite'}-${index + 1}.pdf`;
                                     link.click();
                                   }}
-                                  className="border-2 border-brand-teal/30 hover:border-brand-teal/50"
+                                  className={cn(
+                                    "border-2 border-brand-teal/30 hover:border-brand-teal/50",
+                                    isMobile && "flex-1"
+                                  )}
                                 >
                                   Télécharger
                                 </Button>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -95,26 +95,25 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   bookingLayout,
   conflicts,
   onBookingClick,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  currentDate: _currentDate,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  onDateChange: _onDateChange,
+  currentDate,
+  onDateChange,
   allReservations = [],
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   
-  // Générer les mois à afficher (mois actuel + 11 mois suivants)
+  // ✅ CORRIGÉ : Générer les mois à afficher basés sur currentDate (au lieu de toujours partir de maintenant)
   const monthsToShow = useMemo(() => {
     const months: Date[] = [];
-    const startMonth = startOfMonth(new Date());
+    const startMonth = startOfMonth(currentDate);
     
-    for (let i = 0; i < 12; i++) {
+    // Afficher 3 mois avant et 12 mois après le mois actuel
+    for (let i = -3; i < 12; i++) {
       months.push(addMonths(startMonth, i));
     }
     
     return months;
-  }, []);
+  }, [currentDate]);
 
   // ✅ CORRIGÉ : Utiliser allReservations directement si disponible, sinon extraire de bookingLayout
   const allBookings = useMemo(() => {
@@ -316,7 +315,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   };
 
   // Composant pour afficher un mois
-  const MonthView = ({ monthDate }: { monthDate: Date }) => {
+  const MonthView = ({ monthDate, dataMonth }: { monthDate: Date; dataMonth?: string }) => {
     const weeks = getWeeksForMonth(monthDate);
     const monthName = format(monthDate, 'MMMM', { locale: fr });
     const year = format(monthDate, 'yyyy');
@@ -325,7 +324,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     const showYear = monthYear !== currentYear || monthDate.getMonth() === 0; // Montrer l'année si différente ou janvier
     
     return (
-      <div className="mb-4">
+      <div className="mb-4" data-month={dataMonth}>
         {/* En-tête du mois - Style Airbnb */}
         <div className="pb-2 pt-5">
           <h2 className="text-base font-bold text-gray-900 capitalize">
@@ -518,7 +517,11 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
       >
         {/* Mois */}
         {monthsToShow.map((month) => (
-          <MonthView key={month.getTime()} monthDate={month} />
+          <MonthView 
+            key={month.getTime()} 
+            monthDate={month}
+            dataMonth={`${month.getFullYear()}-${month.getMonth()}`}
+          />
         ))}
         
         {/* Espace en bas */}
