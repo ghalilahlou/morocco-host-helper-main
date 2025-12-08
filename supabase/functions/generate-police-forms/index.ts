@@ -435,21 +435,50 @@ async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
             }
           }
           
-          const maxWidth = 220;
-          const maxHeight = 100;
+          // ✅ CORRIGÉ : Dimensions limitées pour éviter le débordement
+          // Calculer la largeur disponible (pageWidth - 2*margin)
+          const pageWidth = page.getWidth();
+          const margin = 50; // Marge standard
+          const availableWidth = pageWidth - (margin * 2);
+          // Limiter maxWidth à 80% de la largeur disponible
+          const maxWidth = Math.min(180, availableWidth * 0.8);
+          const maxHeight = 60; // Réduit pour éviter le débordement vertical
+          
           const aspect = img.width / img.height;
-          let width = maxWidth;
-          let height = maxWidth / aspect;
+          let width = Math.min(maxWidth, img.width);
+          let height = width / aspect;
           if (height > maxHeight) {
             height = maxHeight;
             width = maxHeight * aspect;
           }
           
+          // ✅ NOUVEAU : Vérifier que la signature ne déborde pas à droite
+          const signatureX = leftColumn;
+          const signatureRightEdge = signatureX + width;
+          const maxRightEdge = pageWidth - margin;
+          
+          // Si la signature déborde, réduire encore la taille
+          let finalWidth = width;
+          let finalHeight = height;
+          if (signatureRightEdge > maxRightEdge) {
+            const overflow = signatureRightEdge - maxRightEdge;
+            const reductionFactor = (width - overflow) / width;
+            finalWidth = width * reductionFactor;
+            finalHeight = height * reductionFactor;
+            console.warn('⚠️ Signature débordait, dimensions réduites:', {
+              originalWidth: width,
+              originalHeight: height,
+              finalWidth,
+              finalHeight,
+              overflow
+            });
+          }
+          
           page.drawImage(img, {
-            x: leftColumn,
-            y: yPosition - height - 10,
-            width,
-            height
+            x: signatureX,
+            y: yPosition - finalHeight - 10,
+            width: finalWidth,
+            height: finalHeight
           });
           console.log('✅ Landlord signature embedded');
         } catch (signatureError) {
