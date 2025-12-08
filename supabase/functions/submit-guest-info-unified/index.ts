@@ -5399,30 +5399,62 @@ async function generatePoliceFormsPDF(client: any, booking: any, isPreview: bool
             }
           }
           
-          // ✅ CORRIGÉ : Dimensions augmentées pour éviter le crop de la signature
-          const maxWidth = 250; // Augmenté de 180 à 250
-          const maxHeight = 80;  // Augmenté de 60 à 80
+          // ✅ CORRIGÉ : Dimensions limitées pour éviter le débordement sur mobile et web
+          // Calculer la largeur disponible (pageWidth - 2*margin)
+          const availableWidth = pageWidth - (margin * 2);
+          // Limiter maxWidth à 80% de la largeur disponible pour laisser de la marge
+          const maxWidth = Math.min(180, availableWidth * 0.8); // Réduit de 250 à 180 max
+          const maxHeight = 60;  // Réduit de 80 à 60 pour éviter le débordement vertical
+          
           const scale = Math.min(
             maxWidth / signatureImage.width,
             maxHeight / signatureImage.height,
-            1.0 // ✅ NOUVEAU : Ne jamais agrandir la signature au-delà de sa taille originale
+            1.0 // ✅ Ne jamais agrandir la signature au-delà de sa taille originale
           );
           const width = signatureImage.width * scale;
           const height = signatureImage.height * scale;
           
+          // ✅ NOUVEAU : Vérifier que la signature ne déborde pas à droite
+          const signatureX = margin;
+          const signatureRightEdge = signatureX + width;
+          const maxRightEdge = pageWidth - margin;
+          
+          // Si la signature déborde, réduire encore la taille
+          let finalWidth = width;
+          let finalHeight = height;
+          if (signatureRightEdge > maxRightEdge) {
+            const overflow = signatureRightEdge - maxRightEdge;
+            const reductionFactor = (width - overflow) / width;
+            finalWidth = width * reductionFactor;
+            finalHeight = height * reductionFactor;
+            log('warn', '[Police] Signature débordait, dimensions réduites:', {
+              originalWidth: width,
+              originalHeight: height,
+              finalWidth,
+              finalHeight,
+              overflow
+            });
+          }
+          
           log('info', '[Police] Dimensions signature:', {
+            pageWidth,
+            margin,
+            availableWidth,
             originalWidth: signatureImage.width,
             originalHeight: signatureImage.height,
-            scaledWidth: width,
-            scaledHeight: height,
-            scale: scale
+            scaledWidth: finalWidth,
+            scaledHeight: finalHeight,
+            scale: scale,
+            signatureX,
+            signatureRightEdge: signatureX + finalWidth,
+            maxRightEdge
           });
           
           page.drawImage(signatureImage, {
-            x: margin,
-            y: yPosition - height,
-            width,
-            height
+            x: signatureX,
+            y: yPosition - finalHeight,
+            width: finalWidth,
+            height: finalHeight
           });
           
           log('info', '✅ Host signature embedded in police form successfully', {
