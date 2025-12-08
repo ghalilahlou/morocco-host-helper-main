@@ -104,7 +104,7 @@ export const PropertyList = ({
             <Button onClick={() => setShowCreateDialog(true)} size="sm" className="gap-2 h-9 sm:h-10 px-3 sm:px-4">
               <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
               <span className="hidden md:inline text-sm sm:text-base">Ajouter</span>
-              <span className="md:hidden text-sm">+</span>
+              <span className="md:hidden text-sm font-bold">++</span>
             </Button>
           </div>
         </div>
