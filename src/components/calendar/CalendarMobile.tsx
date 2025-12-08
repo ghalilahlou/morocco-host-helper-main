@@ -101,6 +101,11 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  // ✅ NOUVEAU : Ref pour tracker si le scroll est déclenché par l'utilisateur ou programmatiquement
+  const isUserScrolling = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // ✅ NOUVEAU : Tracker le dernier mois sélectionné pour éviter les scrolls répétés
+  const lastScrolledMonth = useRef<string | null>(null);
   
   // ✅ CORRIGÉ : Générer les mois à afficher basés sur currentDate (au lieu de toujours partir de maintenant)
   const monthsToShow = useMemo(() => {
@@ -114,6 +119,57 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     
     return months;
   }, [currentDate]);
+
+  // ✅ NOUVEAU : Scroller vers le mois sélectionné quand currentDate change
+  useEffect(() => {
+    const targetMonth = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
+    
+    // Éviter les scrolls répétés vers le même mois
+    if (lastScrolledMonth.current === targetMonth) {
+      return;
+    }
+    
+    // Attendre un court instant pour que le DOM soit rendu
+    const scrollToMonth = () => {
+      if (!scrollContainerRef.current || isUserScrolling.current) return;
+      
+      const targetElement = scrollContainerRef.current.querySelector(
+        `[data-month="${targetMonth}"]`
+      );
+      
+      if (targetElement) {
+        lastScrolledMonth.current = targetMonth;
+        
+        // Calculer la position de scroll pour centrer le mois
+        const containerRect = scrollContainerRef.current.getBoundingClientRect();
+        const elementRect = targetElement.getBoundingClientRect();
+        const scrollTop = scrollContainerRef.current.scrollTop;
+        
+        // Position relative de l'élément dans le container
+        const relativeTop = elementRect.top - containerRect.top + scrollTop;
+        
+        // Scroller pour que le mois soit en haut avec un petit offset
+        scrollContainerRef.current.scrollTo({
+          top: relativeTop - 10,
+          behavior: 'smooth'
+        });
+      }
+    };
+    
+    // Petit délai pour s'assurer que le DOM est à jour
+    const timeoutId = setTimeout(scrollToMonth, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [currentDate]);
+  
+  // ✅ NOUVEAU : Cleanup du timeout au démontage
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // ✅ CORRIGÉ : Utiliser allReservations directement si disponible, sinon extraire de bookingLayout
   const allBookings = useMemo(() => {
@@ -226,10 +282,65 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     return Array.from(bookingsMap.values());
   }, [allReservations, bookingLayout, conflicts]);
 
-  // Gérer le scroll
+  // ✅ CORRIGÉ : Gérer le scroll et synchroniser currentDate avec le mois visible
   const handleScroll = () => {
     if (scrollContainerRef.current) {
       setShowScrollTop(scrollContainerRef.current.scrollTop > 300);
+      
+      // ✅ NOUVEAU : Marquer que l'utilisateur est en train de scroller
+      isUserScrolling.current = true;
+      
+      // Reset le flag après un délai
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+      
+      scrollTimeoutRef.current = setTimeout(() => {
+        isUserScrolling.current = false;
+        
+        // ✅ NOUVEAU : Détecter le mois visible et mettre à jour currentDate
+        if (!scrollContainerRef.current) return;
+        
+        const container = scrollContainerRef.current;
+        const containerTop = container.getBoundingClientRect().top;
+        
+        // Trouver le premier mois visible dans le viewport
+        const monthElements = container.querySelectorAll('[data-month]');
+        let visibleMonth: string | null = null;
+        
+        for (const element of monthElements) {
+          const rect = element.getBoundingClientRect();
+          // Le mois est considéré visible si son haut est dans le viewport
+          if (rect.top >= containerTop - 50 && rect.top < containerTop + 150) {
+            visibleMonth = element.getAttribute('data-month');
+            break;
+          }
+        }
+        
+        // Si aucun trouvé, prendre celui qui est le plus proche du haut
+        if (!visibleMonth) {
+          for (const element of monthElements) {
+            const rect = element.getBoundingClientRect();
+            if (rect.bottom > containerTop) {
+              visibleMonth = element.getAttribute('data-month');
+              break;
+            }
+          }
+        }
+        
+        if (visibleMonth) {
+          const [year, month] = visibleMonth.split('-').map(Number);
+          const newDate = new Date(year, month, 1);
+          
+          // Vérifier si c'est un mois différent de currentDate
+          if (newDate.getFullYear() !== currentDate.getFullYear() || 
+              newDate.getMonth() !== currentDate.getMonth()) {
+            // Mettre à jour le tracker pour éviter le scroll automatique
+            lastScrolledMonth.current = visibleMonth;
+            onDateChange(newDate);
+          }
+        }
+      }, 150);
     }
   };
 
