@@ -337,10 +337,10 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
         <div className="border-t border-gray-200">
           {weeks.map((week, weekIndex) => {
             const bookingsInWeek = getBookingsForWeek(week);
-            // Calculer la hauteur basée sur le nombre de réservations
+            // Calculer la hauteur basée sur le nombre de réservations (responsive)
             const bookingRowsCount = Math.max(0, bookingsInWeek.length);
-            const baseHeight = 32; // Hauteur pour les numéros de jour
-            const bookingHeight = 32; // Hauteur par réservation
+            const baseHeight = 28; // Hauteur pour les numéros de jour (mobile)
+            const bookingHeight = 28; // Hauteur par réservation (mobile) - ajusté pour h-7
             const totalHeight = baseHeight + (bookingRowsCount * bookingHeight) + 4;
             
             return (
@@ -380,7 +380,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                 {bookingsInWeek.length > 0 && (
                   <div 
                     className="absolute left-0 right-0 pointer-events-none"
-                    style={{ top: '28px' }}
+                    style={{ top: '26px' }}
                   >
                     {bookingsInWeek.map((item, idx) => {
                       const { booking: bookingData, startCol, span } = item;
@@ -425,17 +425,17 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                       return (
                         <div
                           key={`${bookingData.booking.id}-${weekIndex}-${idx}`}
-                          className="absolute h-7 pointer-events-auto cursor-pointer"
+                          className="absolute h-7 sm:h-8 pointer-events-auto cursor-pointer"
                           style={{
                             left: `calc(${leftPercent}% + 1px)`,
                             width: `calc(${widthPercent}% - 2px)`,
-                            top: `${idx * 30}px`,
+                            top: `${idx * 28}px`,
                           }}
                           onClick={() => onBookingClick(bookingData.booking)}
                         >
                           <div
                             className={cn(
-                              "h-full flex items-center gap-1.5 px-2",
+                              "h-full flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2",
                               "shadow-sm transition-all duration-200",
                               "hover:shadow-md active:scale-[0.99]",
                               bookingData.isConflict && "ring-2 ring-red-400"
@@ -448,7 +448,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                             {/* ✅ Avatar avec initiales ou photo (seulement au début si nom valide) */}
                             {isStartOfBooking && bookingData.isValidName && (
                               <div
-                                className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden bg-white/20"
+                                className="w-4 h-4 sm:w-5 sm:h-5 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden bg-white/20"
                               >
                                 {bookingData.photoUrl ? (
                                   <img 
@@ -457,25 +457,25 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                                     className="w-full h-full object-cover"
                                   />
                                 ) : (
-                                  <span className={cn("text-[9px] font-bold", bookingData.textColor)}>
+                                  <span className={cn("text-[8px] sm:text-[9px] font-bold", bookingData.textColor)}>
                                     {getInitials(bookingData.guestName)}
                                   </span>
                                 )}
                               </div>
                             )}
                             
-                            {/* ✅ Nom OU Code de réservation (pas de "?") */}
+                            {/* ✅ Nom OU Code de réservation (pas de "?") - Responsive */}
                             {isStartOfBooking && (
-                              <div className={cn("flex items-center gap-1 min-w-0 flex-1", bookingData.textColor)}>
-                                <span className="text-[11px] font-semibold truncate">
+                              <div className={cn("flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1", bookingData.textColor)}>
+                                <span className="text-[10px] sm:text-[11px] font-semibold truncate leading-tight">
                                   {bookingData.isValidName 
                                     ? bookingData.guestName.split(' ')[0]
-                                    : bookingData.guestName.substring(0, 12) + (bookingData.guestName.length > 12 ? '...' : '')
+                                    : bookingData.guestName.substring(0, 10) + (bookingData.guestName.length > 10 ? '...' : '')
                                   }
                                 </span>
                                 {bookingData.guestCount > 1 && (
-                                  <span className="text-[10px] font-medium opacity-80 flex-shrink-0">
-                                    + {bookingData.guestCount - 1}
+                                  <span className="text-[9px] sm:text-[10px] font-medium opacity-80 flex-shrink-0 leading-tight">
+                                    +{bookingData.guestCount - 1}
                                   </span>
                                 )}
                               </div>

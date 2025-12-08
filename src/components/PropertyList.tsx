@@ -11,6 +11,7 @@ import { useProperties } from '@/hooks/useProperties';
 import { useBookings } from '@/hooks/useBookings';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
 import { useToast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
 interface PropertyListProps {
   onPropertySelect: (property: Property) => void;
 }
@@ -33,13 +34,14 @@ export const PropertyList = ({
   const {
     toast
   } = useToast();
+  const isMobile = useIsMobile();
   const getPropertyStats = (propertyId: string, property: Property) => {
-    const propertyBookings = bookings.filter(booking => booking.propertyId === propertyId);
+    const propertyBookings = bookings.filter(booking => booking.property_id === propertyId);
     return {
       total: propertyBookings.length,
       pending: propertyBookings.filter(b => b.status === 'pending').length,
       completed: propertyBookings.filter(b => b.status === 'completed').length,
-      hasAirbnbSync: !!property.airbnb_ics_url
+      hasAirbnbSync: false // TODO: Ajouter le champ airbnb_ics_url au type Property si nécessaire
     };
   };
   const handleDeleteProperty = async () => {
@@ -101,11 +103,26 @@ export const PropertyList = ({
             <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold">Mes annonces</h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <Button onClick={() => setShowCreateDialog(true)} size="sm" className="gap-2 h-9 sm:h-10 px-3 sm:px-4">
-              <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
-              <span className="hidden md:inline text-sm sm:text-base">Ajouter</span>
-              <span className="md:hidden text-sm font-bold">++</span>
-            </Button>
+            {isMobile ? (
+              // ✅ Version mobile : Bouton carré avec "++" plus grand et zone tactile optimale
+              <Button 
+                onClick={() => setShowCreateDialog(true)} 
+                className="h-12 w-12 p-0 rounded-xl bg-[hsl(var(--brand-1))] hover:bg-[hsl(var(--brand-1))]/90 text-white shadow-lg active:scale-95 transition-transform"
+                aria-label="Ajouter une propriété"
+              >
+                <span className="text-2xl font-bold leading-none">++</span>
+              </Button>
+            ) : (
+              // Version desktop : Bouton classique avec texte
+              <Button 
+                onClick={() => setShowCreateDialog(true)} 
+                size="sm" 
+                className="gap-2 h-9 sm:h-10 px-3 sm:px-4 bg-[hsl(var(--brand-1))] hover:bg-[hsl(var(--brand-1))]/90 text-white"
+              >
+                <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
+                <span className="text-sm sm:text-base">Ajouter</span>
+              </Button>
+            )}
           </div>
         </div>
 
