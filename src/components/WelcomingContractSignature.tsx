@@ -1001,11 +1001,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         )}>Dessinez votre signature ci-dessous</p>
                       </div>
 
-                          <div className="relative">
-                        <div className="relative border-2 border-dashed border-brand-teal/40 rounded-lg p-4 bg-gradient-to-br from-white via-white to-cyan-50/30 shadow-md hover:shadow-lg transition-all duration-200">
+                          <div className="relative w-full max-w-full overflow-hidden">
+                        <div className={cn(
+                          "relative border-2 border-dashed border-brand-teal/40 rounded-lg bg-gradient-to-br from-white via-white to-cyan-50/30 shadow-md hover:shadow-lg transition-all duration-200",
+                          isMobile ? "p-2" : "p-4"
+                        )}>
 
-                          {/* ✨ Canvas container ultra-moderne avec animations */}
-                          <div className="relative group">
+                          {/* ✨ Canvas container ultra-moderne avec animations - Responsive */}
+                          <div className="relative group w-full">
                             {/* Glow effect animé */}
                             <div className={`
                               absolute inset-0 rounded-3xl transition-all duration-500
@@ -1013,22 +1016,24 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                               blur-xl
                             `} />
                             
-                            <div className={`
-                              relative bg-gradient-to-br from-white via-white to-cyan-50/30 rounded-xl 
-                              border-2 transition-all duration-500 shadow-xl
-                              ${signature 
+                            <div className={cn(
+                              "relative bg-gradient-to-br from-white via-white to-cyan-50/30 rounded-xl border-2 transition-all duration-500 shadow-xl overflow-hidden",
+                              signature 
                                 ? 'border-green-400 shadow-green-200/50 ring-4 ring-green-100' 
-                                : 'border-brand-teal/40 group-hover:border-brand-teal/60 group-hover:shadow-brand-teal/20 group-hover:ring-4 group-hover:ring-brand-teal/20'
-                              }
-                            `}>
+                                : 'border-brand-teal/40 group-hover:border-brand-teal/60 group-hover:shadow-brand-teal/20 group-hover:ring-4 group-hover:ring-brand-teal/20',
+                              isMobile && "rounded-lg"
+                            )}>
                               {/* Badge "Signature complétée" */}
                               {signature && !isDrawing && (
                                 <motion.div
                                   initial={{ opacity: 0, scale: 0 }}
                                   animate={{ opacity: 1, scale: 1 }}
-                                  className="absolute -top-2 right-2 z-10 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-md flex items-center gap-1"
+                                  className={cn(
+                                    "absolute z-10 bg-green-500 text-white rounded-full font-semibold shadow-md flex items-center gap-1",
+                                    isMobile ? "-top-1 right-1 px-2 py-0.5 text-[10px]" : "-top-2 right-2 px-3 py-1 text-xs"
+                                  )}
                                 >
-                                  <CheckCircle className="w-3 h-3" />
+                                  <CheckCircle className={isMobile ? "w-2.5 h-2.5" : "w-3 h-3"} />
                                   Validée
                                 </motion.div>
                               )}
@@ -1040,7 +1045,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                 className={cn(
                                   "w-full touch-none select-none rounded-lg transition-all duration-200",
                                   isDrawing ? 'cursor-grabbing' : 'cursor-crosshair',
-                                  isMobile && "touch-pan-none"
+                                  isMobile && "touch-pan-none rounded-md"
                                 )}
                                 style={{ 
                                   touchAction: 'none',
@@ -1048,7 +1053,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                   WebkitUserSelect: 'none',
                                   userSelect: 'none',
                                   display: 'block',
-                                  height: isMobile ? '150px' : '200px',
+                                  height: isMobile ? '120px' : '200px',
+                                  maxHeight: isMobile ? '120px' : '200px',
+                                  width: '100%',
+                                  maxWidth: '100%',
                                   backgroundColor: 'white',
                                   border: '1px solid #e5e7eb'
                                 }}
