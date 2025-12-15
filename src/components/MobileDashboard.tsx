@@ -29,7 +29,8 @@ export const MobileDashboard = memo(({
   onRefreshBookings,
   propertyId
 }: MobileDashboardProps) => {
-  const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings();
+  // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
+  const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings({ propertyId });
   
   const bookings = propBookings || allBookings;
   const handleDeleteBooking = onDeleteBooking || deleteBooking;

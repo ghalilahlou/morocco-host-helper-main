@@ -21,6 +21,7 @@ import { AirbnbSyncManager } from './AirbnbSyncManager';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { PropertyTutorial } from './PropertyTutorial';
+import { supabase } from '@/integrations/supabase/client';
 
 
 
@@ -28,7 +29,8 @@ export const PropertyDetail = () => {
   const { propertyId } = useParams<{ propertyId: string }>();
   const navigate = useNavigate();
   const { getPropertyById, isLoading: propertiesLoading, properties } = useProperties();
-  const { bookings, deleteBooking, refreshBookings } = useBookings();
+  // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
+  const { bookings, deleteBooking, refreshBookings } = useBookings({ propertyId: propertyId || undefined });
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { generatePropertyVerificationUrl, isLoading: isGeneratingLink } = useGuestVerification();
   const { toast } = useToast();
@@ -50,8 +52,37 @@ export const PropertyDetail = () => {
     if (!property?.id) return;
     
     try {
-      const reservations = await AirbnbEdgeFunctionService.getReservations(property.id);
-      setAirbnbReservationsCount(reservations.length);
+      // ✅ CORRIGÉ : Charger seulement les réservations Airbnb actives (non passées)
+      // Pour correspondre à ce qui est affiché dans le calendrier
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { data: reservations, error } = await supabase
+        .from('airbnb_reservations')
+        .select('id, start_date, end_date')
+        .eq('property_id', property.id)
+        .gte('end_date', today.toISOString().split('T')[0]) // Seulement les réservations non terminées
+        .order('start_date', { ascending: true });
+      
+      if (error) {
+        console.error('Error loading Airbnb reservations count:', error);
+        setAirbnbReservationsCount(0);
+        return;
+      }
+      
+      // ✅ DIAGNOSTIC : Log pour vérifier le comptage
+      console.log('🔍 [PROPERTY DETAIL] Airbnb reservations count:', {
+        propertyId: property.id,
+        totalReservations: reservations?.length || 0,
+        today: today.toISOString().split('T')[0],
+        reservations: reservations?.map(r => ({
+          id: r.id.substring(0, 8),
+          start: r.start_date,
+          end: r.end_date
+        }))
+      });
+      
+      setAirbnbReservationsCount(reservations?.length || 0);
     } catch (error) {
       console.error('Error loading Airbnb reservations count:', error);
       setAirbnbReservationsCount(0);
@@ -184,6 +215,51 @@ export const PropertyDetail = () => {
     }
   }, [property]);
 
+  // ✅ DIAGNOSTIC : Log pour vérifier le filtrage et identifier les problèmes
+  useEffect(() => {
+    if (property?.id && bookings.length > 0) {
+      const propertyBookings = bookings.filter(booking => booking.propertyId === property.id);
+      const bookingsWithPropertyId = bookings.filter(b => b.propertyId === property.id);
+      const bookingsWithoutPropertyId = bookings.filter(b => !b.propertyId);
+      const bookingsWithOtherPropertyId = bookings.filter(b => b.propertyId && b.propertyId !== property.id);
+
+      console.log('🔍 [PROPERTY DETAIL] Diagnostic du filtrage des réservations:', {
+        propertyId: property.id,
+        totalBookingsFromHook: bookings.length,
+        filteredBookings: propertyBookings.length,
+        bookingsWithCorrectPropertyId: bookingsWithPropertyId.length,
+        bookingsWithoutPropertyId: bookingsWithoutPropertyId.length,
+        bookingsWithOtherPropertyId: bookingsWithOtherPropertyId.length,
+        airbnbReservationsCount,
+        statsTotal: propertyBookings.length + airbnbReservationsCount,
+        bookingDetails: bookings.map(b => ({
+          id: b.id.substring(0, 8),
+          propertyId: b.propertyId,
+          matches: b.propertyId === property.id,
+          status: b.status,
+          checkIn: b.checkInDate
+        }))
+      });
+
+      // ⚠️ ALERTE si des réservations d'autres propriétés sont présentes
+      if (bookingsWithOtherPropertyId.length > 0) {
+        console.warn('⚠️ [PROPERTY DETAIL] PROBLÈME DÉTECTÉ: Des réservations d\'autres propriétés sont présentes!', {
+          expectedPropertyId: property.id,
+          otherPropertyIds: [...new Set(bookingsWithOtherPropertyId.map(b => b.propertyId))],
+          count: bookingsWithOtherPropertyId.length
+        });
+      }
+
+      // ⚠️ ALERTE si des réservations sans propertyId sont présentes
+      if (bookingsWithoutPropertyId.length > 0) {
+        console.warn('⚠️ [PROPERTY DETAIL] PROBLÈME DÉTECTÉ: Des réservations sans propertyId sont présentes!', {
+          count: bookingsWithoutPropertyId.length,
+          bookingIds: bookingsWithoutPropertyId.map(b => b.id.substring(0, 8))
+        });
+      }
+    }
+  }, [bookings, property?.id, airbnbReservationsCount]);
+
   const handleTutorialComplete = () => {
     localStorage.setItem('client-dashboard-tutorial-seen', 'true');
     setShowTutorial(false);
@@ -237,8 +313,8 @@ export const PropertyDetail = () => {
         </Button>
       </div>
 
-      {/* Property Header */}
-      <Card className="border-0 shadow-sm relative">
+      {/* Property Header - aligné sur le modèle Figma */}
+      <Card className="border-0 shadow-md rounded-2xl bg-white relative">
         <CardHeader className="pb-4">
           {/* Mobile help trigger - top right */}
           <div className="absolute top-4 right-4 sm:hidden">
@@ -283,7 +359,9 @@ export const PropertyDetail = () => {
               )}
               <div className="min-w-0 flex-1 overflow-hidden">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-1">
-                  <CardTitle className="text-lg sm:text-xl font-bold truncate">{property.name}</CardTitle>
+                  <CardTitle className="text-lg sm:text-xl font-bold truncate">
+                    {property.name}
+                  </CardTitle>
                   <Badge variant="secondary" className="text-xs w-fit flex-shrink-0">{property.property_type}</Badge>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
@@ -303,19 +381,37 @@ export const PropertyDetail = () => {
             
             {/* Stats and Actions Section */}
             <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6 flex-shrink-0">
-              {/* Compact Stats */}
-              <div className="flex items-center justify-around lg:justify-center lg:gap-6" data-tutorial="stats">
-                <div className="text-center min-w-[50px] sm:min-w-[60px]">
-                  <div className="text-lg sm:text-xl lg:text-2xl font-bold">{stats.total}</div>
-                  <div className="text-xs text-muted-foreground whitespace-nowrap">Total</div>
+              {/* Compact Stats - style Figma (37 / 23 / 14) */}
+              <div className="flex items-center justify-center lg:justify-end gap-4" data-tutorial="stats">
+                <div className="flex flex-col items-center min-w-[70px]">
+                  <div className="px-4 py-1 rounded-xl bg-slate-100 text-slate-900 text-lg sm:text-xl lg:text-2xl font-bold">
+                    {stats.total}
+                  </div>
+                  <div className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
+                    Total
+                  </div>
                 </div>
-                <div className="text-center min-w-[50px] sm:min-w-[60px]">
-                  <div className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: BOOKING_COLORS.pending.hex }}>{stats.pending}</div>
-                  <div className="text-xs text-muted-foreground whitespace-nowrap">En attente</div>
+                <div className="flex flex-col items-center min-w-[70px]">
+                  <div
+                    className="px-4 py-1 rounded-xl text-lg sm:text-xl lg:text-2xl font-bold"
+                    style={{ backgroundColor: '#E0F9EF', color: '#059669' }}
+                  >
+                    {stats.completed}
+                  </div>
+                  <div className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
+                    Terminé
+                  </div>
                 </div>
-                <div className="text-center min-w-[50px] sm:min-w-[60px]">
-                  <div className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: BOOKING_COLORS.completed.hex }}>{stats.completed}</div>
-                  <div className="text-xs text-muted-foreground whitespace-nowrap">Terminé</div>
+                <div className="flex flex-col items-center min-w-[70px]">
+                  <div
+                    className="px-4 py-1 rounded-xl text-lg sm:text-xl lg:text-2xl font-bold"
+                    style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}
+                  >
+                    {stats.pending}
+                  </div>
+                  <div className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
+                    En attente
+                  </div>
                 </div>
               </div>
               

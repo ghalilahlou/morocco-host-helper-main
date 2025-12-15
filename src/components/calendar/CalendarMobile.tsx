@@ -200,14 +200,15 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
           let color: string;
           let textColor: string;
           
+          // ✅ AIRBNB : Couleurs selon le statut
           if (isConflict) {
-            color = BOOKING_COLORS.conflict.hex;
+            color = BOOKING_COLORS.conflict.hex; // Rouge Airbnb #FF5A5F
             textColor = 'text-white';
           } else if (isValidName) {
-            color = BOOKING_COLORS.completed.hex;
-            textColor = 'text-teal-900';
+            color = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
+            textColor = 'text-gray-900';
           } else {
-            color = BOOKING_COLORS.pending.hex;
+            color = BOOKING_COLORS.default.hex; // Gris foncé/noir #1A1A1A
             textColor = 'text-white';
           }
           
@@ -252,14 +253,15 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
           let color: string;
           let textColor: string;
           
+          // ✅ AIRBNB : Couleurs selon le statut
           if (isConflict) {
-            color = BOOKING_COLORS.conflict.hex;
+            color = BOOKING_COLORS.conflict.hex; // Rouge Airbnb #FF5A5F
             textColor = 'text-white';
           } else if (isValidName) {
-            color = BOOKING_COLORS.completed.hex;
-            textColor = 'text-teal-900';
+            color = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
+            textColor = 'text-gray-900';
           } else {
-            color = BOOKING_COLORS.pending.hex;
+            color = BOOKING_COLORS.default.hex; // Gris foncé/noir #1A1A1A
             textColor = 'text-white';
           }
           
@@ -447,11 +449,11 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
         <div className="border-t border-gray-200">
           {weeks.map((week, weekIndex) => {
             const bookingsInWeek = getBookingsForWeek(week);
-            // Calculer la hauteur basée sur le nombre de réservations (responsive)
-            const bookingRowsCount = Math.max(0, bookingsInWeek.length);
+            // ✅ AIRBNB : Hauteur fixe pour chaque ligne (réservations en ligne, pas en cascade)
             const baseHeight = 28; // Hauteur pour les numéros de jour (mobile)
-            const bookingHeight = 28; // Hauteur par réservation (mobile) - ajusté pour h-7
-            const totalHeight = baseHeight + (bookingRowsCount * bookingHeight) + 4;
+            const bookingHeight = 28; // Hauteur par ligne de réservation (mobile)
+            // ✅ AIRBNB : Chaque réservation sur sa propre ligne horizontale
+            const totalHeight = baseHeight + (bookingsInWeek.length * bookingHeight) + 4;
             
             return (
               <div key={`${monthDate.getTime()}-week-${weekIndex}`} className="relative border-b border-gray-100" style={{ minHeight: `${totalHeight}px` }}>
@@ -486,7 +488,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                   })}
                 </div>
 
-                {/* Barres de réservation - Style Airbnb */}
+                {/* ✅ AIRBNB : Barres de réservation en ligne (chaque réservation sur sa propre ligne) */}
                 {bookingsInWeek.length > 0 && (
                   <div 
                     className="absolute left-0 right-0 pointer-events-none"
@@ -522,7 +524,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                       // ✅ Étendre la barre jusqu'au BORD DROIT de la dernière cellule
                       const widthPercent = span * cellWidth;
                       
-                      // ✅ Style de bordure arrondie - arrondi seulement aux extrémités
+                      // ✅ AIRBNB : Style de bordure arrondie - arrondi seulement aux extrémités
                       let borderRadius = '0';
                       if (isStartOfBooking && isEndOfBooking) {
                         borderRadius = '14px';
@@ -532,6 +534,24 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                         borderRadius = '0 14px 14px 0';
                       }
                       
+                      // ✅ AIRBNB : Déterminer la couleur selon le statut (comme dans Figma)
+                      let backgroundColor = bookingData.color;
+                      let textColor = bookingData.textColor;
+                      
+                      // Si c'est un conflit, utiliser rouge Airbnb
+                      if (bookingData.isConflict) {
+                        backgroundColor = '#FF5A5F';
+                        textColor = 'text-white';
+                      } else if (bookingData.isValidName) {
+                        // Réservation complétée : gris clair avec checkmark vert
+                        backgroundColor = '#E5E5E5';
+                        textColor = 'text-gray-900';
+                      } else {
+                        // Réservation en attente : gris foncé/noir
+                        backgroundColor = '#1A1A1A';
+                        textColor = 'text-white';
+                      }
+                      
                       return (
                         <div
                           key={`${bookingData.booking.id}-${weekIndex}-${idx}`}
@@ -539,7 +559,8 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                           style={{
                             left: `calc(${leftPercent}% + 1px)`,
                             width: `calc(${widthPercent}% - 2px)`,
-                            top: `${idx * 28}px`,
+                            // ✅ AIRBNB : Chaque réservation sur sa propre ligne (pas en cascade)
+                            top: `${idx * bookingHeight}px`,
                           }}
                           onClick={() => onBookingClick(bookingData.booking)}
                         >
@@ -551,10 +572,21 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                               bookingData.isConflict && "ring-2 ring-red-400"
                             )}
                             style={{ 
-                              backgroundColor: bookingData.color,
+                              backgroundColor,
                               borderRadius,
                             }}
                           >
+                            {/* ✅ AIRBNB : Checkmark vert pour réservations complétées, X blanc pour annulées (comme dans Figma) */}
+                            {isStartOfBooking && (
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                {bookingData.isConflict ? (
+                                  <span className="text-white text-sm font-bold leading-none">✕</span>
+                                ) : bookingData.isValidName ? (
+                                  <span className="text-green-600 text-sm font-bold leading-none">✓</span>
+                                ) : null}
+                              </div>
+                            )}
+                            
                             {/* ✅ Avatar avec initiales ou photo (seulement au début si nom valide) */}
                             {isStartOfBooking && bookingData.isValidName && (
                               <div
@@ -567,16 +599,16 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                                     className="w-full h-full object-cover"
                                   />
                                 ) : (
-                                  <span className={cn("text-[8px] sm:text-[9px] font-bold", bookingData.textColor)}>
+                                  <span className={cn("text-[8px] sm:text-[9px] font-bold", textColor)}>
                                     {getInitials(bookingData.guestName)}
                                   </span>
                                 )}
                               </div>
                             )}
                             
-                            {/* ✅ Nom OU Code de réservation (pas de "?") - Responsive */}
+                            {/* ✅ Nom OU Code de réservation - Responsive */}
                             {isStartOfBooking && (
-                              <div className={cn("flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1", bookingData.textColor)}>
+                              <div className={cn("flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1", textColor)}>
                                 <span className="text-[10px] sm:text-[11px] font-semibold truncate leading-tight">
                                   {bookingData.isValidName 
                                     ? bookingData.guestName.split(' ')[0]

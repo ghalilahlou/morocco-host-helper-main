@@ -184,28 +184,30 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
       console.log('⏳ loadAirbnbReservations déjà en cours, appel ignoré');
       return;
     }
+
+    // Déterminer la plage de dates du mois courant
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const startDate = new Date(year, month, 1);
+    const endDate = new Date(year, month + 1, 0);
     
-    // Check cache first
-    const cached = airbnbCache.get(propertyId);
+    const startStr = startDate.toISOString().split('T')[0];
+    const endStr = endDate.toISOString().split('T')[0];
+
+    // ✅ NOUVEAU : clé de cache inclut propriété + plage de dates
+    const cacheKey = `${propertyId}-${startStr}-${endStr}`;
+    
+    // Check cache first pour cette plage précise
+    const cached = airbnbCache.get(cacheKey);
     if (cached) {
       setAirbnbReservations(cached.data);
-      // ✅ Cache hit - pas de rechargement nécessaire
       return;
     }
     
     isLoadingRef.current = true;
     
     try {
-      // Get current month range for calendar events
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth();
-      const startDate = new Date(year, month, 1);
-      const endDate = new Date(year, month + 1, 0);
-      
-      const startStr = startDate.toISOString().split('T')[0];
-      const endStr = endDate.toISOString().split('T')[0];
-      
-      // Fetch calendar events
+      // Fetch calendar events pour la plage voulue
       const calendarEvents = await fetchAirbnbCalendarEvents(propertyId, startStr, endStr);
       
       // ✅ CORRIGÉ : Convertir les événements en réservations Airbnb avec enrichissement
@@ -290,8 +292,8 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
       const finalReservations = enrichedReservations;
       
       // ✅ CORRIGÉ : Utiliser les réservations enrichies au lieu des réservations formatées
-      // Cache the data
-      airbnbCache.set(propertyId, finalReservations);
+      // Mettre en cache par propriété + plage de dates
+      airbnbCache.set(cacheKey, finalReservations);
       setAirbnbReservations(finalReservations);
       
       // Get sync status
@@ -415,13 +417,14 @@ const handleManualRefresh = useCallback(async () => {
       // Schedule reload for later
       const remainingTime = MIN_RELOAD_INTERVAL - timeSinceLastReload;
       reloadTimeoutRef.current = setTimeout(() => {
-        airbnbCache.delete(propertyId || '');
+        // Invalider tout le cache Airbnb – les changements peuvent affecter plusieurs mois
+        airbnbCache.clear();
         loadAirbnbReservations();
         lastReloadTime.current = Date.now();
       }, remainingTime);
     } else {
       // Reload immediately
-      airbnbCache.delete(propertyId || '');
+      airbnbCache.clear();
       loadAirbnbReservations();
       lastReloadTime.current = now;
     }
@@ -511,17 +514,26 @@ const handleManualRefresh = useCallback(async () => {
           });
         }
         
+        // ✅ CORRIGÉ : Invalider TOUS les caches avant de rafraîchir
+        // Cela évite d'afficher des données obsolètes ou en double
+        airbnbCache.clear();
+        if (propertyId) {
+          // Invalider TOUS les caches pour cette propriété (avec ou sans dateRange)
+          const { multiLevelCache } = await import('@/services/multiLevelCache');
+          await multiLevelCache.invalidatePattern(`bookings-${propertyId}`);
+          await multiLevelCache.invalidatePattern(`bookings-${propertyId}-*`);
+        }
+        
         // ✅ CORRIGÉ : Rafraîchir les bookings D'ABORD (comme dans handleManualRefresh)
         // Cela garantit que les bookings sont synchronisés avec les nouvelles réservations ICS
         if (onRefreshBookings) {
           console.log('🔄 Rafraîchissement des bookings après sync...');
           await onRefreshBookings();
           // Attendre un court instant pour que les subscriptions se mettent à jour
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Augmenté à 1s pour laisser le temps aux websockets
         }
         
         // ✅ ÉTAPE 2 : Recharger les réservations Airbnb (utiliser loadAirbnbReservations pour la cohérence)
-        airbnbCache.clear();
         await loadAirbnbReservations();
         
         setSyncStatus('success');
@@ -705,55 +717,109 @@ const handleOpenConfig = useCallback(() => {
       }
       
       return reservation;
-    }).filter(reservation => {
-      // Filtrer seulement celles qui n'ont PAS de match (pour éviter les doublons)
+    });
+
+    // ✅ CORRIGÉ : Filtrer séparément les réservations Airbnb sans doublons
+    const uniqueAirbnbReservations = filteredAirbnb.filter(reservation => {
+      // Vérifier que ce n'est pas un boolean (erreur de logique précédente)
+      if (typeof reservation === 'boolean') return false;
+
+      // Garder seulement celles qui n'ont PAS de match exact avec un booking
       const hasManualMatch = bookings.some(booking => {
         const manualStart = new Date(booking.checkInDate);
         const manualEnd = new Date(booking.checkOutDate);
         const airbnbStart = reservation.startDate;
         const airbnbEnd = reservation.endDate;
-        
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
+
+        const datesMatch = manualStart.getTime() === airbnbStart.getTime() &&
                           manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = booking.bookingReference && reservation.airbnbBookingId && 
-                         (booking.bookingReference.includes(reservation.airbnbBookingId) || 
+        const refsMatch = booking.bookingReference && reservation.airbnbBookingId &&
+                         (booking.bookingReference.includes(reservation.airbnbBookingId) ||
                           reservation.airbnbBookingId.includes(booking.bookingReference));
-        
+
         return datesMatch || refsMatch;
       });
-      
-      return !hasManualMatch; // Garder seulement les Airbnb SANS match exact avec un booking
+
+      return !hasManualMatch;
     });
     
-    return [...bookings, ...filteredAirbnb];
+    return [...bookings, ...uniqueAirbnbReservations];
   }, [bookings, airbnbReservations]);
 
   // Generate calendar days
   const calendarDays = useMemo(() => generateCalendarDays(currentDate), [currentDate]);
 
-  // ✅ DIAGNOSTIC : Log des réservations avant calcul du layout
+  // ✅ DIAGNOSTIC : Log des réservations avant calcul du layout (uniquement en mode debugCalendar)
   useEffect(() => {
+    if (!debugMode) return;
+
     console.log('📅 [CALENDAR DIAGNOSTIC] Réservations reçues:', {
       totalBookings: bookings.length,
       totalAirbnb: airbnbReservations.length,
       totalAllReservations: allReservations.length,
-      bookingIds: bookings.map(b => ({ id: b.id, propertyId: b.propertyId, checkIn: b.checkInDate, checkOut: b.checkOutDate, status: b.status })),
       currentMonth: currentDate.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })
     });
-  }, [bookings, airbnbReservations, allReservations, currentDate]);
+    console.log('📅 [CALENDAR DIAGNOSTIC] Booking IDs:', bookings.map(b => b.id.substring(0, 8)).join(', '));
+    console.log('📅 [CALENDAR DIAGNOSTIC] Détails bookings:', bookings.map(b => ({
+      id: b.id.substring(0, 8),
+      propertyId: b.propertyId?.substring(0, 8) || 'N/A',
+      checkIn: b.checkInDate,
+      checkOut: b.checkOutDate,
+      status: b.status
+    })));
+  }, [bookings, airbnbReservations, allReservations, currentDate, debugMode]);
 
   // Calculate booking positions for continuous bars
   const bookingLayout = useMemo(() => {
-    console.log('📅 [CALENDAR DIAGNOSTIC] Calcul du layout avec', allReservations.length, 'réservations');
+    if (debugMode) {
+      console.log('📅 [CALENDAR DIAGNOSTIC] Calcul du layout avec', allReservations.length, 'réservations');
+    }
+
     const layout = calculateBookingLayout(calendarDays, allReservations, colorOverrides);
-    console.log('📅 [CALENDAR DIAGNOSTIC] Layout calculé:', Object.keys(layout).length, 'semaines avec réservations');
-    Object.keys(layout).forEach(weekIndex => {
-      if (layout[weekIndex].length > 0) {
-        console.log(`📅 [CALENDAR DIAGNOSTIC] Semaine ${weekIndex}:`, layout[weekIndex].length, 'réservations');
-      }
-    });
+
+    if (debugMode) {
+      console.log('📅 [CALENDAR DIAGNOSTIC] Layout calculé:', Object.keys(layout).length, 'semaines avec réservations');
+      Object.keys(layout).forEach(weekIndex => {
+        if (layout[weekIndex].length > 0) {
+          console.log(`📅 [CALENDAR DIAGNOSTIC] Semaine ${weekIndex}:`, layout[weekIndex].length, 'réservations');
+        }
+      });
+    }
+
     return layout;
-  }, [calendarDays, allReservations, colorOverrides]);
+  }, [calendarDays, allReservations, colorOverrides, debugMode]);
+
+  // ✅ NOUVEAU : Résumé de debug pour vérifier concrètement les dates chargées
+  const debugDateSummary = useMemo(() => {
+    if (!debugMode) return null;
+
+    const manualStarts = bookings.map(b => new Date(b.checkInDate));
+    const manualEnds = bookings.map(b => new Date(b.checkOutDate));
+    const airbnbStarts = airbnbReservations.map(r => new Date(r.startDate));
+    const airbnbEnds = airbnbReservations.map(r => new Date(r.endDate));
+
+    const allStarts = [...manualStarts, ...airbnbStarts].filter(d => !isNaN(d.getTime()));
+    const allEnds = [...manualEnds, ...airbnbEnds].filter(d => !isNaN(d.getTime()));
+
+    if (allStarts.length === 0 || allEnds.length === 0) {
+      return {
+        manualCount: bookings.length,
+        airbnbCount: airbnbReservations.length,
+        earliest: null as Date | null,
+        latest: null as Date | null
+      };
+    }
+
+    const earliest = new Date(Math.min(...allStarts.map(d => d.getTime())));
+    const latest = new Date(Math.max(...allEnds.map(d => d.getTime())));
+
+    return {
+      manualCount: bookings.length,
+      airbnbCount: airbnbReservations.length,
+      earliest,
+      latest
+    };
+  }, [debugMode, bookings, airbnbReservations]);
 
 
   // ✅ CORRIGÉ : Utiliser les conflits déjà calculés plus haut (pas besoin de les recalculer)
@@ -1052,6 +1118,21 @@ const handleOpenConfig = useCallback(() => {
         onClose={() => setSelectedBooking(null)}
         propertyId={propertyId}
       />
+
+      {/* ✅ NOUVEAU : Panneau de debug visuel pour vérifier les dates ICS/manuelles */}
+      {debugMode && debugDateSummary && (
+        <div className="mt-4 text-xs text-muted-foreground border rounded-md p-3 bg-muted/40">
+          <div className="font-semibold mb-1">Debug calendrier (dates chargées)</div>
+          <div>Réservations manuelles (bookings) : {debugDateSummary.manualCount}</div>
+          <div>Réservations Airbnb (ICS) : {debugDateSummary.airbnbCount}</div>
+          <div>
+            Période globale :{" "}
+            {debugDateSummary.earliest
+              ? `${debugDateSummary.earliest.toLocaleDateString('fr-FR')} → ${debugDateSummary.latest?.toLocaleDateString('fr-FR')}`
+              : 'aucune date'}
+          </div>
+        </div>
+      )}
 
     </div>
   );

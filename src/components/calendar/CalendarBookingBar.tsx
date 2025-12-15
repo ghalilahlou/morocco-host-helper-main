@@ -4,6 +4,7 @@ import { BookingLayout } from './CalendarUtils';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
+import { Check, X } from 'lucide-react';
 
 interface CalendarBookingBarProps {
   bookingData: BookingLayout;
@@ -67,28 +68,44 @@ export const CalendarBookingBar = memo(({
   conflicts, 
   onBookingClick 
 }: CalendarBookingBarProps) => {
+  const booking = bookingData.booking as Booking | AirbnbReservation;
+
   // 1. Détecter les conflits (priorité absolue = rouge)
-  const isConflict = conflicts.includes(bookingData.booking.id);
+  const isConflict = conflicts.includes(booking.id);
   
   // 2. Obtenir le label à afficher
-  const displayLabel = getUnifiedBookingDisplayText(bookingData.booking, bookingData.isStart);
+  const displayLabel = getUnifiedBookingDisplayText(booking, bookingData.isStart);
   
   // 3. Déterminer si c'est un nom (comme "Marcel", "Michel") ou un code
   const isName = isValidGuestName(displayLabel);
   
-  // 4. Déterminer la couleur : nom = vert, code = gris, conflit = rouge
-  const colorInfo = (() => {
-    if (isConflict) return BOOKING_COLORS.conflict;
-    if (isName) return BOOKING_COLORS.completed; // Nom affiché = VERT
-    return BOOKING_COLORS.pending; // Code affiché = GRIS
+  // 4. Déterminer le statut (uniquement pour les bookings manuels)
+  const status = 'status' in booking ? (booking as Booking).status : undefined;
+  const isCompleted = status === 'completed';
+
+  // 5. Palette visuelle des barres (alignée sur la maquette)
+  const { barColor, textColor } = (() => {
+    if (isConflict) {
+      return {
+        barColor: BOOKING_COLORS.conflict.hex, // Rouge vif
+        textColor: 'text-white'
+      };
+    }
+
+    // Réservation terminée : barre gris clair comme "Samy"
+    if (isCompleted) {
+      return {
+        barColor: BOOKING_COLORS.completed.hex,
+        textColor: 'text-slate-900'
+      };
+    }
+
+    // Réservation active / en attente : barre noire comme "Abdelilah"
+    return {
+      barColor: BOOKING_COLORS.manual.hex,
+      textColor: 'text-white'
+    };
   })();
-  
-  // ✅ HARMONISÉ : Ajuster la couleur du texte selon la couleur de fond pour un meilleur contraste
-  const textColor = isConflict 
-    ? 'text-white' 
-    : colorInfo.hex === BOOKING_COLORS.completed.hex 
-      ? 'text-teal-900' // Texte foncé pour le teal clair (#8BD7D2)
-      : 'text-white'; // Texte blanc pour le gris et autres couleurs
   
   // ✅ CRITIQUE : Vérifier que booking existe
   if (!bookingData.booking) {
@@ -99,19 +116,22 @@ export const CalendarBookingBar = memo(({
   return (
     <div
       className={`
-        rounded-lg flex items-center px-3 py-1.5 text-xs font-semibold ${textColor}
-        cursor-pointer transition-all duration-200 shadow-md hover:shadow-lg
-        ${isConflict ? 'ring-2 ring-red-300' : ''}
-        w-full
+        w-full h-full
+        rounded-full flex items-center px-3 sm:px-4 text-xs font-semibold ${textColor}
+        cursor-pointer transition-all duration-200
+        ${isConflict ? 'ring-2 ring-red-300/70' : 'ring-0'}
       `}
       style={{
-        backgroundColor: colorInfo.hex,
-        minHeight: '100%',
-        height: '100%',
+        backgroundColor: barColor,
+        // Si ce segment contient la date de check-out, réduire légèrement la largeur
+        // pour suggérer que la journée de départ n'est que partiellement occupée.
+        width: bookingData.isEnd && bookingData.span > 0
+          ? `calc(100% - ${(0.75 * (100 / bookingData.span)).toFixed(2)}%)`
+          : '100%',
         zIndex: 1000 + (bookingData.layer || 0),
         boxShadow: isConflict 
           ? '0 4px 12px rgba(220,38,38,0.25)' 
-          : `0 2px 8px ${colorInfo.hex}30`,
+          : '0 2px 6px rgba(15,23,42,0.20)',
         border: 'none',
         pointerEvents: 'auto', // ✅ CRITIQUE : S'assurer que les événements sont activés
       }}
@@ -126,7 +146,33 @@ export const CalendarBookingBar = memo(({
     >
       {bookingData.isStart && (
         <div className="flex items-center gap-2 w-full min-w-0">
-          <span className="truncate">{displayLabel}</span>
+          {/* Icône de statut à gauche - paramètres alignés sur le modèle Figma */}
+          <div
+            className="flex items-center justify-center flex-shrink-0"
+            style={{
+              width: 22,   // légèrement plus large que le vecteur Figma (~18)
+              height: 16   // légèrement plus haut pour garder les proportions
+            }}
+          >
+            {isConflict ? (
+              <X
+                className="w-full h-full"
+                style={{ color: '#0BD9D0' }}
+                strokeWidth={2}
+              />
+            ) : (
+              <Check
+                className="w-full h-full"
+                style={{ color: '#0BD9D0' }}
+                strokeWidth={2}
+              />
+            )}
+          </div>
+
+          {/* Label de réservation */}
+          <span className="truncate">
+            {displayLabel}
+          </span>
         </div>
       )}
     </div>

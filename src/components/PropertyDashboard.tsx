@@ -21,8 +21,11 @@ interface PropertyDashboardProps {
 
 export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashboardProps) => {
   const { properties, isLoading: propertiesLoading } = useProperties();
-  const { bookings, refreshBookings, isLoading: bookingsLoading } = useBookings();
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  // ✅ PHASE 1 : Passer selectedProperty.id pour filtrer les réservations
+  const { bookings, refreshBookings, isLoading: bookingsLoading } = useBookings({ 
+    propertyId: selectedProperty?.id 
+  });
   const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('cards');
   const [airbnbReservationsCount, setAirbnbReservationsCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);

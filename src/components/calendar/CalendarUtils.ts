@@ -16,6 +16,8 @@ export interface BookingLayout {
   startDayIndex: number;
   span: number;
   isStart: boolean;
+  // Indique si ce segment contient la fin effective de la réservation (veille du check-out)
+  isEnd?: boolean;
   weekIndex: number;
   color: string;
   isAirbnb?: boolean;
@@ -218,8 +220,8 @@ export const calculateBookingLayout = (
     const checkIn = toLocalMidnight(rawCheckIn);
     const checkOut = toLocalMidnight(rawCheckOut);
     
-    // 📊 DEBUG : Log pour vérifier les conversions
-    if (bookingIndex === 0) {
+    // 📊 DEBUG (limité) : Log pour vérifier les conversions - uniquement en développement et pour la première réservation
+    if (process.env.NODE_ENV === 'development' && bookingIndex === 0) {
       console.log('🗓️ [Calendar] Première réservation:', {
         isAirbnb,
         rawCheckIn,
@@ -287,21 +289,21 @@ export const calculateBookingLayout = (
       let startIndex = -1;
       let endIndex = -1;
       
-      // ✅ DIAGNOSTIC EXHAUSTIF : Log des jours de la semaine pour cette réservation
-      const weekDates = week.map(d => ({
-        date: normalizeDate(new Date(d.date.getFullYear(), d.date.getMonth(), d.date.getDate())).toLocaleDateString('fr-FR'),
-        dayNumber: d.dayNumber,
-        isCurrentMonth: d.isCurrentMonth
-      }));
-      
-      // ✅ ANALYSE EXHAUSTIVE : Trouver le span de la réservation dans cette semaine
+      // ✅ ANALYSE : Trouver le span de la réservation dans cette semaine
       for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
         const day = week[dayIndex];
+
+        // ✅ NOUVEAU : ignorer les jours qui ne font pas partie du mois courant
+        // Le calendrier ne doit afficher que les dates du mois sélectionné,
+        // pas la continuité visuelle des mois précédent/suivant.
+        if (!day.isCurrentMonth) {
+          continue;
+        }
         // ✅ CRITIQUE : Normaliser la date du jour de la même manière que checkIn/checkOut
         const dayDate = normalizeDate(new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate()));
         
-        // ✅ DIAGNOSTIC : Log pour le premier jour de la première réservation
-        if (bookingIndex === 0 && weekIndex === 0 && dayIndex === 0) {
+        // ✅ DIAGNOSTIC LIMITE : Log pour le premier jour de la première réservation (développement uniquement)
+        if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0 && dayIndex === 0) {
           console.log('🔍 [ANALYSE POSITION] Comparaison dates:', {
             dayDate: dayDate.toLocaleDateString('fr-FR'),
             dayNumber: day.dayNumber,
@@ -313,10 +315,10 @@ export const calculateBookingLayout = (
           });
         }
         
-        // ✅ CORRIGÉ : Comparaison stricte avec dates normalisées
-        // La réservation inclut le jour d'arrivée (inclusif) et se termine le jour de départ (exclusif)
-        // Exemple : Arrivée 25/11, Départ 26/11 → Barre uniquement sur le 25
-        const isInBookingPeriod = dayDate.getTime() >= normalizedCheckIn.getTime() && dayDate.getTime() < normalizedCheckOut.getTime();
+        // ✅ NOUVELLE LOGIQUE VISUELLE :
+        // La réservation inclut le jour d'arrivée (inclusif) et va jusqu'à la date de check-out (incluse pour l'affichage),
+        // afin que la barre visuelle s'étende jusqu'à la cellule du check-out (comme dans la maquette).
+        const isInBookingPeriod = dayDate.getTime() >= normalizedCheckIn.getTime() && dayDate.getTime() <= normalizedCheckOut.getTime();
         
         if (isInBookingPeriod) {
           if (startIndex === -1) {
@@ -343,29 +345,32 @@ export const calculateBookingLayout = (
         // ✅ CORRIGÉ : Vérification stricte de l'alignement avec la date d'arrivée
         const firstDayDate = normalizeDate(new Date(week[startIndex].date.getFullYear(), week[startIndex].date.getMonth(), week[startIndex].date.getDate()));
         const isStart = firstDayDate.getTime() === normalizedCheckIn.getTime();
+
+        // Déterminer si ce segment contient la date de check-out (pour l'affichage visuel)
+        const lastDayDate = normalizeDate(new Date(week[endIndex].date.getFullYear(), week[endIndex].date.getMonth(), week[endIndex].date.getDate()));
+        const isEnd = lastDayDate.getTime() === normalizedCheckOut.getTime();
         
-        // ✅ DIAGNOSTIC EXHAUSTIF : Log détaillé pour chaque réservation
-        console.log(`📅 [CALCUL LAYOUT] Réservation ${booking.id.substring(0, 8)}... dans semaine ${weekIndex}:`, {
-          bookingId: booking.id,
-          checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
-          checkOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
-          weekDates,
-          startDayIndex: startIndex,
-          endDayIndex: endIndex,
-          span,
-          isStart,
-          dayNumber: week[startIndex].dayNumber,
-          expectedDayNumber: normalizedCheckIn.getDate(),
-          match: week[startIndex].dayNumber === normalizedCheckIn.getDate() && 
-                 week[startIndex].date.getMonth() === normalizedCheckIn.getMonth() &&
-                 week[startIndex].date.getFullYear() === normalizedCheckIn.getFullYear()
-        });
+        // ✅ DIAGNOSTIC RÉDUIT : Log détaillé restreint (une seule fois par réservation et seulement en développement)
+        if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0) {
+          console.log(`📅 [CALCUL LAYOUT] Réservation ${booking.id.substring(0, 8)}... dans semaine ${weekIndex}:`, {
+            bookingId: booking.id,
+            checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
+            checkOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
+            startDayIndex: startIndex,
+            endDayIndex: endIndex,
+            span,
+            isStart,
+            dayNumber: week[startIndex].dayNumber,
+            expectedDayNumber: normalizedCheckIn.getDate()
+          });
+        }
         
         const bookingLayout = {
           booking,
           startDayIndex: startIndex,
           span,
           isStart,
+          isEnd,
           weekIndex,
           color,
           isAirbnb,

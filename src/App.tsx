@@ -88,11 +88,19 @@ const GlobalErrorFallback = ({ error, resetError }: { error: Error; resetError: 
   );
 };
 
+// ✅ PHASE 3 : Configuration optimisée de React Query
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
+      staleTime: 30000, // 30 secondes - données considérées fraîches
+      gcTime: 5 * 60 * 1000, // 5 minutes - temps de garde en cache (anciennement cacheTime)
+      refetchOnMount: false, // Ne pas refetch si les données sont fraîches
+      refetchOnReconnect: true, // Refetch si reconnexion
+    },
+    mutations: {
+      retry: 1,
     },
   },
 });

@@ -25,25 +25,7 @@ Le domaine `csopyblkfyofwkeqqegd.supabase.co` **DOIT** rester dans les domaines 
 ### Étape 1 : Vérifier la configuration Authentication dans Supabase
 
 1. Allez sur [Supabase Dashboard](https://supabase.com/dashboard)
-2. Sélectionnez votre projet
-3. Allez dans **Authentication** → **URL Configuration**
-
-### Étape 2 : Configurer les URLs
-
-**Site URL** :
-```
-https://checky.ma
-```
-
-**Redirect URLs** : Ajoutez ces URLs (une par une) :
-```
-https://checky.ma/auth/callback
-https://checky.ma/**
-https://www.checky.ma/auth/callback
-https://www.checky.ma/**
-```
-
-⚠️ **Important** : Ne supprimez PAS les URLs Supabase existantes, ajoutez simplement les nouvelles.
+2. Sélectiimage.pngnouvelles.
 
 ### Étape 3 : Vérifier la configuration Providers
 

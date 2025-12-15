@@ -27,7 +27,8 @@ export const Dashboard = memo(({
   onRefreshBookings,
   propertyId
 }: DashboardProps) => {
-  const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings();
+  // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
+  const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings({ propertyId });
   
   // Use prop bookings if provided, otherwise use all bookings
   const bookings = propBookings || allBookings;
@@ -68,8 +69,14 @@ export const Dashboard = memo(({
       filtered: filtered.length,
       searchTerm,
       statusFilter,
-      bookingIds: bookings.map(b => ({ id: b.id, propertyId: b.propertyId, status: b.status, guestName: b.guest_name }))
+      bookingIds: bookings.map(b => b.id.substring(0, 8)).join(', ')
     });
+    console.log('📋 [DASHBOARD DIAGNOSTIC] Détails:', bookings.map(b => ({
+      id: b.id.substring(0, 8),
+      propertyId: b.propertyId?.substring(0, 8) || 'N/A',
+      status: b.status,
+      guestName: b.guest_name
+    })));
     
     return filtered;
   }, [bookings, searchTerm, statusFilter]);

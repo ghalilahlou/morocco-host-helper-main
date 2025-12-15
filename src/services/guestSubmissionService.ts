@@ -180,7 +180,47 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       };
     });
 
-    console.log('✅ Enriched bookings with guest submissions:', enrichedBookings);
+    // ✅ DIAGNOSTIC : Vérifier les doublons avant de retourner
+    const uniqueIds = new Set<string>();
+    const duplicates: string[] = [];
+    enrichedBookings.forEach(b => {
+      if (uniqueIds.has(b.id)) {
+        duplicates.push(b.id.substring(0, 8));
+      } else {
+        uniqueIds.add(b.id);
+      }
+    });
+    
+    if (duplicates.length > 0) {
+      console.warn('⚠️ [ENRICH] Doublons détectés dans enrichedBookings:', {
+        duplicates,
+        total: enrichedBookings.length,
+        unique: uniqueIds.size
+      });
+    }
+    
+    console.log('✅ Enriched bookings with guest submissions:', {
+      total: enrichedBookings.length,
+      unique: uniqueIds.size,
+      duplicates: duplicates.length > 0 ? duplicates : 'none',
+      bookingIds: enrichedBookings.map(b => b.id.substring(0, 8)).join(', ')
+    });
+    console.log('✅ [ENRICH] Détails des réservations enrichies:', enrichedBookings.map(b => ({
+      id: b.id.substring(0, 8),
+      propertyId: b.propertyId?.substring(0, 8) || 'N/A',
+      status: b.status,
+      guestName: b.guest_name
+    })));
+    
+    // ✅ PROTECTION : Retourner seulement les réservations uniques
+    if (duplicates.length > 0) {
+      const uniqueBookings = Array.from(uniqueIds).map(id => 
+        enrichedBookings.find(b => b.id === id)!
+      );
+      console.warn('⚠️ [ENRICH] Doublons supprimés, retour de', uniqueBookings.length, 'réservations uniques');
+      return uniqueBookings;
+    }
+    
     return enrichedBookings;
 
   } catch (error) {

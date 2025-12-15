@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { CalendarDay, BookingLayout } from './CalendarUtils';
 import { CalendarBookingBar } from './CalendarBookingBar';
 import { Booking } from '@/types/booking';
@@ -11,9 +12,11 @@ interface CalendarGridProps {
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
 }
 
-const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+// Libellés de jours pour desktop, comme sur la maquette ("lun.", "mar.", ...)
+const dayNames = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
 
-export const CalendarGrid = ({ 
+// ✅ PHASE 3 : Mémoriser CalendarGrid avec comparaison personnalisée
+export const CalendarGrid = memo(({ 
   calendarDays, 
   bookingLayout, 
   conflicts, 
@@ -27,27 +30,33 @@ export const CalendarGrid = ({
   }
 
   return (
-    <div className="rounded-xl overflow-hidden bg-white shadow-sm border border-border/50">
-      {/* ✅ SIMPLIFIÉ : En-têtes sobres */}
-      <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200">
+    <div className="rounded-2xl bg-transparent">
+      {/* En-têtes des jours, fond très clair comme sur la maquette */}
+      <div className="grid grid-cols-7 bg-slate-50/80 border-b border-slate-200 rounded-t-2xl">
         {dayNames.map((day, index) => (
           <div 
             key={day} 
             className={`
-              p-3 sm:p-4 text-center text-xs sm:text-sm font-semibold text-slate-600
-              ${index === 0 ? 'rounded-tl-xl' : ''}
-              ${index === 6 ? 'rounded-tr-xl' : ''}
+              px-3 py-2 sm:px-4 sm:py-3 text-center text-[11px] sm:text-xs font-medium text-slate-500 uppercase tracking-wide
+              ${index === 0 ? 'rounded-tl-2xl' : ''}
+              ${index === 6 ? 'rounded-tr-2xl' : ''}
             `}
           >
-            <span className="hidden sm:inline font-semibold tracking-wide text-slate-800">{day}</span>
-            <span className="sm:hidden font-bold text-slate-800">{day.charAt(0)}</span>
+            <span className="hidden sm:inline">{day}</span>
+            <span className="sm:hidden font-semibold text-slate-700">{day.charAt(0)}</span>
           </div>
         ))}
       </div>
 
       {/* Calendar Grid */}
-      <div className="relative">
+      <div className="relative bg-transparent pt-2">
         {weeks.map((week, weekIndex) => {
+          // Masquer complètement les lignes qui ne contiennent aucun jour du mois courant
+          const hasCurrentMonthDay = week.some(d => d.isCurrentMonth);
+          if (!hasCurrentMonthDay) {
+            return null;
+          }
+
           // ✅ CALCULER les valeurs une seule fois par semaine pour cohérence
           const layersInWeek = bookingLayout[weekIndex] ? 
             Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1 : 1;
@@ -63,7 +72,7 @@ export const CalendarGrid = ({
           return (
             <div key={weekIndex} className="relative" style={{ minHeight: `${cellHeight}px` }}>
               {/* Week Row with Days */}
-              <div className="grid grid-cols-7 relative" style={{ minHeight: `${cellHeight}px` }}>
+              <div className="grid grid-cols-7 gap-3 relative" style={{ minHeight: `${cellHeight}px` }}>
                 {week.map((day, dayIndex) => {
                   const isToday = day.date.toDateString() === new Date().toDateString();
                   
@@ -71,24 +80,33 @@ export const CalendarGrid = ({
                     <div
                       key={dayIndex}
                       className={`
-                        border-r border-b border-slate-100 bg-white relative
+                        relative
+                        ${day.isCurrentMonth
+                          ? 'bg-white border border-slate-200/80 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
+                          : 'bg-transparent border-transparent shadow-none'}
                         ${isMobile ? 'p-2' : 'p-3 sm:p-4'}
-                        ${!day.isCurrentMonth ? 'bg-slate-50 text-slate-400' : 'bg-white'}
-                        ${isToday ? 'bg-cyan-50 border-cyan-200 z-10' : ''}
-                        ${dayIndex === 6 ? 'border-r-0' : ''}
+                        ${isToday ? 'ring-2 ring-cyan-300/60 ring-offset-0 z-10' : ''}
                       `}
                       style={{
                         minHeight: `${cellHeight}px`,
                         height: `${cellHeight}px`,
                       }}
                     >
-                      <div className={`
-                        font-semibold
-                        ${isMobile ? 'text-lg mb-2' : 'text-base sm:text-lg mb-2 sm:mb-3'}
-                        ${isToday ? 'text-cyan-700' : 'text-slate-700'}
-                        ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
-                      `}>
-                        {day.dayNumber}
+                      <div
+                        className={`flex items-start`}
+                      >
+                        <div
+                          className={`
+                            inline-flex items-center justify-center font-semibold
+                            ${isMobile ? 'text-sm' : 'text-sm sm:text-base'}
+                            ${isToday ? 'text-white bg-cyan-500' : 'text-slate-700 bg-transparent'}
+                            ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
+                            ${isToday ? 'rounded-full w-7 h-7' : ''}
+                          `}
+                        >
+                          {/* N'afficher un numéro que pour les jours du mois courant */}
+                          {day.isCurrentMonth ? day.dayNumber.toString().padStart(2, '0') : ''}
+                        </div>
                       </div>
                     </div>
                   );
@@ -112,41 +130,7 @@ export const CalendarGrid = ({
                     const layer = bookingData.layer || 0;
                     const maxLayers = layersInWeek;
                     
-                    // ✅ DIAGNOSTIC EXHAUSTIF : Log détaillé pour chaque barre
-                    if (arrayIndex === 0) {
-                      // ✅ CORRIGÉ : Vérifier le type de booking avant d'accéder aux propriétés
-                      const isAirbnbBooking = 'source' in bookingData.booking && bookingData.booking.source === 'airbnb';
-                      const booking = isAirbnbBooking 
-                        ? null // Ne pas traiter les réservations Airbnb ici
-                        : (bookingData.booking as Booking);
-                      
-                      // ✅ CORRIGÉ : Ne faire le log que pour les réservations Booking (pas Airbnb)
-                      if (booking) {
-                        const expectedDay = week.find(d => {
-                          const dDate = new Date(d.date.getFullYear(), d.date.getMonth(), d.date.getDate(), 0, 0, 0, 0);
-                          const checkIn = new Date(booking.checkInDate);
-                          const checkInNorm = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate(), 0, 0, 0, 0);
-                          return dDate.getTime() === checkInNorm.getTime();
-                        });
-                        
-                        console.log(`📊 [RENDU BARRE] Semaine ${weekIndex}, première barre:`, {
-                          bookingId: booking.id.substring(0, 8),
-                          startDayIndex: bookingData.startDayIndex,
-                          span: bookingData.span,
-                          layer,
-                          gridColumn: `${bookingData.startDayIndex + 1} / span ${bookingData.span}`,
-                          checkIn: booking.checkInDate,
-                          checkOut: booking.checkOutDate,
-                          cellHeight,
-                          weekDayNumbers: week.map(d => d.dayNumber),
-                          expectedDayNumber: expectedDay?.dayNumber,
-                          actualDayNumber: week[bookingData.startDayIndex]?.dayNumber,
-                          alignmentMatch: expectedDay?.dayNumber === week[bookingData.startDayIndex]?.dayNumber,
-                          hasBooking: !!bookingData.booking,
-                          bookingType: 'manual'
-                        });
-                      }
-                    }
+                    // Les logs de rendu détaillés ont été désactivés pour améliorer les performances
                     
                     // ✅ CALCUL PRÉCIS : Valeurs pour le positionnement (augmentées pour mobile)
                     const cellPadding = isMobile ? 8 : 12; // p-2 (8px) ou p-3 (12px)
@@ -197,7 +181,7 @@ export const CalendarGrid = ({
                         }}
                       >
                         <div 
-                          className="grid grid-cols-7 h-full"
+                          className="grid grid-cols-7 h-full gap-3"
                           style={{
                             // ✅ CRITIQUE : S'assurer que la grille correspond exactement aux cellules
                             height: `${cellHeight}px`,
@@ -254,4 +238,24 @@ export const CalendarGrid = ({
       </div>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // ✅ PHASE 3 : Comparaison personnalisée pour éviter les re-renders inutiles
+  if (prevProps.calendarDays.length !== nextProps.calendarDays.length) return false;
+  if (prevProps.conflicts.length !== nextProps.conflicts.length) return false;
+  if (JSON.stringify(prevProps.conflicts) !== JSON.stringify(nextProps.conflicts)) return false;
+  
+  // Comparer les clés de bookingLayout
+  const prevKeys = Object.keys(prevProps.bookingLayout);
+  const nextKeys = Object.keys(nextProps.bookingLayout);
+  if (prevKeys.length !== nextKeys.length) return false;
+  
+  // Comparer les valeurs de bookingLayout
+  for (const key of prevKeys) {
+    if (!nextProps.bookingLayout[key]) return false;
+    if (prevProps.bookingLayout[key].length !== nextProps.bookingLayout[key].length) return false;
+  }
+  
+  return true; // Props identiques, pas besoin de re-render
+});
+
+CalendarGrid.displayName = 'CalendarGrid';

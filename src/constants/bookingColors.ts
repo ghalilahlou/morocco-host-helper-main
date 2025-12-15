@@ -1,61 +1,61 @@
 /**
  * Centralized booking color constants
- * This ensures consistency across all components that display booking status colors
- * ✅ HARMONISÉ : Couleurs synchronisées avec la palette du dashboard Host (teal/cyan clair et ouvert)
+ * ✅ AIRBNB : Couleurs synchronisées avec la palette Airbnb
  */
 
 export const BOOKING_COLORS = {
-  // ✅ UNIFIÉ : Gris cohérent avec le style du dashboard (slate-400 unifié)
+  // ✅ AIRBNB : Gris clair pour réservations complétées (comme dans Figma)
   pending: {
-    hex: '#94A3B8', // slate-400 - gris unifié et cohérent avec CalendarGrid
-    gradient: 'linear-gradient(135deg, #CBD5E1 0%, #94A3B8 50%, #64748B 100%)',
-    tailwind: 'bg-gradient-to-br from-slate-300 to-slate-500',
-    text: 'text-slate-700',
-    shadow: 'shadow-slate-300/50',
-    hover: 'hover:from-slate-400 hover:to-slate-600'
+    hex: '#E5E5E5', // Gris clair Airbnb
+    gradient: 'linear-gradient(135deg, #F7F7F7 0%, #E5E5E5 50%, #D4D4D4 100%)',
+    tailwind: 'bg-gray-200',
+    text: 'text-gray-900',
+    shadow: 'shadow-gray-300/50',
+    hover: 'hover:bg-gray-300'
   },
-  // ✅ HARMONISÉ : Teal/cyan clair et ouvert pour correspondre au style du dashboard (#8BD7D2 ou #54DEFD)
+  // ✅ AIRBNB : Gris clair avec checkmark vert pour réservations complétées
   completed: {
-    hex: '#8BD7D2', // brand-3 - turquoise doux, clair et ouvert comme dans le dashboard
-    gradient: 'linear-gradient(135deg, #54DEFD 0%, #8BD7D2 50%, #119DA4 100%)',
-    tailwind: 'bg-gradient-to-br from-cyan-300 to-teal-400',
-    text: 'text-teal-900',
-    shadow: 'shadow-cyan-300/50',
-    hover: 'hover:from-cyan-400 hover:to-teal-500'
+    hex: '#E5E5E5', // Gris clair Airbnb (comme dans Figma)
+    gradient: 'linear-gradient(135deg, #F7F7F7 0%, #E5E5E5 50%, #D4D4D4 100%)',
+    tailwind: 'bg-gray-200',
+    text: 'text-gray-900',
+    shadow: 'shadow-gray-300/50',
+    hover: 'hover:bg-gray-300'
   },
+  // ✅ AIRBNB : Rouge Airbnb (#FF5A5F) pour conflits/annulations
   conflict: {
-    hex: '#DC2626',
-    gradient: 'linear-gradient(135deg, #EF4444 0%, #DC2626 50%, #B91C1C 100%)',
-    tailwind: 'bg-gradient-to-br from-red-500 to-red-700',
-    text: 'text-red-800',
+    hex: '#FF5A5F', // Rouge Airbnb principal
+    gradient: 'linear-gradient(135deg, #FF5A5F 0%, #E04A4F 50%, #C73A3F 100%)',
+    tailwind: 'bg-red-500',
+    text: 'text-white',
     shadow: 'shadow-red-300/50',
-    hover: 'hover:from-red-600 hover:to-red-800'
+    hover: 'hover:bg-red-600'
   },
-  // ✅ HARMONISÉ : Réservations Airbnb en teal moyen (#119DA4) cohérent avec le dashboard
+  // ✅ AIRBNB : Gris foncé/noir pour certaines réservations (comme dans Figma)
   airbnb: {
-    hex: '#119DA4', // brand-1 - teal moyen du dashboard
-    gradient: 'linear-gradient(135deg, #54DEFD 0%, #119DA4 50%, #0C7489 100%)',
-    tailwind: 'bg-gradient-to-br from-cyan-400 to-teal-600',
-    text: 'text-teal-900',
-    shadow: 'shadow-cyan-300/50',
-    hover: 'hover:from-cyan-500 hover:to-teal-700'
+    hex: '#1A1A1A', // Gris foncé/noir Airbnb
+    gradient: 'linear-gradient(135deg, #2A2A2A 0%, #1A1A1A 50%, #0A0A0A 100%)',
+    tailwind: 'bg-gray-900',
+    text: 'text-white',
+    shadow: 'shadow-gray-800/50',
+    hover: 'hover:bg-gray-800'
   },
   manual: {
-    hex: '#119DA4', // brand-1 - teal moyen du dashboard
-    gradient: 'linear-gradient(135deg, #54DEFD 0%, #119DA4 50%, #0C7489 100%)',
-    tailwind: 'bg-gradient-to-br from-cyan-400 to-teal-600',
-    text: 'text-teal-900',
-    shadow: 'shadow-cyan-300/50',
-    hover: 'hover:from-cyan-500 hover:to-teal-700'
+    hex: '#1A1A1A', // Gris foncé/noir Airbnb
+    gradient: 'linear-gradient(135deg, #2A2A2A 0%, #1A1A1A 50%, #0A0A0A 100%)',
+    tailwind: 'bg-gray-900',
+    text: 'text-white',
+    shadow: 'shadow-gray-800/50',
+    hover: 'hover:bg-gray-800'
   },
-  // ✅ HARMONISÉ : Couleur par défaut en teal moyen (#119DA4) cohérent avec le dashboard
+  // ✅ AIRBNB : Couleur par défaut - gris foncé
   default: {
-    hex: '#119DA4', // brand-1 - teal moyen du dashboard
-    gradient: 'linear-gradient(135deg, #54DEFD 0%, #119DA4 50%, #0C7489 100%)',
-    tailwind: 'bg-gradient-to-br from-cyan-400 to-teal-600',
-    text: 'text-teal-900',
-    shadow: 'shadow-cyan-300/50',
-    hover: 'hover:from-cyan-500 hover:to-teal-700'
+    hex: '#1A1A1A', // Gris foncé/noir Airbnb
+    gradient: 'linear-gradient(135deg, #2A2A2A 0%, #1A1A1A 50%, #0A0A0A 100%)',
+    tailwind: 'bg-gray-900',
+    text: 'text-white',
+    shadow: 'shadow-gray-800/50',
+    hover: 'hover:bg-gray-800'
   }
 } as const;
 
