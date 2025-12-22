@@ -10,6 +10,7 @@ import { EnrichedBooking } from '@/services/guestSubmissionService';
 // getUnifiedBookingDisplayText() gère toute la logique de nettoyage et validation
 import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { UnifiedBookingModal } from './UnifiedBookingModal';
+import { ConflictModal } from './ConflictModal';
 import { CalendarHeader } from './calendar/CalendarHeader';
 import { CalendarGrid } from './calendar/CalendarGrid';
 import { CalendarMobile } from './calendar/CalendarMobile';
@@ -27,6 +28,7 @@ import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import { formatLocalDate } from '@/utils/dateUtils';
 
 interface CalendarViewProps {
   bookings: EnrichedBooking[];
@@ -112,6 +114,7 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
   const [icsUrl, setIcsUrl] = useState<string | null>(null);
   const [hasIcs, setHasIcs] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
+  const [showConflictModal, setShowConflictModal] = useState(false);
   const { toast } = useToast();
   
   // ✅ NOUVEAU : États pour le rafraîchissement automatique
@@ -191,8 +194,9 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     const startDate = new Date(year, month, 1);
     const endDate = new Date(year, month + 1, 0);
     
-    const startStr = startDate.toISOString().split('T')[0];
-    const endStr = endDate.toISOString().split('T')[0];
+    // ✅ CORRIGÉ : Utiliser formatLocalDate pour éviter les décalages de timezone
+    const startStr = formatLocalDate(startDate);
+    const endStr = formatLocalDate(endDate);
 
     // ✅ NOUVEAU : clé de cache inclut propriété + plage de dates
     const cacheKey = `${propertyId}-${startStr}-${endStr}`;
@@ -591,6 +595,17 @@ const handleOpenConfig = useCallback(() => {
     return detectedConflicts;
   }, [bookings, airbnbReservations]);
 
+  // ✅ MOBILE : Ouvrir automatiquement la modale de conflit si des conflits sont détectés
+  useEffect(() => {
+    if (isMobile && conflicts.length > 0 && !showConflictModal) {
+      // Utiliser setTimeout pour éviter les mises à jour d'état pendant le rendu
+      const timer = setTimeout(() => {
+        setShowConflictModal(true);
+      }, 300); // Petit délai pour que le calendrier soit rendu
+      return () => clearTimeout(timer);
+    }
+  }, [isMobile, conflicts.length, showConflictModal]);
+
   // ✅ CORRIGÉ : Calcul des matchs et couleurs avec conflits inclus
   const { colorOverrides: getColorOverrides, matchedBookingsIds } = useMemo(() => {
     const overrides: { [key: string]: string } = {};
@@ -934,105 +949,31 @@ const handleOpenConfig = useCallback(() => {
       "space-y-3 sm:space-y-4",
       isMobile && "px-2"
     )}>
-      {/* Conflicts Alert */}
-      {conflicts.length > 0 && (
+      {/* Conflicts Alert - Desktop */}
+      {!isMobile && conflicts.length > 0 && (
         <Alert className={cn(
           "border-destructive",
-          isMobile && "p-3 text-sm"
+          "p-3 text-sm"
         )}>
-          <AlertTriangle className={cn(isMobile ? "h-3 w-3" : "h-4 w-4")} />
-          <AlertDescription className={cn(isMobile && "text-xs")}>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
             <strong>{conflicts.length} conflit(s) détecté(s)</strong> - Des réservations se chevauchent
           </AlertDescription>
         </Alert>
       )}
 
-      {/* ✅ NOUVEAU : Barre de rafraîchissement et statut */}
-      <motion.div 
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={cn(
-          "mb-4 bg-gradient-to-r from-cyan-50 to-teal-50 dark:from-cyan-950/20 dark:to-teal-950/20 rounded-lg border border-cyan-200 dark:border-cyan-800",
-          isMobile ? "p-2 flex-col gap-2" : "p-3 flex items-center justify-between"
-        )}
-      >
-        <div className={cn(
-          "flex items-center",
-          isMobile ? "flex-wrap gap-2" : "space-x-3"
-        )}>
-          <div className="flex items-center space-x-2">
-            {isOnline ? (
-              <Wifi className={cn(isMobile ? "h-3 w-3" : "h-4 w-4", "text-green-600")} />
-            ) : (
-              <WifiOff className={cn(isMobile ? "h-3 w-3" : "h-4 w-4", "text-red-600")} />
-            )}
-            <span className={cn(
-              "text-muted-foreground",
-              isMobile ? "text-xs" : "text-sm"
-            )}>
-              {isOnline ? 'Connecté' : 'Hors ligne'}
-            </span>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <div className={cn(
-              "rounded-full",
-              isMobile ? "h-1.5 w-1.5" : "h-2 w-2",
-              isRefreshing ? 'bg-cyan-500 animate-pulse' : 'bg-green-500'
-            )} />
-            <span className={cn(
-              "text-muted-foreground",
-              isMobile ? "text-xs" : "text-sm"
-            )}>
-              {isRefreshing ? 'Mise à jour...' : `Dernière MAJ: ${lastRefresh.toLocaleTimeString()}`}
-            </span>
-          </div>
-        </div>
-
-        <div className={cn(
-          "flex items-center",
-          isMobile ? "flex-wrap gap-2 w-full" : "space-x-2"
-        )}>
-          <Button
-            variant="outline"
-            size={isMobile ? "sm" : "sm"}
-            onClick={handleManualRefresh}
-            disabled={isRefreshing || !isOnline}
-            className={cn(
-              "flex items-center space-x-2",
-              isMobile && "flex-1 text-xs"
-            )}
-          >
-            <motion.div
-              animate={{ rotate: isRefreshing ? 360 : 0 }}
-              transition={{ duration: 0.5, repeat: isRefreshing ? Infinity : 0 }}
-            >
-              <RefreshCw className={cn(isMobile ? "h-3 w-3" : "h-4 w-4")} />
-            </motion.div>
-            <span className={isMobile ? "text-xs" : ""}>Actualiser</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            size={isMobile ? "sm" : "sm"}
-            onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
-            className={cn(
-              "flex items-center space-x-2",
-              isMobile && "flex-1 text-xs",
-              autoRefreshEnabled ? 'text-green-600' : 'text-gray-500'
-            )}
-          >
-            <div className={cn(
-              "rounded-full",
-              isMobile ? "h-1.5 w-1.5" : "h-2 w-2",
-              autoRefreshEnabled ? 'bg-green-500' : 'bg-gray-400'
-            )} />
-            <span className={cn(isMobile ? "text-xs" : "text-sm")}>
-              Auto-refresh {autoRefreshEnabled ? 'ON' : 'OFF'}
-            </span>
-          </Button>
-        </div>
-      </motion.div>
+      {/* ✅ MOBILE : Afficher automatiquement la modale de conflit sur mobile */}
+      {isMobile && conflicts.length > 0 && !showConflictModal && (
+        <Alert 
+          className="border-destructive p-3 text-sm cursor-pointer"
+          onClick={() => setShowConflictModal(true)}
+        >
+          <AlertTriangle className="h-3 w-3" />
+          <AlertDescription className="text-xs">
+            <strong>{conflicts.length} conflit(s) détecté(s)</strong> - Cliquez pour voir les détails
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Calendar Header */}
       <ErrorBoundary>
@@ -1046,6 +987,11 @@ const handleOpenConfig = useCallback(() => {
           isConnected={syncStatus === 'success'}
           hasIcs={hasIcs}
           onOpenConfig={handleOpenConfig}
+          onCreateBooking={() => {
+            // Émettre un événement pour créer une réservation
+            const event = new CustomEvent('create-booking-request');
+            window.dispatchEvent(event);
+          }}
           stats={getStats}
           conflictDetails={conflictDetails}
           allReservations={allReservations}
@@ -1118,6 +1064,49 @@ const handleOpenConfig = useCallback(() => {
         onClose={() => setSelectedBooking(null)}
         propertyId={propertyId}
       />
+
+      {/* ✅ MOBILE : Modale de conflit */}
+      {isMobile && (
+        <ConflictModal
+          isOpen={showConflictModal}
+          onClose={() => setShowConflictModal(false)}
+          conflictDetails={conflictDetails}
+          allReservations={allReservations}
+          onDeleteBooking={async (id: string) => {
+            try {
+              // Trouver la réservation à supprimer
+              const booking = bookings.find(b => b.id === id);
+              if (booking) {
+                // Supprimer via Supabase
+                const { error } = await supabase
+                  .from('bookings')
+                  .delete()
+                  .eq('id', id);
+                
+                if (error) throw error;
+                
+                // Rafraîchir les bookings
+                if (onRefreshBookings) {
+                  await onRefreshBookings();
+                }
+                
+                toast({
+                  title: "Réservation supprimée",
+                  description: "La réservation a été supprimée avec succès.",
+                });
+              }
+            } catch (error) {
+              console.error('Error deleting booking:', error);
+              toast({
+                title: "Erreur",
+                description: "Impossible de supprimer la réservation.",
+                variant: "destructive"
+              });
+              throw error;
+            }
+          }}
+        />
+      )}
 
       {/* ✅ NOUVEAU : Panneau de debug visuel pour vérifier les dates ICS/manuelles */}
       {debugMode && debugDateSummary && (

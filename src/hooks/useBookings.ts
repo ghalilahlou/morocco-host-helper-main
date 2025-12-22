@@ -14,7 +14,8 @@ interface CacheEntry {
 }
 
 const bookingsCache = new Map<string, CacheEntry>();
-const BOOKINGS_CACHE_DURATION = 30000; // 30 secondes
+// ✅ OPTIMISATION : Cache augmenté à 60s pour réduire les requêtes
+const BOOKINGS_CACHE_DURATION = 60000; // 60 secondes
 
 interface UseBookingsOptions {
   propertyId?: string;
@@ -26,7 +27,7 @@ interface UseBookingsOptions {
 }
 
 export const useBookings = (options?: UseBookingsOptions) => {
-  const { propertyId, dateRange, limit = 100 } = options || {};
+  const { propertyId, dateRange, limit = 50 } = options || {}; // ✅ OPTIMISATION : Réduire la limite par défaut de 100 à 50 pour éviter les timeouts
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const loadingRef = useRef(false);
@@ -353,25 +354,105 @@ export const useBookings = (options?: UseBookingsOptions) => {
         });
       }
       
-      // ✅ PHASE 2 : Ajouter pagination
+      // ✅ PHASE 2 : Ajouter pagination avec limite réduite pour éviter les timeouts
       query = query
         .order('check_in_date', { ascending: false })
-        .limit(limit);
+        .limit(Math.min(limit, 50)); // ✅ OPTIMISATION : Limiter à 50 max pour éviter les timeouts
       
-      const { data: bookingsData, error } = await query;
+      let bookingsData, error;
+      try {
+        // ✅ OPTIMISATION : Timeout réduit à 2.5s pour une meilleure réactivité
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Query timeout after 2.5s')), 2500)
+        );
+        
+        const result = await Promise.race([query, timeoutPromise]) as any;
+        bookingsData = result.data;
+        error = result.error;
+        
+        // ✅ OPTIMISATION : Détecter immédiatement les erreurs 500 dans la réponse
+        if (result.status === 500 || (error && ((error as any).status === 500 || (error as any).statusCode === 500))) {
+          console.warn('⚠️ [BOOKINGS] Erreur 500 détectée immédiatement, passage au fallback');
+          error = error || { code: '500', status: 500, message: 'Internal Server Error' };
+        }
+      } catch (err: any) {
+        // Capturer les erreurs de réseau, timeout, ou autres erreurs non gérées
+        error = err;
+        bookingsData = null;
+        // Si c'est un timeout, forcer le fallback
+        if (err.message?.includes('timeout') || err.message?.includes('Query timeout')) {
+          error.code = '57014'; // Code de timeout PostgreSQL
+        }
+      }
       
       if (error) {
-        // ✅ PHASE 2 : Fallback si la vue matérialisée n'existe pas encore
-        if (error.message?.includes('does not exist') || error.message?.includes('relation') || error.code === '42P01') {
-          debug('Materialized view not available, falling back to bookings table', { error: error.message });
+        // ✅ PHASE 2 : Fallback si la vue matérialisée n'existe pas, erreur serveur, ou timeout
+        // Détecter les erreurs 500, timeout, et autres erreurs de vue matérialisée
+        const errorStatus = (error as any).status || (error as any).statusCode || (error as any).code;
+        const errorMessage = error.message || String(error);
+        const errorDetails = (error as any).details || '';
+        const errorHint = (error as any).hint || '';
         
-        // Fallback sur la table bookings classique
+        // Vérifier si c'est une erreur 500 (Internal Server Error)
+        const is500Error = 
+          errorStatus === 500 || 
+          errorStatus === '500' ||
+          errorMessage?.includes('Internal Server Error') ||
+          errorMessage?.includes('500');
+        
+        // Vérifier si c'est un timeout (code 57014)
+        const isTimeoutError = 
+          error.code === '57014' ||
+          errorMessage?.includes('timeout') ||
+          errorMessage?.includes('canceling statement due to statement timeout');
+        
+        const shouldFallback = 
+          errorMessage?.includes('does not exist') || 
+          errorMessage?.includes('relation') || 
+          errorMessage?.includes('materialized view') ||
+          errorMessage?.includes('mv_bookings_enriched') ||
+          error.code === '42P01' ||
+          error.code === 'PGRST116' ||
+          error.code === '57014' ||
+          is500Error ||
+          isTimeoutError;
+        
+        if (shouldFallback) {
+          warn('Materialized view error, falling back to bookings table', { 
+            error: error.message, 
+            code: error.code,
+            status: (error as any).status || (error as any).statusCode
+          });
+        
+        // ✅ OPTIMISATION : Fallback optimisé - sélectionner seulement les colonnes nécessaires
         let fallbackQuery = supabase
           .from('bookings')
           .select(`
-            *,
-            guests (*),
-            property:properties (*)
+            id,
+            property_id,
+            check_in_date,
+            check_out_date,
+            number_of_guests,
+            booking_reference,
+            guest_name,
+            status,
+            created_at,
+            updated_at,
+            documents_generated,
+            guests (
+              id,
+              full_name,
+              date_of_birth,
+              nationality,
+              document_number,
+              booking_id
+            ),
+            property:properties (
+              id,
+              name,
+              address,
+              property_type
+            )
           `);
         
         if (propertyId) {
@@ -440,20 +521,159 @@ export const useBookings = (options?: UseBookingsOptions) => {
           );
           debug('✅ [LOAD BOOKINGS] Doublons supprimés, utilisation de', uniqueBookings.length, 'réservations uniques');
           
-          // ✅ PHASE 2 : Mettre en cache multi-niveaux
-          await multiLevelCache.set(cacheKey, uniqueBookings, 30000); // 30s memory, 5min IndexedDB
+          // ✅ OPTIMISATION : Cache augmenté à 60s
+          await multiLevelCache.set(cacheKey, uniqueBookings, 60000); // 60s memory, 5min IndexedDB
           bookingsCache.set(cacheKey, { data: uniqueBookings, timestamp: now });
           
           setBookings(uniqueBookings);
           return;
         }
         
-        // ✅ PHASE 2 : Mettre en cache multi-niveaux
-        await multiLevelCache.set(cacheKey, enrichedBookings, 30000); // 30s memory, 5min IndexedDB
+        // ✅ OPTIMISATION : Cache augmenté à 60s
+        await multiLevelCache.set(cacheKey, enrichedBookings, 60000); // 60s memory, 5min IndexedDB
         bookingsCache.set(cacheKey, { data: enrichedBookings, timestamp: now });
         
         setBookings(enrichedBookings);
         return;
+        } else {
+          // ✅ OPTIMISATION : Si c'est un timeout, forcer le fallback même si shouldFallback n'était pas vrai
+          if (isTimeoutError) {
+            warn('Materialized view timeout detected, forcing fallback to bookings table', { 
+              error: error.message, 
+              code: error.code
+            });
+            
+            // ✅ OPTIMISATION : Fallback timeout optimisé - sélectionner seulement les colonnes nécessaires
+            let fallbackQuery = supabase
+              .from('bookings')
+              .select(`
+                id,
+                property_id,
+                check_in_date,
+                check_out_date,
+                number_of_guests,
+                booking_reference,
+                guest_name,
+                status,
+                created_at,
+                updated_at,
+                documents_generated,
+                guests (
+                  id,
+                  full_name,
+                  date_of_birth,
+                  nationality,
+                  passport_number,
+                  booking_id
+                ),
+                property:properties (
+                  id,
+                  name,
+                  address,
+                  property_type
+                )
+              `);
+            
+            if (propertyId) {
+              fallbackQuery = fallbackQuery.eq('property_id', propertyId);
+            }
+            
+            if (dateRange) {
+              fallbackQuery = fallbackQuery
+                .gte('check_in_date', dateRange.start.toISOString().split('T')[0])
+                .lte('check_out_date', dateRange.end.toISOString().split('T')[0]);
+            }
+            
+            const { data: fallbackData, error: fallbackError } = await fallbackQuery
+              .order('created_at', { ascending: false })
+              .limit(Math.min(limit, 50));
+            
+            if (fallbackError) {
+              logError('Error loading bookings (fallback after timeout)', fallbackError as Error);
+              setBookings([]);
+              setIsLoading(false);
+              loadingRef.current = false;
+              return;
+            }
+            
+            // Utiliser les données du fallback
+            const filteredBookingsData = fallbackData?.filter(booking => {
+              if (booking.status === 'draft' || (booking.status as any) === 'draft') {
+                return false;
+              }
+              return true;
+            }) || [];
+            
+            // Transformer les données de la table bookings vers le format Booking
+            const transformedBookings: Booking[] = filteredBookingsData.map((booking: any) => {
+              if (!booking.property_id) {
+                warn('Booking sans property_id détecté et exclu (fallback timeout)', { bookingId: booking.id });
+                return null;
+              }
+              
+              const property = Array.isArray(booking.property) ? booking.property[0] : booking.property;
+              const guests = Array.isArray(booking.guests) ? booking.guests : [];
+              
+              return {
+                id: booking.id,
+                propertyId: booking.property_id,
+                userId: booking.user_id,
+                checkInDate: booking.check_in_date,
+                checkOutDate: booking.check_out_date,
+                numberOfGuests: booking.number_of_guests || 0,
+                bookingReference: booking.booking_reference || '',
+                guest_name: booking.guest_name || '',
+                status: booking.status || 'pending',
+                createdAt: booking.created_at,
+                updated_at: booking.updated_at || booking.created_at,
+                documentsGenerated: booking.documents_generated || { policeForm: false, contract: false },
+                guests: guests.map((g: any) => ({
+                  fullName: g.full_name || '',
+                  dateOfBirth: g.date_of_birth || '',
+                  documentNumber: g.document_number || '',
+                  nationality: g.nationality || '',
+                  placeOfBirth: g.place_of_birth || '',
+                  documentType: g.document_type || 'PASSPORT',
+                  profession: g.profession || '',
+                  motifSejour: g.motif_sejour || 'TOURISME',
+                  adressePersonnelle: g.adresse_personnelle || '',
+                  email: g.email || null
+                })),
+                property: property ? {
+                  id: property.id,
+                  name: property.name || '',
+                  address: property.address || '',
+                  capacity: property.capacity || 0
+                } : undefined
+              };
+            }).filter(Boolean) as Booking[];
+            
+            // ✅ DIAGNOSTIC : Log avant enrichissement
+            debug('📊 [LOAD BOOKINGS] Avant enrichissement (fallback timeout)', {
+              count: transformedBookings.length,
+              propertyId,
+              bookingIds: transformedBookings.map(b => ({ id: b.id.substring(0, 8), propertyId: b.propertyId, status: b.status }))
+            });
+            
+            // Enrichir et mettre en cache
+            const enrichedBookings = await enrichBookingsWithGuestSubmissions(transformedBookings);
+            
+            // ✅ PHASE 2 : Mettre en cache multi-niveaux
+            await multiLevelCache.set(cacheKey, enrichedBookings, 60000); // 60s memory, 5min IndexedDB
+            bookingsCache.set(cacheKey, { data: enrichedBookings, timestamp: now });
+            
+            setBookings(enrichedBookings);
+            setIsLoading(false);
+            loadingRef.current = false;
+            return;
+          }
+          
+          // Si le fallback n'est pas applicable, logger l'erreur et continuer avec une liste vide
+          logError('Error loading bookings from materialized view (no fallback)', error as Error);
+          setBookings([]);
+          setIsLoading(false);
+          loadingRef.current = false;
+          return;
         }
       }
 

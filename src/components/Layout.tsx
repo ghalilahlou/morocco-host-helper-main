@@ -2,81 +2,135 @@ import React, { useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
-import { Home, Crown, MessageCircle } from 'lucide-react';
+import { Crown, MessageCircle, Check } from 'lucide-react';
 import { UserMenu } from '@/components/UserMenu';
 import { SubscriptionModal } from '@/components/SubscriptionModal';
 import { ContactModal } from '@/components/ContactModal';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 interface LayoutProps {
   children?: React.ReactNode;
 }
+
 export const Layout: React.FC<LayoutProps> = ({
   children
 }) => {
-  const {
-    user,
-    signOut
-  } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
   const [contactModalOpen, setContactModalOpen] = useState(false);
+  
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
   };
-  return <div className="min-h-screen bg-white">
-      <header className="bg-white border-b shadow-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14 sm:h-16 md:h-20">
-            <div className="flex items-center space-x-2 sm:space-x-3">
+
+  return (
+    <div className="min-h-screen bg-[#F9F7F2]">
+      {/* Header selon modèle Figma */}
+      <header className="bg-[#F9F7F2] border-b border-gray-200/50 sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16 md:h-20">
+            {/* Logo CHECKY */}
+            <div className="flex items-center space-x-2">
               <button 
                 onClick={() => navigate('/dashboard')} 
-                className="focus:outline-none transition-transform hover:scale-105"
+                className="focus:outline-none transition-transform hover:scale-105 flex items-center space-x-2"
                 aria-label="Retour au tableau de bord"
               >
-                <img 
-                  src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png" 
-                  alt="Checky Logo" 
-                  className="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 lg:w-40 lg:h-40 object-contain cursor-pointer" 
-                />
+                <div className="flex items-center space-x-2">
+                  <Check className="w-5 h-5 md:w-6 md:h-6 text-[#0BD9D0]" />
+                  <span className="text-xl md:text-2xl font-bold text-black">CHECKY</span>
+                </div>
               </button>
             </div>
 
-            <nav className="hidden md:flex items-center space-x-6">
-            </nav>
-
-            <div className="flex items-center space-x-1.5 sm:space-x-2 md:space-x-4">
-              {/* Mobile: Only icons, Desktop: Full text */}
-              <Button 
-                variant="outline" 
-                onClick={() => setSubscriptionModalOpen(true)}
-                size="sm"
-                className="flex items-center space-x-1 md:space-x-2 text-primary border-primary hover:bg-primary hover:text-white h-8 sm:h-9 md:h-10 px-2 sm:px-3 md:px-4"
-              >
-                <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5" />
-                <span className="hidden sm:inline text-xs sm:text-sm md:text-base">Mon Abonnement</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                onClick={() => setContactModalOpen(true)}
-                size="sm"
-                className="flex items-center space-x-1 md:space-x-2 text-foreground border-primary/50 hover:bg-[hsl(var(--brand-2))] hover:text-white h-8 sm:h-9 md:h-10 px-2 sm:px-3 md:px-4"
-              >
-                <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-5 md:h-5" />
-                <span className="hidden sm:inline text-xs sm:text-sm md:text-base">Contact</span>
-              </Button>
-              
-              <UserMenu onSignOut={handleSignOut} />
+            {/* Navigation droite - Desktop: texte complet, Mobile: icônes seulement */}
+            <div className="flex items-center space-x-2 md:space-x-4">
+              {isMobile ? (
+                <>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setSubscriptionModalOpen(true)}
+                    size="sm"
+                    className="h-9 w-9 p-0 rounded-full border-gray-300 hover:bg-gray-50"
+                  >
+                    <Crown className="w-4 h-4 text-gray-700" />
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setContactModalOpen(true)}
+                    size="sm"
+                    className="h-9 w-9 p-0 rounded-full border-gray-300 hover:bg-gray-50"
+                  >
+                    <MessageCircle className="w-4 h-4 text-gray-700" />
+                  </Button>
+                  
+                  <UserMenu onSignOut={handleSignOut} />
+                </>
+              ) : (
+                <>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setSubscriptionModalOpen(true)}
+                    size="sm"
+                    className="flex items-center space-x-2 rounded-full border-gray-300 bg-white hover:bg-gray-50 text-gray-900 h-9 px-4"
+                  >
+                    <Crown className="w-4 h-4 text-gray-700" />
+                    <span className="text-sm font-medium">Mon forfait</span>
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setContactModalOpen(true)}
+                    size="sm"
+                    className="flex items-center space-x-2 rounded-full border-gray-300 bg-white hover:bg-gray-50 text-gray-900 h-9 px-4"
+                  >
+                    <MessageCircle className="w-4 h-4 text-gray-700" />
+                    <span className="text-sm font-medium">Contact</span>
+                  </Button>
+                  
+                  <UserMenu onSignOut={handleSignOut} />
+                </>
+              )}
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-3 sm:py-4 md:py-6 lg:py-8 bg-white min-h-screen">
-        <div className="bg-white">
-          {children || <Outlet />}
-        </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 bg-[#F9F7F2] min-h-screen">
+        {children || <Outlet />}
       </main>
+
+      {/* Footer selon modèle Figma */}
+      <footer className="bg-[#F9F7F2] border-t border-gray-200/50 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
+              <span>© 2025 Checky — Tous droits réservés</span>
+              <span className="hidden sm:inline">•</span>
+              <a href="#" className="hover:text-gray-700">Mentions légales</a>
+              <span>•</span>
+              <a href="#" className="hover:text-gray-700">Politique de confidentialité</a>
+              <span>•</span>
+              <a href="#" className="hover:text-gray-700">CGV</a>
+            </div>
+            <Select defaultValue="fr">
+              <SelectTrigger className="w-[140px] h-8 text-sm border-gray-300">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fr">Français (FR)</SelectItem>
+                <SelectItem value="en">English (EN)</SelectItem>
+                <SelectItem value="ar">العربية (AR)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </footer>
 
       <SubscriptionModal 
         open={subscriptionModalOpen} 
@@ -87,5 +141,6 @@ export const Layout: React.FC<LayoutProps> = ({
         open={contactModalOpen} 
         onOpenChange={setContactModalOpen} 
       />
-    </div>;
+    </div>
+  );
 };

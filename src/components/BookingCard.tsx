@@ -12,7 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 import { DocumentsViewer } from './DocumentsViewer';
 import { TestDocumentUpload } from './TestDocumentUpload';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface BookingCardProps {
@@ -22,7 +22,8 @@ interface BookingCardProps {
   onGenerateDocuments: (booking: Booking) => void;
 }
 
-export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: BookingCardProps) => {
+// ✅ OPTIMISATION : Mémoriser le composant pour éviter les re-renders inutiles
+export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocuments }: BookingCardProps) => {
   const { updateBooking } = useBookings();
   const { toast } = useToast();
   
@@ -441,4 +442,15 @@ export const BookingCard = ({ booking, onEdit, onDelete, onGenerateDocuments }: 
       </CardFooter>
     </Card>
   );
-};
+}, (prevProps, nextProps) => {
+  // ✅ OPTIMISATION : Comparaison personnalisée pour éviter les re-renders inutiles
+  // Ne re-render que si l'ID de la réservation change ou si les données importantes changent
+  return (
+    prevProps.booking.id === nextProps.booking.id &&
+    prevProps.booking.status === nextProps.booking.status &&
+    prevProps.booking.documents_generated === nextProps.booking.documents_generated &&
+    prevProps.booking.updated_at === nextProps.booking.updated_at
+  );
+});
+
+BookingCard.displayName = 'BookingCard';

@@ -1,6 +1,64 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Configuration CORS sécurisée - Domaines autorisés uniquement
+const ALLOWED_ORIGINS = [
+  // Développement local
+  'http://localhost:3000',
+  'http://localhost:5173', // Vite default port
+  'http://localhost:54321', // Supabase local
+  
+  // Développement réseau local (adresses IP locales)
+  'http://192.168.11.195:3000',
+  'http://192.168.11.203:3000',
+  'http://192.168.1.1:3000',
+  'http://127.0.0.1:3000',
+  
+  // Production - ✅ DOMAINE PRINCIPAL
+  'https://checky.ma',
+  'https://www.checky.ma',
+  // Fallback Vercel (preview deployments uniquement)
+  'https://morocco-host-helper.vercel.app',
+];
+
+// Headers CORS dynamiques basés sur l'origine
+function getCorsHeaders(request: Request): Record<string, string> {
+  const origin = request.headers.get('origin');
+  
+  // Vérifier si l'origine est dans la liste autorisée
+  let isAllowedOrigin = origin && ALLOWED_ORIGINS.includes(origin);
+  
+  // Si pas trouvé exactement, vérifier si c'est une adresse IP locale (développement)
+  if (!isAllowedOrigin && origin) {
+    // Accepter les adresses IP locales pour le développement (192.168.x.x, 10.x.x.x, 172.16-31.x.x, 127.0.0.1)
+    // Pattern amélioré pour matcher les IPs complètes avec port optionnel
+    const localIpPattern = /^https?:\/\/((192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[01])\.\d+\.\d+|127\.0\.0\.1|localhost)(:\d+)?)$/;
+    if (localIpPattern.test(origin)) {
+      isAllowedOrigin = true;
+    }
+    // Accepter aussi les déploiements Vercel
+    if (origin.includes('vercel.app')) {
+      isAllowedOrigin = true;
+    }
+  }
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowedOrigin && origin ? origin : 'https://checky.ma',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Max-Age': '86400', // Cache preflight for 24h
+  };
+}
+
+function handleOptions(request: Request): Response {
+  if (request.method === 'OPTIONS') {
+    const corsHeaders = getCorsHeaders(request);
+    return new Response('ok', { headers: corsHeaders });
+  }
+  return new Response('Method not allowed', { status: 405 });
+}
+
 // Inline getServerClient pour éviter les problèmes d'import
 async function getServerClient() {
   const url = Deno.env.get('SUPABASE_URL');
@@ -38,12 +96,6 @@ async function hashAccessCode(code: string, pepper?: string): Promise<string> {
   return hashHex;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
-};
-
 type IssueReq = {
   action?: 'issue';
   propertyId: string;
@@ -72,11 +124,14 @@ type RequestBody = IssueReq | ResolveReq;
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return handleOptions(req);
   }
 
   console.log('🚀 Issue guest link function called');
   console.log('📅 Timestamp:', new Date().toISOString());
+
+  // Obtenir les headers CORS dynamiques basés sur l'origine
+  const dynamicCorsHeaders = getCorsHeaders(req);
 
   try {
     // Read request body exactly once
@@ -91,7 +146,7 @@ serve(async (req) => {
         details: parseError.message
       }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -104,7 +159,7 @@ serve(async (req) => {
       const res = await handleResolve(server, requestBody as ResolveReq);
       return new Response(JSON.stringify(res.body), {
         status: res.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -120,7 +175,7 @@ serve(async (req) => {
         details: { propertyId }
       }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -133,7 +188,7 @@ serve(async (req) => {
         details: { bookingId }
       }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -146,7 +201,7 @@ serve(async (req) => {
         details: { expiresIn }
       }), {
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -183,7 +238,7 @@ serve(async (req) => {
             }
           }), {
             status: 403,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
           });
         }
       }
@@ -286,7 +341,7 @@ serve(async (req) => {
             requiresCode: hasAirbnbCode
           }), {
             status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
           });
         }
       }
@@ -476,7 +531,7 @@ serve(async (req) => {
             details: 'Le secret ACCESS_CODE_PEPPER n\'est pas configuré sur le serveur'
           }), {
             status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
           });
         }
       }
@@ -571,7 +626,7 @@ serve(async (req) => {
             details: createError.message
           }), {
             status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -593,7 +648,7 @@ serve(async (req) => {
             details: createError.message
           }), {
             status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
           });
         }
 
@@ -608,7 +663,7 @@ serve(async (req) => {
         details: createError.message
       }), {
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
@@ -666,7 +721,7 @@ serve(async (req) => {
       requiresCode
     }), {
       status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
@@ -677,7 +732,7 @@ serve(async (req) => {
       details: error.message
     }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
     });
   }
 });

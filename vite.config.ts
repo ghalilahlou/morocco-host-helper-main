@@ -54,6 +54,8 @@ export default defineConfig(({ mode }) => ({
       },
     },
     chunkSizeWarningLimit: 1000,
+    // ✅ OPTIMISATION : Améliorer le code splitting
+    sourcemap: mode === 'development',
   },
   optimizeDeps: {
     exclude: ['@rollup/rollup-linux-x64-gnu'],

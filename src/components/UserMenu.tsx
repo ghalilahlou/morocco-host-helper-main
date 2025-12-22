@@ -37,10 +37,10 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onSignOut }) => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+        <Button variant="ghost" className="relative h-10 w-10 rounded-full p-0">
           <Avatar className="h-10 w-10">
             <AvatarImage src={user.user_metadata?.avatar_url} alt={userName} />
-            <AvatarFallback className="bg-primary text-primary-foreground">
+            <AvatarFallback className="bg-[#0BD9D0] text-white font-semibold">
               {userInitials}
             </AvatarFallback>
           </Avatar>

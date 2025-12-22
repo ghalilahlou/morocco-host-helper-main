@@ -153,186 +153,178 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   };
 
   const getDayClassName = (date: Date) => {
-    const baseClasses = "relative w-10 h-10 flex items-center justify-center text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer hover:bg-blue-50";
+    const baseClasses = "relative w-10 h-10 flex items-center justify-center text-sm font-medium rounded-lg transition-all duration-200 cursor-pointer hover:bg-gray-50";
     
     if (isDateDisabled(date)) {
       return cn(baseClasses, "text-gray-300 cursor-not-allowed opacity-50 hover:bg-transparent");
     }
 
-    if (isRangeStart(date)) {
-      return cn(baseClasses, "bg-brand-teal text-white font-bold shadow-lg");
-    }
-
+    // Date de fin de range (sélectionnée) - Style Figma avec fond teal
     if (isRangeEnd(date)) {
-      return cn(baseClasses, "bg-brand-teal text-white font-bold shadow-lg");
+      return cn(baseClasses, "text-white font-semibold");
     }
 
+    // Date de début de range (sélectionnée) - Style Figma
+    if (isRangeStart(date)) {
+      return cn(baseClasses, "text-white font-semibold");
+    }
+
+    // Dates dans la plage sélectionnée - Style Figma avec fond gris clair
     if (isDateInRange(date)) {
-      return cn(baseClasses, "bg-brand-teal/20 text-brand-teal font-medium");
+      return cn(baseClasses, "text-gray-700 font-normal");
     }
 
+    // Plage temporaire pendant la sélection
     if (isDateInTempRange(date)) {
-      return cn(baseClasses, "bg-blue-100 text-blue-600");
+      return cn(baseClasses, "bg-gray-100 text-gray-700");
     }
 
+    // Date de début temporaire
     if (tempRangeStart && isSameDay(date, tempRangeStart)) {
-      return cn(baseClasses, "bg-brand-teal text-white font-bold");
+      return cn(baseClasses, "text-white font-semibold");
     }
 
+    // Aujourd'hui - Style Figma
     if (isToday(date)) {
-      return cn(baseClasses, "bg-blue-500 text-white font-bold");
+      return cn(baseClasses, "text-gray-700 font-normal");
     }
 
+    // Dates d'autres mois
     if (!isSameMonth(date, currentMonth)) {
-      return cn(baseClasses, "text-gray-400 hover:text-gray-600 hover:bg-gray-100");
+      return cn(baseClasses, "text-gray-300 hover:text-gray-500");
     }
 
+    // Date unique sélectionnée
     if (mode === 'single' && selected && isSameDay(date, selected)) {
-      return cn(baseClasses, "bg-primary text-white shadow-lg scale-105");
+      return cn(baseClasses, "text-white font-semibold");
     }
 
-    // Default pour les dates normales
-    return cn(baseClasses, "text-gray-700 hover:bg-brand-teal/10 hover:text-brand-teal");
+    // Default pour les dates normales - Style Figma
+    return cn(baseClasses, "text-gray-700 hover:bg-gray-100");
   };
 
   return (
-    <div className={cn("p-6 bg-white rounded-2xl shadow-xl border border-gray-100", className)}>
-      {/* Header avec navigation */}
-      <div className="flex items-center justify-between mb-6">
-        <motion.div
+    <div className={cn("bg-white w-full", className)}>
+      {/* Header avec navigation - Style Figma */}
+      <div className="flex items-center justify-between mb-4">
+        <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
+          onClick={() => navigateMonth('prev')}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          aria-label="Mois précédent"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigateMonth('prev')}
-            className="p-2 hover:bg-gray-100 rounded-xl"
+          <ChevronLeft className="w-5 h-5 text-gray-600" />
+        </motion.button>
+
+        <div className="flex items-center gap-2">
+          <motion.select
+            key={`month-${currentMonth.getTime()}`}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            value={currentMonth.getMonth()}
+            onChange={(e) => {
+              const newMonth = new Date(currentMonth);
+              newMonth.setMonth(parseInt(e.target.value));
+              setCurrentMonth(newMonth);
+            }}
+            className="text-lg font-semibold text-gray-900 bg-transparent border-none outline-none cursor-pointer appearance-none pr-2"
+            style={{ 
+              backgroundImage: 'none',
+              paddingRight: '1.5rem'
+            }}
           >
-            <ChevronLeft className="w-5 h-5" />
-          </Button>
-        </motion.div>
+            {monthNames.map((month, index) => (
+              <option key={index} value={index}>
+                {month.substring(0, 3)}
+              </option>
+            ))}
+          </motion.select>
+          
+          <motion.select
+            key={`year-${currentMonth.getTime()}`}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            value={currentMonth.getFullYear()}
+            onChange={(e) => {
+              const newMonth = new Date(currentMonth);
+              newMonth.setFullYear(parseInt(e.target.value));
+              setCurrentMonth(newMonth);
+            }}
+            className="text-lg font-semibold text-gray-900 bg-transparent border-none outline-none cursor-pointer appearance-none"
+            style={{ 
+              backgroundImage: 'none'
+            }}
+          >
+            {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 2 + i).map(year => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </motion.select>
+        </div>
 
-        <motion.h2 
-          key={currentMonth.getTime()}
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-xl font-bold text-gray-900"
-        >
-          {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-        </motion.h2>
-
-        <motion.div
+        <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
+          onClick={() => navigateMonth('next')}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          aria-label="Mois suivant"
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigateMonth('next')}
-            className="p-2 hover:bg-gray-100 rounded-xl"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </Button>
-        </motion.div>
+          <ChevronRight className="w-5 h-5 text-gray-600" />
+        </motion.button>
       </div>
 
-      {/* Sélections rapides */}
-      {quickSelections && (
-        <motion.div 
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-wrap gap-2 mb-6"
-        >
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleQuickSelect(0)}
-            className="text-xs px-3 py-1 rounded-full hover:bg-primary hover:text-white transition-colors"
-          >
-            Aujourd'hui
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleQuickSelect(1)}
-            className="text-xs px-3 py-1 rounded-full hover:bg-primary hover:text-white transition-colors"
-          >
-            Demain
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleQuickSelect(7)}
-            className="text-xs px-3 py-1 rounded-full hover:bg-primary hover:text-white transition-colors"
-          >
-            +1 semaine
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleQuickSelect(30)}
-            className="text-xs px-3 py-1 rounded-full hover:bg-primary hover:text-white transition-colors"
-          >
-            +1 mois
-          </Button>
-        </motion.div>
-      )}
-
-      {/* En-têtes des jours */}
+      {/* En-têtes des jours - Style Figma */}
       <div className="grid grid-cols-7 gap-1 mb-2">
-        {weekDays.map(day => (
-          <div key={day} className="text-center text-xs font-semibold text-gray-500 py-2">
+        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+          <div key={day} className="text-center text-sm font-medium text-gray-500 py-1">
             {day}
           </div>
         ))}
       </div>
 
-      {/* Grille du calendrier */}
+      {/* Grille du calendrier - Style Figma */}
       <motion.div 
         className="grid grid-cols-7 gap-1"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        {/* ✅ CORRIGÉ : Retirer mode="wait" car il y a plusieurs enfants (map) */}
-        {/* mode="wait" ne fonctionne qu'avec un seul enfant à la fois */}
         <AnimatePresence>
-          {calendarDays.map((date, index) => (
-            <motion.div
-              key={date.getTime()}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.01, duration: 0.2 }}
-              className={getDayClassName(date)}
-              onClick={() => handleDateClick(date)}
-              onMouseEnter={() => mode === 'range' && tempRangeStart && setHoveredDate(date)}
-              whileHover={{ scale: isDateDisabled(date) ? 1 : 1.1 }}
-              whileTap={{ scale: isDateDisabled(date) ? 1 : 0.95 }}
-            >
-              <span className="relative z-10">
-                {date.getDate()}
-              </span>
-              
-              {/* Indicateur pour aujourd'hui */}
-              {isToday(date) && (
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  className="absolute inset-0 rounded-xl border-2 border-blue-400 opacity-50"
-                />
-              )}
-
-              {/* Effet de survol pour les ranges */}
-              {mode === 'range' && tempRangeStart && hoveredDate && isDateInTempRange(date) && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="absolute inset-0 bg-primary/30 rounded-xl"
-                />
-              )}
-            </motion.div>
-          ))}
+          {calendarDays.map((date, index) => {
+            const isInRange = isDateInRange(date);
+            const isStart = isRangeStart(date);
+            const isEnd = isRangeEnd(date);
+            const isInTempRange = isDateInTempRange(date) && !isStart && !isEnd;
+            const isTempStart = tempRangeStart && isSameDay(date, tempRangeStart);
+            
+            return (
+              <motion.div
+                key={date.getTime()}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: index * 0.01, duration: 0.2 }}
+                className={getDayClassName(date)}
+                onClick={() => handleDateClick(date)}
+                onMouseEnter={() => mode === 'range' && tempRangeStart && setHoveredDate(date)}
+                whileHover={{ scale: isDateDisabled(date) ? 1 : 1.05 }}
+                whileTap={{ scale: isDateDisabled(date) ? 1 : 0.95 }}
+                style={{
+                  backgroundColor: 
+                    isEnd || isStart || isTempStart 
+                      ? '#50ACB4' // Teal pour les dates sélectionnées
+                      : isInRange || isInTempRange
+                        ? '#F3F4F6' // Gris clair pour les dates dans la plage
+                        : 'transparent'
+                }}
+              >
+                <span className="relative z-10">
+                  {date.getDate()}
+                </span>
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </motion.div>
 
@@ -368,26 +360,6 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
         </motion.div>
       )}
 
-      {/* Légende */}
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap items-center gap-4 text-xs text-gray-500"
-      >
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></div>
-          <span>Aujourd'hui</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 bg-primary rounded"></div>
-          <span>Sélectionné</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 bg-gray-200 rounded"></div>
-          <span>Non disponible</span>
-        </div>
-      </motion.div>
     </div>
   );
 };

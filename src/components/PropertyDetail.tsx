@@ -1,12 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Building2, Edit, MapPin, Users, FileText, Calendar, Link as LinkIcon, ChevronDown, CheckCircle, ExternalLink, HelpCircle, MessageCircleQuestion } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Card, CardContent } from '@/components/ui/card';
+import { Building2, MapPin, Users, Link as LinkIcon, ArrowLeft, Edit, HelpCircle } from 'lucide-react';
 import { Property, Booking } from '@/types/booking';
 import { useProperties } from '@/hooks/useProperties';
 import { useBookings } from '@/hooks/useBookings';
@@ -16,10 +12,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Dashboard } from './Dashboard';
 import { BookingWizardWithBoundary as BookingWizard } from './BookingWizard';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
-import { TestDocumentUpload } from './TestDocumentUpload';
-import { AirbnbSyncManager } from './AirbnbSyncManager';
-import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
-import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { PropertyTutorial } from './PropertyTutorial';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -40,10 +32,7 @@ export const PropertyDetail = () => {
   const [showWizard, setShowWizard] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | undefined>();
   const [showEditProperty, setShowEditProperty] = useState(false);
-  const [airbnbSyncCompleted, setAirbnbSyncCompleted] = useState(false);
-  const [clientLinkShared, setClientLinkShared] = useState(false);
-  const [showRemainingActions, setShowRemainingActions] = useState(true);
-  const [isGeneratingLocal, setIsGeneratingLocal] = useState(false); // ✅ State local pour bloquer immédiatement
+  const [isGeneratingLocal, setIsGeneratingLocal] = useState(false);
   const [airbnbReservationsCount, setAirbnbReservationsCount] = useState(0);
   const [showTutorial, setShowTutorial] = useState(false);
 
@@ -141,26 +130,6 @@ export const PropertyDetail = () => {
   }, [property?.id, generatePropertyVerificationUrl, toast, isGeneratingLocal, isGeneratingLink]);
 
   // All useEffect hooks
-  useEffect(() => {
-    if (airbnbSyncCompleted && clientLinkShared) {
-      setShowRemainingActions(false);
-      // Store the state to prevent showing again for this property
-      localStorage.setItem(`actions-completed-${property?.id}`, 'true');
-    }
-  }, [airbnbSyncCompleted, clientLinkShared, property?.id]);
-
-  useEffect(() => {
-    if (property) {
-      // Check if actions were already completed for this property
-      const actionsCompleted = localStorage.getItem(`actions-completed-${property.id}`);
-      if (actionsCompleted) {
-        setShowRemainingActions(false);
-      }
-      
-      // Synchronisation considérée comme terminée si on a une URL ICS OU des réservations Airbnb
-      setAirbnbSyncCompleted(!!property.airbnb_ics_url || airbnbReservationsCount > 0);
-    }
-  }, [property, airbnbReservationsCount]);
 
   useEffect(() => {
     // Check authentication first
@@ -193,6 +162,7 @@ export const PropertyDetail = () => {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [loadAirbnbCount]);
+
 
   // Refresh bookings immediately when a deletion event is emitted
   useEffect(() => {
@@ -304,48 +274,28 @@ export const PropertyDetail = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')} className="gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white w-fit">
+      {/* Flèche retour + Titre "Tableau de bord" selon modèle Figma */}
+      <div className="flex items-center gap-2">
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={() => navigate('/dashboard')} 
+          className="gap-2 text-gray-700 hover:bg-gray-100"
+        >
           <ArrowLeft className="h-4 w-4" />
-          <span className="hidden sm:inline">Retour à Vos Propriétés</span>
-          <span className="sm:hidden">Retour</span>
+          <span>Tableau de bord</span>
         </Button>
       </div>
 
-      {/* Property Header - aligné sur le modèle Figma */}
-      <Card className="border-0 shadow-md rounded-2xl bg-white relative">
-        <CardHeader className="pb-4">
-          {/* Mobile help trigger - top right */}
-          <div className="absolute top-4 right-4 sm:hidden">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 p-0"
-                  aria-label="Aide"
-                  data-tutorial="tutorial-button"
-                >
-                  <HelpCircle className="h-5 w-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="bottom" sideOffset={8} className="bg-background border shadow-lg z-50">
-                <DropdownMenuItem onClick={handleStartTutorial}>
-                  Visite Guidée
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate(`/help/client-link/${property?.id}`)}>
-                  Lien de check-in
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 lg:gap-6">
-            
-            {/* Property Info Section */}
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 lg:max-w-[50%] xl:max-w-[45%] pr-4 lg:pr-8">
+      {/* Property Card - aligné exactement sur le modèle Figma */}
+      <Card className="border-0 shadow-sm rounded-2xl" style={{ backgroundColor: '#F9FAFB' }}>
+        <CardContent className="p-6">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            {/* Partie gauche : Icône + Nom + Infos */}
+            <div className="flex items-center gap-4 flex-1 min-w-0">
+              {/* Icône propriété */}
               {property.photo_url ? (
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden bg-muted flex-shrink-0">
+                <div className="w-12 h-12 md:w-16 md:h-16 rounded-lg overflow-hidden flex-shrink-0" style={{ backgroundColor: '#E5E7EB' }}>
                   <img 
                     src={property.photo_url} 
                     alt={property.name}
@@ -353,206 +303,83 @@ export const PropertyDetail = () => {
                   />
                 </div>
               ) : (
-                <div className="p-1.5 sm:p-2 bg-primary/10 rounded-lg flex-shrink-0">
-                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                <div className="w-12 h-12 md:w-16 md:h-16 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#E5E7EB' }}>
+                  <Building2 className="w-6 h-6 md:w-8 md:h-8 text-gray-600" />
                 </div>
               )}
-              <div className="min-w-0 flex-1 overflow-hidden">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-1">
-                  <CardTitle className="text-lg sm:text-xl font-bold truncate">
+              
+              {/* Nom et infos */}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h2 className="text-lg md:text-xl font-bold text-black truncate">
                     {property.name}
-                  </CardTitle>
-                  <Badge variant="secondary" className="text-xs w-fit flex-shrink-0">{property.property_type}</Badge>
+                  </h2>
+                  {property.property_type && (
+                    <span className="px-2 py-0.5 rounded-full bg-[#0BD9D0]/10 text-[#0BD9D0] text-xs font-medium">
+                      {property.property_type}
+                    </span>
+                  )}
                 </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-4 h-4" />
+                    <span>{property.max_occupancy} guests</span>
+                  </div>
                   {property.address && (
-                    <div className="flex items-center gap-1 min-w-0">
-                      <MapPin className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate max-w-[200px] sm:max-w-[300px] lg:max-w-[250px] xl:max-w-[350px]">{property.address?.split(',')[0]?.trim()}</span>
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4" />
+                      <span className="truncate max-w-[200px]">{property.address?.split(',')[0]?.trim()}</span>
                     </div>
                   )}
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <Users className="h-3 w-3 flex-shrink-0" />
-                    <span>{property.max_occupancy}</span>
-                  </div>
                 </div>
               </div>
             </div>
             
-            {/* Stats and Actions Section */}
+            {/* Partie droite : Stats + Boutons */}
             <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6 flex-shrink-0">
-              {/* Compact Stats - style Figma (37 / 23 / 14) */}
-              <div className="flex items-center justify-center lg:justify-end gap-4" data-tutorial="stats">
-                <div className="flex flex-col items-center min-w-[70px]">
-                  <div className="px-4 py-1 rounded-xl bg-slate-100 text-slate-900 text-lg sm:text-xl lg:text-2xl font-bold">
-                    {stats.total}
-                  </div>
-                  <div className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
-                    Total
-                  </div>
+              {/* Stats selon modèle Figma (37 / 23 / 14) */}
+              <div className="flex items-center gap-4">
+                <div className="text-xl md:text-2xl font-bold text-black">
+                  {stats.total} Total
                 </div>
-                <div className="flex flex-col items-center min-w-[70px]">
-                  <div
-                    className="px-4 py-1 rounded-xl text-lg sm:text-xl lg:text-2xl font-bold"
-                    style={{ backgroundColor: '#E0F9EF', color: '#059669' }}
-                  >
-                    {stats.completed}
-                  </div>
-                  <div className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
-                    Terminé
-                  </div>
+                <div className="text-xl md:text-2xl font-bold" style={{ color: '#059669' }}>
+                  {stats.completed} Terminé
                 </div>
-                <div className="flex flex-col items-center min-w-[70px]">
-                  <div
-                    className="px-4 py-1 rounded-xl text-lg sm:text-xl lg:text-2xl font-bold"
-                    style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}
-                  >
-                    {stats.pending}
-                  </div>
-                  <div className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
-                    En attente
-                  </div>
+                <div className="text-xl md:text-2xl font-bold text-gray-500">
+                  {stats.pending} En attente
                 </div>
               </div>
               
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-2 sm:justify-center">
+              {/* Boutons selon modèle Figma */}
+              <div className="flex items-center gap-2">
                 <Button 
                   variant="outline" 
                   size="sm"
-                  onClick={() => setShowEditProperty(true)} 
-                  className="gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white bg-white"
-                  data-tutorial="edit-property"
-                >
-                  <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
-                  <span className="text-xs sm:text-sm">Modifier le bien</span>
-                </Button>
-                <Button 
-                  size="sm"
                   onClick={(e) => handleGenerateGuestLink(e)}
                   disabled={isGeneratingLocal || isGeneratingLink}
-                  className="gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white bg-white"
+                  className="gap-2 rounded-full border-gray-300 bg-white hover:bg-gray-50 text-gray-900 h-9 px-4"
                   data-tutorial="generate-link"
-                  variant="outline"
                 >
-                  {isGeneratingLocal || isGeneratingLink ? (
-                    <>
-                      <div className="h-3 w-3 sm:h-4 sm:w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      <span className="text-xs sm:text-sm">Génération...</span>
-                    </>
-                  ) : (
-                    <>
-                      <LinkIcon className="h-3 w-3 sm:h-4 sm:w-4" />
-                      <span className="text-xs sm:text-sm">Copier le lien</span>
-                    </>
-                  )}
+                  <LinkIcon className="h-4 w-4" />
+                  <span className="text-sm font-medium">Copier le lien</span>
                 </Button>
-                {/* Help dropdown inline - single trigger to keep position correct */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      className="hidden sm:flex gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white bg-white"
-                      data-tutorial="tutorial-button"
-                    >
-                      <HelpCircle className="h-4 w-4" />
-                      <span className="hidden sm:inline">Comment ça marche ?</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" side="bottom" sideOffset={8} className="bg-background border shadow-lg z-50">
-                    <DropdownMenuItem onClick={handleStartTutorial}>
-                      Visite Guidée
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => navigate(`/help/client-link/${property?.id}`)}>
-                      Lien de check-in
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleStartTutorial}
+                  className="gap-2 rounded-full border-gray-300 bg-white hover:bg-gray-50 text-gray-900 h-9 px-4"
+                  data-tutorial="tutorial-button"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                  <span className="text-sm font-medium">Tutoriel</span>
+                </Button>
               </div>
             </div>
           </div>
-        </CardHeader>
+        </CardContent>
       </Card>
 
-
-      {/* Actions restantes */}
-      {showRemainingActions && (
-        <Card data-tutorial="remaining-actions">
-          <Collapsible defaultOpen>
-            <CollapsibleTrigger asChild>
-              <CardHeader className="cursor-pointer">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <CheckCircle className="h-5 w-5 text-primary" />
-                      Actions restantes
-                    </CardTitle>
-                    <CardDescription>
-                      Réalisez les actions restantes pour finaliser la configuration de votre bien
-                    </CardDescription>
-                  </div>
-                  <ChevronDown className="h-4 w-4 transition-transform data-[state=open]:rotate-180" />
-                </div>
-              </CardHeader>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
-                  <div className="flex items-center space-x-3">
-                    <Checkbox 
-                      id="airbnb-sync" 
-                      checked={airbnbSyncCompleted}
-                      onCheckedChange={(checked) => setAirbnbSyncCompleted(!!checked)}
-                    />
-                    <label 
-                      htmlFor="airbnb-sync" 
-                      className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
-                        airbnbSyncCompleted ? 'line-through text-muted-foreground' : ''
-                      }`}
-                    >
-                      Synchronisation du calendrier Airbnb
-                    </label>
-                  </div>
-                  <Link to={`/help/airbnb-sync/${property?.id}`} className="text-sm text-primary hover:text-primary/80 flex items-center gap-1 ml-auto sm:ml-0">
-                    En savoir plus
-                    <ExternalLink className="h-3 w-3" />
-                  </Link>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
-                  <div className="flex items-center space-x-3">
-                    <Checkbox 
-                      id="client-link" 
-                      checked={clientLinkShared}
-                      onCheckedChange={(checked) => setClientLinkShared(!!checked)}
-                    />
-                    <label 
-                      htmlFor="client-link" 
-                      className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
-                        clientLinkShared ? 'line-through text-muted-foreground' : ''
-                      }`}
-                    >
-                      Partagez le lien à vos clients
-                    </label>
-                  </div>
-                  <Link to={`/help/client-link/${property?.id}`} className="text-sm text-primary hover:text-primary/80 flex items-center gap-1 ml-auto sm:ml-0">
-                    En savoir plus
-                    <ExternalLink className="h-3 w-3" />
-                  </Link>
-                </div>
-              </CardContent>
-            </CollapsibleContent>
-          </Collapsible>
-        </Card>
-      )}
-
-
-      {/* Test Document Upload */}
-      {propertyBookings.length > 0 && (
-        <TestDocumentUpload bookingId={propertyBookings[0].id} />
-      )}
-
-
-      {/* Bookings Dashboard */}
+      {/* Bookings Dashboard (Calendrier) */}
       <div data-tutorial="bookings">
         <Dashboard
           bookings={propertyBookings}

@@ -55,7 +55,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Upload, FileText, X, CheckCircle, Users, Calendar as CalendarLucide, ArrowRight, ArrowLeft, Sparkles, RefreshCw, RotateCcw } from 'lucide-react';
+import { CalendarIcon, Upload, FileText, X, CheckCircle, Users, Calendar as CalendarLucide, ArrowRight, ArrowLeft, Sparkles, RefreshCw, RotateCcw, Check, PenTool, Home, CloudUpload } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -65,10 +65,12 @@ import { useT } from '@/i18n/GuestLocaleProvider';
 import { EnhancedInput } from '@/components/ui/enhanced-input';
 import { EnhancedFileUpload } from '@/components/ui/enhanced-file-upload';
 import { AnimatedStepper } from '@/components/ui/animated-stepper';
-import { IntuitiveBookingPicker } from '@/components/ui/intuitive-date-picker';
+import { EnhancedCalendar } from '@/components/ui/enhanced-calendar';
 import { validateToken, isTestToken, logTestTokenUsage, TEST_TOKENS_CONFIG } from '@/utils/testTokens';
 import { validateTokenDirect } from '@/utils/tokenValidation';
 import { Guest } from '@/types/booking'; // ✅ Importer le type centralisé
+import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
+import { AnimatePresence } from 'framer-motion';
 
 // Liste complète des nationalités
 const NATIONALITIES = [
@@ -569,6 +571,29 @@ export const GuestVerification = () => {
   const [checkInDate, setCheckInDate] = useState<Date | undefined>();
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
   const [numberOfGuests, setNumberOfGuests] = useState(1);
+  const [numberOfAdults, setNumberOfAdults] = useState(1);
+  const [numberOfChildren, setNumberOfChildren] = useState(0);
+  const [showCalendarPanel, setShowCalendarPanel] = useState(false);
+  const [showGuestsPanel, setShowGuestsPanel] = useState(false);
+  const calendarPanelRef = useRef<HTMLDivElement>(null);
+  const guestsPanelRef = useRef<HTMLDivElement>(null);
+  
+  // Fermer les panneaux au clic extérieur
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (calendarPanelRef.current && !calendarPanelRef.current.contains(event.target as Node)) {
+        setShowCalendarPanel(false);
+      }
+      if (guestsPanelRef.current && !guestsPanelRef.current.contains(event.target as Node)) {
+        setShowGuestsPanel(false);
+      }
+    };
+    
+    if (showCalendarPanel || showGuestsPanel) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showCalendarPanel, showGuestsPanel]);
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
   const [currentStep, setCurrentStep] = useState<'booking' | 'documents' | 'signature'>('booking');
 
@@ -1224,9 +1249,20 @@ export const GuestVerification = () => {
     console.log('✅ Document validation passed');
 
     // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour la validation (évite les doubles formulaires)
-    const incompleteGuests = deduplicatedGuests.filter(guest => 
-      !guest.fullName || !guest.dateOfBirth || !guest.nationality || !guest.documentNumber
-    );
+    // ✅ VALIDATION STRICTE : Vérifier que TOUS les champs requis sont remplis, y compris le motif de séjour
+    // (même critères que pour la réservation, les documents et les signatures)
+    const incompleteGuests = deduplicatedGuests.filter((guest, index) => {
+      // Lire le motif de séjour depuis le select pour cet invité
+      const motifSelect = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
+      const motifSejour = motifSelect?.value || guest.motifSejour || '';
+      
+      return !guest.fullName || 
+             !guest.dateOfBirth || 
+             !guest.nationality || 
+             !guest.documentNumber ||
+             !motifSejour || 
+             motifSejour.trim() === '';
+    });
 
     if (incompleteGuests.length > 0) {
       // ✅ CRITIQUE : Réinitialiser les flags si validation échoue
@@ -1243,11 +1279,19 @@ export const GuestVerification = () => {
     setIsLoading(true);
     try {
       // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour éviter les doublons dans la soumission
+      // ✅ VALIDATION STRICTE : Inclure le motif de séjour pour TOUS les invités (même critères que réservation/documents/signatures)
       const guestData = {
-        guests: deduplicatedGuests.map(guest => ({
-          ...guest,
-          dateOfBirth: guest.dateOfBirth ? format(guest.dateOfBirth, 'yyyy-MM-dd') : null
-        }))
+        guests: deduplicatedGuests.map((guest, index) => {
+          // Lire le motif de séjour depuis le select pour cet invité
+          const motifSelect = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
+          const motifSejour = motifSelect?.value || guest.motifSejour || 'TOURISME';
+          
+          return {
+            ...guest,
+            dateOfBirth: guest.dateOfBirth ? format(guest.dateOfBirth, 'yyyy-MM-dd') : null,
+            motifSejour: motifSejour // ✅ VALIDATION STRICTE : Inclure le motif validé
+          };
+        })
       };
 
       const bookingData = {
@@ -1282,11 +1326,45 @@ export const GuestVerification = () => {
         formattedDateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined
       });
 
+      // ✅ VALIDATION STRICTE : Vérifier que TOUS les invités ont un motif de séjour valide
+      // (même critères que pour la réservation, les documents et les signatures)
+      const guestsWithoutMotif = deduplicatedGuests.filter((guest, index) => {
+        const motifSelect = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
+        const motifSejour = motifSelect?.value || guest.motifSejour || '';
+        return !motifSejour || motifSejour.trim() === '';
+      });
+
+      if (guestsWithoutMotif.length > 0) {
+        // ✅ CRITIQUE : Réinitialiser les flags si validation échoue
+        isSubmittingRef.current = false;
+        isProcessingRef.current = false;
+        toast({
+          title: t('validation.error.title'),
+          description: `Veuillez sélectionner un motif de séjour pour ${guestsWithoutMotif.length > 1 ? 'tous les invités' : 'l\'invité'}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
       // ✅ CRITIQUE : Lire les valeurs directement depuis les inputs pour les champs non-contrôlés
       const emailInput = document.querySelector('input[name="email-0"]') as HTMLInputElement;
       const professionInput = document.querySelector('input[name="profession-0"]') as HTMLInputElement;
       const adresseInput = document.querySelector('input[name="adresse-0"]') as HTMLInputElement;
       const motifSelect = document.querySelector('select[name="motifSejour-0"]') as HTMLSelectElement;
+
+      // ✅ VALIDATION STRICTE : Vérifier que le motif de séjour du premier invité est valide
+      const firstGuestMotif = motifSelect?.value || firstGuest?.motifSejour || '';
+      if (!firstGuestMotif || firstGuestMotif.trim() === '') {
+        console.error('❌ Motif de séjour manquant pour le premier invité');
+        toast({
+          title: "Motif de séjour requis",
+          description: "Veuillez sélectionner un motif de séjour pour le premier invité.",
+          variant: "destructive",
+        });
+        isSubmittingRef.current = false;
+        isProcessingRef.current = false;
+        return;
+      }
 
       const guestInfo = {
         firstName: firstGuest?.fullName?.split(' ')[0] || '',
@@ -1298,7 +1376,7 @@ export const GuestVerification = () => {
         idNumber: firstGuest?.documentNumber || '',
         dateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined,
         profession: professionInput?.value || firstGuest?.profession || '',
-        motifSejour: motifSelect?.value || firstGuest?.motifSejour || 'TOURISME',
+        motifSejour: firstGuestMotif, // ✅ VALIDATION STRICTE : Utiliser la valeur validée
         adressePersonnelle: adresseInput?.value || firstGuest?.adressePersonnelle || ''
       };
 
@@ -1325,19 +1403,6 @@ export const GuestVerification = () => {
         toast({
           title: "Email invalide",
           description: "Veuillez saisir une adresse email valide (ex: nom@exemple.com).",
-          variant: "destructive",
-        });
-        isSubmittingRef.current = false;
-        isProcessingRef.current = false;
-        return;
-      }
-
-      // ✅ VALIDATION : Vérifier que le motif de séjour est sélectionné
-      if (!guestInfo.motifSejour || guestInfo.motifSejour.trim() === '') {
-        console.error('❌ Motif de séjour manquant');
-        toast({
-          title: "Motif de séjour requis",
-          description: "Veuillez sélectionner un motif de séjour.",
           variant: "destructive",
         });
         isSubmittingRef.current = false;
@@ -1862,189 +1927,573 @@ export const GuestVerification = () => {
   const currentStepIndex = ['booking', 'documents', 'signature'].indexOf(currentStep);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-turquoise/10 py-4 sm:py-8">
-      <div className="container mx-auto px-3 sm:px-4 max-w-5xl">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
-            <CardHeader className="bg-gradient-to-r from-brand-cyan/5 to-brand-turquoise/5 border-b border-gray-100 px-4 sm:px-6 py-4 sm:py-6">
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-              >
-                <CardTitle className="text-xl sm:text-2xl md:text-3xl font-bold text-center text-gray-900">
-                  {t('guest.verification.title')}
-                </CardTitle>
-                <CardDescription className="text-center text-sm sm:text-base md:text-lg mt-2 text-gray-600 px-2">
-                  {t('guest.verification.subtitle', { propertyName })}
-                </CardDescription>
-              </motion.div>
-              
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.4 }}
-                className="mt-4 sm:mt-8"
-              >
-                <AnimatedStepper
-                  steps={steps}
-                  currentStep={currentStepIndex}
-                  size="md"
-                />
-              </motion.div>
-            </CardHeader>
+    <div className="min-h-screen flex bg-gray-50">
+      {/* Left Sidebar - Background matching logo - Fixed */}
+      <div className="hidden md:flex w-1/3 lg:w-1/4 text-white p-8 flex-col fixed left-0 top-0 h-screen z-10 rounded-r-2xl" style={{ backgroundColor: '#1E1E1E' }}>
+        <div className="mb-8">
+          <div className="mb-3">
+            <img 
+              src="/lovable-uploads/image.png" 
+              alt="CHECKY Logo" 
+              className="h-10 w-auto object-contain max-w-[180px]"
+            />
+          </div>
+          <p className="text-sm mt-1" style={{ color: '#0BD9D0' }}>Le check-in digitalisé</p>
+        </div>
+        
+        {currentStep === 'booking' && (
+          <>
+            <div className="mb-6">
+              <p className="text-gray-300 text-sm mb-4">
+                Votre réservation à {propertyName || '((Property name))'} approche à grand pas. 
+                Réalisez votre check-in en quelques minutes.
+              </p>
+            </div>
             
-            <CardContent className="p-4 sm:p-6 md:p-8">
+            <div className="mt-auto space-y-3">
+              <div className="text-sm">
+                <span className="text-gray-400">Hébergement</span>
+                <p className="text-white font-medium">{propertyName || '((Property name))'}</p>
+              </div>
+              {checkInDate && checkOutDate ? (
+                <>
+                  <div className="text-sm">
+                    <span className="text-gray-400">Dates</span>
+                    <p className="text-white font-medium">
+                      {format(checkInDate, 'dd/MM/yyyy')} - {format(checkOutDate, 'dd/MM/yyyy')}
+                    </p>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-gray-400">Voyageurs</span>
+                    <p className="text-white font-medium">{numberOfGuests}</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-sm">
+                    <span className="text-gray-400">Dates</span>
+                    <p className="text-white font-medium">((Arrival date))-((Departure date))</p>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-gray-400">Voyageurs</span>
+                    <p className="text-white font-medium">((Nb adultes)) / ((Nb enfants))</p>
+                  </div>
+                </>
+              )}
+            </div>
+            
+            <div className="mt-6">
+              <p className="text-gray-300 text-sm">
+                Notre engagement : vos documents sont conservés conformément aux exigences légales, 
+                transmis de manière sécurisée et accessibles uniquement par les parties concernées.
+              </p>
+            </div>
+          </>
+        )}
+        
+        {currentStep === 'documents' && (
+          <>
+            <div className="mb-6">
+              {/* Bannière d'import dans la sidebar gauche */}
+              <div 
+                className="border-2 border-dashed rounded-lg p-8 cursor-pointer transition-all relative"
+                style={{ 
+                  backgroundColor: '#1E1E1E',
+                  borderColor: '#666666'
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.style.borderColor = '#0BD9D0';
+                  e.currentTarget.style.backgroundColor = '#2A2A2A';
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.style.borderColor = '#666666';
+                  e.currentTarget.style.backgroundColor = '#1E1E1E';
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.style.borderColor = '#666666';
+                  e.currentTarget.style.backgroundColor = '#1E1E1E';
+                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    handleFileUpload(e.dataTransfer.files);
+                  }
+                }}
+                onClick={(e) => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = 'image/*,.pdf';
+                  input.multiple = true;
+                  input.onchange = (e) => {
+                    const target = e.target as HTMLInputElement;
+                    if (target.files && target.files.length > 0) {
+                      handleFileUpload(target.files);
+                    }
+                  };
+                  input.click();
+                }}
+              >
+                <div className="text-center mb-6">
+                  <CloudUpload className="w-16 h-16 mx-auto mb-4" style={{ color: '#0BD9D0' }} />
+                  <p className="text-white font-semibold mb-2 text-base">Glissez-déposez vos documents</p>
+                  <p className="text-white text-sm mb-1">
+                    Carte d'identité ou passeport en format PDF, PNG, JPG
+                  </p>
+                  <p className="text-white text-xs">
+                    (5MB max par fichier)
+                  </p>
+                </div>
+                <div className="flex justify-center">
+                  <Button
+                    className="bg-[#0BD9D0] hover:bg-[#0ac4bb] text-white border-0 rounded-lg px-6 py-2.5 text-sm font-medium shadow-md hover:shadow-lg transition-all"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = 'image/*,.pdf';
+                      input.multiple = true;
+                      input.onchange = (e) => {
+                        const target = e.target as HTMLInputElement;
+                        if (target.files && target.files.length > 0) {
+                          handleFileUpload(target.files);
+                        }
+                      };
+                      input.click();
+                    }}
+                  >
+                    Importer
+                  </Button>
+                </div>
+              </div>
+              
+              {uploadedDocuments.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="text-sm font-medium mb-3 text-white">Documents téléchargés ({uploadedDocuments.length})</h3>
+                  <div className="space-y-2">
+                    {uploadedDocuments.map((doc, index) => (
+                      <div key={index} className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: '#1E1E1E' }}>
+                        {doc.processing ? (
+                          <div className="w-12 h-12 flex items-center justify-center">
+                            <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        ) : doc.file.type.startsWith('image/') ? (
+                          <img 
+                            src={doc.url} 
+                            alt={doc.file.name}
+                            className="w-12 h-12 object-cover rounded"
+                          />
+                        ) : (
+                          <FileText className="w-8 h-8 text-gray-400" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-medium truncate">
+                            {doc.file.name}
+                            {doc.processing && <span className="ml-2 text-green-400 text-xs">(Traitement...)</span>}
+                          </p>
+                          <p className="text-gray-400 text-xs">
+                            Nom: {deduplicatedGuests[index]?.fullName || (doc.extractedData?.fullName || 'Non assigné')}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-auto">
+              <p className="text-gray-300 text-sm">
+                Notre engagement : vos documents sont conservés conformément aux exigences légales, 
+                transmis de manière sécurisée et accessibles uniquement par les parties concernées.
+              </p>
+            </div>
+          </>
+        )}
+        
+        {currentStep === 'signature' && (
+          <>
+            <div className="mb-6">
+              <h3 className="text-lg font-bold mb-4">Récapitulatif</h3>
+              <div className="space-y-3">
+                <div className="text-sm">
+                  <span className="text-gray-400">Hébergement</span>
+                  <p className="text-white font-medium">{propertyName || '((Property name))'}</p>
+                </div>
+                <div className="text-sm">
+                  <span className="text-gray-400">Dates</span>
+                  <p className="text-white font-medium">
+                    {checkInDate && checkOutDate 
+                      ? `${format(checkInDate, 'dd/MM/yyyy')}-${format(checkOutDate, 'dd/MM/yyyy')}`
+                      : '((Arrival date))-((Departure date))'
+                    }
+                  </p>
+                </div>
+                <div className="text-sm">
+                  <span className="text-gray-400">Voyageurs</span>
+                  <p className="text-white font-medium">{numberOfGuests}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-auto">
+              <p className="text-gray-300 text-sm">
+                Notre engagement : vos documents sont conservés conformément aux exigences légales, 
+                transmis de manière sécurisée et accessibles uniquement par les parties concernées.
+              </p>
+            </div>
+          </>
+        )}
+      </div>
+      
+      {/* Right Main Content */}
+      <div className="flex-1 flex flex-col md:ml-[33.333%] lg:ml-[25%]" style={{ backgroundColor: '#FDFDF9' }}>
+        {/* Header with Language Switcher */}
+        <div className="p-6 flex justify-end">
+          <LanguageSwitcher />
+        </div>
+        
+        {/* Progress Steps - Centered */}
+        <div className="px-6 pb-8 flex items-center justify-center gap-12">
+          <div className={`flex flex-col items-center gap-3 ${currentStep === 'booking' ? 'text-[#50ACB4]' : 'text-[#89D7D2]'}`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+              currentStep === 'booking' 
+                ? 'shadow-lg scale-110' 
+                : ''
+            }`} style={{
+              backgroundColor: currentStep === 'booking' ? '#50ACB4' : '#89D7D2',
+              color: 'white'
+            }}>
+              <Home className="w-6 h-6" />
+            </div>
+            <span className={`font-semibold text-sm ${currentStep === 'documents' ? 'text-white' : ''}`}>{currentStep === 'booking' ? 'Réservation' : 'Réservation'}</span>
+            {currentStep === 'booking' && (
+              <div className="h-1 w-16 rounded-full mt-1" style={{ backgroundColor: '#50ACB4' }} />
+            )}
+          </div>
+          
+          {/* Connector Line */}
+          <div className="h-0.5 flex-1 max-w-24" style={{
+            backgroundColor: currentStep === 'booking' || currentStep === 'documents' ? '#50ACB4' : '#89D7D2'
+          }} />
+          
+          <div className={`flex flex-col items-center gap-3 ${
+            currentStep === 'documents' 
+              ? 'text-[#50ACB4]' 
+              : 'text-[#89D7D2]'
+          }`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+              currentStep === 'documents' 
+                ? 'shadow-lg scale-110' 
+                : ''
+            }`} style={{
+              backgroundColor: currentStep === 'documents' ? '#50ACB4' : '#89D7D2',
+              color: 'white'
+            }}>
+              <FileText className="w-6 h-6" />
+            </div>
+            <span className={`font-semibold text-sm ${currentStep === 'documents' ? 'text-white' : ''}`}>Documents d'identité</span>
+            {currentStep === 'documents' && (
+              <div className="h-1 w-16 rounded-full mt-1" style={{ backgroundColor: '#50ACB4' }} />
+            )}
+          </div>
+          
+          {/* Connector Line */}
+          <div className="h-0.5 flex-1 max-w-24" style={{
+            backgroundColor: currentStep === 'signature' || currentStep === 'documents' ? '#50ACB4' : '#89D7D2'
+          }} />
+          
+          <div className={`flex flex-col items-center gap-3 ${
+            currentStep === 'signature' 
+              ? 'text-[#50ACB4]' 
+              : 'text-[#89D7D2]'
+          }`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+              currentStep === 'signature' 
+                ? 'shadow-lg scale-110' 
+                : ''
+            }`} style={{
+              backgroundColor: currentStep === 'signature' ? '#50ACB4' : '#89D7D2',
+              color: 'white'
+            }}>
+              <PenTool className="w-6 h-6" />
+            </div>
+            <span className={`font-semibold text-sm ${currentStep === 'documents' ? 'text-white' : ''}`}>Signature</span>
+            {currentStep === 'signature' && (
+              <div className="h-1 w-16 rounded-full mt-1" style={{ backgroundColor: '#50ACB4' }} />
+            )}
+          </div>
+        </div>
+        
+        {/* Main Content */}
+        <div className="flex-1 px-6 pb-6 overflow-y-auto">
               {/* ✅ CORRIGÉ : Retirer ErrorBoundary car il causait des doubles rendus visuels */}
               {/* L'intercepteur global d'erreurs window.onerror gère déjà les erreurs Portal */}
                 {/* ✅ CORRIGÉ : Retirer AnimatePresence pour éviter les conflits avec les Portals Radix UI */}
                 {/* Utiliser simplement des div conditionnelles avec des clés stables */}
                 {currentStep === 'booking' && (
-                  <div key="booking-step">
-                    <div className="space-y-8">
-                      <div>
-                        <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-                          <CalendarLucide className="w-6 h-6 text-primary" />
-                          {t('guest.booking.title')}
-                        </h3>
-                      </div>
-                      
-                      <div className="flex justify-center">
-                        <IntuitiveBookingPicker
-                          checkInDate={checkInDate}
-                          checkOutDate={checkOutDate}
-                          onDatesChange={(checkIn, checkOut) => {
-                            setCheckInDate(checkIn);
-                            setCheckOutDate(checkOut);
-                          }}
-                          numberOfGuests={numberOfGuests}
-                          onGuestsChange={(newGuestCount) => {
-                            console.log('📊 Calendrier - Changement nombre guests:', { 
-                              ancien: numberOfGuests, 
-                              nouveau: newGuestCount,
-                              guestsActuels: guests.length 
-                            });
-                            
-                            setNumberOfGuests(newGuestCount);
-                            
-                            // ✅ CORRIGÉ : Utiliser setGuests avec fonction pour éviter les race conditions
-                            setGuests(prevGuests => {
-                              console.log('📊 Avant modification:', prevGuests.length);
-                              
-                              // Si le nombre est le même, ne rien faire
-                              if (newGuestCount === prevGuests.length) {
-                                console.log('✅ Même nombre, pas de modification');
-                                return prevGuests;
-                              }
-                              
-                              const currentGuests = [...prevGuests];
-                              
-                              // Ajouter des guests si nécessaire
-                              if (newGuestCount > currentGuests.length) {
-                                const guestsToAdd = newGuestCount - currentGuests.length;
-                                console.log(`➕ Ajout de ${guestsToAdd} guest(s)`);
-                                
-                                for (let i = 0; i < guestsToAdd; i++) {
-                                  currentGuests.push({
-                                    fullName: '',
-                                    dateOfBirth: undefined,
-                                    nationality: '',
-                                    documentNumber: '',
-                                    documentType: 'passport',
-                                    profession: '',
-                                    motifSejour: 'TOURISME',
-                                    adressePersonnelle: '',
-                                    email: ''
-                                  });
-                                }
-                              } 
-                              // Retirer des guests si nécessaire
-                              else if (newGuestCount < currentGuests.length) {
-                                console.log(`➖ Suppression de ${currentGuests.length - newGuestCount} guest(s)`);
-                                currentGuests.splice(newGuestCount);
-                              }
-                              
-                              console.log('📊 Après modification:', currentGuests.length);
-                              return currentGuests;
-                            });
-                          }}
-                          propertyName={propertyName}
-                        />
-                      </div>
-                    </div>
-
-                    <div 
-                      className="flex justify-end pt-8"
+                  <div className="max-w-4xl mx-auto space-y-8 relative">
+                    <motion.h2 
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-3xl font-bold text-gray-900 mb-8"
                     >
-                      {/* ✅ CORRIGÉ : Retirer motion.div pour éviter les conflits */}
-                      <Button 
-                        onClick={handleNextStep} 
-                        size="lg" 
-                        className="px-8 py-3 bg-brand-teal hover:bg-brand-teal/90 transition-transform hover:scale-105 active:scale-95"
+                      Votre check-in commence ici
+                    </motion.h2>
+                    
+                    {/* Central Search Bar - 4 zones cliquables */}
+                    <div className="relative">
+                      <motion.div 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="bg-[#FDFDF9] rounded-2xl border border-gray-200 p-5 flex items-end gap-4 shadow-lg hover:shadow-xl transition-all duration-300"
                       >
-                        {t('guest.navigation.next')}
-                        <ArrowRight className="w-5 h-5 ml-2" />
-                      </Button>
+                        {/* Zone 1: Hébergement */}
+                        <div className="flex-1 cursor-default">
+                          <Label className="text-xs text-gray-500 mb-1.5 block font-normal uppercase tracking-wide">Hébergement</Label>
+                          <div className="text-lg font-semibold text-gray-900">{propertyName || 'studio casa'}</div>
+                        </div>
+                        
+                        {/* Zone 2: Quand ? - Cliquable */}
+                        <div 
+                          className="flex-1 cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors"
+                          onClick={() => {
+                            setShowCalendarPanel(!showCalendarPanel);
+                            setShowGuestsPanel(false);
+                          }}
+                        >
+                          <Label className="text-xs text-gray-500 mb-1.5 block font-normal uppercase tracking-wide">Quand ?</Label>
+                          <div className="text-lg font-semibold text-gray-900">
+                            {checkInDate && checkOutDate 
+                              ? `${format(checkInDate, 'dd/MM/yyyy')} - ${format(checkOutDate, 'dd/MM/yyyy')}`
+                              : 'Dates'
+                            }
+                          </div>
+                        </div>
+                        
+                        {/* Zone 3: Qui ? - Cliquable */}
+                        <div 
+                          className="flex-1 cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors"
+                          onClick={() => {
+                            setShowGuestsPanel(!showGuestsPanel);
+                            setShowCalendarPanel(false);
+                          }}
+                        >
+                          <Label className="text-xs text-gray-500 mb-1.5 block font-normal uppercase tracking-wide">Qui ?</Label>
+                          <div className="text-lg font-semibold text-gray-900">
+                            {numberOfAdults + numberOfChildren > 0 
+                              ? `${numberOfAdults + numberOfChildren} voyageur${numberOfAdults + numberOfChildren > 1 ? 's' : ''}`
+                              : 'Nombre de voyageurs'
+                            }
+                          </div>
+                        </div>
+                        
+                        {/* Zone 4: Bouton flèche verte */}
+                        <Button
+                          className="w-14 h-14 rounded-full bg-green-600 hover:bg-green-700 text-white flex-shrink-0 shadow-lg hover:shadow-xl transition-all"
+                          onClick={handleNextStep}
+                        >
+                          <ArrowRight className="w-6 h-6" />
+                        </Button>
+                      </motion.div>
+                      
+                      {/* Panneau flottant - Calendrier */}
+                      {showCalendarPanel && (
+                        <motion.div 
+                          ref={calendarPanelRef}
+                          initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                          className="absolute top-full left-0 mt-3 w-full bg-white rounded-xl shadow-2xl z-50 p-6"
+                        >
+                          <div className="mb-4">
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">Sélectionnez vos dates</h3>
+                            <p className="text-sm text-gray-600">Choisissez vos dates d'arrivée et de départ</p>
+                          </div>
+                          
+                          <EnhancedCalendar
+                            mode="range"
+                            rangeStart={checkInDate}
+                            rangeEnd={checkOutDate}
+                            onRangeSelect={(checkIn, checkOut) => {
+                              setCheckInDate(checkIn);
+                              setCheckOutDate(checkOut);
+                              setShowCalendarPanel(false);
+                            }}
+                            className="w-full"
+                          />
+                        </motion.div>
+                      )}
+                      
+                      {/* Panneau flottant - Voyageurs */}
+                      {showGuestsPanel && (
+                        <motion.div 
+                          ref={guestsPanelRef}
+                          initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                          className="absolute top-full left-0 mt-3 w-full bg-[#FDFDF9] rounded-xl border border-gray-200 shadow-2xl z-50 p-6"
+                        >
+                          <h3 className="text-xl font-bold text-gray-900 mb-6">Nombre de voyageurs</h3>
+                          
+                          {/* Adultes */}
+                          <div className="flex items-center justify-between mb-6 pb-6 border-b border-gray-200">
+                            <div>
+                              <Label className="text-base font-semibold text-gray-900 block mb-1">Adultes</Label>
+                              <p className="text-sm text-gray-500">13 ans et plus</p>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="w-10 h-10 rounded-full"
+                                onClick={() => setNumberOfAdults(Math.max(1, numberOfAdults - 1))}
+                                disabled={numberOfAdults <= 1}
+                              >
+                                -
+                              </Button>
+                              <span className="w-12 text-center text-xl font-semibold">{numberOfAdults}</span>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="w-10 h-10 rounded-full"
+                                onClick={() => setNumberOfAdults(numberOfAdults + 1)}
+                              >
+                                +
+                              </Button>
+                            </div>
+                          </div>
+                          
+                          {/* Enfants */}
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <Label className="text-base font-semibold text-gray-900 block mb-1">Enfants</Label>
+                              <p className="text-sm text-gray-500">De 2 à 12 ans</p>
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="w-10 h-10 rounded-full"
+                                onClick={() => setNumberOfChildren(Math.max(0, numberOfChildren - 1))}
+                                disabled={numberOfChildren <= 0}
+                              >
+                                -
+                              </Button>
+                              <span className="w-12 text-center text-xl font-semibold">{numberOfChildren}</span>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="w-10 h-10 rounded-full"
+                                onClick={() => setNumberOfChildren(numberOfChildren + 1)}
+                              >
+                                +
+                              </Button>
+                            </div>
+                          </div>
+                          
+                          <Button
+                            className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white"
+                            onClick={() => {
+                              const total = numberOfAdults + numberOfChildren;
+                              setNumberOfGuests(total);
+                              setGuests(prevGuests => {
+                                const currentGuests = [...prevGuests];
+                                if (total > currentGuests.length) {
+                                  const toAdd = total - currentGuests.length;
+                                  for (let i = 0; i < toAdd; i++) {
+                                    currentGuests.push({
+                                      fullName: '',
+                                      dateOfBirth: undefined,
+                                      nationality: '',
+                                      documentNumber: '',
+                                      documentType: 'passport',
+                                      profession: '',
+                                      motifSejour: 'TOURISME',
+                                      adressePersonnelle: '',
+                                      email: ''
+                                    });
+                                  }
+                                } else if (total < currentGuests.length) {
+                                  currentGuests.splice(total);
+                                }
+                                return currentGuests;
+                              });
+                              setShowGuestsPanel(false);
+                            }}
+                          >
+                            Confirmer
+                          </Button>
+                        </motion.div>
+                      )}
                     </div>
+                    
+                    {/* Bouton Suivant - Bas à droite */}
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.3 }}
+                      className="flex justify-end pt-6"
+                    >
+                      <Button
+                        className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
+                        onClick={handleNextStep}
+                      >
+                        Suivant
+                      </Button>
+                    </motion.div>
                   </div>
                 )}
 
                 {currentStep === 'documents' && (
-                  <div key="documents-step">
-                    <div className="space-y-8">
-                      <div>
-                        <div className="flex items-center justify-between mb-6">
-                          <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-                            <FileText className="w-6 h-6 text-primary" />
-                            {t('guest.documents.title')}
-                          </h3>
-                          {/* ✅ TEST: Bouton pour tester manuellement la date de naissance */}
-                          <Button 
-                            onClick={testDateOfBirth}
-                            variant="outline"
-                            size="sm"
-                            className="text-xs"
-                          >
-                            🧪 Test Date
-                          </Button>
+                  <motion.div
+                    key="documents-step"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="max-w-4xl mx-auto"
+                  >
+                    {/* Zone centrale avec informations et image pour intégrer les documents */}
+                    <div className="mb-8 text-center">
+                      <div className="flex flex-col items-center justify-center min-h-[400px]">
+                        <div className="mb-6">
+                          <FileText className="w-24 h-24 mx-auto mb-6" style={{ color: '#50ACB4' }} />
                         </div>
+                        <h2 className="text-3xl font-bold text-gray-900 mb-4">Importez vos documents</h2>
+                        <p className="text-gray-600 text-lg mb-2 max-w-2xl">
+                          Utilisez la zone d'import à gauche pour télécharger vos pièces d'identité
+                        </p>
+                        <p className="text-gray-500 text-sm max-w-xl">
+                          Vos documents seront automatiquement analysés et les informations seront pré-remplies dans le formulaire ci-dessous
+                        </p>
                       </div>
-                      
-                      <div>
-                        <EnhancedFileUpload
-                          onFilesUploaded={handleFileUpload}
-                          uploadedFiles={uploadedDocuments}
-                          onRemoveFile={removeDocument}
-                          maxFiles={numberOfGuests}
-                          acceptedTypes="image/*"
-                          maxSizeMB={5}
-                          showPreview={true}
-                        />
-                      </div>
+                    </div>
 
-                      <div className="space-y-6">
-                        <div className="flex items-center gap-3 mb-4">
-                          <Users className="w-6 h-6 text-primary" />
-                          <h4 className="text-xl font-bold text-gray-900">{t('guest.clients.title')}</h4>
-                          <div className="flex-1 h-px bg-gradient-to-r from-primary/30 to-transparent"></div>
-                        </div>
+                    <div className="flex items-center gap-2 mb-6">
+                      <Users className="w-6 h-6 text-gray-900" />
+                      <h2 className="text-3xl font-bold text-gray-900">Informations des voyageurs</h2>
+                    </div>
+                    <p className="text-gray-600 mb-6 text-sm">
+                      Certains champs seront pré-remplis automatiquement lorsque vous aurez importé vos documents.
+                    </p>
+                    
+                    <div className="space-y-6">
 
                         <div className="space-y-6">
                           {deduplicatedGuests.map((guest, index) => (
                             <div
                               key={`guest-form-${index}`}
                             >
-                              <Card className="p-8 border-2 border-gray-200 hover:border-brand-teal/40 transition-all duration-300 shadow-lg hover:shadow-2xl bg-gradient-to-br from-white via-gray-50/30 to-white rounded-xl">
-                                <div className="flex items-center justify-between mb-8 pb-4 border-b-2 border-gray-100">
+                              <Card className="p-8 border-2 border-gray-300 hover:border-brand-teal/40 transition-all duration-300 shadow-lg hover:shadow-2xl bg-white rounded-xl">
+                                <div className="flex items-center justify-between mb-8 pb-4 border-b-2 border-gray-200">
                                   <h4 className="font-bold text-xl text-gray-900 flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-teal to-teal-600 flex items-center justify-center text-white font-bold text-base shadow-md">
                                       {index + 1}
                                     </div>
-                                    <span className="bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+                                    <span className="text-gray-900">
                                       {t('guest.clients.clientNumber', { number: index + 1 })}
                                     </span>
                                   </h4>
@@ -2062,7 +2511,7 @@ export const GuestVerification = () => {
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <Users className="w-4 h-4 text-brand-teal" />
                                       {t('guest.clients.fullName')} <span className="text-red-500">*</span>
                                     </Label>
@@ -2085,7 +2534,7 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <CalendarIcon className="w-4 h-4 text-brand-teal" />
                                       {t('guest.clients.dateOfBirth')} <span className="text-red-500">*</span>
                                     </Label>
@@ -2107,7 +2556,7 @@ export const GuestVerification = () => {
                                           </span>
                                         </Button>
                                       </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-0 border-2 border-brand-teal/20 shadow-xl bg-white">
+                                      <PopoverContent className="w-auto p-0 border-2 border-brand-teal/20 shadow-xl bg-[#FDFDF9]">
                                         <Calendar
                                           mode="single"
                                           selected={guest.dateOfBirth}
@@ -2120,7 +2569,7 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <span className="text-brand-teal">🌍</span>
                                       {t('guest.clients.nationality')} <span className="text-red-500">*</span>
                                     </Label>
@@ -2139,14 +2588,14 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <FileText className="w-4 h-4 text-brand-teal" />
                                       {t('guest.clients.documentType')} <span className="text-red-500">*</span>
                                     </Label>
                                     <select
                                       value={guest.documentType} 
                                       onChange={(e) => updateGuest(index, 'documentType', e.target.value)}
-                                      className="h-12 w-full border-2 rounded-lg px-4 bg-white border-gray-300 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 text-gray-900 font-medium shadow-sm hover:shadow-md"
+                                      className="h-12 w-full border-2 rounded-lg px-4 bg-[#FDFDF9] border-gray-300 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 text-gray-900 font-medium shadow-sm hover:shadow-md"
                                     >
                                       <option value="passport">{t('guest.clients.passport')}</option>
                                       <option value="national_id">{t('guest.clients.nationalId')}</option>
@@ -2154,7 +2603,7 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <FileText className="w-4 h-4 text-brand-teal" />
                                       {t('guest.clients.documentNumber')} <span className="text-red-500">*</span>
                                     </Label>
@@ -2177,7 +2626,7 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <label className="block text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <span className="text-brand-teal">💼</span>
                                       Profession
                                     </label>
@@ -2190,12 +2639,12 @@ export const GuestVerification = () => {
                                         updateGuest(index, 'profession', target.value);
                                       }}
                                       placeholder="Ex : Étudiant, Employé, Retraité..."
-                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
+                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-[#FDFDF9] px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
                                   />
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <label className="block text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <CalendarLucide className="w-4 h-4 text-brand-teal" />
                                       Motif du séjour <span className="text-red-500">*</span>
                                     </label>
@@ -2205,7 +2654,7 @@ export const GuestVerification = () => {
                                       onChange={(e) => {
                                         updateGuest(index, 'motifSejour', e.target.value);
                                       }}
-                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-[#FDFDF9] px-4 py-2 text-sm text-gray-900 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
                                       required
                                     >
                                       <option value="">Sélectionnez un motif</option>
@@ -2219,7 +2668,7 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <label className="block text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <span className="text-brand-teal">📍</span>
                                       Adresse personnelle
                                     </label>
@@ -2232,12 +2681,12 @@ export const GuestVerification = () => {
                                         updateGuest(index, 'adressePersonnelle', target.value);
                                       }}
                                     placeholder="Votre adresse au Maroc ou à l'étranger"
-                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
+                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-[#FDFDF9] px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
                                     />
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <label className="block text-sm font-semibold text-gray-900 flex items-center gap-2">
                                       <span className="text-brand-teal">✉️</span>
                                       Courriel <span className="text-red-500">*</span>
                                     </label>
@@ -2250,7 +2699,7 @@ export const GuestVerification = () => {
                                         updateGuest(index, 'email', target.value);
                                       }}
                                       placeholder="votre.email@example.com"
-                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
+                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-[#FDFDF9] px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
                                       required
                                     />
                                   </div>
@@ -2259,28 +2708,21 @@ export const GuestVerification = () => {
                             </div>
                           ))}
                         </div>
-                      </div>
                     </div>
-
-                    <div 
-                      className="flex justify-between pt-8"
-                    >
-                      {/* ✅ CORRIGÉ : Retirer motion.div pour éviter les conflits */}
+                    
+                    <div className="flex justify-between pt-8 mt-8 border-t border-gray-600">
                       <Button 
                         variant="outline" 
                         onClick={handlePrevStep} 
                         size="lg" 
-                        className="px-8 py-3 border-2 transition-transform hover:scale-105 active:scale-95"
+                        className="px-8 py-3"
                       >
                         <ArrowLeft className="w-5 h-5 mr-2" />
                         {t('guest.navigation.previous')}
                       </Button>
                       
-                      {/* ✅ CORRIGÉ : Retirer motion.div pour éviter les conflits lors de la navigation */}
-                      {/* ✅ CRITIQUE : Protection contre les doubles clics */}
                       <Button 
                         onClick={(e) => {
-                          // ✅ CRITIQUE : Empêcher les doubles clics
                           if (isSubmittingRef.current || isProcessingRef.current || isLoading || navigationInProgressRef.current) {
                             e.preventDefault();
                             e.stopPropagation();
@@ -2293,18 +2735,56 @@ export const GuestVerification = () => {
                         }}
                         disabled={isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current}
                         size="lg"
-                        className="px-8 py-3 bg-brand-teal hover:bg-brand-teal/90 transition-transform hover:scale-105 active:scale-95"
+                        className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white"
                       >
-                        {/* ✅ CORRIGÉ : Toujours afficher le texte normal, même pendant le traitement */}
                         <Sparkles className="w-5 h-5 mr-2" />
                         {t('guest.cta.sendInfo')}
                       </Button>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
-            </CardContent>
-          </Card>
-        </motion.div>
+                
+                {currentStep === 'signature' && (
+                  <motion.div
+                    key="signature-step"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    className="max-w-4xl mx-auto"
+                  >
+                    <h2 className="text-3xl font-bold mb-6">Signature du contrat</h2>
+                    <p className="text-gray-600 mb-6">Veuillez lire et signer le contrat ci-dessous.</p>
+                    
+                    {/* Contract content placeholder - keep existing signature logic */}
+                    <div className="bg-gray-50 rounded-lg p-6 mb-6 border border-gray-200">
+                      <p className="text-sm text-gray-700 whitespace-pre-line">
+                        {t('guest.signature.contract') || 'Contrat de location...'}
+                      </p>
+                    </div>
+                    
+                    {/* Signature pad and checkbox - keep existing logic */}
+                    <div className="space-y-6">
+                      <div>
+                        <Label className="flex items-center gap-2 mb-4">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4"
+                            required
+                          />
+                          <span>J'accepte les termes et conditions du contrat</span>
+                        </Label>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+        </div>
+        
+        {/* Footer */}
+        <footer className="px-6 py-4 border-t border-gray-200 bg-[#FDFDF9]">
+          <p className="text-sm text-gray-600 text-center">
+            © 2025 Checky — Tous droits réservés · Mentions légales · Politique de confidentialité · CGV
+          </p>
+        </footer>
       </div>
     </div>
   );

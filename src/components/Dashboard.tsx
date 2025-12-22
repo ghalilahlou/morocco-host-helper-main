@@ -1,13 +1,16 @@
-import { useState, useEffect, useMemo, memo } from 'react';
-import { Plus, Search, Filter, RefreshCcw, Grid, CalendarDays } from 'lucide-react';
+import { useState, useEffect, useMemo, memo, lazy, Suspense } from 'react';
+import { Plus, Search, Filter, Grid, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BookingCard } from './BookingCard';
-import { CalendarView } from './CalendarView';
 import { useBookings } from '@/hooks/useBookings';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
+import { debug } from '@/lib/logger';
+
+// ✅ OPTIMISATION : Lazy loading pour CalendarView (composant lourd)
+const CalendarView = lazy(() => import('./CalendarView').then(module => ({ default: module.CalendarView })));
 
 
 interface DashboardProps {
@@ -39,10 +42,9 @@ export const Dashboard = memo(({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('calendar');
   
-  // Refresh bookings when component mounts and periodically
+  // Refresh bookings when component mounts
   useEffect(() => {
     handleRefreshBookings();
-    
   }, []);
   
   // Log bookings changes for debugging
@@ -63,20 +65,15 @@ export const Dashboard = memo(({
       return matchesSearch && matchesStatus;
     });
     
-    // ✅ DIAGNOSTIC : Log des réservations filtrées
-    console.log('📋 [DASHBOARD DIAGNOSTIC] Réservations:', {
-      total: bookings.length,
-      filtered: filtered.length,
-      searchTerm,
-      statusFilter,
-      bookingIds: bookings.map(b => b.id.substring(0, 8)).join(', ')
-    });
-    console.log('📋 [DASHBOARD DIAGNOSTIC] Détails:', bookings.map(b => ({
-      id: b.id.substring(0, 8),
-      propertyId: b.propertyId?.substring(0, 8) || 'N/A',
-      status: b.status,
-      guestName: b.guest_name
-    })));
+    // ✅ OPTIMISATION : Logs désactivés en production pour améliorer les performances
+    if (import.meta.env.DEV) {
+      debug('📋 [DASHBOARD] Réservations filtrées', {
+        total: bookings.length,
+        filtered: filtered.length,
+        searchTerm,
+        statusFilter
+      });
+    }
     
     return filtered;
   }, [bookings, searchTerm, statusFilter]);
@@ -89,58 +86,49 @@ export const Dashboard = memo(({
     archived: bookings.filter(b => b.status === 'archived').length
   }), [bookings]);
 
+  // Écouter l'événement de création de réservation depuis CalendarHeader
+  useEffect(() => {
+    const handleCreateBooking = () => {
+      onNewBooking();
+    };
+    window.addEventListener('create-booking-request', handleCreateBooking);
+    return () => {
+      window.removeEventListener('create-booking-request', handleCreateBooking);
+    };
+  }, [onNewBooking]);
+
   return (
     <div className="space-y-6">
-
-
-      {/* Header */}
+      {/* Header Tableau de bord selon modèle Figma */}
       <div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-2xl md:text-3xl font-bold text-foreground">Tableau de bord</h1>
-          <div className="flex flex-wrap gap-2">
+        <h1 className="text-2xl md:text-3xl font-bold text-black">Tableau de bord</h1>
+        <p className="text-sm md:text-base text-gray-600 mt-2">
+          Gérez vos réservations et générez les documents obligatoires
+        </p>
+      </div>
+
+      {/* Navigation Tabs selon modèle Figma */}
+      <div className="flex items-center gap-2">
             <Button
-              variant="outline"
+          variant={viewMode === 'calendar' ? 'default' : 'outline'}
               size="sm"
               onClick={() => setViewMode('calendar')}
               data-tutorial="calendar"
-              className="hover:bg-[hsl(var(--teal-hover))] hover:text-white"
+          className={viewMode === 'calendar' ? 'bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white' : 'hover:bg-gray-100 border-gray-300'}
             >
-              <CalendarDays className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Calendrier</span>
+          <CalendarDays className="w-4 h-4 mr-2" />
+          Calendrier
             </Button>
             <Button
-              variant="outline"
+          variant={viewMode === 'cards' ? 'default' : 'outline'}
               size="sm"
               onClick={() => setViewMode('cards')}
-              className="hover:bg-[hsl(var(--teal-hover))] hover:text-white"
+          className={viewMode === 'cards' ? 'bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white' : 'hover:bg-gray-100 border-gray-300'}
             >
-              <Grid className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Cards</span>
+          <Grid className="w-4 h-4 mr-2" />
+          Cards
             </Button>
-            <Button
-              onClick={handleRefreshBookings}
-              variant="outline"
-              size="sm"
-              className="hover:bg-[hsl(var(--teal-hover))] hover:text-white"
-            >
-              <RefreshCcw className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Actualiser</span>
-            </Button>
-            <Button
-              onClick={onNewBooking}
-              variant="outline"
-              size="sm"
-              className="whitespace-nowrap hover:bg-[hsl(var(--teal-hover))] hover:text-white"
-              data-tutorial="add-booking"
-            >
-              <Plus className="w-4 h-4 sm:mr-2" />
-              <span className="hidden sm:inline">Nouvelle réservation</span>
-            </Button>
-          </div>
-        </div>
-        <p className="text-sm md:text-base text-muted-foreground mt-2">Gérez vos réservations et générez les documents obligatoires</p>
       </div>
-
 
       {/* Filters - Only show in cards view */}
       {viewMode === 'cards' && (
@@ -207,12 +195,18 @@ export const Dashboard = memo(({
         )
       ) : (
         <div data-tutorial="calendar-view">
-          <CalendarView
-            bookings={bookings}
-            onEditBooking={onEditBooking}
-            propertyId={propertyId}
-            onRefreshBookings={handleRefreshBookings}
-          />
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          }>
+            <CalendarView
+              bookings={bookings}
+              onEditBooking={onEditBooking}
+              propertyId={propertyId}
+              onRefreshBookings={handleRefreshBookings}
+            />
+          </Suspense>
         </div>
       )}
     </div>

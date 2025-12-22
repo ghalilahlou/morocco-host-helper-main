@@ -1,29 +1,85 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Property } from '@/types/booking';
 import { useAuth } from './useAuth';
 import { toast } from 'sonner';
+
+// ✅ OPTIMISATION : Cache pour éviter les requêtes répétées
+interface CacheEntry {
+  data: Property[];
+  timestamp: number;
+}
+
+const propertiesCache = new Map<string, CacheEntry>();
+const PROPERTIES_CACHE_DURATION = 30000; // 30 secondes
+const loadingRef = { current: false };
 
 export const useProperties = () => {
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
 
-  const loadProperties = async () => {
+  const loadProperties = async (retryCount = 0) => {
     if (!user) {
       setProperties([]);
       setIsLoading(false);
       return;
     }
 
+    // ✅ OPTIMISATION : Vérifier le cache d'abord
+    const cacheKey = `properties-${user.id}`;
+    const cached = propertiesCache.get(cacheKey);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < PROPERTIES_CACHE_DURATION) {
+      console.log('✅ [PROPERTIES] Utilisation du cache', { count: cached.data.length });
+      setProperties(cached.data);
+      setIsLoading(false);
+      return;
+    }
+
+    // ✅ PROTECTION : Empêcher les appels multiples simultanés
+    if (loadingRef.current) {
+      console.log('⏳ loadProperties déjà en cours, appel ignoré');
+      return;
+    }
+
+    loadingRef.current = true;
+    setIsLoading(true);
+
     try {
-      const { data, error } = await supabase
+      // ✅ OPTIMISATION : Ajouter un timeout explicite de 10 secondes
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Properties query timeout after 10s')), 10000)
+      );
+
+      const queryPromise = supabase
         .from('properties')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      const result = await Promise.race([queryPromise, timeoutPromise]) as any;
+      const { data, error } = result;
+
+      // ✅ OPTIMISATION : Gérer les erreurs 500 avec retry
+      if (error) {
+        const errorStatus = (error as any).status || (error as any).statusCode || (error as any).code;
+        const is500Error = errorStatus === 500 || errorStatus === '500' || 
+                          error.message?.includes('Internal Server Error') ||
+                          error.message?.includes('500');
+        
+        // ✅ RETRY : Réessayer jusqu'à 2 fois en cas d'erreur 500
+        if (is500Error && retryCount < 2) {
+          console.warn(`⚠️ [PROPERTIES] Erreur 500 détectée, retry ${retryCount + 1}/2`);
+          loadingRef.current = false;
+          // Attendre 1 seconde avant de réessayer
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return loadProperties(retryCount + 1);
+        }
+        
+        throw error;
+      }
 
       const transformedProperties: Property[] = (data || []).map(property => ({
         ...property,
@@ -35,11 +91,24 @@ export const useProperties = () => {
           : {},
       }));
 
+      // ✅ OPTIMISATION : Mettre en cache
+      propertiesCache.set(cacheKey, { data: transformedProperties, timestamp: now });
+      console.log('✅ [PROPERTIES] Propriétés chargées et mises en cache', { count: transformedProperties.length });
+
       setProperties(transformedProperties);
-    } catch (error) {
-      console.error('Error loading properties:', error);
-      toast.error('Failed to load properties');
+    } catch (error: any) {
+      console.error('❌ [PROPERTIES] Erreur lors du chargement:', error);
+      
+      // ✅ OPTIMISATION : Utiliser le cache même s'il est expiré en cas d'erreur
+      if (cached) {
+        console.warn('⚠️ [PROPERTIES] Utilisation du cache expiré en raison d\'une erreur');
+        setProperties(cached.data);
+        toast.error('Erreur de chargement, affichage des données en cache');
+      } else {
+        toast.error('Échec du chargement des propriétés');
+      }
     } finally {
+      loadingRef.current = false;
       setIsLoading(false);
     }
   };
@@ -143,6 +212,11 @@ export const useProperties = () => {
   }, [user]);
 
   const refreshProperties = () => {
+    // ✅ OPTIMISATION : Invalider le cache avant de recharger
+    if (user) {
+      const cacheKey = `properties-${user.id}`;
+      propertiesCache.delete(cacheKey);
+    }
     loadProperties();
   };
 

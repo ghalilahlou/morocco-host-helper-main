@@ -32,12 +32,14 @@ export async function fetchAirbnbCalendarEvents(
       return [];
     }
 
-    // Validate date format (basic check)
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      console.error('fetchAirbnbCalendarEvents: Invalid date format', { start, end });
+    // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter les décalages de timezone
+    let startDate: Date;
+    let endDate: Date;
+    try {
+      startDate = parseLocalDate(start);
+      endDate = parseLocalDate(end);
+    } catch (error) {
+      console.error('fetchAirbnbCalendarEvents: Invalid date format', { start, end, error });
       return [];
     }
 

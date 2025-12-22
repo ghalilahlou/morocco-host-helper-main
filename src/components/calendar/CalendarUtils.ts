@@ -345,24 +345,24 @@ export const calculateBookingLayout = (
         // ✅ CORRIGÉ : Vérification stricte de l'alignement avec la date d'arrivée
         const firstDayDate = normalizeDate(new Date(week[startIndex].date.getFullYear(), week[startIndex].date.getMonth(), week[startIndex].date.getDate()));
         const isStart = firstDayDate.getTime() === normalizedCheckIn.getTime();
-
+        
         // Déterminer si ce segment contient la date de check-out (pour l'affichage visuel)
         const lastDayDate = normalizeDate(new Date(week[endIndex].date.getFullYear(), week[endIndex].date.getMonth(), week[endIndex].date.getDate()));
         const isEnd = lastDayDate.getTime() === normalizedCheckOut.getTime();
         
         // ✅ DIAGNOSTIC RÉDUIT : Log détaillé restreint (une seule fois par réservation et seulement en développement)
         if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0) {
-          console.log(`📅 [CALCUL LAYOUT] Réservation ${booking.id.substring(0, 8)}... dans semaine ${weekIndex}:`, {
-            bookingId: booking.id,
-            checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
-            checkOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
-            startDayIndex: startIndex,
-            endDayIndex: endIndex,
-            span,
-            isStart,
-            dayNumber: week[startIndex].dayNumber,
+        console.log(`📅 [CALCUL LAYOUT] Réservation ${booking.id.substring(0, 8)}... dans semaine ${weekIndex}:`, {
+          bookingId: booking.id,
+          checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
+          checkOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
+          startDayIndex: startIndex,
+          endDayIndex: endIndex,
+          span,
+          isStart,
+          dayNumber: week[startIndex].dayNumber,
             expectedDayNumber: normalizedCheckIn.getDate()
-          });
+        });
         }
         
         const bookingLayout = {

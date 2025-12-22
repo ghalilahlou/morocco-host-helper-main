@@ -85,7 +85,7 @@ export const CalendarGrid = memo(({
                           ? 'bg-white border border-slate-200/80 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
                           : 'bg-transparent border-transparent shadow-none'}
                         ${isMobile ? 'p-2' : 'p-3 sm:p-4'}
-                        ${isToday ? 'ring-2 ring-cyan-300/60 ring-offset-0 z-10' : ''}
+                        ${isToday ? 'ring-2 ring-[#0BD9D0] ring-offset-0 z-10' : ''}
                       `}
                       style={{
                         minHeight: `${cellHeight}px`,
@@ -99,9 +99,8 @@ export const CalendarGrid = memo(({
                           className={`
                             inline-flex items-center justify-center font-semibold
                             ${isMobile ? 'text-sm' : 'text-sm sm:text-base'}
-                            ${isToday ? 'text-white bg-cyan-500' : 'text-slate-700 bg-transparent'}
+                            ${isToday ? 'text-[#0BD9D0]' : 'text-slate-700'}
                             ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
-                            ${isToday ? 'rounded-full w-7 h-7' : ''}
                           `}
                         >
                           {/* N'afficher un numéro que pour les jours du mois courant */}

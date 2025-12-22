@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import { Home, Plus, Edit, MapPin, Users, MoreVertical, Calendar, FileText, Trash2, Grid3X3, Eye } from 'lucide-react';
+import { Home, Plus, Edit, MapPin, Users, MoreVertical, Calendar, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Property } from '@/types/booking';
 import { useProperties } from '@/hooks/useProperties';
 import { useBookings } from '@/hooks/useBookings';
@@ -97,134 +95,139 @@ export const PropertyList = ({
       </>;
   }
   return <>
-      <div className="space-y-4 sm:space-y-6 px-3 sm:px-4 md:px-6 py-4 sm:py-6">
-        <div className="flex items-center justify-between gap-3 sm:gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold">Mes annonces</h1>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
+      <div className="space-y-6">
+        {/* Header selon modèle Figma */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl md:text-3xl font-bold text-black">Mes annonces</h1>
             {isMobile ? (
-              // ✅ Version mobile : Bouton carré avec "++" plus grand et zone tactile optimale
               <Button 
                 onClick={() => setShowCreateDialog(true)} 
-                className="h-12 w-12 p-0 rounded-xl bg-[hsl(var(--brand-1))] hover:bg-[hsl(var(--brand-1))]/90 text-white shadow-lg active:scale-95 transition-transform"
+              className="h-12 w-12 p-0 rounded-xl bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white shadow-lg"
                 aria-label="Ajouter une propriété"
               >
-                <span className="text-2xl font-bold leading-none">++</span>
+              <Plus className="h-6 w-6" />
               </Button>
             ) : (
-              // Version desktop : Bouton classique avec texte
               <Button 
                 onClick={() => setShowCreateDialog(true)} 
                 size="sm" 
-                className="gap-2 h-9 sm:h-10 px-3 sm:px-4 bg-[hsl(var(--brand-1))] hover:bg-[hsl(var(--brand-1))]/90 text-white"
+              className="gap-2 h-10 px-4 bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white rounded-full"
               >
-                <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span className="text-sm sm:text-base">Ajouter</span>
+              <Plus className="h-4 w-4" />
+              <span>Ajouter</span>
               </Button>
             )}
-          </div>
         </div>
 
-        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-          <div className="w-full overflow-x-auto">
-            <Table className="w-full min-w-[600px]">
-              <TableHeader>
-                <TableRow className="border-b bg-gray-50/50">
-                  <TableHead className="font-semibold text-gray-900 py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 text-sm sm:text-base">Annonce</TableHead>
-                  <TableHead className="font-semibold text-gray-900 py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 hidden sm:table-cell"></TableHead>
-                  <TableHead className="font-semibold text-gray-900 py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 text-sm sm:text-base">Lieu</TableHead>
-                  <TableHead className="font-semibold text-gray-900 py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 text-sm sm:text-base hidden md:table-cell">Capacité</TableHead>
-                  <TableHead className="py-3 sm:py-4 md:py-5 px-3 sm:px-4 md:px-6 w-24 sm:w-32"></TableHead>
-                </TableRow>
-              </TableHeader>
-            <TableBody>
+        {/* Liste des propriétés en cartes selon modèle Figma */}
+        <div className="space-y-4">
               {properties.map(property => {
               const stats = getPropertyStats(property.id, property);
-              const isActive = stats.total > 0 || stats.hasAirbnbSync;
-              return <TableRow key={property.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer relative" onClick={() => onPropertySelect(property)}>
-                    <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6">
-                      <div className="flex items-center gap-2 sm:gap-3 md:gap-4">
-                         {property.photo_url ? <div className="w-10 h-8 sm:w-14 sm:h-10 md:w-16 md:h-12 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg overflow-hidden flex-shrink-0">
+            return (
+              <div
+                key={property.id}
+                onClick={() => onPropertySelect(property)}
+                className="bg-white rounded-2xl shadow-sm border border-gray-200/50 p-4 md:p-6 hover:shadow-md transition-shadow cursor-pointer"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  {/* Partie gauche : Icône + Nom + Localisation */}
+                  <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
+                    {/* Icône propriété */}
+                    {property.photo_url ? (
+                      <div className="w-12 h-12 md:w-16 md:h-16 bg-[#E0F2F7] rounded-xl overflow-hidden flex-shrink-0">
                               <img src={property.photo_url} alt={property.name} className="w-full h-full object-cover" />
-                            </div> : <div className="w-10 h-8 sm:w-14 sm:h-10 md:w-16 md:h-12 bg-gradient-to-br from-primary/20 to-primary/10 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                              <Home className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-primary" />
-                            </div>}
-                         <div className="min-w-0 flex-1">
-                           <div className="font-semibold text-gray-900 text-sm sm:text-base md:text-lg truncate">{property.name}</div>
-                           <div className="sm:hidden flex items-center gap-1.5 text-xs sm:text-sm text-gray-600 mt-1">
-                             <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                             <span className="truncate">{property.address?.split(',')[0]?.trim() || 'Non spécifié'}</span>
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 md:w-16 md:h-16 bg-[#E0F2F7] rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Home className="w-6 h-6 md:w-8 md:h-8 text-white" />
+                      </div>
+                    )}
+                    
+                    {/* Nom et localisation */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-black text-base md:text-lg truncate">{property.name}</h3>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <MapPin className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                        <span className="text-sm text-gray-600 truncate">
+                          {property.address?.split(',')[0]?.trim() || 'Non spécifié'}
+                        </span>
                            </div>
                          </div>
                        </div>
-                     </TableCell>
-                     
-                     <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6 hidden sm:table-cell">
-                     </TableCell>
-                     
-                     <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6 hidden sm:table-cell">
-                       <div className="flex items-center gap-2 sm:gap-2.5">
-                         <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-                         <span className="text-gray-600 text-sm sm:text-base truncate max-w-[200px] sm:max-w-[300px]">{property.address?.split(',')[0]?.trim() || 'Non spécifié'}</span>
-                       </div>
-                     </TableCell>
-                     
-                     <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6 hidden md:table-cell">
-                       <div className="flex items-center gap-2">
-                         <Users className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-                         <span className="text-gray-600 font-medium text-sm sm:text-base">{property.max_occupancy}</span>
-                       </div>
-                     </TableCell>
-                     
-                     <TableCell className="py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-6 relative">
-                       <div className="absolute top-2 sm:top-3 right-2 sm:right-3">
+
+                  {/* Partie droite : Bouton Accéder + Menu */}
+                  <div className="flex items-center gap-2 md:gap-3 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                    {isMobile ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPropertySelect(property);
+                        }}
+                        className="h-9 w-9 p-0"
+                        aria-label="Accéder au calendrier"
+                      >
+                        <Calendar className="w-5 h-5 text-gray-700" />
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPropertySelect(property);
+                        }}
+                        className="gap-2 rounded-full border-gray-300 bg-white hover:bg-gray-50 text-gray-900 h-9 px-4"
+                        aria-label="Accéder au calendrier"
+                      >
+                        <Calendar className="w-4 h-4 text-gray-700" />
+                        <span className="text-sm font-medium">Accéder</span>
+                      </Button>
+                    )}
+                    
+                    {/* Menu trois points */}
                          <DropdownMenu>
                            <DropdownMenuTrigger asChild>
-                             <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="w-8 h-8 sm:w-9 sm:h-9 p-0 hover:bg-gray-100 min-w-[32px]">
-                               <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={(e) => e.stopPropagation()} 
+                          className="h-9 w-9 p-0 hover:bg-gray-100"
+                        >
+                          <MoreVertical className="w-5 h-5 text-gray-700" />
                              </Button>
                            </DropdownMenuTrigger>
-                           <DropdownMenuContent align="end" className="w-44 sm:w-52 bg-white z-50">
-                             <DropdownMenuItem onClick={e => {
+                      <DropdownMenuContent align="end" className="w-48 bg-white z-50">
+                        <DropdownMenuItem 
+                          onClick={(e) => {
                            e.stopPropagation();
                            setEditingProperty(property);
                            setShowCreateDialog(true);
-                         }} className="gap-2 hover:bg-[hsl(var(--teal-hover))] hover:text-white focus:bg-[hsl(var(--teal-hover))] focus:text-white text-sm sm:text-base py-2.5">
-                               <Edit className="w-4 h-4 sm:w-5 sm:h-5" />
+                          }} 
+                          className="gap-2 hover:bg-[#0BD9D0] hover:text-white focus:bg-[#0BD9D0] focus:text-white"
+                        >
+                          <Edit className="w-4 h-4" />
                                Modifier
                              </DropdownMenuItem>
-                             <DropdownMenuItem onClick={e => {
+                        <DropdownMenuItem 
+                          onClick={(e) => {
                            e.stopPropagation();
                            setPropertyToDelete(property);
                            setDeleteConfirmOpen(true);
-                         }} className="gap-2 text-red-600 focus:text-red-600 text-sm sm:text-base py-2.5">
-                               <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                          }} 
+                          className="gap-2 text-red-600 focus:text-red-600"
+                        >
+                          <Trash2 className="w-4 h-4" />
                                Supprimer
                              </DropdownMenuItem>
                            </DropdownMenuContent>
                          </DropdownMenu>
                        </div>
-                       <div className="flex items-center justify-end gap-2 sm:gap-3 pr-10 sm:pr-14 md:pr-20">
-                         <Button variant="outline" size="sm" onClick={e => {
-                       e.stopPropagation();
-                       onPropertySelect(property);
-                     }} className="gap-1.5 text-foreground hover:bg-[hsl(var(--teal-hover))] hover:text-white text-xs sm:text-sm px-3 sm:px-4 py-2 h-8 sm:h-9 min-w-[80px] sm:min-w-[100px]">
-                           <Calendar className="w-4 h-4 sm:w-5 sm:h-5" />
-                           <span className="hidden sm:inline">Accéder</span>
-                           <span className="sm:hidden">Accès</span>
-                         </Button>
-                         <div className="sm:hidden flex items-center gap-1.5 text-xs text-gray-600">
-                           <Users className="w-4 h-4 text-gray-400" />
-                           <span className="font-medium">{property.max_occupancy}</span>
                          </div>
                        </div>
-                     </TableCell>
-                  </TableRow>;
+            );
             })}
-            </TableBody>
-            </Table>
-          </div>
         </div>
       </div>
 

@@ -5,6 +5,11 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173', // Vite default port
   'http://localhost:54321', // Supabase local
   
+  // Développement réseau local (adresses IP locales)
+  'http://192.168.11.195:3000',
+  'http://192.168.1.1:3000',
+  'http://127.0.0.1:3000',
+  
   // Production - ✅ DOMAINE PRINCIPAL
   'https://checky.ma',
   'https://www.checky.ma',
@@ -16,7 +21,18 @@ const ALLOWED_ORIGINS = [
 // Headers CORS dynamiques basés sur l'origine
 export function getCorsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get('origin');
-  const isAllowedOrigin = origin && ALLOWED_ORIGINS.includes(origin);
+  
+  // Vérifier si l'origine est dans la liste autorisée
+  let isAllowedOrigin = origin && ALLOWED_ORIGINS.includes(origin);
+  
+  // Si pas trouvé exactement, vérifier si c'est une adresse IP locale (développement)
+  if (!isAllowedOrigin && origin) {
+    // Accepter les adresses IP locales pour le développement (192.168.x.x, 10.x.x.x, 172.16-31.x.x, 127.0.0.1)
+    const localIpPattern = /^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|127\.0\.0\.1|localhost)(:\d+)?$/;
+    if (localIpPattern.test(origin)) {
+      isAllowedOrigin = true;
+    }
+  }
   
   return {
     'Access-Control-Allow-Origin': isAllowedOrigin ? origin : 'https://checky.ma',

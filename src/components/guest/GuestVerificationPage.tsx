@@ -1,11 +1,10 @@
 import React from 'react';
 import { GuestLocaleProvider } from '@/i18n/GuestLocaleProvider';
-import { GuestLayout } from './GuestLayout';
 import { GuestVerification } from '@/pages/GuestVerification';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 /**
- * ✅ Wrapper stable pour GuestVerification
+ * ✅ Wrapper stable pour GuestVerification avec nouveau design Figma
  * Évite les remontages multiples en encapsulant les providers dans un composant réutilisable
  * 
  * PROBLÈME RÉSOLU:
@@ -13,6 +12,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
  * - Après : Un seul wrapper réutilisable stable
  * 
  * ✅ AJOUT : ErrorBoundary pour éviter les pages blanches
+ * ✅ NOUVEAU : Utilise GuestVerificationFigma avec le design Figma
  */
 export const GuestVerificationPage: React.FC = () => {
   return (
@@ -35,9 +35,7 @@ export const GuestVerificationPage: React.FC = () => {
       }
     >
       <GuestLocaleProvider>
-        <GuestLayout>
-          <GuestVerification />
-        </GuestLayout>
+        <GuestVerification />
       </GuestLocaleProvider>
     </ErrorBoundary>
   );
