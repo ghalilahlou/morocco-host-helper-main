@@ -1274,6 +1274,9 @@ export const GuestVerification = () => {
     const checkInDateStartOfDay = new Date(checkInDate);
     checkInDateStartOfDay.setHours(0, 0, 0, 0);
     
+    // ✅ DÉSACTIVÉ : Permettre les dates passées (réservations antérieures)
+    // Les utilisateurs peuvent créer des réservations pour des dates passées
+    /*
     if (checkInDateStartOfDay < today) {
       // ✅ CRITIQUE : Réinitialiser les flags si validation échoue
       isSubmittingRef.current = false;
@@ -1285,6 +1288,7 @@ export const GuestVerification = () => {
       });
       return;
     }
+    */
 
     // ✅ CORRIGÉ : Utiliser deduplicatedGuests.length au lieu de numberOfGuests pour la validation
     // car deduplicatedGuests est la source de vérité pour le rendu (évite les doubles formulaires)

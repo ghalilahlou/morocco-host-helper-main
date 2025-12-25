@@ -190,18 +190,13 @@ export const useGuestVerification = () => {
       
       // Log masqué en production (sauf le lien final)
       
-      // ✅ UNIFIÉ : Toujours utiliser ics_direct avec dates pré-remplies
-      // Si pas de reservationData, créer un objet minimal avec les dates disponibles
+      // ✅ MODIFIÉ : Ne pas créer de dates par défaut pour les réservations indépendantes
+      // Le guest choisira ses propres dates dans le formulaire
       let finalReservationData = options?.reservationData;
       
-      if (!finalReservationData && airbnbBookingId) {
-        finalReservationData = {
-        airbnbCode: airbnbBookingId,
-        startDate: new Date(), // Date par défaut si non fournie
-        endDate: new Date(),
-        numberOfGuests: 1
-        };
-      }
+      // ✅ SUPPRIMÉ : Ne plus créer de dates par défaut automatiquement
+      // Les réservations indépendantes n'auront pas de dates pré-remplies
+      // Seules les réservations ICS/Airbnb auront des dates dans l'URL
       
       // ✅ CORRIGÉ : Normaliser les dates avant l'envoi pour éviter les problèmes de sérialisation JSON
       // Les objets Date sont sérialisés en ISO avec timezone, donc on les convertit en chaînes YYYY-MM-DD
@@ -211,10 +206,10 @@ export const useGuestVerification = () => {
           ...finalReservationData,
           // Convertir les Date objects en chaînes YYYY-MM-DD pour éviter le décalage timezone lors de la sérialisation JSON
           startDate: finalReservationData.startDate instanceof Date 
-            ? formatLocalDate(finalReservationData.startDate)
+            ? formatLocalDate(finalReservationData.startDate) as any
             : finalReservationData.startDate,
           endDate: finalReservationData.endDate instanceof Date
-            ? formatLocalDate(finalReservationData.endDate)
+            ? formatLocalDate(finalReservationData.endDate) as any
             : finalReservationData.endDate
         };
         
@@ -268,14 +263,18 @@ export const useGuestVerification = () => {
         return null;
       }
 
-      // ✅ UNIFIÉ : Toujours utiliser la logique ics_direct avec dates pré-remplies
-      // Tous les liens redirigent directement vers GuestVerification avec les dates dans l'URL
-      const reservationData = options?.reservationData || finalReservationData;
-      let startDate: string | undefined;
-      let endDate: string | undefined;
+      // ✅ MODIFIÉ : Ne créer reservationData que si des dates réelles sont fournies
+      // Pour les réservations indépendantes (sans dates), le guest choisira ses dates
+      const reservationData = options?.reservationData;
       
-      if (reservationData) {
-        // ✅ CORRIGÉ : Inclure les dates dans l'URL en utilisant formatLocalDate pour éviter décalage timezone
+      // ✅ NOUVEAU : Vérifier si c'est une réservation indépendante (sans dates pré-définies)
+      const isIndependentBooking = !reservationData || 
+        reservationData.airbnbCode === 'INDEPENDENT_BOOKING' ||
+        !reservationData.startDate ||
+        !reservationData.endDate;
+      
+      if (reservationData && !isIndependentBooking) {
+        // ✅ RÉSERVATION ICS/AIRBNB : Inclure les dates dans l'URL
         // ⚠️ IMPORTANT : DTEND dans ICS est exclusif, donc endDate est déjà la date de départ réelle
         const startDateObj = reservationData.startDate instanceof Date 
           ? reservationData.startDate 
@@ -285,8 +284,8 @@ export const useGuestVerification = () => {
           : new Date(reservationData.endDate);
         
         // Utiliser formatLocalDate pour éviter le décalage timezone (format YYYY-MM-DD en heure locale)
-        startDate = formatLocalDate(startDateObj);
-        endDate = formatLocalDate(endDateObj);
+        const startDate = formatLocalDate(startDateObj);
+        const endDate = formatLocalDate(endDateObj);
         
         // ✅ NOUVEAU : Nettoyer le nom du guest avant de l'inclure dans l'URL
         // ⚠️ IMPORTANT : Ne pas inclure guestName dans l'URL si vide pour éviter le double formulaire
@@ -303,20 +302,18 @@ export const useGuestVerification = () => {
           urlParams += `&guestName=${guestName}`;
         }
         
-        // ✅ URL COURTE : Utiliser seulement le token (les données sont dans les métadonnées)
-        // Format: /v/{token} au lieu de /guest-verification/{propertyId}/{token}?{longParams}
-        const shortUrl = `${runtime.urls.app.base}/v/${data.token}`;
+        // ✅ URL COMPLÈTE : Utiliser l'URL avec paramètres pour les réservations ICS/Airbnb
         const fullUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?${urlParams}`;
         
-        // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation (version courte)
-        console.log('🔗 [LIEN DE RÉSERVATION]:', shortUrl);
+        // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation
+        console.log('🔗 [LIEN DE RÉSERVATION ICS/AIRBNB]:', fullUrl);
         
         // ✅ COPIE FLUIDE : Utiliser la fonction unifiée robuste
         try {
           const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
           const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
           
-          const result = await copyToClipboardSimple(shortUrl, userEvent);
+          const result = await copyToClipboardSimple(fullUrl, userEvent);
           
           if (result.success) {
             toast({
@@ -326,7 +323,7 @@ export const useGuestVerification = () => {
           } else {
             toast({
               title: "Lien généré",
-              description: result.error || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
+              description: result.error || `Le lien a été généré. Copiez-le manuellement : ${fullUrl}`,
               duration: 10000,
             });
           }
@@ -334,12 +331,12 @@ export const useGuestVerification = () => {
           console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
           toast({
             title: "Lien généré",
-            description: copyError?.message || `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${shortUrl}`,
+            description: copyError?.message || `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${fullUrl}`,
             duration: 10000,
           });
         }
         
-        return shortUrl; // ✅ Retourner l'URL courte
+        return fullUrl; // ✅ Retourner l'URL complète avec dates
       } else {
         // Fallback : Si pas de dates, utiliser l'URL courte
         const shortUrl = `${runtime.urls.app.base}/v/${data.token}`;
