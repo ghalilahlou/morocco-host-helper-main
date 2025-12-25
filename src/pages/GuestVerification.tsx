@@ -518,19 +518,48 @@ export const GuestVerification = () => {
           return; // Sortir si les dates sont dans l'URL
         }
 
-        // Fallback : Vérifier le token si pas de paramètres d'URL
-        const { data, error } = await supabase.functions.invoke('issue-guest-link', {
-          body: {
-            action: 'resolve',
-            propertyId,
-            token
-          }
-        });
 
-        if (error) {
-          console.error('❌ Erreur lors de la vérification du token:', error);
+        // Fallback : Vérifier le token si pas de paramètres d'URL
+        // ✅ VALIDATION : Vérifier que propertyId et token sont valides avant l'appel
+        if (!propertyId || !token) {
+          console.error('❌ [ICS] propertyId ou token manquant, abandon:', { propertyId, token });
           return;
         }
+
+        try {
+          console.log('🔍 [ICS] Appel issue-guest-link resolve:', { 
+            propertyId, 
+            token: token.substring(0, 8) + '...',
+            hasPropertyId: !!propertyId,
+            hasToken: !!token
+          });
+          
+          const { data, error } = await supabase.functions.invoke('issue-guest-link', {
+            body: {
+              action: 'resolve',
+              propertyId,
+              token
+            }
+          });
+
+          if (error) {
+            console.error('❌ [ICS] Erreur issue-guest-link:', {
+              message: error.message,
+              status: error.status,
+              statusText: error.statusText,
+              details: error
+            });
+            
+            // Afficher un toast pour informer l'utilisateur
+            toast({
+              title: "Erreur de vérification",
+              description: "Impossible de vérifier le lien. Veuillez réessayer.",
+              variant: "destructive"
+            });
+            return;
+          }
+
+          console.log('✅ [ICS] Réponse issue-guest-link:', data);
 
         if (data?.success && data?.metadata?.linkType === 'ics_direct') {
           const reservationData = data.metadata.reservationData;
@@ -579,6 +608,9 @@ export const GuestVerification = () => {
               description: `Réservation ${reservationData.airbnbCode} du ${new Date(reservationData.startDate).toLocaleDateString('fr-FR')} au ${new Date(reservationData.endDate).toLocaleDateString('fr-FR')}`
             });
           }
+        }
+        } catch (icsError) {
+          console.error('❌ [ICS] Erreur lors de l\'appel issue-guest-link:', icsError);
         }
       } catch (error) {
         console.error('❌ Erreur lors de la vérification des données ICS:', error);
