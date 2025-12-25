@@ -424,7 +424,11 @@ serve(async (req) => {
       
       let reservationData = (requestBody as IssueReq).reservationData;
       
-      // ✅ NOUVEAU : Si reservationData est manquant, créer des données par défaut
+      // ✅ DÉSACTIVÉ : Ne plus créer de données par défaut automatiquement
+      // Pour les réservations indépendantes, le guest choisira ses propres dates
+      // Seules les réservations ICS/Airbnb auront reservationData fourni explicitement
+      /*
+      // ✅ ANCIEN : Si reservationData est manquant, créer des données par défaut
       if (!reservationData) {
         console.warn('⚠️ reservationData manquant, création de données par défaut');
         
@@ -467,33 +471,38 @@ serve(async (req) => {
           console.log('✅ Données de réservation par défaut créées:', reservationData);
         }
       }
+      */
       
-      // Validate reservationData structure
-      if (!reservationData.airbnbCode || typeof reservationData.airbnbCode !== 'string') {
-        console.error('❌ Missing or invalid airbnbCode in reservationData:', reservationData);
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'airbnbCode is required in reservationData',
-          details: { reservationData }
-        }), {
-          status: 400,
-          headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
       
-      if (!reservationData.startDate || !reservationData.endDate) {
-        console.error('❌ Missing startDate or endDate in reservationData:', reservationData);
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'startDate and endDate are required in reservationData',
-          details: { reservationData }
-        }), {
-          status: 400,
-          headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
-        });
-      }
-      
-      // ✅ NOUVEAU : Créer la réservation immédiatement lors de la génération du lien
+      // ✅ MODIFIÉ : Ne créer de réservation QUE si reservationData est fourni
+      // Si pas de reservationData, c'est une réservation indépendante (guest choisit ses dates)
+      if (reservationData) {
+        // Validate reservationData structure
+        if (!reservationData.airbnbCode || typeof reservationData.airbnbCode !== 'string') {
+          console.error('❌ Missing or invalid airbnbCode in reservationData:', reservationData);
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'airbnbCode is required in reservationData',
+            details: { reservationData }
+          }), {
+            status: 400,
+            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
+        if (!reservationData.startDate || !reservationData.endDate) {
+          console.error('❌ Missing startDate or endDate in reservationData:', reservationData);
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'startDate and endDate are required in reservationData',
+            details: { reservationData }
+          }), {
+            status: 400,
+            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
+        // ✅ Créer la réservation immédiatement lors de la génération du lien
       try {
         console.log('🏗️ Création de la réservation ICS en base de données...');
         console.log('📥 reservationData reçu:', {
@@ -633,6 +642,11 @@ serve(async (req) => {
             headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
           });
         }
+      } else {
+        // ✅ RÉSERVATION INDÉPENDANTE : Pas de reservationData fourni
+        // Le guest choisira ses propres dates dans le formulaire
+        console.log('📝 Réservation indépendante - Pas de dates pré-remplies');
+      }
     } else {
       // Logique existante pour les liens avec validation de code
       const candidate = normalizeCode(airbnbCode || finalBookingId || '');

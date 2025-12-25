@@ -2182,7 +2182,27 @@ export const GuestVerification = () => {
                   <h3 className="text-sm font-medium mb-3 text-white">Documents téléchargés ({uploadedDocuments.length})</h3>
                   <div className="space-y-2">
                     {uploadedDocuments.map((doc, index) => (
-                      <div key={index} className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: '#1E1E1E' }}>
+                      <div key={index} className="flex items-center gap-3 p-3 rounded-lg relative group" style={{ backgroundColor: '#1E1E1E' }}>
+                        {/* ✅ NOUVEAU : Bouton de suppression */}
+                        <button
+                          onClick={() => {
+                            // Supprimer le document de la liste
+                            setUploadedDocuments(prev => prev.filter((_, i) => i !== index));
+                            // Supprimer le guest correspondant
+                            setGuests(prev => prev.filter((_, i) => i !== index));
+                            // Décrémenter le nombre de guests
+                            setNumberOfGuests(prev => Math.max(1, prev - 1));
+                            toast({
+                              title: "Document supprimé",
+                              description: "Le document a été retiré de la liste",
+                            });
+                          }}
+                          className="absolute top-2 right-2 p-1 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Supprimer ce document"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                        
                         {doc.processing ? (
                           <div className="w-12 h-12 flex items-center justify-center">
                             <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
