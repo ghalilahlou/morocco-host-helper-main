@@ -250,38 +250,17 @@ export const calculateBookingLayout = (
       // ✅ CORRIGÉ : Airbnb bookings use blue by default (not red/gray)
       color = CONSTANT_BOOKING_COLORS.airbnb.tailwind;
     } else {
-      // For manual bookings, determine color based on status and Airbnb matching
+      // For manual bookings, use black/dark gray color (like in Figma design)
       const manualBooking = booking as Booking;
+      
+      // ✅ MODIFIÉ : Toutes les réservations manuelles sont NOIRES (comme dans Figma)
+      // Pas de vert pour les confirmées/complétées - seulement noir
+      color = CONSTANT_BOOKING_COLORS.manual.tailwind; // bg-gray-900 (noir)
       
       // ✅ SIMPLIFIÉ : Ne plus détecter les conflits ici car c'est fait par detectBookingConflicts()
       // La couleur sera appliquée par CalendarBookingBar selon le résultat de detectBookingConflicts()
-      
-      // Priority 1: Confirmed/completed bookings appear green
-      if (manualBooking.status === 'confirmed' || manualBooking.status === 'completed') {
-        color = 'bg-success'; // Green for confirmed/completed bookings
-      } else {
-        // Priority 2: Check for Airbnb match (dates exactes)
-        const hasAirbnbMatch = bookings.some(b => {
-          if (!('source' in b) || b.source !== 'airbnb') return false;
-          const airbnb = b as unknown as AirbnbReservation;
-          const manualStart = new Date(manualBooking.checkInDate);
-          const manualEnd = new Date(manualBooking.checkOutDate);
-          const airbnbStart = new Date(airbnb.startDate);
-          const airbnbEnd = new Date(airbnb.endDate);
-          
-          return manualStart.getTime() === airbnbStart.getTime() && 
-                 manualEnd.getTime() === airbnbEnd.getTime();
-        });
-        
-        if (hasAirbnbMatch) {
-          color = 'bg-success'; // Green for matched bookings
-        } else {
-          // ✅ CORRIGÉ : Utiliser la couleur par défaut (gris/bleu)
-          // Les conflits seront gérés par detectBookingConflicts() et CalendarBookingBar
-          color = CONSTANT_BOOKING_COLORS.manual.tailwind;
-        }
-      }
     }
+    
     
     
     // ✅ CORRIGÉ : Normalisation stricte des dates pour éviter les décalages
@@ -529,8 +508,7 @@ export const detectBookingConflicts = (
           start: new Date(airbnb.startDate),
           end: new Date(airbnb.endDate),
           bookingReference: airbnb.airbnbBookingId,
-          status: 'pending', // Les réservations Airbnb sont toujours pending
-          hasGuests: false // Les réservations Airbnb n'ont pas de guests
+          status: 'pending' // Les réservations Airbnb sont toujours pending
         });
       } else {
         // C'est un Booking transformé
