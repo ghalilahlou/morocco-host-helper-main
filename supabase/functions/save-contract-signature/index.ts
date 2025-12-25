@@ -156,23 +156,104 @@ serve(async (req) => {
       console.log('✅ Nouvelle signature créée:', signatureId);
     }
 
-    // ✅ CORRECTION : Mettre à jour le statut de la réservation
-    console.log('🔄 Mise à jour du statut de la réservation...');
+    // ✅ CORRECTION : Le trigger handle_contract_signature_insert() met automatiquement à jour
+    // documents_generated.contract et le statut si contract ET policeForm sont générés
+    // On vérifie juste l'état après pour confirmer
+    console.log('🔄 Vérification de l\'état après signature (le trigger devrait avoir mis à jour documents_generated)...');
     
-    const { error: updateBookingError } = await supabase
+    // Attendre un peu pour que le trigger se déclenche
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Récupérer l'état actuel pour vérifier ce que le trigger a fait
+    const { data: updatedBooking, error: fetchError } = await supabase
       .from('bookings')
-      .update({
-        // Utiliser un statut compatible avec le frontend ('pending' | 'completed' | 'archived')
-        status: 'completed',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', body.bookingId);
+      .select('documents_generated, status')
+      .eq('id', body.bookingId)
+      .single();
 
-    if (updateBookingError) {
-      console.error('❌ Erreur lors de la mise à jour du statut de la réservation:', updateBookingError);
-      // Ne pas échouer pour cette erreur, juste logger
+    if (fetchError) {
+      console.error('❌ Erreur lors de la vérification de l\'état:', fetchError);
     } else {
-      console.log('✅ Statut de la réservation mis à jour avec succès');
+      const currentDocs = updatedBooking?.documents_generated || {};
+      const currentStatus = updatedBooking?.status || 'pending';
+      
+      console.log('📊 État actuel de la réservation:', {
+        bookingId: body.bookingId,
+        status: currentStatus,
+        documents_generated: currentDocs,
+        hasContract: currentDocs.contract === true,
+        hasPoliceForm: currentDocs.policeForm === true
+      });
+      
+      // Si le trigger n'a pas mis à jour documents_generated.contract, le faire manuellement
+      if (currentDocs.contract !== true) {
+        console.log('⚠️ Le trigger n\'a pas mis à jour documents_generated.contract, mise à jour manuelle...');
+        const updatedDocs = {
+          ...currentDocs,
+          contract: true
+        };
+
+        const { error: updateBookingError } = await supabase
+          .from('bookings')
+          .update({
+            documents_generated: updatedDocs,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', body.bookingId);
+
+        if (updateBookingError) {
+          console.error('❌ Erreur lors de la mise à jour manuelle de documents_generated:', updateBookingError);
+        } else {
+          console.log('✅ documents_generated.contract mis à jour manuellement avec succès');
+          
+          // Vérifier si le statut doit être mis à 'completed' (si policeForm est aussi généré)
+          const hasPoliceForm = updatedDocs.policeForm === true;
+          if (hasPoliceForm && currentStatus !== 'completed') {
+            const { error: statusUpdateError } = await supabase
+              .from('bookings')
+              .update({
+                status: 'completed',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', body.bookingId);
+            
+            if (statusUpdateError) {
+              console.error('❌ Erreur lors de la mise à jour du statut:', statusUpdateError);
+            } else {
+              console.log('✅ Statut mis à jour à completed (contract + policeForm générés)');
+            }
+          } else if (!hasPoliceForm) {
+            console.log('ℹ️ Statut conservé (policeForm pas encore généré)');
+          } else {
+            console.log('ℹ️ Statut déjà à completed');
+          }
+        }
+      } else {
+        console.log('✅ documents_generated.contract déjà mis à jour (probablement par le trigger)');
+        
+        // Vérifier si le statut doit être mis à 'completed'
+        const hasPoliceForm = currentDocs.policeForm === true;
+        if (hasPoliceForm && currentStatus !== 'completed') {
+          console.log('⚠️ Contract et policeForm sont générés mais statut n\'est pas completed, mise à jour...');
+          const { error: statusUpdateError } = await supabase
+            .from('bookings')
+            .update({
+              status: 'completed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', body.bookingId);
+          
+          if (statusUpdateError) {
+            console.error('❌ Erreur lors de la mise à jour du statut:', statusUpdateError);
+          } else {
+            console.log('✅ Statut mis à jour à completed (contract + policeForm générés)');
+          }
+        } else if (hasPoliceForm && currentStatus === 'completed') {
+          console.log('✅ Statut déjà à completed');
+        } else {
+          console.log('ℹ️ Statut conservé (policeForm pas encore généré)');
+        }
+      }
     }
 
     // ✅ NOUVEAU : Régénérer le contrat avec la signature intégrée

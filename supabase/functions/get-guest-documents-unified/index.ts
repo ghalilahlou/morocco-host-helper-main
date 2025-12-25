@@ -576,6 +576,11 @@ serve(async (req) => {
         // ✅ NOUVEAU : Récupérer les documents manquants depuis le Storage
         console.log(`🔍 Checking for missing documents in Storage for booking ${booking.id}`);
         
+        // ✅ CORRECTION : Ne PAS générer automatiquement les documents manquants
+        // Cette fonction doit seulement RÉCUPÉRER les documents existants, pas les générer
+        // La génération doit être faite explicitement par l'utilisateur via l'interface
+        // Cela évite les appels inutiles à submit-guest-info-unified et les erreurs 401
+        
         // Vérifier si des documents sont manquants et les récupérer depuis le Storage
         if (categorizedDocs.contract.length === 0) {
           console.log(`🔍 No contract found in DB, checking Storage...`);
@@ -589,6 +594,10 @@ serve(async (req) => {
               createdAt: new Date().toISOString()
             });
             console.log(`✅ Contract retrieved from Storage`);
+          } else {
+            // ✅ CORRIGÉ : Ne pas générer automatiquement, juste logger qu'il est manquant
+            console.log(`ℹ️ No contract found in Storage for booking ${booking.id}`);
+            // La génération doit être faite explicitement par l'utilisateur
           }
         }
         
@@ -604,6 +613,10 @@ serve(async (req) => {
               createdAt: new Date().toISOString()
             });
             console.log(`✅ Police form retrieved from Storage`);
+          } else {
+            // ✅ CORRIGÉ : Ne pas générer automatiquement, juste logger qu'il est manquant
+            console.log(`ℹ️ No police form found in Storage for booking ${booking.id}`);
+            // La génération doit être faite explicitement par l'utilisateur
           }
         }
         
@@ -619,6 +632,59 @@ serve(async (req) => {
               createdAt: new Date().toISOString()
             });
             console.log(`✅ Identity document retrieved from Storage`);
+          }
+          // Note: Les documents d'identité sont généralement uploadés par l'invité, pas générés automatiquement
+        }
+        
+        // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings
+        const hasContract = categorizedDocs.contract.length > 0;
+        const hasPolice = categorizedDocs.police.length > 0;
+        const hasIdentity = categorizedDocs.identity.length > 0;
+        
+        if (hasContract || hasPolice || hasIdentity) {
+          try {
+            // Récupérer l'état actuel de documents_generated
+            const { data: currentBooking } = await supabase
+              .from('bookings')
+              .select('documents_generated')
+              .eq('id', booking.id)
+              .single();
+            
+            const currentDocs = currentBooking?.documents_generated || {};
+            const contractUrl = categorizedDocs.contract[0]?.url || currentDocs.contractUrl || null;
+            const policeUrl = categorizedDocs.police[0]?.url || currentDocs.policeUrl || null;
+            const identityUrl = categorizedDocs.identity[0]?.url || currentDocs.identityUrl || null;
+            
+            const updatedDocs = {
+              ...currentDocs,
+              contract: hasContract,
+              policeForm: hasPolice,
+              identity: hasIdentity,
+              contractUrl: contractUrl || currentDocs.contractUrl,
+              policeUrl: policeUrl || currentDocs.policeUrl,
+              identityUrl: identityUrl || currentDocs.identityUrl,
+              updatedAt: new Date().toISOString()
+            };
+            
+            const { error: updateError } = await supabase
+              .from('bookings')
+              .update({
+                documents_generated: updatedDocs,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', booking.id);
+            
+            if (updateError) {
+              console.error(`❌ Error updating documents_generated:`, updateError);
+            } else {
+              console.log(`✅ documents_generated updated successfully`, {
+                contract: hasContract,
+                policeForm: hasPolice,
+                identity: hasIdentity
+              });
+            }
+          } catch (updateError) {
+            console.error(`❌ Error updating documents_generated:`, updateError);
           }
         }
 

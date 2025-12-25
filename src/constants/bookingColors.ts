@@ -22,6 +22,15 @@ export const BOOKING_COLORS = {
     shadow: 'shadow-gray-300/50',
     hover: 'hover:bg-gray-300'
   },
+  // ✅ NOUVEAU : Vert pour réservations confirmées
+  confirmed: {
+    hex: '#10b981', // Vert success (comme dans Tailwind)
+    gradient: 'linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%)',
+    tailwind: 'bg-green-500',
+    text: 'text-white',
+    shadow: 'shadow-green-300/50',
+    hover: 'hover:bg-green-600'
+  },
   // ✅ AIRBNB : Rouge Airbnb (#FF5A5F) pour conflits/annulations
   conflict: {
     hex: '#FF5A5F', // Rouge Airbnb principal

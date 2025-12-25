@@ -192,12 +192,38 @@ export const useGuestVerification = () => {
       
       // ✅ UNIFIÉ : Toujours utiliser ics_direct avec dates pré-remplies
       // Si pas de reservationData, créer un objet minimal avec les dates disponibles
-      const finalReservationData = options?.reservationData || (airbnbBookingId ? {
+      let finalReservationData = options?.reservationData;
+      
+      if (!finalReservationData && airbnbBookingId) {
+        finalReservationData = {
         airbnbCode: airbnbBookingId,
         startDate: new Date(), // Date par défaut si non fournie
         endDate: new Date(),
         numberOfGuests: 1
-      } : undefined);
+        };
+      }
+      
+      // ✅ CORRIGÉ : Normaliser les dates avant l'envoi pour éviter les problèmes de sérialisation JSON
+      // Les objets Date sont sérialisés en ISO avec timezone, donc on les convertit en chaînes YYYY-MM-DD
+      if (finalReservationData) {
+        const { formatLocalDate } = await import('@/utils/dateUtils');
+        finalReservationData = {
+          ...finalReservationData,
+          // Convertir les Date objects en chaînes YYYY-MM-DD pour éviter le décalage timezone lors de la sérialisation JSON
+          startDate: finalReservationData.startDate instanceof Date 
+            ? formatLocalDate(finalReservationData.startDate)
+            : finalReservationData.startDate,
+          endDate: finalReservationData.endDate instanceof Date
+            ? formatLocalDate(finalReservationData.endDate)
+            : finalReservationData.endDate
+        };
+        
+        console.log('📅 [useGuestVerification] Dates normalisées avant envoi:', {
+          startDate: finalReservationData.startDate,
+          endDate: finalReservationData.endDate,
+          airbnbCode: finalReservationData.airbnbCode
+        });
+      }
 
       // Use the Edge Function instead of direct database access
       const { data, error } = await supabase.functions.invoke('issue-guest-link', {
@@ -206,7 +232,7 @@ export const useGuestVerification = () => {
           propertyId, 
           airbnbCode: airbnbBookingId, // Utiliser airbnbCode au lieu de bookingId
           linkType: 'ics_direct', // ✅ FORCÉ : Toujours utiliser ics_direct avec dates pré-remplies
-          reservationData: finalReservationData // Données de réservation pour liens directs
+          reservationData: finalReservationData // Données de réservation pour liens directs (dates au format YYYY-MM-DD)
         }
       });
 

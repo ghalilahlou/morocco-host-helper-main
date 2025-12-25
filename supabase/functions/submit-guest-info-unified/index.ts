@@ -628,13 +628,37 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
 
     // 3. Créer la réservation avec les données ICS ET l'enregistrer en base
     // ✅ CORRIGÉ : Extraire directement la date YYYY-MM-DD sans conversion timezone
-    // Les dates ICS sont déjà au format YYYY-MM-DD, pas besoin de conversion
-    const checkInDate = typeof reservationData.startDate === 'string' 
-      ? reservationData.startDate.split('T')[0] 
-      : new Date(reservationData.startDate).toISOString().split('T')[0];
-    const checkOutDate = typeof reservationData.endDate === 'string'
-      ? reservationData.endDate.split('T')[0]
-      : new Date(reservationData.endDate).toISOString().split('T')[0];
+    // Les dates sont maintenant normalisées dans issue-guest-link au format YYYY-MM-DD
+    function extractDateOnly(dateValue: string | Date | any): string {
+      if (typeof dateValue === 'string') {
+        // Si format ISO complet (2025-12-25T23:00:00.000Z), extraire juste YYYY-MM-DD
+        if (dateValue.includes('T')) {
+          return dateValue.split('T')[0];
+        }
+        // Si déjà YYYY-MM-DD, retourner tel quel
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+          return dateValue;
+        }
+        // Sinon, essayer de parser et extraire
+        const dateObj = new Date(dateValue);
+        const year = dateObj.getUTCFullYear();
+        const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getUTCDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+      
+      // Si Date object, extraire la partie date en UTC pour éviter les décalages
+      const dateObj = dateValue instanceof Date ? dateValue : new Date(dateValue);
+      const year = dateObj.getUTCFullYear();
+      const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    const checkInDate = extractDateOnly(reservationData.startDate);
+    const checkOutDate = extractDateOnly(reservationData.endDate);
+    
+    log('info', 'Dates normalisées pour la réservation', { checkInDate, checkOutDate });
     
     // Vérifier si une réservation existe déjà pour ce code Airbnb
     const { data: existingBooking } = await supabase
@@ -1897,6 +1921,8 @@ async function sendGuestContractInternal(
       throw new Error('Configuration Supabase manquante');
     }
 
+    const supabaseClient = await getServerClient();
+
     const emailData = {
       guestEmail: guestInfo.email,
       guestName: `${guestInfo.firstName} ${guestInfo.lastName}`,
@@ -1913,33 +1939,27 @@ async function sendGuestContractInternal(
 
     log('info', 'Appel à send-guest-contract', { emailData });
 
-    // ✅ CORRECTION : Utiliser l'URL complète avec le bon format d'authentification
-    const response = await fetch(`${functionUrl}/functions/v1/send-guest-contract`, {
-      method: 'POST',
+    // ✅ CORRECTION : Utiliser supabase.functions.invoke() avec headers explicites pour l'authentification
+    // Comme dans sync-documents, on passe explicitement les headers Authorization et apikey
+    const { data: result, error: invokeError } = await supabaseClient.functions.invoke('send-guest-contract', {
+      body: emailData,
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${serviceKey}`,
-        'apikey': serviceKey,
-        'x-client-info': `${FUNCTION_NAME}/1.0`
-      },
-      body: JSON.stringify(emailData)
+        'apikey': serviceKey
+      }
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      log('error', 'Réponse HTTP non-OK de send-guest-contract', {
-        status: response.status,
-        statusText: response.statusText,
-        errorText
+    if (invokeError) {
+      log('error', 'Erreur lors de l\'appel à send-guest-contract', {
+        error: invokeError.message,
+        errorDetails: invokeError
       });
-      throw new Error(`Envoi email échoué: ${response.status} ${response.statusText}`);
+      throw new Error(`Envoi email échoué: ${invokeError.message || 'Erreur inconnue'}`);
     }
 
-    const result = await response.json();
-
-    if (!result.success) {
+    if (!result || !result.success) {
       log('error', 'Réponse d\'erreur de send-guest-contract', { result });
-      throw new Error(`Envoi email échoué: ${result.error || 'Erreur inconnue'}`);
+      throw new Error(`Envoi email échoué: ${result?.error || 'Erreur inconnue'}`);
     }
 
     log('info', 'Email envoyé avec succès');
@@ -2513,6 +2533,39 @@ serve(async (req) => {
         // Sauvegarder le document en base même non signé
         await saveDocumentToDatabase(supabaseClient, requestBody.bookingId, 'contract', contractUrl, !!requestBody.signature);
         
+        // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings
+        try {
+          const { data: currentBooking } = await supabaseClient
+            .from('bookings')
+            .select('documents_generated')
+            .eq('id', requestBody.bookingId)
+            .single();
+          
+          const currentDocs = currentBooking?.documents_generated || {};
+          const updatedDocs = {
+            ...currentDocs,
+            contract: true,
+            contractUrl: contractUrl,
+            contractCreatedAt: new Date().toISOString(),
+            contractIsSigned: !!requestBody.signature
+          };
+          
+          await supabaseClient
+            .from('bookings')
+            .update({
+              documents_generated: updatedDocs,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', requestBody.bookingId);
+          
+          log('info', '[generate_contract_only] documents_generated.contract mis à jour', {
+            contract: true,
+            contractUrl: contractUrl.substring(0, 50) + '...'
+          });
+        } catch (updateError) {
+          log('warn', '[generate_contract_only] Erreur mise à jour documents_generated', { error: updateError });
+        }
+        
         // ✅ ENVOI EMAIL : Envoyer l'email si on a un email dans le booking
         let emailSent = false;
         if (bookingData.guest_email) {
@@ -2824,6 +2877,41 @@ serve(async (req) => {
       
       // Générer uniquement les fiches de police
       const policeUrl = await generatePoliceFormsInternal(requestBody.bookingId);
+      
+      // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings
+      if (policeUrl) {
+        try {
+          const supabaseClient = await getServerClient();
+          const { data: currentBooking } = await supabaseClient
+            .from('bookings')
+            .select('documents_generated')
+            .eq('id', requestBody.bookingId)
+            .single();
+          
+          const currentDocs = currentBooking?.documents_generated || {};
+          const updatedDocs = {
+            ...currentDocs,
+            policeForm: true,
+            policeUrl: policeUrl,
+            policeCreatedAt: new Date().toISOString()
+          };
+          
+          await supabaseClient
+            .from('bookings')
+            .update({
+              documents_generated: updatedDocs,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', requestBody.bookingId);
+          
+          log('info', '[generate_police_only] documents_generated.policeForm mis à jour', {
+            policeForm: true,
+            policeUrl: policeUrl.substring(0, 50) + '...'
+          });
+        } catch (updateError) {
+          log('warn', '[generate_police_only] Erreur mise à jour documents_generated', { error: updateError });
+        }
+      }
       
       return new Response(JSON.stringify({
         success: true,
@@ -3677,7 +3765,11 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     checkIn: b.check_in_date,
     checkOut: b.check_out_date,
     hasProperty: !!b.property,
-    guestsCount: b.guests?.length || 0
+    guestsCount: b.guests?.length || 0,
+    // ✅ DEBUG : Vérifier que contract_template est bien récupéré
+    hasContractTemplate: !!b.property?.contract_template,
+    contractTemplateType: typeof b.property?.contract_template,
+    contractTemplateKeys: b.property?.contract_template ? Object.keys(b.property.contract_template) : []
   });
 
   // ✅ VARIABILISATION COMPLÈTE : Récupération host profile avec toutes les données
@@ -3721,6 +3813,20 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
   // ✅ VARIABILISATION selon la logique frontend : contract_template prioritaire
   // Priorité: contract_template -> host_profiles -> contact_info -> fallback
   const contractTemplate = prop.contract_template || {};
+  
+  // ✅ DEBUG : Log détaillé du contract_template pour vérifier qu'il est bien récupéré
+  log('info', '[buildContractContext] Contract template analysis:', {
+    hasContractTemplate: !!contractTemplate,
+    contractTemplateType: typeof contractTemplate,
+    contractTemplateKeys: contractTemplate && typeof contractTemplate === 'object' ? Object.keys(contractTemplate) : [],
+    landlordName: (contractTemplate as any)?.landlord_name || 'NON DÉFINI',
+    landlordEmail: (contractTemplate as any)?.landlord_email || 'NON DÉFINI',
+    landlordPhone: (contractTemplate as any)?.landlord_phone || 'NON DÉFINI',
+    landlordAddress: (contractTemplate as any)?.landlord_address || 'NON DÉFINI',
+    hasLandlordSignature: !!(contractTemplate as any)?.landlord_signature,
+    propertyId: prop.id,
+    propertyName: prop.name
+  });
   
   const hostName = contractTemplate.landlord_name || 
     host?.full_name || 
@@ -4332,6 +4438,19 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   
   // ✅ Nom du bailleur selon la variabilisation
   const contractTemplate = ctx.property.contract_template || {};
+  
+  // ✅ DEBUG : Log pour vérifier que contract_template est bien utilisé dans generateContractPDF
+  log('info', '[generateContractPDF] Contract template usage:', {
+    hasContractTemplate: !!contractTemplate,
+    contractTemplateType: typeof contractTemplate,
+    contractTemplateKeys: contractTemplate && typeof contractTemplate === 'object' ? Object.keys(contractTemplate) : [],
+    landlordName: (contractTemplate as any)?.landlord_name || 'NON DÉFINI',
+    landlordEmail: (contractTemplate as any)?.landlord_email || 'NON DÉFINI',
+    landlordPhone: (contractTemplate as any)?.landlord_phone || 'NON DÉFINI',
+    propertyId: property.id,
+    propertyName: property.name
+  });
+  
   const hostName = contractTemplate.landlord_name || 
     ctx.host?.name ||
     ctx.host?.full_name || 

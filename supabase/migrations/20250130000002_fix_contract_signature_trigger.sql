@@ -59,9 +59,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Recréer le trigger
+-- Recréer le trigger pour INSERT et UPDATE
 CREATE TRIGGER trigger_contract_signature_insert
-  AFTER INSERT ON public.contract_signatures
+  AFTER INSERT OR UPDATE ON public.contract_signatures
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_contract_signature_insert();
 

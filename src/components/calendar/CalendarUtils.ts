@@ -188,6 +188,20 @@ export const calculateBookingLayout = (
     bookingRows[weekIndex] = [];
   });
   
+  // ✅ DEBUG : Log pour vérifier les réservations reçues dans calculateBookingLayout
+  if (process.env.NODE_ENV === 'development' && bookings.length > 0) {
+    const bookingsByStatus = {
+      pending: bookings.filter(b => 'status' in b && (b as Booking).status === 'pending').length,
+      completed: bookings.filter(b => 'status' in b && (b as Booking).status === 'completed').length,
+      confirmed: bookings.filter(b => 'status' in b && (b as Booking).status === 'confirmed').length,
+      archived: bookings.filter(b => 'status' in b && (b as Booking).status === 'archived').length,
+      airbnb: bookings.filter(b => 'source' in b && (b as any).source === 'airbnb').length
+    };
+    // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
+    // Ce log était exécuté à chaque calcul de layout et causait des re-rendus infinis
+    // console.log('📊 [CalendarUtils] Réservations reçues dans calculateBookingLayout:', ...);
+  }
+  
   // Process each booking and find all weeks it appears in
   bookings.forEach((booking, bookingIndex) => {
     const isAirbnb = 'source' in booking && booking.source === 'airbnb';
@@ -220,16 +234,11 @@ export const calculateBookingLayout = (
     const checkIn = toLocalMidnight(rawCheckIn);
     const checkOut = toLocalMidnight(rawCheckOut);
     
-    // 📊 DEBUG (limité) : Log pour vérifier les conversions - uniquement en développement et pour la première réservation
-    if (process.env.NODE_ENV === 'development' && bookingIndex === 0) {
-      console.log('🗓️ [Calendar] Première réservation:', {
-        isAirbnb,
-        rawCheckIn,
-        rawCheckOut,
-        convertedCheckIn: checkIn.toLocaleDateString('fr-FR'),
-        convertedCheckOut: checkOut.toLocaleDateString('fr-FR')
-      });
-    }
+    // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
+    // Ce log était dans une boucle forEach et causait des re-rendus infinis
+    // if (process.env.NODE_ENV === 'development' && bookingIndex === 0) {
+    //   console.log('🗓️ [Calendar] Première réservation:', ...);
+    // }
     
     // Use color override if provided, otherwise use status-based or default colors
     const bookingId = isAirbnb ? booking.id : booking.id;
@@ -288,32 +297,21 @@ export const calculateBookingLayout = (
     weeks.forEach((week, weekIndex) => {
       let startIndex = -1;
       let endIndex = -1;
+      let hasBookingOverlap = false;
       
       // ✅ ANALYSE : Trouver le span de la réservation dans cette semaine
+      // ✅ CORRIGÉ : Vérifier TOUS les jours (y compris ceux hors du mois courant) pour détecter les réservations qui chevauchent plusieurs mois
       for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
         const day = week[dayIndex];
 
-        // ✅ NOUVEAU : ignorer les jours qui ne font pas partie du mois courant
-        // Le calendrier ne doit afficher que les dates du mois sélectionné,
-        // pas la continuité visuelle des mois précédent/suivant.
-        if (!day.isCurrentMonth) {
-          continue;
-        }
         // ✅ CRITIQUE : Normaliser la date du jour de la même manière que checkIn/checkOut
         const dayDate = normalizeDate(new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate()));
         
-        // ✅ DIAGNOSTIC LIMITE : Log pour le premier jour de la première réservation (développement uniquement)
-        if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0 && dayIndex === 0) {
-          console.log('🔍 [ANALYSE POSITION] Comparaison dates:', {
-            dayDate: dayDate.toLocaleDateString('fr-FR'),
-            dayNumber: day.dayNumber,
-            normalizedCheckIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
-            normalizedCheckOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
-            dayTime: dayDate.getTime(),
-            checkInTime: normalizedCheckIn.getTime(),
-            checkOutTime: normalizedCheckOut.getTime()
-          });
-        }
+        // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
+        // Ce log était dans une boucle triple (bookings × weeks × days) et causait des re-rendus infinis
+        // if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0 && dayIndex === 0) {
+        //   console.log('🔍 [ANALYSE POSITION] Comparaison dates:', ...);
+        // }
         
         // ✅ NOUVELLE LOGIQUE VISUELLE :
         // La réservation inclut le jour d'arrivée (inclusif) et va jusqu'à la date de check-out (incluse pour l'affichage),
@@ -321,10 +319,15 @@ export const calculateBookingLayout = (
         const isInBookingPeriod = dayDate.getTime() >= normalizedCheckIn.getTime() && dayDate.getTime() <= normalizedCheckOut.getTime();
         
         if (isInBookingPeriod) {
+          hasBookingOverlap = true;
+          
+          // ✅ CORRIGÉ : Ne définir startIndex/endIndex que pour les jours du mois courant
+          // Mais marquer qu'on a trouvé un chevauchement même si c'est hors du mois courant
+          if (day.isCurrentMonth) {
           if (startIndex === -1) {
             startIndex = dayIndex;
             // ✅ DIAGNOSTIC : Vérifier que startIndex correspond bien à la date d'arrivée
-            if (bookingIndex === 0 && weekIndex === 0) {
+              if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0) {
               console.log('✅ [ANALYSE POSITION] startIndex trouvé:', {
                 dayIndex,
                 dayNumber: day.dayNumber,
@@ -336,10 +339,33 @@ export const calculateBookingLayout = (
           }
           endIndex = dayIndex;
         }
+        }
       }
       
-      // If we found booking days in this week, create a layout entry
-      if (startIndex !== -1 && endIndex !== -1) {
+      // ✅ CORRIGÉ : Si la réservation chevauche cette semaine mais commence avant ou se termine après le mois courant,
+      // on doit quand même créer un layout pour les jours du mois courant dans cette semaine
+      if (hasBookingOverlap && startIndex === -1) {
+        // La réservation commence avant le mois courant, commencer au premier jour du mois courant de cette semaine
+        for (let i = 0; i < 7; i++) {
+          if (week[i].isCurrentMonth) {
+            startIndex = i;
+            break;
+          }
+        }
+      }
+      
+      if (hasBookingOverlap && endIndex === -1 && startIndex !== -1) {
+        // La réservation se termine après le mois courant, aller jusqu'au dernier jour du mois courant de cette semaine
+        for (let i = 6; i >= 0; i--) {
+          if (week[i].isCurrentMonth) {
+            endIndex = i;
+            break;
+          }
+        }
+      }
+      
+      // ✅ CORRIGÉ : Créer un layout entry si on a trouvé des jours dans le mois courant qui chevauchent la réservation
+      if (startIndex !== -1 && endIndex !== -1 && startIndex <= endIndex) {
         const span = endIndex - startIndex + 1;
         
         // ✅ CORRIGÉ : Vérification stricte de l'alignement avec la date d'arrivée
@@ -352,8 +378,10 @@ export const calculateBookingLayout = (
         
         // ✅ DIAGNOSTIC RÉDUIT : Log détaillé restreint (une seule fois par réservation et seulement en développement)
         if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0) {
+          const bookingStatus = 'status' in booking ? (booking as Booking).status : 'N/A';
         console.log(`📅 [CALCUL LAYOUT] Réservation ${booking.id.substring(0, 8)}... dans semaine ${weekIndex}:`, {
           bookingId: booking.id,
+            status: bookingStatus,
           checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
           checkOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
           startDayIndex: startIndex,
@@ -435,6 +463,22 @@ export const calculateBookingLayout = (
       return a.startDayIndex - b.startDayIndex;
     });
     
+    // ✅ DEBUG : Log pour vérifier les réservations dans chaque semaine (uniquement en développement)
+    if (process.env.NODE_ENV === 'development' && sortedBookings.length > 0) {
+      const bookingsInWeekByStatus = {
+        pending: sortedBookings.filter(b => 'status' in b.booking && (b.booking as Booking).status === 'pending').length,
+        completed: sortedBookings.filter(b => 'status' in b.booking && (b.booking as Booking).status === 'completed').length,
+        confirmed: sortedBookings.filter(b => 'status' in b.booking && (b.booking as Booking).status === 'confirmed').length,
+        archived: sortedBookings.filter(b => 'status' in b.booking && (b.booking as Booking).status === 'archived').length,
+        airbnb: sortedBookings.filter(b => b.isAirbnb).length
+      };
+      
+      // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
+      // Le diagnostic était dans une boucle et causait des re-rendus infinis
+      // if (bookingsInWeekByStatus.completed > 0 || bookingsInWeekByStatus.confirmed > 0) {
+      //   console.log(`📅 [CALENDAR DIAGNOSTIC] Semaine ${weekIndex}:`, ...);
+      // }
+    }
     
     bookingRows[weekIndex] = sortedBookings;
   });

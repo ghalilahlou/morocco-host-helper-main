@@ -35,7 +35,7 @@ export interface Booking {
   numberOfGuests: number;
   bookingReference?: string;
   guest_name?: string;
-  status: 'pending' | 'completed' | 'archived' | 'draft';
+  status: 'pending' | 'completed' | 'confirmed' | 'archived' | 'draft';
   documentsGenerated?: {
     policeForm: boolean;
     contract: boolean;

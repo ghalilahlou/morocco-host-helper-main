@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -35,6 +35,9 @@ export const PropertyDetail = () => {
   const [isGeneratingLocal, setIsGeneratingLocal] = useState(false);
   const [airbnbReservationsCount, setAirbnbReservationsCount] = useState(0);
   const [showTutorial, setShowTutorial] = useState(false);
+  
+  // ✅ NETTOYAGE STRICT : Référence du propertyId précédent pour détecter les changements
+  const previousPropertyIdRef = useRef<string | undefined>(propertyId);
 
   // All useCallback hooks MUST be before any early returns
   const loadAirbnbCount = useCallback(async () => {
@@ -131,6 +134,30 @@ export const PropertyDetail = () => {
 
   // All useEffect hooks
 
+  // ✅ NETTOYAGE STRICT : Vider l'état si le propertyId de l'URL change
+  useEffect(() => {
+    const currentPropertyId = propertyId;
+    const previousPropertyId = previousPropertyIdRef.current;
+    
+    // Si le propertyId a changé, vider complètement l'état
+    if (previousPropertyId !== undefined && previousPropertyId !== currentPropertyId) {
+      console.log('🧹 [PROPERTY DETAIL] Nettoyage strict : propertyId de l\'URL a changé, vidage de l\'état', {
+        previousPropertyId,
+        currentPropertyId
+      });
+      
+      // Vider l'état de la propriété
+      setProperty(null);
+      
+      // Les bookings seront automatiquement vidés par useBookings grâce au nettoyage strict
+      // mais on peut forcer un refresh pour être sûr
+      refreshBookings();
+    }
+    
+    // Mettre à jour la référence
+    previousPropertyIdRef.current = currentPropertyId;
+  }, [propertyId, refreshBookings]);
+
   useEffect(() => {
     // Check authentication first
     if (!authLoading && !isAuthenticated) {
@@ -193,40 +220,18 @@ export const PropertyDetail = () => {
       const bookingsWithoutPropertyId = bookings.filter(b => !b.propertyId);
       const bookingsWithOtherPropertyId = bookings.filter(b => b.propertyId && b.propertyId !== property.id);
 
-      console.log('🔍 [PROPERTY DETAIL] Diagnostic du filtrage des réservations:', {
-        propertyId: property.id,
-        totalBookingsFromHook: bookings.length,
-        filteredBookings: propertyBookings.length,
-        bookingsWithCorrectPropertyId: bookingsWithPropertyId.length,
-        bookingsWithoutPropertyId: bookingsWithoutPropertyId.length,
-        bookingsWithOtherPropertyId: bookingsWithOtherPropertyId.length,
-        airbnbReservationsCount,
-        statsTotal: propertyBookings.length + airbnbReservationsCount,
-        bookingDetails: bookings.map(b => ({
-          id: b.id.substring(0, 8),
-          propertyId: b.propertyId,
-          matches: b.propertyId === property.id,
-          status: b.status,
-          checkIn: b.checkInDate
-        }))
-      });
+      // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
+      // Ce log était dans un useEffect et s'exécutait à chaque changement de bookings/property
+      // console.log('🔍 [PROPERTY DETAIL] Diagnostic du filtrage des réservations:', ...);
 
-      // ⚠️ ALERTE si des réservations d'autres propriétés sont présentes
-      if (bookingsWithOtherPropertyId.length > 0) {
-        console.warn('⚠️ [PROPERTY DETAIL] PROBLÈME DÉTECTÉ: Des réservations d\'autres propriétés sont présentes!', {
-          expectedPropertyId: property.id,
-          otherPropertyIds: [...new Set(bookingsWithOtherPropertyId.map(b => b.propertyId))],
-          count: bookingsWithOtherPropertyId.length
-        });
-      }
-
-      // ⚠️ ALERTE si des réservations sans propertyId sont présentes
-      if (bookingsWithoutPropertyId.length > 0) {
-        console.warn('⚠️ [PROPERTY DETAIL] PROBLÈME DÉTECTÉ: Des réservations sans propertyId sont présentes!', {
-          count: bookingsWithoutPropertyId.length,
-          bookingIds: bookingsWithoutPropertyId.map(b => b.id.substring(0, 8))
-        });
-      }
+      // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
+      // Ces logs étaient dans un useEffect et s'exécutaient à chaque changement
+      // if (bookingsWithOtherPropertyId.length > 0) {
+      //   console.warn('⚠️ [PROPERTY DETAIL] PROBLÈME DÉTECTÉ: Des réservations d\'autres propriétés sont présentes!', ...);
+      // }
+      // if (bookingsWithoutPropertyId.length > 0) {
+      //   console.warn('⚠️ [PROPERTY DETAIL] PROBLÈME DÉTECTÉ: Des réservations sans propertyId sont présentes!', ...);
+      // }
     }
   }, [bookings, property?.id, airbnbReservationsCount]);
 

@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { BookingFormData, BookingFormUpdate } from '../BookingWizard';
 import { useEffect } from 'react';
+import { parseLocalDate } from '@/utils/dateUtils';
 
 interface BookingDetailsStepProps {
   formData: BookingFormData;
@@ -44,9 +45,27 @@ export const BookingDetailsStep = ({ formData, updateFormData, propertyId }: Boo
     }
   };
 
-  // ✅ CORRECTION : Ajout de l'heure pour éviter les problèmes de fuseau horaire
-  const checkInDate = formData.checkInDate ? new Date(formData.checkInDate + 'T00:00:00') : undefined;
-  const checkOutDate = formData.checkOutDate ? new Date(formData.checkOutDate + 'T00:00:00') : undefined;
+  // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter les décalages de timezone
+  // ✅ AJOUT : Gestion d'erreur pour éviter les crashes si la date est invalide
+  const checkInDate = formData.checkInDate ? (() => {
+    try {
+      return parseLocalDate(formData.checkInDate);
+    } catch (error) {
+      console.warn('Erreur parsing checkInDate, fallback sur new Date:', error);
+      // Fallback sur new Date avec T00:00:00 pour éviter les décalages UTC
+      return new Date(formData.checkInDate + 'T00:00:00');
+    }
+  })() : undefined;
+  
+  const checkOutDate = formData.checkOutDate ? (() => {
+    try {
+      return parseLocalDate(formData.checkOutDate);
+    } catch (error) {
+      console.warn('Erreur parsing checkOutDate, fallback sur new Date:', error);
+      // Fallback sur new Date avec T00:00:00 pour éviter les décalages UTC
+      return new Date(formData.checkOutDate + 'T00:00:00');
+    }
+  })() : undefined;
 
   return (
     <div className="space-y-6">

@@ -29,6 +29,30 @@ import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { formatLocalDate } from '@/utils/dateUtils';
+import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
+
+// ✅ Import pour le diagnostic
+const normalizeDocumentFlag = (value: any): boolean => {
+  if (!value) return false;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value > 0;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') {
+    if ('completed' in value) return Boolean(value.completed);
+    if ('isSigned' in value) return Boolean((value as any).isSigned);
+    if ('signed' in value) return Boolean((value as any).signed);
+    if ('status' in value) {
+      const status = String((value as any).status || '').toLowerCase();
+      return ['generated', 'completed', 'signed', 'valid', 'validated', 'valide', 'ready'].includes(status);
+    }
+    if ('url' in value) return Boolean((value as any).url);
+    if ('value' in value) return Boolean((value as any).value);
+    if ('timestamp' in value) return Boolean((value as any).timestamp);
+    return Object.keys(value).length > 0;
+  }
+  return false;
+};
 
 interface CalendarViewProps {
   bookings: EnrichedBooking[];
@@ -758,48 +782,79 @@ const handleOpenConfig = useCallback(() => {
       return !hasManualMatch;
     });
     
-    return [...bookings, ...uniqueAirbnbReservations];
+    // ✅ CORRECTION : Filtrer les réservations pour n'afficher que celles avec tous les documents requis
+    // Une réservation doit avoir : contrat + police + identité pour apparaître
+    const SHOW_ALL_BOOKINGS = false; // ✅ Filtrer par documents requis (police, contrat, identité)
+    
+    // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
+    // Ce log était dans un useMemo et s'exécutait à chaque re-render
+    // if (process.env.NODE_ENV === 'development') {
+    //   console.log('📊 [CalendarView] Réservations reçues:', ...);
+    // }
+    
+    // ✅ CORRECTION CRITIQUE : Filtrer les réservations pour n'afficher que celles 'completed' avec tous les documents
+    // Une réservation doit avoir : status='completed' + contrat + police + identité
+    // Filtrer les bookings pour ne garder que ceux qui sont 'completed' avec tous les documents
+    const filteredBookings = bookings.filter(booking => {
+      // ✅ TEMPORAIRE : Si SHOW_ALL_BOOKINGS est true, afficher toutes les réservations
+      if (SHOW_ALL_BOOKINGS) {
+        return true; // Afficher toutes les réservations pour diagnostiquer
+      }
+      
+      // Pour les réservations manuelles (bookings), vérifier qu'elles ont tous les documents
+      if (booking.status === 'completed') {
+        const hasAllDocs = hasAllRequiredDocumentsForCalendar(booking);
+        // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
+        // Ce log était dans un filter() et s'exécutait pour chaque réservation à chaque re-render
+        // if (process.env.NODE_ENV === 'development') {
+        //   console.log('🔍 [CalendarView] Réservation completed analysée:', ...);
+        // }
+        return hasAllDocs;
+      }
+      // Garder les autres statuts (pending, confirmed, etc.) pour l'instant
+      // L'utilisateur peut vouloir voir les réservations en cours aussi
+      return true;
+    });
+    
+    const allReservationsResult = [...filteredBookings, ...uniqueAirbnbReservations];
+    
+    // ✅ DEBUG CRITIQUE : Log détaillé pour diagnostiquer pourquoi aucune réservation n'apparaît
+    const completedBookings = filteredBookings.filter(b => b.status === 'completed');
+    const completedWithAllDocs = completedBookings.filter(b => hasAllRequiredDocumentsForCalendar(b));
+    const confirmedBookings = filteredBookings.filter(b => b.status === 'confirmed');
+    const pendingBookings = filteredBookings.filter(b => b.status === 'pending');
+    
+    // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
+    // Ce log était dans un useMemo et s'exécutait à chaque re-render
+    // console.log('📊 [CalendarView] Réservations finales pour affichage:', ...);
+    
+    return allReservationsResult;
   }, [bookings, airbnbReservations]);
 
   // Generate calendar days
   const calendarDays = useMemo(() => generateCalendarDays(currentDate), [currentDate]);
 
-  // ✅ DIAGNOSTIC : Log des réservations avant calcul du layout (uniquement en mode debugCalendar)
-  useEffect(() => {
-    if (!debugMode) return;
-
-    console.log('📅 [CALENDAR DIAGNOSTIC] Réservations reçues:', {
-      totalBookings: bookings.length,
-      totalAirbnb: airbnbReservations.length,
-      totalAllReservations: allReservations.length,
-      currentMonth: currentDate.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })
-    });
-    console.log('📅 [CALENDAR DIAGNOSTIC] Booking IDs:', bookings.map(b => b.id.substring(0, 8)).join(', '));
-    console.log('📅 [CALENDAR DIAGNOSTIC] Détails bookings:', bookings.map(b => ({
-      id: b.id.substring(0, 8),
-      propertyId: b.propertyId?.substring(0, 8) || 'N/A',
-      checkIn: b.checkInDate,
-      checkOut: b.checkOutDate,
-      status: b.status
-    })));
-  }, [bookings, airbnbReservations, allReservations, currentDate, debugMode]);
+  // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
+  // Ce useEffect était déclenché à chaque changement de bookings/airbnbReservations et causait des re-rendus infinis
+  // useEffect(() => {
+  //   if (!debugMode) return;
+  //   console.log('📅 [CALENDAR DIAGNOSTIC] Réservations reçues:', ...);
+  // }, [bookings, airbnbReservations, allReservations, currentDate, debugMode]);
 
   // Calculate booking positions for continuous bars
   const bookingLayout = useMemo(() => {
-    if (debugMode) {
-      console.log('📅 [CALENDAR DIAGNOSTIC] Calcul du layout avec', allReservations.length, 'réservations');
-    }
+    // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
+    // if (debugMode) {
+    //   console.log('📅 [CALENDAR DIAGNOSTIC] Calcul du layout avec', allReservations.length, 'réservations');
+    // }
 
     const layout = calculateBookingLayout(calendarDays, allReservations, colorOverrides);
 
-    if (debugMode) {
-      console.log('📅 [CALENDAR DIAGNOSTIC] Layout calculé:', Object.keys(layout).length, 'semaines avec réservations');
-      Object.keys(layout).forEach(weekIndex => {
-        if (layout[weekIndex].length > 0) {
-          console.log(`📅 [CALENDAR DIAGNOSTIC] Semaine ${weekIndex}:`, layout[weekIndex].length, 'réservations');
-        }
-      });
-    }
+    // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
+    // Ces logs étaient dans un useMemo et s'exécutaient à chaque re-render
+    // if (debugMode) {
+    //   console.log('📅 [CALENDAR DIAGNOSTIC] Layout calculé:', ...);
+    // }
 
     return layout;
   }, [calendarDays, allReservations, colorOverrides, debugMode]);
@@ -934,13 +989,23 @@ const handleOpenConfig = useCallback(() => {
     return { completed, pending, conflicts: conflictsCount };
   }, [bookings, airbnbReservations, matchedBookings, conflicts]);
 
-  // Auto-mark matched manual bookings as completed
+  // ✅ CORRIGÉ : Auto-mark matched manual bookings as completed avec gestion d'erreurs
   useEffect(() => {
-    matchedBookings.forEach((id) => {
-      const b = bookings.find((bk) => bk.id === id);
-      if (b && b.status !== 'completed') {
-        supabase.from('bookings').update({ status: 'completed' }).eq('id', id);
-      }
+    if (matchedBookings.length === 0) return;
+    
+    // ✅ CORRIGÉ : Utiliser Promise.all pour attendre toutes les mises à jour (forEach n'attend pas les promesses)
+    Promise.all(
+      matchedBookings.map(async (id) => {
+        const b = bookings.find((bk) => bk.id === id);
+        if (b && b.status !== 'completed') {
+          const { error } = await supabase.from('bookings').update({ status: 'completed' }).eq('id', id);
+          if (error) {
+            console.error('❌ Erreur lors de la mise à jour du statut:', error);
+          }
+        }
+      })
+    ).catch((error) => {
+      console.error('❌ Erreur lors de la mise à jour des statuts:', error);
     });
   }, [matchedBookings, bookings]);
 
@@ -1126,3 +1191,6 @@ const handleOpenConfig = useCallback(() => {
     </div>
   );
 });
+
+// ✅ Export par défaut pour faciliter le lazy loading
+export default CalendarView;

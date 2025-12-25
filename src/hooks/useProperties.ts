@@ -48,9 +48,14 @@ export const useProperties = () => {
     setIsLoading(true);
 
     try {
-      // ✅ OPTIMISATION : Ajouter un timeout explicite de 10 secondes
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Properties query timeout after 10s')), 10000)
+      // ✅ OPTIMISATION : Timeout augmenté à 30 secondes pour les connexions lentes
+      const TIMEOUT_MS = 30000;
+      const timeoutId = setTimeout(() => {
+        // Le timeout sera géré par Promise.race
+      }, TIMEOUT_MS);
+
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Properties query timeout after 30s')), TIMEOUT_MS)
       );
 
       const queryPromise = supabase
@@ -59,22 +64,51 @@ export const useProperties = () => {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      const result = await Promise.race([queryPromise, timeoutPromise]) as any;
+      let result: any;
+      try {
+        result = await Promise.race([queryPromise, timeoutPromise]);
+      } catch (raceError: any) {
+        // Si c'est le timeout, nettoyer et relancer
+        clearTimeout(timeoutId);
+        throw raceError;
+      }
+      
+      clearTimeout(timeoutId);
       const { data, error } = result;
 
-      // ✅ OPTIMISATION : Gérer les erreurs 500 avec retry
+      // ✅ OPTIMISATION : Détecter les erreurs réseau et de connexion
       if (error) {
+        const errorMessage = error.message || String(error) || '';
         const errorStatus = (error as any).status || (error as any).statusCode || (error as any).code;
-        const is500Error = errorStatus === 500 || errorStatus === '500' || 
-                          error.message?.includes('Internal Server Error') ||
-                          error.message?.includes('500');
         
-        // ✅ RETRY : Réessayer jusqu'à 2 fois en cas d'erreur 500
-        if (is500Error && retryCount < 2) {
-          console.warn(`⚠️ [PROPERTIES] Erreur 500 détectée, retry ${retryCount + 1}/2`);
+        // Détecter les erreurs de connexion réseau
+        const isNetworkError = 
+          errorMessage.includes('ERR_CONNECTION_CLOSED') ||
+          errorMessage.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+          errorMessage.includes('Failed to fetch') ||
+          errorMessage.includes('NetworkError') ||
+          errorMessage.includes('Network request failed') ||
+          (error.name === 'TypeError' && errorMessage.includes('fetch'));
+        
+        const is500Error = errorStatus === 500 || errorStatus === '500' || 
+                          errorMessage.includes('Internal Server Error') ||
+                          errorMessage.includes('500');
+        
+        const isTimeoutError = 
+          errorMessage.includes('timeout') ||
+          errorMessage.includes('Timeout') ||
+          errorStatus === 408 ||
+          errorStatus === '408';
+        
+        // ✅ RETRY : Réessayer pour les erreurs réseau, 500, ou timeout (jusqu'à 3 fois)
+        const maxRetries = 3;
+        const shouldRetry = (isNetworkError || is500Error || isTimeoutError) && retryCount < maxRetries;
+        
+        if (shouldRetry) {
+          const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Backoff exponentiel, max 5s
+          console.warn(`⚠️ [PROPERTIES] Erreur détectée (${isNetworkError ? 'réseau' : is500Error ? '500' : 'timeout'}), retry ${retryCount + 1}/${maxRetries} dans ${retryDelay}ms`);
           loadingRef.current = false;
-          // Attendre 1 seconde avant de réessayer
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
           return loadProperties(retryCount + 1);
         }
         
@@ -99,13 +133,28 @@ export const useProperties = () => {
     } catch (error: any) {
       console.error('❌ [PROPERTIES] Erreur lors du chargement:', error);
       
+      const errorMessage = error?.message || String(error) || '';
+      const isNetworkError = 
+        errorMessage.includes('ERR_CONNECTION_CLOSED') ||
+        errorMessage.includes('ERR_QUIC_PROTOCOL_ERROR') ||
+        errorMessage.includes('Failed to fetch') ||
+        errorMessage.includes('timeout');
+      
       // ✅ OPTIMISATION : Utiliser le cache même s'il est expiré en cas d'erreur
       if (cached) {
         console.warn('⚠️ [PROPERTIES] Utilisation du cache expiré en raison d\'une erreur');
         setProperties(cached.data);
-        toast.error('Erreur de chargement, affichage des données en cache');
+        toast.error(
+          isNetworkError 
+            ? 'Problème de connexion, affichage des données en cache' 
+            : 'Erreur de chargement, affichage des données en cache'
+        );
       } else {
-        toast.error('Échec du chargement des propriétés');
+        toast.error(
+          isNetworkError 
+            ? 'Échec de connexion au serveur. Veuillez vérifier votre connexion internet.' 
+            : 'Échec du chargement des propriétés'
+        );
       }
     } finally {
       loadingRef.current = false;

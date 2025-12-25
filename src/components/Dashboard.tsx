@@ -8,9 +8,10 @@ import { useBookings } from '@/hooks/useBookings';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { debug } from '@/lib/logger';
+import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
 
 // ✅ OPTIMISATION : Lazy loading pour CalendarView (composant lourd)
-const CalendarView = lazy(() => import('./CalendarView').then(module => ({ default: module.CalendarView })));
+const CalendarView = lazy(() => import('./CalendarView'));
 
 
 interface DashboardProps {
@@ -55,11 +56,51 @@ export const Dashboard = memo(({
   // 🚀 OPTIMISATION: Memoize filtered bookings pour éviter les re-calculs
   const filteredBookings = useMemo(() => {
     const filtered = bookings.filter(booking => {
-      // If no search term, show all bookings
+      // ✅ FILTRE 1 : Exclure les réservations Airbnb ICS non terminées
+      // Une réservation ICS non terminée est identifiée par :
+      // - status = 'pending'
+      // - bookingReference existe et n'est pas 'INDEPENDENT_BOOKING' (code Airbnb)
+      // - Pas de guests complets (pas de fullName, documentNumber, nationality pour tous les guests)
+      const isAirbnbICS = 'source' in booking && booking.source === 'airbnb';
+      const hasBookingReference = booking.bookingReference && booking.bookingReference !== 'INDEPENDENT_BOOKING';
+      const hasCompleteGuests = booking.guests && booking.guests.length > 0 && 
+        booking.guests.every(guest => 
+          guest.fullName && 
+          guest.documentNumber && 
+          guest.nationality
+        );
+      
+      // ✅ Exclure les réservations ICS non terminées (pas de guests complets)
+      const isICSReservationNotCompleted = !isAirbnbICS && 
+        booking.status === 'pending' && 
+        hasBookingReference && 
+        !hasCompleteGuests;
+      
+      if (isICSReservationNotCompleted) {
+        return false; // Exclure cette réservation
+      }
+      
+      // ✅ FILTRE 2 : Dans la vue Cards, n'afficher que les réservations avec documents complets
+      if (viewMode === 'cards') {
+        // Vérifier que la réservation est completed ET a tous les documents requis
+        if (booking.status === 'completed') {
+          const hasAllDocs = hasAllRequiredDocumentsForCalendar(booking);
+          if (!hasAllDocs) {
+            return false; // Exclure si documents manquants
+          }
+        } else if (booking.status !== 'confirmed') {
+          // Exclure les réservations qui ne sont ni completed ni confirmed
+          return false;
+        }
+        // Pour 'confirmed', on affiche aussi (en cours de traitement)
+      }
+      
+      // ✅ FILTRE 3 : Recherche par terme
       const matchesSearch = !searchTerm || 
                            booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            booking.guests.some(guest => guest.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
       
+      // ✅ FILTRE 4 : Filtre par statut
       const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
       
       return matchesSearch && matchesStatus;
@@ -71,12 +112,20 @@ export const Dashboard = memo(({
         total: bookings.length,
         filtered: filtered.length,
         searchTerm,
-        statusFilter
+        statusFilter,
+        viewMode,
+        excludedICS: bookings.filter(b => {
+          const isAirbnbICS = 'source' in b && b.source === 'airbnb';
+          const hasBookingReference = b.bookingReference && b.bookingReference !== 'INDEPENDENT_BOOKING';
+          const hasCompleteGuests = b.guests && b.guests.length > 0 && 
+            b.guests.every(guest => guest.fullName && guest.documentNumber && guest.nationality);
+          return !isAirbnbICS && b.status === 'pending' && hasBookingReference && !hasCompleteGuests;
+        }).length
       });
     }
     
     return filtered;
-  }, [bookings, searchTerm, statusFilter]);
+  }, [bookings, searchTerm, statusFilter, viewMode]);
 
   // 🚀 OPTIMISATION: Memoize stats pour éviter les re-calculs
   const stats = useMemo(() => ({

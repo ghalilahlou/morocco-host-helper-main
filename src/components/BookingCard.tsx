@@ -1,4 +1,4 @@
-import { Calendar, Users, FileCheck, Download, Edit, Trash2, Clock, FileText, UserCheck } from 'lucide-react';
+import { Calendar, Users, FileCheck, Download, Edit, Trash2, Clock, FileText, UserCheck, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +38,7 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
     uploadedDocuments: 0,
     hasSignature: false
   });
+  const [hasAnyDocuments, setHasAnyDocuments] = useState(false); // ✅ NOUVEAU : Vérifier si des documents existent
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR', {
@@ -68,7 +69,7 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
 
   const canGenerateDocuments = booking.guests.length > 0;
 
-  // Load verification counts
+  // Load verification counts and check for documents
   useEffect(() => {
     const loadVerificationCounts = async () => {
       try {
@@ -80,13 +81,53 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
             hasSignature: summary.hasSignature
           });
         }
+        
+        // ✅ NOUVEAU : Vérifier si des documents existent dans toutes les tables
+        const [uploadedDocsResult, generatedDocsResult] = await Promise.allSettled([
+          supabase
+            .from('uploaded_documents')
+            .select('id')
+            .eq('booking_id', booking.id)
+            .in('document_type', ['contract', 'police', 'identity']),
+          supabase
+            .from('generated_documents')
+            .select('id')
+            .eq('booking_id', booking.id)
+            .in('document_type', ['contract', 'police', 'identity'])
+            .then(result => result)
+            .catch(() => ({ data: [], error: null }))
+        ]);
+        
+        const uploadedDocs = uploadedDocsResult.status === 'fulfilled' && !uploadedDocsResult.value.error 
+          ? uploadedDocsResult.value.data || [] 
+          : [];
+        const generatedDocs = generatedDocsResult.status === 'fulfilled' && !generatedDocsResult.value.error 
+          ? generatedDocsResult.value.data || [] 
+          : [];
+        
+        // ✅ Vérifier si des documents existent (dans documents_generated, uploaded_documents, ou generated_documents)
+        const hasDocsInGenerated = booking.documentsGenerated && (
+          booking.documentsGenerated.contract === true ||
+          booking.documentsGenerated.policeForm === true ||
+          booking.documentsGenerated.police === true ||
+          (booking.documentsGenerated as any)?.contractUrl ||
+          (booking.documentsGenerated as any)?.policeUrl
+        );
+        
+        setHasAnyDocuments(
+          hasDocsInGenerated || 
+          uploadedDocs.length > 0 || 
+          generatedDocs.length > 0 ||
+          summary.guestSubmissionsCount > 0 ||
+          summary.uploadedDocumentsCount > 0
+        );
       } catch (error) {
         console.error('❌ Error loading verification counts:', error);
       }
     };
     
     loadVerificationCounts();
-  }, [booking.id]);
+  }, [booking.id, booking.documentsGenerated]);
 
   const handleDownloadPolice = async () => {
     try {
@@ -170,14 +211,23 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
   };
 
 
+  // ✅ NOUVEAU : Détecter si la réservation est completed mais sans documents
+  const isCompletedWithoutDocuments = booking.status === 'completed' && !hasAnyDocuments;
+  
   return (
-    <Card className="rounded-2xl border shadow-[var(--shadow-soft)] hover:shadow-[var(--shadow-medium)] transition-all duration-300 group">
+    <Card className={`rounded-2xl border shadow-[var(--shadow-soft)] hover:shadow-[var(--shadow-medium)] transition-all duration-300 group ${
+      isCompletedWithoutDocuments ? 'border-red-500 border-2' : ''
+    }`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
             <div className="space-y-1">
               <div className="flex items-center space-x-2">
                 <h3 className="font-semibold text-foreground">{booking.guests?.[0]?.fullName || `Réservation #${booking.id.slice(-6)}`}</h3>
                 {getStatusBadge()}
+                {/* ✅ NOUVEAU : Indicateur d'alerte si completed sans documents */}
+                {isCompletedWithoutDocuments && (
+                  <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" title="Réservation terminée sans documents - Dossier administratif vide" />
+                )}
               </div>
           </div>
           <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-1">

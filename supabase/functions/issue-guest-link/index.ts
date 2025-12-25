@@ -71,6 +71,34 @@ async function getServerClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+// ✅ NOUVEAU : Fonction utilitaire pour extraire la partie date (YYYY-MM-DD) sans décalage timezone
+// Évite les problèmes de décalage d'un jour lors de la conversion de dates
+function extractDateOnly(dateValue: string | Date | any): string {
+  if (typeof dateValue === 'string') {
+    // Si format ISO complet (2025-12-25T23:00:00.000Z), extraire juste YYYY-MM-DD
+    if (dateValue.includes('T')) {
+      return dateValue.split('T')[0];
+    }
+    // Si déjà YYYY-MM-DD, retourner tel quel
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+      return dateValue;
+    }
+    // Sinon, essayer de parser et extraire
+    const dateObj = new Date(dateValue);
+    const year = dateObj.getUTCFullYear();
+    const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  
+  // Si Date object, extraire la partie date en UTC pour éviter les décalages
+  const dateObj = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  const year = dateObj.getUTCFullYear();
+  const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Inline security functions pour les codes Airbnb
 function normalizeCode(input: string): string {
   return (input || '').trim().toUpperCase();
@@ -105,8 +133,8 @@ type IssueReq = {
   linkType?: 'ics_direct' | 'ics_with_code' | 'independent';
   reservationData?: {
     airbnbCode: string;
-    startDate: Date;
-    endDate: Date;
+    startDate: Date | string; // ✅ CORRIGÉ : Accepter Date ou string YYYY-MM-DD
+    endDate: Date | string; // ✅ CORRIGÉ : Accepter Date ou string YYYY-MM-DD
     guestName?: string;
     numberOfGuests?: number;
   };
@@ -395,13 +423,60 @@ serve(async (req) => {
       requiresCode = false;
       
       const reservationData = (requestBody as IssueReq).reservationData;
-      if (reservationData) {
-        // ✅ NOUVEAU : Créer la réservation immédiatement lors de la génération du lien
-        try {
-          console.log('🏗️ Création de la réservation ICS en base de données...');
+      if (!reservationData) {
+        console.error('❌ reservationData is required for ics_direct link type');
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'reservationData is required when linkType is ics_direct',
+          details: { linkType, reservationData: null }
+        }), {
+          status: 400,
+          headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Validate reservationData structure
+      if (!reservationData.airbnbCode || typeof reservationData.airbnbCode !== 'string') {
+        console.error('❌ Missing or invalid airbnbCode in reservationData:', reservationData);
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'airbnbCode is required in reservationData',
+          details: { reservationData }
+        }), {
+          status: 400,
+          headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      if (!reservationData.startDate || !reservationData.endDate) {
+        console.error('❌ Missing startDate or endDate in reservationData:', reservationData);
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'startDate and endDate are required in reservationData',
+          details: { reservationData }
+        }), {
+          status: 400,
+          headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // ✅ NOUVEAU : Créer la réservation immédiatement lors de la génération du lien
+      try {
+        console.log('🏗️ Création de la réservation ICS en base de données...');
+        console.log('📥 reservationData reçu:', {
+          airbnbCode: reservationData.airbnbCode,
+          startDate: reservationData.startDate,
+          endDate: reservationData.endDate,
+          startDateType: typeof reservationData.startDate,
+          endDateType: typeof reservationData.endDate
+        });
+        
+        // ✅ CORRIGÉ : Utiliser extractDateOnly pour éviter le décalage timezone
+        // Les dates peuvent être des objets Date JavaScript ou des chaînes ISO
+        const checkInDate = extractDateOnly(reservationData.startDate);
+        const checkOutDate = extractDateOnly(reservationData.endDate);
           
-          const checkInDate = new Date(reservationData.startDate).toISOString().split('T')[0];
-          const checkOutDate = new Date(reservationData.endDate).toISOString().split('T')[0];
+          console.log('📅 Dates normalisées pour la réservation:', { checkInDate, checkOutDate });
           
           // Vérifier si une réservation existe déjà pour ce code Airbnb
           const { data: existingBooking } = await server
@@ -495,23 +570,36 @@ serve(async (req) => {
           
           console.log('✅ Réservation ICS créée/mise à jour avec ID:', bookingId);
           
-          // Stocker l'ID de la réservation dans les métadonnées
+          // ✅ CORRIGÉ : Stocker les dates normalisées (YYYY-MM-DD) dans les métadonnées
+          // Cela évite les problèmes de décalage lors de la récupération dans VerifyToken.tsx
           reservation_metadata = {
             type: 'ics_direct',
             airbnbCode: reservationData.airbnbCode,
-            startDate: reservationData.startDate,
-            endDate: reservationData.endDate,
+            startDate: checkInDate, // ✅ CORRIGÉ : Utiliser la date normalisée
+            endDate: checkOutDate, // ✅ CORRIGÉ : Utiliser la date normalisée
             guestName: reservationData.guestName,
             numberOfGuests: reservationData.numberOfGuests,
             bookingId: bookingId // ✅ NOUVEAU : ID de la réservation créée
           };
           
+          console.log('✅ Métadonnées de réservation normalisées:', {
+            startDate: checkInDate,
+            endDate: checkOutDate,
+            bookingId
+          });
+          
           console.log('✅ Données de réservation et ID stockés dans le token');
         } catch (error) {
           console.error('❌ Erreur lors de la création de la réservation ICS:', error);
-          throw new Error(`Impossible de créer la réservation ICS: ${error.message}`);
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Failed to create ICS reservation',
+            details: error.message
+          }), {
+            status: 500,
+            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
+          });
         }
-      }
     } else {
       // Logique existante pour les liens avec validation de code
       const candidate = normalizeCode(airbnbCode || finalBookingId || '');

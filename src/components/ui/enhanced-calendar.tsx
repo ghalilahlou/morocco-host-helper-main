@@ -57,6 +57,17 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
       if (!isSameMonth(startMonth, currentMonth)) {
         setCurrentMonth(startMonth);
       }
+      // ✅ DEBUG : Log pour vérifier que les dates sont bien reçues
+      console.log('🗓️ [EnhancedCalendar] rangeStart reçu:', {
+        rangeStart: rangeStart.toISOString(),
+        rangeStartLocal: rangeStart.toLocaleDateString('fr-FR'),
+        rangeStartFormatted: `${rangeStart.getFullYear()}-${String(rangeStart.getMonth() + 1).padStart(2, '0')}-${String(rangeStart.getDate()).padStart(2, '0')}`,
+        rangeEnd: rangeEnd ? {
+          iso: rangeEnd.toISOString(),
+          local: rangeEnd.toLocaleDateString('fr-FR'),
+          formatted: `${rangeEnd.getFullYear()}-${String(rangeEnd.getMonth() + 1).padStart(2, '0')}-${String(rangeEnd.getDate()).padStart(2, '0')}`
+        } : null
+      });
     } else if (mode === 'range' && rangeEnd) {
       // Si seulement une date de fin est sélectionnée, afficher le mois de cette date
       const endMonth = startOfMonth(rangeEnd);

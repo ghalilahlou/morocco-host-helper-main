@@ -59,7 +59,7 @@ import { CalendarIcon, Upload, FileText, X, CheckCircle, Users, Calendar as Cale
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
+import { parseLocalDate, formatLocalDate, extractDateOnly } from '@/utils/dateUtils';
 import { OpenAIDocumentService } from '@/services/openaiDocumentService';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { EnhancedInput } from '@/components/ui/enhanced-input';
@@ -393,17 +393,42 @@ export const GuestVerification = () => {
           // ✅ CORRIGÉ : Pré-remplir directement depuis l'URL en utilisant parseLocalDate
           // pour éviter le décalage d'un jour causé par l'interprétation UTC de new Date()
           // ✅ AJOUT : Gestion d'erreurs robuste pour éviter page blanche
+          // ✅ CORRIGÉ : Utiliser extractDateOnly pour éviter les décalages de timezone
           try {
-            const startDate = parseLocalDate(startDateParam);
-            const endDate = parseLocalDate(endDateParam);
+            // Extraire la partie date (YYYY-MM-DD) depuis n'importe quel format
+            const startDateStr = extractDateOnly(startDateParam);
+            const endDateStr = extractDateOnly(endDateParam);
             
-            console.log('📅 Dates récupérées depuis l\'URL (sans décalage timezone):', {
+            // ✅ CORRIGÉ : Parser les dates et normaliser à minuit local pour éviter les problèmes de comparaison
+            const startDateParsed = parseLocalDate(startDateStr);
+            const endDateParsed = parseLocalDate(endDateStr);
+            
+            // ✅ CRITIQUE : Normaliser les dates à minuit local (sans heures/minutes/secondes)
+            // Cela évite les problèmes de comparaison dans le calendrier
+            const startDate = new Date(startDateParsed.getFullYear(), startDateParsed.getMonth(), startDateParsed.getDate());
+            const endDate = new Date(endDateParsed.getFullYear(), endDateParsed.getMonth(), endDateParsed.getDate());
+            
+            console.log('📅 Dates récupérées depuis l\'URL (normalisées à minuit local):', {
               startDateParam,
               endDateParam,
-              startDate: startDate.toISOString(),
-              endDate: endDate.toISOString(),
+              startDateStr,
+              endDateStr,
+              // ✅ CORRIGÉ : Afficher les valeurs réelles utilisées (format local) au lieu de toISOString()
               startDateLocal: startDate.toLocaleDateString('fr-FR'),
               endDateLocal: endDate.toLocaleDateString('fr-FR'),
+              startDateFormatted: formatLocalDate(startDate),
+              endDateFormatted: formatLocalDate(endDate),
+              // ✅ DEBUG : Afficher aussi les composants de date pour vérification
+              startDateComponents: {
+                year: startDate.getFullYear(),
+                month: startDate.getMonth() + 1,
+                day: startDate.getDate()
+              },
+              endDateComponents: {
+                year: endDate.getFullYear(),
+                month: endDate.getMonth() + 1,
+                day: endDate.getDate()
+              },
               isValidStart: startDate.getTime() > 0,
               isValidEnd: endDate.getTime() > 0
             });
@@ -513,11 +538,14 @@ export const GuestVerification = () => {
             console.log('✅ Données ICS détectées via token, pré-remplissage des dates:', reservationData);
             
             // Pré-remplir les dates depuis les métadonnées du token
-            // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
+            // ✅ CORRIGÉ : Utiliser extractDateOnly puis parseLocalDate pour éviter le décalage timezone
             // ✅ AJOUT : Gestion d'erreurs robuste
             try {
-              setCheckInDate(parseLocalDate(reservationData.startDate));
-              setCheckOutDate(parseLocalDate(reservationData.endDate));
+              const startDateStr = extractDateOnly(reservationData.startDate);
+              const endDateStr = extractDateOnly(reservationData.endDate);
+              
+              setCheckInDate(parseLocalDate(startDateStr));
+              setCheckOutDate(parseLocalDate(endDateStr));
               setNumberOfGuests(reservationData.numberOfGuests || 1);
             } catch (dateError) {
               console.error('❌ Erreur lors du parsing des dates depuis les métadonnées:', dateError);
@@ -748,11 +776,14 @@ export const GuestVerification = () => {
         if (searchResult?.reservation) {
           const matchedReservation = searchResult.reservation;
           
-          // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
+          // ✅ CORRIGÉ : Utiliser extractDateOnly puis parseLocalDate pour éviter le décalage timezone
           // ✅ AJOUT : Gestion d'erreurs robuste
           try {
-            const foundCheckInDate = parseLocalDate(matchedReservation.start_date);
-            const foundCheckOutDate = parseLocalDate(matchedReservation.end_date);
+            const startDateStr = extractDateOnly(matchedReservation.start_date);
+            const endDateStr = extractDateOnly(matchedReservation.end_date);
+            
+            const foundCheckInDate = parseLocalDate(startDateStr);
+            const foundCheckOutDate = parseLocalDate(endDateStr);
             
             setCheckInDate(foundCheckInDate);
             setCheckOutDate(foundCheckOutDate);
@@ -1250,27 +1281,68 @@ export const GuestVerification = () => {
 
     // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour la validation (évite les doubles formulaires)
     // ✅ VALIDATION STRICTE : Vérifier que TOUS les champs requis sont remplis, y compris le motif de séjour
-    // (même critères que pour la réservation, les documents et les signatures)
+    // ✅ NOUVEAU : Validation adaptée pour citoyens marocains (CIN acceptée avec date d'entrée optionnelle)
     const incompleteGuests = deduplicatedGuests.filter((guest, index) => {
       // Lire le motif de séjour depuis le select pour cet invité
       const motifSelect = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
       const motifSejour = motifSelect?.value || guest.motifSejour || '';
       
-      return !guest.fullName || 
-             !guest.dateOfBirth || 
-             !guest.nationality || 
-             !guest.documentNumber ||
-             !motifSejour || 
-             motifSejour.trim() === '';
+      // Vérifier les champs de base
+      if (!guest.fullName || !guest.dateOfBirth || !guest.nationality || !motifSejour || motifSejour.trim() === '') {
+        return true;
+      }
+      
+      // ✅ NOUVEAU : Validation adaptée selon la nationalité
+      const isMoroccan = guest.nationality?.toUpperCase().includes('MAROC') || 
+                         guest.nationality?.toUpperCase().includes('MOROCCO') ||
+                         guest.nationality?.toUpperCase() === 'MAROCAIN' ||
+                         guest.nationality?.toUpperCase() === 'MAROCAINE';
+      
+      if (isMoroccan) {
+        // Citoyen marocain : CIN acceptée (national_id), date d'entrée au Maroc optionnelle
+        if (!guest.documentNumber || guest.documentNumber.trim() === '') {
+          return true; // Document requis même pour marocain
+        }
+        // Pas de validation de date d'entrée pour marocain (optionnelle)
+      } else {
+        // Non-marocain : Passeport ou titre de séjour requis, date d'entrée au Maroc obligatoire
+        if (!guest.documentNumber || guest.documentNumber.trim() === '') {
+          return true;
+        }
+        // Vérifier que c'est un passeport ou titre de séjour (pas CIN)
+        if (guest.documentType === 'national_id') {
+          // Pour non-marocain, national_id n'est pas accepté (doit être passeport)
+          return true;
+        }
+        // TODO: Ajouter validation de date d'entrée au Maroc obligatoire pour non-marocain
+        // (nécessite ajout du champ dans le formulaire)
+      }
+      
+      return false;
     });
 
-    if (incompleteGuests.length > 0) {
+      if (incompleteGuests.length > 0) {
       // ✅ CRITIQUE : Réinitialiser les flags si validation échoue
       isSubmittingRef.current = false;
       isProcessingRef.current = false;
+      
+      // ✅ NOUVEAU : Message d'erreur adapté selon le type de problème
+      const firstIncomplete = incompleteGuests[0];
+      const isMoroccan = firstIncomplete.nationality?.toUpperCase().includes('MAROC') || 
+                         firstIncomplete.nationality?.toUpperCase().includes('MOROCCO') ||
+                         firstIncomplete.nationality?.toUpperCase() === 'MAROCAIN' ||
+                         firstIncomplete.nationality?.toUpperCase() === 'MAROCAINE';
+      
+      let errorMessage = t('validation.completeGuests.desc');
+      if (!firstIncomplete.documentNumber || firstIncomplete.documentNumber.trim() === '') {
+        errorMessage = 'Veuillez renseigner le numéro de document d\'identité.';
+      } else if (!isMoroccan && firstIncomplete.documentType === 'national_id') {
+        errorMessage = 'Pour les non-marocains, un passeport ou titre de séjour est requis (la CIN n\'est pas acceptée).';
+      }
+      
       toast({
         title: t('validation.error.title'),
-        description: t('validation.completeGuests.desc'),
+        description: errorMessage,
         variant: "destructive"
       });
       return;
@@ -2319,8 +2391,11 @@ export const GuestVerification = () => {
                             rangeStart={checkInDate}
                             rangeEnd={checkOutDate}
                             onRangeSelect={(checkIn, checkOut) => {
-                              setCheckInDate(checkIn);
-                              setCheckOutDate(checkOut);
+                              // ✅ CORRIGÉ : Normaliser les dates à minuit local pour éviter les problèmes de comparaison
+                              const normalizedCheckIn = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
+                              const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
+                              setCheckInDate(normalizedCheckIn);
+                              setCheckOutDate(normalizedCheckOut);
                               setShowCalendarPanel(false);
                             }}
                             className="w-full"

@@ -2,9 +2,10 @@ import { memo } from 'react';
 import { Booking } from '@/types/booking';
 import { BookingLayout } from './CalendarUtils';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
+import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
-import { Check, X } from 'lucide-react';
+import { Check, X, Loader2, AlertCircle, HelpCircle } from 'lucide-react';
 
 interface CalendarBookingBarProps {
   bookingData: BookingLayout;
@@ -81,7 +82,20 @@ export const CalendarBookingBar = memo(({
   
   // 4. Déterminer le statut (uniquement pour les bookings manuels)
   const status = 'status' in booking ? (booking as Booking).status : undefined;
+  
+  // ✅ TIMEOUT GRACIEUX : Extraire les indicateurs de chargement/erreur/timeout des documents
+  const documentsLoading = 'documentsLoading' in booking ? (booking as EnrichedBooking).documentsLoading : false;
+  const enrichmentError = 'enrichmentError' in booking ? (booking as EnrichedBooking).enrichmentError : false;
+  const documentsTimeout = 'documentsTimeout' in booking ? (booking as EnrichedBooking).documentsTimeout : false;
   const isCompleted = status === 'completed';
+  const isConfirmed = status === 'confirmed';
+  
+  // ✅ AIRBNB : Détecter si c'est une réservation Airbnb
+  const isAirbnb = 'airbnb_booking_id' in booking || 
+                   'source' in booking && (booking as any).source === 'airbnb' ||
+                   ('booking_reference' in booking && 
+                    typeof (booking as any).booking_reference === 'string' && 
+                    /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test((booking as any).booking_reference));
 
   // 5. Palette visuelle des barres (alignée sur la maquette)
   const { barColor, textColor } = (() => {
@@ -92,11 +106,27 @@ export const CalendarBookingBar = memo(({
       };
     }
 
+    // ✅ AIRBNB : Réservation Airbnb avec couleur rose/orange distinctive
+    if (isAirbnb) {
+      return {
+        barColor: '#FF385C', // Rose Airbnb principal (#FF385C)
+        textColor: 'text-white'
+      };
+    }
+
     // Réservation terminée : barre gris clair comme "Samy"
     if (isCompleted) {
       return {
         barColor: BOOKING_COLORS.completed.hex,
         textColor: 'text-slate-900'
+      };
+    }
+
+    // Réservation confirmée : barre verte comme les réservations confirmées
+    if (isConfirmed) {
+      return {
+        barColor: BOOKING_COLORS.confirmed?.hex || BOOKING_COLORS.manual.hex,
+        textColor: 'text-white'
       };
     }
 
@@ -123,6 +153,10 @@ export const CalendarBookingBar = memo(({
       `}
       style={{
         backgroundColor: barColor,
+        // ✅ AIRBNB : Dégradé rose/orange pour les réservations Airbnb
+        background: isAirbnb 
+          ? 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 50%, #E61E4D 100%)'
+          : barColor,
         // Si ce segment contient la date de check-out, réduire légèrement la largeur
         // pour suggérer que la journée de départ n'est que partiellement occupée.
         width: bookingData.isEnd && bookingData.span > 0
@@ -131,6 +165,8 @@ export const CalendarBookingBar = memo(({
         zIndex: 1000 + (bookingData.layer || 0),
         boxShadow: isConflict 
           ? '0 4px 12px rgba(220,38,38,0.25)' 
+          : isAirbnb
+          ? '0 2px 8px rgba(255,56,92,0.30)' // ✅ AIRBNB : Ombre rose pour Airbnb
           : '0 2px 6px rgba(15,23,42,0.20)',
         border: 'none',
         pointerEvents: 'auto', // ✅ CRITIQUE : S'assurer que les événements sont activés
@@ -157,8 +193,26 @@ export const CalendarBookingBar = memo(({
             {isConflict ? (
               <X
                 className="w-full h-full"
-                style={{ color: '#0BD9D0' }}
+                style={{ color: '#DC2626' }}
                 strokeWidth={2}
+              />
+            ) : documentsLoading ? ( // ✅ Spinner si documents en cours de chargement (pas de timeout)
+              <Loader2 
+                className="w-full h-full animate-spin text-gray-400" 
+                strokeWidth={2}
+                title="Documents en cours de chargement..."
+              />
+            ) : documentsTimeout ? ( // ✅ TIMEOUT GRACIEUX : Icône discrète (point d'interrogation) pour timeout
+              <HelpCircle 
+                className="w-full h-full text-gray-500" 
+                strokeWidth={2}
+                title="Documents en attente de vérification manuelle (timeout) - La réservation reste affichée"
+              />
+            ) : enrichmentError ? ( // ✅ Icône d'erreur si l'enrichissement a échoué (non-timeout)
+              <AlertCircle 
+                className="w-full h-full text-gray-400" 
+                strokeWidth={2}
+                title="Erreur lors du chargement des documents"
               />
             ) : (
               <Check
@@ -170,9 +224,27 @@ export const CalendarBookingBar = memo(({
           </div>
 
           {/* Label de réservation */}
-          <span className="truncate">
+          <span className="truncate flex-1">
             {displayLabel}
           </span>
+
+          {/* ✅ NOUVEAU : Indicateur de chargement des documents (spinner discret) */}
+          {'documentsLoading' in booking && (booking as EnrichedBooking).documentsLoading && (
+            <Loader2 
+              className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" 
+              strokeWidth={2}
+              title="Documents en cours de chargement..."
+            />
+          )}
+
+          {/* ✅ NOUVEAU : Indicateur d'erreur d'enrichissement (icône grise) */}
+          {'enrichmentError' in booking && (booking as EnrichedBooking).enrichmentError && !(booking as EnrichedBooking).documentsLoading && (
+            <AlertCircle 
+              className="w-3 h-3 text-gray-400 flex-shrink-0" 
+              strokeWidth={2}
+              title="Documents non disponibles temporairement"
+            />
+          )}
         </div>
       )}
     </div>

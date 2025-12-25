@@ -67,3 +67,40 @@ export function toDateString(date: Date | string): string {
   return formatLocalDate(date);
 }
 
+/**
+ * ✅ NOUVEAU : Extrait la partie date (YYYY-MM-DD) depuis n'importe quel format
+ * Évite le décalage de timezone en extrayant directement la date sans conversion UTC
+ * 
+ * @param dateValue - Date au format ISO, YYYY-MM-DD, ou Date object
+ * @returns Date au format YYYY-MM-DD en heure locale
+ * 
+ * @example
+ * extractDateOnly('2025-12-16T23:00:00.000Z') // '2025-12-16'
+ * extractDateOnly('2025-12-16') // '2025-12-16'
+ * extractDateOnly(new Date(2025, 11, 16)) // '2025-12-16' (en heure locale)
+ */
+export function extractDateOnly(dateValue: string | Date | any): string {
+  if (typeof dateValue === 'string') {
+    // Si format ISO complet (2025-12-16T23:00:00.000Z), extraire juste YYYY-MM-DD
+    if (dateValue.includes('T')) {
+      return dateValue.split('T')[0];
+    }
+    // Si déjà YYYY-MM-DD, retourner tel quel
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+      return dateValue;
+    }
+    // Sinon, essayer de parser
+    try {
+      return parseLocalDate(dateValue);
+    } catch {
+      // Si échec, essayer avec new Date puis formater
+      const dateObj = new Date(dateValue);
+      return formatLocalDate(dateObj);
+    }
+  }
+  
+  // Si Date object, utiliser formatLocalDate pour éviter décalage UTC
+  const dateObj = dateValue instanceof Date ? dateValue : new Date(dateValue);
+  return formatLocalDate(dateObj);
+}
+

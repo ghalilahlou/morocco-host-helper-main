@@ -14,6 +14,7 @@ import { EnhancedLoader } from '@/components/ui/enhanced-loader';
 import { supabase } from '@/integrations/supabase/client';
 import { AlertCircle, RefreshCw, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { extractDateOnly } from '@/utils/dateUtils';
 
 export function VerifyToken() {
   const { token } = useParams<{ token: string }>();
@@ -108,12 +109,10 @@ export function VerifyToken() {
             const reservationData = metadata.reservationData || metadata;
             
             if (reservationData?.startDate && reservationData?.endDate) {
-              const startDate = typeof reservationData.startDate === 'string' 
-                ? reservationData.startDate 
-                : new Date(reservationData.startDate).toISOString().split('T')[0];
-              const endDate = typeof reservationData.endDate === 'string' 
-                ? reservationData.endDate 
-                : new Date(reservationData.endDate).toISOString().split('T')[0];
+              // ✅ CORRIGÉ : Utiliser la fonction utilitaire centralisée
+              // Évite le décalage causé par toISOString() qui utilise UTC
+              const startDate = extractDateOnly(reservationData.startDate);
+              const endDate = extractDateOnly(reservationData.endDate);
               
               const guests = reservationData.numberOfGuests || 1;
               const airbnbCode = reservationData.airbnbCode || 'INDEPENDENT_BOOKING';

@@ -11,6 +11,7 @@ import { useBookings } from '@/hooks/useBookings';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { motion, AnimatePresence } from 'framer-motion';
+import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
 
 interface MobileDashboardProps {
   onNewBooking: () => void;
@@ -47,15 +48,25 @@ export const MobileDashboard = memo(({
 
   const filteredBookings = useMemo(() => {
     return bookings.filter(booking => {
+      // ✅ FILTRE 1 : Vérifier les documents pour les réservations completed
+      if (viewMode === 'cards' && booking.status === 'completed') {
+        const hasAllDocs = hasAllRequiredDocumentsForCalendar(booking);
+        if (!hasAllDocs) {
+          return false; // Exclure si documents manquants
+        }
+      }
+      
+      // ✅ FILTRE 2 : Recherche par terme
       const matchesSearch = !searchTerm || 
                            booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            booking.guests.some(guest => guest.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
       
+      // ✅ FILTRE 3 : Filtre par statut
       const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
       
       return matchesSearch && matchesStatus;
     });
-  }, [bookings, searchTerm, statusFilter]);
+  }, [bookings, searchTerm, statusFilter, viewMode]);
 
   const stats = useMemo(() => ({
     total: bookings.length,

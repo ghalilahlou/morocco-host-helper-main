@@ -265,7 +265,7 @@ async function loadBookingsQuery(
         placeOfBirth: guest.placeOfBirth || guest.place_of_birth || undefined,
         documentType: (guest.documentType || guest.document_type) as 'passport' | 'national_id'
       })),
-      status: booking.status as 'pending' | 'completed' | 'archived' | 'draft',
+      status: booking.status as 'pending' | 'completed' | 'confirmed' | 'archived' | 'draft',
       createdAt: booking.created_at,
       updated_at: booking.updated_at || booking.created_at,
       documentsGenerated: typeof booking.documents_generated === 'object' && booking.documents_generated !== null

@@ -68,7 +68,7 @@ export interface ContractTemplate {
 }
 
 export interface BookingStatus {
-  status: 'pending' | 'completed' | 'archived' | 'draft';
+  status: 'pending' | 'completed' | 'confirmed' | 'archived' | 'draft';
   processingStatus: 'uploading' | 'processing' | 'completed' | 'error';
   documentsGenerated: {
     policeForm: boolean;

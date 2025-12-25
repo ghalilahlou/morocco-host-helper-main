@@ -18,6 +18,9 @@
     "healthcheck": "tsx ./tools/healthcheck.ts",
     "sync:edges": "tsx ./tools/sync-edges.ts",
     "test:edge": "npm run sync:edges --",
+    "diagnose:404": "tsx ./scripts/diagnose-404.ts",
+    "refresh:mv": "tsx ./scripts/refresh-materialized-view.ts",
+    "clear:cache": "tsx ./scripts/clear-bookings-cache.ts",
     "db:check": "echo 'TODO: implement db performance checks'"
   },
   "dependencies": {
