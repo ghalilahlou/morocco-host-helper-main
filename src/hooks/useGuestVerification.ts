@@ -262,10 +262,16 @@ export const useGuestVerification = () => {
         });
         return null;
       }
-
       // ✅ MODIFIÉ : Ne créer reservationData que si des dates réelles sont fournies
       // Pour les réservations indépendantes (sans dates), le guest choisira ses dates
       const reservationData = options?.reservationData;
+      
+      // ✅ DIAGNOSTIC : Logger les données reçues
+      console.log('🔍 [GENERATE LINK] Données reçues:', {
+        hasReservationData: !!reservationData,
+        reservationData: reservationData,
+        airbnbBookingId: airbnbBookingId
+      });
       
       // ✅ NOUVEAU : Vérifier si c'est une réservation indépendante (sans dates pré-définies)
       const isIndependentBooking = !reservationData || 
@@ -273,8 +279,21 @@ export const useGuestVerification = () => {
         !reservationData.startDate ||
         !reservationData.endDate;
       
+      // ✅ DIAGNOSTIC : Logger la détection
+      console.log('🔍 [GENERATE LINK] Détection type de réservation:', {
+        isIndependentBooking,
+        hasReservationData: !!reservationData,
+        airbnbCode: reservationData?.airbnbCode,
+        hasStartDate: !!reservationData?.startDate,
+        hasEndDate: !!reservationData?.endDate,
+        startDate: reservationData?.startDate,
+        endDate: reservationData?.endDate
+      });
+      
       if (reservationData && !isIndependentBooking) {
         // ✅ RÉSERVATION ICS/AIRBNB : Inclure les dates dans l'URL
+        console.log('✅ [GENERATE LINK] Génération lien ICS/AIRBNB avec dates');
+        
         // ⚠️ IMPORTANT : DTEND dans ICS est exclusif, donc endDate est déjà la date de départ réelle
         const startDateObj = reservationData.startDate instanceof Date 
           ? reservationData.startDate 
@@ -294,12 +313,12 @@ export const useGuestVerification = () => {
         const airbnbCode = reservationData.airbnbCode || airbnbBookingId || 'INDEPENDENT_BOOKING';
         
         // Construire l'URL avec ou sans guestName selon s'il est valide
-        let urlParams = `startDate=${startDate}&endDate=${endDate}&guests=${numberOfGuests}&airbnbCode=${airbnbCode}`;
+        let urlParams = `startDate=${startDate}\u0026endDate=${endDate}\u0026guests=${numberOfGuests}\u0026airbnbCode=${airbnbCode}`;
         
         // ✅ CORRIGÉ : Ne pas ajouter guestName si vide pour éviter les problèmes de double formulaire
         if (cleanGuestName && cleanGuestName.trim() !== '') {
           const guestName = encodeURIComponent(cleanGuestName);
-          urlParams += `&guestName=${guestName}`;
+          urlParams += `\u0026guestName=${guestName}`;
         }
         
         // ✅ URL COMPLÈTE : Utiliser l'URL avec paramètres pour les réservations ICS/Airbnb
