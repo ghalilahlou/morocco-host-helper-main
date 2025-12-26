@@ -5,7 +5,7 @@ import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
-import { Check, X, Loader2, AlertCircle, HelpCircle } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 
 interface CalendarBookingBarProps {
   bookingData: BookingLayout;
@@ -85,11 +85,6 @@ export const CalendarBookingBar = memo(({
   
   // 4. Déterminer le statut (uniquement pour les bookings manuels)
   const status = 'status' in booking ? (booking as Booking).status : undefined;
-  
-  // ✅ TIMEOUT GRACIEUX : Extraire les indicateurs de chargement/erreur/timeout des documents
-  const documentsLoading = 'documentsLoading' in booking ? (booking as EnrichedBooking).documentsLoading : false;
-  const enrichmentError = 'enrichmentError' in booking ? (booking as EnrichedBooking).enrichmentError : false;
-  const documentsTimeout = 'documentsTimeout' in booking ? (booking as EnrichedBooking).documentsTimeout : false;
   const isCompleted = status === 'completed';
   const isConfirmed = status === 'confirmed';
   
@@ -100,6 +95,11 @@ export const CalendarBookingBar = memo(({
     (booking as Booking).bookingReference !== 'INDEPENDENT_BOOKING' &&
     /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test((booking as Booking).bookingReference);
   
+  // ✅ RÉSERVATION INDÉPENDANTE : Détecter si c'est une réservation indépendante confirmée
+  const isIndependentConfirmed = 'bookingReference' in booking &&
+    (booking as Booking).bookingReference === 'INDEPENDENT_BOOKING' &&
+    (isConfirmed || isCompleted);
+  
   // ✅ AIRBNB : Détecter si c'est une réservation Airbnb réelle (depuis airbnb_reservations)
   const isAirbnb = 'airbnb_booking_id' in booking || 
     ('source' in booking && (booking as any).source === 'airbnb');
@@ -107,7 +107,7 @@ export const CalendarBookingBar = memo(({
   // ✅ CORRIGÉ : Palette visuelle des barres - PRIORITÉ AUX CODES (comme dans Figma)
   // 1. Rouge pour conflits
   // 2. NOIR pour codes Airbnb/ICS (EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL...)
-  // 3. GRIS pour noms valides (Mouhcine, Zaineb)
+  // 3. GRIS pour noms valides (Mouhcine, Zaineb) ET réservations indépendantes confirmées
   const { barColor, textColor } = (() => {
     // 1. Rouge pour conflit (priorité absolue)
     if (isConflict) {
@@ -155,8 +155,9 @@ export const CalendarBookingBar = memo(({
 
     // 4. ✅ GRIS pour réservations avec NOM VALIDE (Mouhcine, Zaineb, etc.)
     // OU pour réservations completed (validées par le système)
+    // OU pour réservations indépendantes confirmées
     // Cette vérification vient APRÈS les codes pour éviter les faux positifs
-    if (isValidName || isCompleted) {
+    if (isValidName || isCompleted || isIndependentConfirmed) {
       return {
         barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5 pour validées
         textColor: 'text-gray-900'
@@ -222,33 +223,28 @@ export const CalendarBookingBar = memo(({
             }}
           >
             {isConflict ? (
+              // ❌ ROUGE : Croix rouge pour conflits
               <X
                 className="w-full h-full"
                 style={{ color: '#DC2626' }}
                 strokeWidth={2}
               />
-            ) : documentsLoading ? ( // ✅ Spinner si documents en cours de chargement (pas de timeout)
-              <div title="Documents en cours de chargement...">
-                <Loader2 
-                  className="w-full h-full animate-spin text-gray-400" 
-                  strokeWidth={2}
-                />
-              </div>
-            ) : documentsTimeout ? ( // ✅ TIMEOUT GRACIEUX : Icône discrète (point d'interrogation) pour timeout
-              <div title="Documents en attente de vérification manuelle (timeout) - La réservation reste affichée">
-                <HelpCircle 
-                  className="w-full h-full text-gray-500" 
-                  strokeWidth={2}
-                />
-              </div>
-            ) : enrichmentError ? ( // ✅ Icône d'erreur si l'enrichissement a échoué (non-timeout)
-              <div title="Erreur lors du chargement des documents">
-                <AlertCircle 
-                  className="w-full h-full text-gray-400" 
-                  strokeWidth={2}
-                />
-              </div>
+            ) : barColor === BOOKING_COLORS.completed.hex || barColor === '#E5E5E5' ? (
+              // ✅ VERT : Checkmark vert pour barres GRISES (réservations validées)
+              <Check
+                className="w-full h-full"
+                style={{ color: '#0BD9D0' }}
+                strokeWidth={2}
+              />
+            ) : barColor === '#222222' || (hasAirbnbCode && !isCompleted) ? (
+              // ❌ BLANC : Croix blanche pour barres NOIRES (codes Airbnb en attente)
+              <X
+                className="w-full h-full"
+                style={{ color: '#FFFFFF' }}
+                strokeWidth={2}
+              />
             ) : (
+              // Par défaut : checkmark vert
               <Check
                 className="w-full h-full"
                 style={{ color: '#0BD9D0' }}
@@ -261,26 +257,6 @@ export const CalendarBookingBar = memo(({
           <span className="truncate flex-1">
             {displayLabel}
           </span>
-
-          {/* ✅ NOUVEAU : Indicateur de chargement des documents (spinner discret) */}
-          {'documentsLoading' in booking && (booking as EnrichedBooking).documentsLoading && (
-            <div title="Documents en cours de chargement..." className="flex-shrink-0">
-              <Loader2 
-                className="w-3 h-3 text-gray-400 animate-spin" 
-                strokeWidth={2}
-              />
-            </div>
-          )}
-
-          {/* ✅ NOUVEAU : Indicateur d'erreur d'enrichissement (icône grise) */}
-          {'enrichmentError' in booking && (booking as EnrichedBooking).enrichmentError && !(booking as EnrichedBooking).documentsLoading && (
-            <div title="Documents non disponibles temporairement" className="flex-shrink-0">
-              <AlertCircle 
-                className="w-3 h-3 text-gray-400" 
-                strokeWidth={2}
-              />
-            </div>
-          )}
         </div>
       )}
     </div>

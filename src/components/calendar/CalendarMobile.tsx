@@ -596,12 +596,17 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                               borderRadius,
                             }}
                           >
-                            {/* ✅ AIRBNB : Checkmark vert pour réservations complétées, X blanc pour annulées (comme dans Figma) */}
+                            {/* ✅ AIRBNB : Checkmark vert pour réservations complétées, X blanc pour codes Airbnb */}
                             {isStartOfBooking && (
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 {bookingData.isConflict ? (
+                                  // ❌ ROUGE : Croix rouge pour conflits
+                                  <span className="text-white text-sm font-bold leading-none">✕</span>
+                                ) : backgroundColor === '#222222' ? (
+                                  // ❌ BLANC : Croix blanche pour codes Airbnb en attente (barres noires)
                                   <span className="text-white text-sm font-bold leading-none">✕</span>
                                 ) : bookingData.isValidName ? (
+                                  // ✅ VERT : Checkmark vert pour réservations validées (barres grises)
                                   <span className="text-green-600 text-sm font-bold leading-none">✓</span>
                                 ) : null}
                               </div>
