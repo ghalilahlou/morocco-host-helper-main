@@ -179,6 +179,14 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     if (allReservations && allReservations.length > 0) {
       allReservations.forEach((booking) => {
         if (!bookingsMap.has(booking.id)) {
+          // ✅ ICS/AIRBNB : Détecter les réservations ICS/Airbnb issues de fichiers ICS
+          // Toute réservation avec bookingReference au format Airbnb (HM, CL, etc.) est considérée comme ICS/Airbnb
+          const hasAirbnbCode = 'bookingReference' in booking && 
+            (booking as Booking).bookingReference && 
+            (booking as Booking).bookingReference !== 'INDEPENDENT_BOOKING' &&
+            /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test((booking as Booking).bookingReference);
+          
+          // ✅ AIRBNB : Détecter si c'est une réservation Airbnb réelle (depuis airbnb_reservations)
           const isAirbnb = 'source' in booking && booking.source === 'airbnb';
           
           const startDate = isAirbnb
@@ -190,6 +198,8 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             : new Date((booking as Booking).checkOutDate);
           
           const displayText = getUnifiedBookingDisplayText(booking, true);
+          // ✅ CLEF : Vérifier si le displayText est un NOM VALIDE (Mouhcine, Zaineb)
+          // ou un CODE (HM8548HWET, CLXYZ123)
           const isValidName = isValidGuestName(displayText);
           
           const guestCount = isAirbnb
@@ -197,18 +207,28 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             : (booking as Booking).numberOfGuests || 1;
           
           const isConflict = conflicts.includes(booking.id);
+          
           let color: string;
           let textColor: string;
           
-          // ✅ AIRBNB : Couleurs selon le statut
+          // ✅ CORRIGÉ : Couleurs selon le design Figma - PRIORITÉ AUX CODES
+          // 1. Rouge pour conflits
+          // 2. NOIR pour codes Airbnb/ICS (EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL...)
+          // 3. GRIS pour noms valides (Mouhcine, Zaineb)
           if (isConflict) {
-            color = BOOKING_COLORS.conflict.hex; // Rouge Airbnb #FF5A5F
+            color = BOOKING_COLORS.conflict.hex; // Rouge #FF5A5F
+            textColor = 'text-white';
+          } else if (hasAirbnbCode || isAirbnb) {
+            // ✅ PRIORITÉ : NOIR pour codes Airbnb/ICS (vérifier D'ABORD)
+            // Codes : EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL..., etc.
+            color = '#222222'; // Noir pour codes (comme dans Figma)
             textColor = 'text-white';
           } else if (isValidName) {
+            // ✅ GRIS pour noms valides (vérifier APRÈS les codes)
             color = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
             textColor = 'text-gray-900';
           } else {
-            color = BOOKING_COLORS.default.hex; // Gris foncé/noir #1A1A1A
+            color = BOOKING_COLORS.default.hex; // Noir #1A1A1A pour autres réservations en attente
             textColor = 'text-white';
           }
           

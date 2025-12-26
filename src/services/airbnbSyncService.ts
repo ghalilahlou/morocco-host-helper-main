@@ -68,7 +68,8 @@ export class AirbnbSyncService {
   }
 
   static getAirbnbReservationColor(reservation: AirbnbReservation, matchedBookings: string[], conflicts: string[]): string {
-    // Réservations Airbnb (ICS) doivent apparaître en gris tant qu'elles ne sont pas validées
-    return BOOKING_COLORS.pending.tailwind;
+    // ✅ CORRIGÉ : Réservations Airbnb (ICS) avec codes doivent apparaître en NOIR tant qu'elles ne sont pas validées
+    // NOIR pour codes Airbnb en attente (HM52S5FSAZ, HMKNEJMCRM, etc.)
+    return 'bg-[#222222]'; // Noir au lieu de gris
   }
 }

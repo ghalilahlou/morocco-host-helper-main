@@ -29,7 +29,7 @@ import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { formatLocalDate } from '@/utils/dateUtils';
-import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
+import { hasAllRequiredDocumentsForCalendar, getBookingDocumentStatus } from '@/utils/bookingDocuments';
 
 // ✅ Import pour le diagnostic
 const normalizeDocumentFlag = (value: any): boolean => {
@@ -658,17 +658,39 @@ const handleOpenConfig = useCallback(() => {
       }
     });
     
-    // ÉTAPE 2: Appliquer les couleurs avec conflits inclus - ROUGE pour les conflits
+    
+    // ÉTAPE 2: Appliquer les couleurs avec conflits inclus
+    // LOGIQUE CORRIGÉE :
+    // - ROUGE : Conflits
+    // - GRIS : Réservations validées avec NOM de guest (Mouhcine, Zaineb)
+    // - NOIR : Réservations en attente avec CODE Airbnb (HM52S5FSAZ, HMKNEJMCRM)
     bookings.forEach(booking => {
       // ✅ PRIORITÉ 1: Rouge si en conflit
       if (conflicts.includes(booking.id)) {
         overrides[booking.id] = BOOKING_COLORS.conflict.tailwind;
       } else {
-      overrides[booking.id] = AirbnbSyncService.getBookingStatusColor(
-        booking,
-        updatedMatchedBookings,
-          conflicts // ✅ Inclure les conflits
-      );
+        // Vérifier si la réservation a un code Airbnb
+        const hasAirbnbCode = booking.bookingReference && 
+          booking.bookingReference !== 'INDEPENDENT_BOOKING' &&
+          /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test(booking.bookingReference);
+        
+        // Vérifier si la réservation est validée (a des documents et guests complets)
+        const documents = getBookingDocumentStatus(booking);
+        const isValidated = documents.isValidated;
+        
+        // ✅ LOGIQUE CORRIGÉE : PRIORITÉ AUX CODES
+        // 1. Si c'est un code Airbnb ET pas validé → NOIR
+        // 2. Si c'est validé (avec nom de guest) → GRIS
+        if (hasAirbnbCode && !isValidated) {
+          // NOIR pour codes Airbnb en attente (HM52S5FSAZ, HMKNEJMCRM, etc.)
+          overrides[booking.id] = 'bg-[#222222]';
+        } else if (isValidated || updatedMatchedBookings.includes(booking.id)) {
+          // GRIS pour réservations validées avec nom de guest (Mouhcine, Zaineb)
+          overrides[booking.id] = BOOKING_COLORS.completed.tailwind; // Gris clair #E5E5E5
+        } else {
+          // NOIR par défaut pour autres réservations en attente
+          overrides[booking.id] = BOOKING_COLORS.default?.tailwind || BOOKING_COLORS.manual.tailwind;
+        }
       }
     });
 

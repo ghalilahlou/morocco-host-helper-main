@@ -77,8 +77,11 @@ export const CalendarBookingBar = memo(({
   // 2. Obtenir le label à afficher
   const displayLabel = getUnifiedBookingDisplayText(booking, bookingData.isStart);
   
-  // 3. Déterminer si c'est un nom (comme "Marcel", "Michel") ou un code
-  const isName = isValidGuestName(displayLabel);
+  // 3. ✅ CLEF : Déterminer si le displayLabel est un NOM VALIDE (comme "Mouhcine", "Zaineb")
+  // ou un CODE (comme "HM8548HWET", "CLXYZ123")
+  // Si c'est un nom valide → réservation VALIDÉE (gris)
+  // Si c'est un code → réservation EN ATTENTE (noir)
+  const isValidName = isValidGuestName(displayLabel);
   
   // 4. Déterminer le statut (uniquement pour les bookings manuels)
   const status = 'status' in booking ? (booking as Booking).status : undefined;
@@ -90,49 +93,79 @@ export const CalendarBookingBar = memo(({
   const isCompleted = status === 'completed';
   const isConfirmed = status === 'confirmed';
   
-  // ✅ AIRBNB : Détecter si c'est une réservation Airbnb
+  // ✅ ICS/AIRBNB : Détecter les réservations ICS/Airbnb issues de fichiers ICS
+  // Toute réservation avec bookingReference au format Airbnb (HM, CL, etc.) est considérée comme ICS/Airbnb
+  const hasAirbnbCode = 'bookingReference' in booking && 
+    (booking as Booking).bookingReference && 
+    (booking as Booking).bookingReference !== 'INDEPENDENT_BOOKING' &&
+    /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test((booking as Booking).bookingReference);
+  
+  // ✅ AIRBNB : Détecter si c'est une réservation Airbnb réelle (depuis airbnb_reservations)
   const isAirbnb = 'airbnb_booking_id' in booking || 
-                   'source' in booking && (booking as any).source === 'airbnb' ||
-                   ('booking_reference' in booking && 
-                    typeof (booking as any).booking_reference === 'string' && 
-                    /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test((booking as any).booking_reference));
+    ('source' in booking && (booking as any).source === 'airbnb');
 
-  // 5. Palette visuelle des barres (alignée sur la maquette)
+  // ✅ CORRIGÉ : Palette visuelle des barres - PRIORITÉ AUX CODES (comme dans Figma)
+  // 1. Rouge pour conflits
+  // 2. NOIR pour codes Airbnb/ICS (EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL...)
+  // 3. GRIS pour noms valides (Mouhcine, Zaineb)
   const { barColor, textColor } = (() => {
+    // 1. Rouge pour conflit (priorité absolue)
     if (isConflict) {
       return {
-        barColor: BOOKING_COLORS.conflict.hex, // Rouge vif
+        barColor: BOOKING_COLORS.conflict.hex, // Rouge #FF5A5F
         textColor: 'text-white'
       };
     }
 
-    // ✅ AIRBNB : Réservation Airbnb avec couleur rose/orange distinctive
-    if (isAirbnb) {
+    // 2. Utiliser la couleur depuis colorOverrides si disponible (convertir tailwind en hex)
+    if (bookingData.color) {
+      // Extraire la couleur hex depuis la classe tailwind
+      let hexColor = bookingData.color;
+      
+      // Si c'est une classe tailwind avec couleur arbitraire [hex]
+      const hexMatch = bookingData.color.match(/\[#([0-9A-Fa-f]{6})\]/);
+      if (hexMatch) {
+        hexColor = `#${hexMatch[1]}`;
+      } else if (bookingData.color.includes('gray-200') || bookingData.color.includes('completed')) {
+        hexColor = BOOKING_COLORS.completed.hex; // #E5E5E5 - Gris pour validées
+      } else if (bookingData.color.includes('gray-900') || bookingData.color.includes('default') || bookingData.color.includes('manual')) {
+        hexColor = BOOKING_COLORS.default.hex; // #1A1A1A
+      } else if (bookingData.color.includes('red') || bookingData.color.includes('conflict')) {
+        hexColor = BOOKING_COLORS.conflict.hex; // #FF5A5F
+      }
+      
+      // Déterminer la couleur du texte selon la couleur de fond
+      const textColorClass = hexColor === BOOKING_COLORS.completed.hex ? 'text-gray-900' : 'text-white';
+      
       return {
-        barColor: '#FF385C', // Rose Airbnb principal (#FF385C)
+        barColor: hexColor,
+        textColor: textColorClass
+      };
+    }
+
+    // 3. ✅ PRIORITÉ : NOIR pour réservations avec CODE Airbnb/ICS (comme dans Figma)
+    // Vérifier D'ABORD si c'est un code AVANT de vérifier si c'est un nom valide
+    // Codes : EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL..., etc.
+    if (hasAirbnbCode || isAirbnb) {
+      return {
+        barColor: '#222222', // Noir pour codes Airbnb/ICS (comme dans Figma)
         textColor: 'text-white'
       };
     }
 
-    // Réservation terminée : barre gris clair comme "Samy"
-    if (isCompleted) {
+    // 4. ✅ GRIS pour réservations avec NOM VALIDE (Mouhcine, Zaineb, etc.)
+    // OU pour réservations completed (validées par le système)
+    // Cette vérification vient APRÈS les codes pour éviter les faux positifs
+    if (isValidName || isCompleted) {
       return {
-        barColor: BOOKING_COLORS.completed.hex,
-        textColor: 'text-slate-900'
+        barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5 pour validées
+        textColor: 'text-gray-900'
       };
     }
 
-    // Réservation confirmée : barre verte comme les réservations confirmées
-    if (isConfirmed) {
-      return {
-        barColor: BOOKING_COLORS.confirmed?.hex || BOOKING_COLORS.manual.hex,
-        textColor: 'text-white'
-      };
-    }
-
-    // Réservation active / en attente : barre noire comme "Abdelilah"
+    // 5. Noir pour autres réservations en attente
     return {
-      barColor: BOOKING_COLORS.manual.hex,
+      barColor: BOOKING_COLORS.default.hex, // Noir #1A1A1A pour réservations en attente
       textColor: 'text-white'
     };
   })();
@@ -153,10 +186,8 @@ export const CalendarBookingBar = memo(({
       `}
       style={{
         backgroundColor: barColor,
-        // ✅ AIRBNB : Dégradé rose/orange pour les réservations Airbnb
-        background: isAirbnb 
-          ? 'linear-gradient(135deg, #FF5A5F 0%, #FF385C 50%, #E61E4D 100%)'
-          : barColor,
+        // ✅ PAS DE DÉGRADÉ : Utiliser la couleur unie (noir pour ICS, gris pour validées, etc.)
+        background: barColor,
         // Si ce segment contient la date de check-out, réduire légèrement la largeur
         // pour suggérer que la journée de départ n'est que partiellement occupée.
         width: bookingData.isEnd && bookingData.span > 0
@@ -197,23 +228,26 @@ export const CalendarBookingBar = memo(({
                 strokeWidth={2}
               />
             ) : documentsLoading ? ( // ✅ Spinner si documents en cours de chargement (pas de timeout)
-              <Loader2 
-                className="w-full h-full animate-spin text-gray-400" 
-                strokeWidth={2}
-                title="Documents en cours de chargement..."
-              />
+              <div title="Documents en cours de chargement...">
+                <Loader2 
+                  className="w-full h-full animate-spin text-gray-400" 
+                  strokeWidth={2}
+                />
+              </div>
             ) : documentsTimeout ? ( // ✅ TIMEOUT GRACIEUX : Icône discrète (point d'interrogation) pour timeout
-              <HelpCircle 
-                className="w-full h-full text-gray-500" 
-                strokeWidth={2}
-                title="Documents en attente de vérification manuelle (timeout) - La réservation reste affichée"
-              />
+              <div title="Documents en attente de vérification manuelle (timeout) - La réservation reste affichée">
+                <HelpCircle 
+                  className="w-full h-full text-gray-500" 
+                  strokeWidth={2}
+                />
+              </div>
             ) : enrichmentError ? ( // ✅ Icône d'erreur si l'enrichissement a échoué (non-timeout)
-              <AlertCircle 
-                className="w-full h-full text-gray-400" 
-                strokeWidth={2}
-                title="Erreur lors du chargement des documents"
-              />
+              <div title="Erreur lors du chargement des documents">
+                <AlertCircle 
+                  className="w-full h-full text-gray-400" 
+                  strokeWidth={2}
+                />
+              </div>
             ) : (
               <Check
                 className="w-full h-full"
@@ -230,20 +264,22 @@ export const CalendarBookingBar = memo(({
 
           {/* ✅ NOUVEAU : Indicateur de chargement des documents (spinner discret) */}
           {'documentsLoading' in booking && (booking as EnrichedBooking).documentsLoading && (
-            <Loader2 
-              className="w-3 h-3 text-gray-400 animate-spin flex-shrink-0" 
-              strokeWidth={2}
-              title="Documents en cours de chargement..."
-            />
+            <div title="Documents en cours de chargement..." className="flex-shrink-0">
+              <Loader2 
+                className="w-3 h-3 text-gray-400 animate-spin" 
+                strokeWidth={2}
+              />
+            </div>
           )}
 
           {/* ✅ NOUVEAU : Indicateur d'erreur d'enrichissement (icône grise) */}
           {'enrichmentError' in booking && (booking as EnrichedBooking).enrichmentError && !(booking as EnrichedBooking).documentsLoading && (
-            <AlertCircle 
-              className="w-3 h-3 text-gray-400 flex-shrink-0" 
-              strokeWidth={2}
-              title="Documents non disponibles temporairement"
-            />
+            <div title="Documents non disponibles temporairement" className="flex-shrink-0">
+              <AlertCircle 
+                className="w-3 h-3 text-gray-400" 
+                strokeWidth={2}
+              />
+            </div>
           )}
         </div>
       )}
