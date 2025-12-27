@@ -1,169 +1,155 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
+import SignatureCanvas from 'react-signature-canvas';
 import { Button } from '@/components/ui/button';
-import { RotateCcw, Check } from 'lucide-react';
+import { CheckCircle, X } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
 interface SignaturePadProps {
   onSignature: (signatureData: string) => void;
   disabled?: boolean;
+  isMobile?: boolean;
 }
 
-export const SignaturePad: React.FC<SignaturePadProps> = ({ onSignature, disabled = false }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
+export const SignaturePad: React.FC<SignaturePadProps> = ({ onSignature, disabled = false, isMobile = false }) => {
+  const signaturePadRef = useRef<SignatureCanvas>(null);
   const [hasSignature, setHasSignature] = useState(false);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    // Configurer le canvas
-    canvas.width = canvas.offsetWidth * 2; // Haute résolution
-    canvas.height = canvas.offsetHeight * 2;
-    context.scale(2, 2);
-    
-    // Style du tracé
-    context.strokeStyle = '#1f2937'; // Couleur gris foncé
-    context.lineWidth = 2;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-
-    // Fond blanc
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-  }, []);
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (disabled) return;
-    
-    setIsDrawing(true);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    let x, y;
-    if ('touches' in e) {
-      // Touch event
-      x = e.touches[0].clientX - rect.left;
-      y = e.touches[0].clientY - rect.top;
-    } else {
-      // Mouse event
-      x = e.clientX - rect.left;
-      y = e.clientY - rect.top;
+  const handleEnd = () => {
+    if (signaturePadRef.current && !signaturePadRef.current.isEmpty()) {
+      setHasSignature(true);
     }
-
-    context.beginPath();
-    context.moveTo(x, y);
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || disabled) return;
-    
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    let x, y;
-    if ('touches' in e) {
-      // Touch event
-      e.preventDefault(); // Empêcher le scroll
-      x = e.touches[0].clientX - rect.left;
-      y = e.touches[0].clientY - rect.top;
-    } else {
-      // Mouse event
-      x = e.clientX - rect.left;
-      y = e.clientY - rect.top;
+  const handleClear = () => {
+    if (signaturePadRef.current) {
+      signaturePadRef.current.clear();
+      setHasSignature(false);
     }
-
-    context.lineTo(x, y);
-    context.stroke();
-    setHasSignature(true);
   };
 
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearSignature = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    setHasSignature(false);
-  };
-
-  const saveSignature = () => {
-    const canvas = canvasRef.current;
-    if (!canvas || !hasSignature) return;
-
-    const signatureData = canvas.toDataURL('image/png');
-    onSignature(signatureData);
+  const handleSave = () => {
+    if (signaturePadRef.current && !signaturePadRef.current.isEmpty()) {
+      const dataURL = signaturePadRef.current.toDataURL();
+      onSignature(dataURL);
+    }
   };
 
   return (
     <div className="space-y-4">
-      <div className="border-2 border-dashed border-emerald-300 rounded-xl p-4 bg-gradient-to-br from-emerald-50 to-green-50">
-        <p className="text-center text-sm text-gray-600 mb-3">
-          Signez dans la zone ci-dessous avec votre souris ou votre doigt
-        </p>
-        
-        <canvas
-          ref={canvasRef}
-          className={`w-full h-32 border-2 rounded-lg bg-white cursor-crosshair ${
-            disabled ? 'opacity-50 cursor-not-allowed' : 'border-gray-300 hover:border-emerald-400'
-          }`}
-          onMouseDown={startDrawing}
-          onMouseMove={draw}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
-          onTouchStart={startDrawing}
-          onTouchMove={draw}
-          onTouchEnd={stopDrawing}
-          disabled={disabled}
-        />
-        
-        <div className="flex gap-2 mt-3">
+      <div className="text-center mb-4">
+        <h3 className={cn(
+          "font-semibold text-gray-900",
+          isMobile ? "text-base" : "text-lg"
+        )}>Votre signature</h3>
+        <p className={cn(
+          "text-gray-600 mt-1",
+          isMobile ? "text-xs" : "text-sm"
+        )}>Dessinez votre signature ci-dessous</p>
+      </div>
+
+      <div className="relative w-full">
+        <div className={cn(
+          "relative border border-gray-300 rounded-lg bg-white transition-all duration-200 overflow-hidden",
+          hasSignature ? 'border-gray-900' : 'hover:border-gray-400'
+        )}>
+          {/* Badge "Signée" */}
+          {hasSignature && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={cn(
+                "absolute z-10 bg-gray-900 text-white rounded-full font-medium shadow-sm flex items-center gap-1",
+                isMobile ? "-top-2 right-2 px-2 py-1 text-[10px]" : "-top-2 right-2 px-3 py-1 text-xs"
+              )}
+            >
+              <CheckCircle className={isMobile ? "w-3 h-3" : "w-3.5 h-3.5"} />
+              Signée
+            </motion.div>
+          )}
+          
+          {/* Texte d'aide */}
+          {!hasSignature && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+              <p className="text-gray-400 text-sm">Cliquez et dessinez votre signature</p>
+            </div>
+          )}
+          
+          {/* Ligne de guide */}
+          {!hasSignature && (
+            <div className="absolute bottom-1/3 left-4 right-4 h-[1px] bg-gray-200 pointer-events-none z-10"></div>
+          )}
+          
+          <SignatureCanvas
+            ref={signaturePadRef}
+            canvasProps={{
+              className: cn(
+                "w-full rounded-lg",
+                isMobile ? "h-[120px]" : "h-[180px]"
+              ),
+              style: {
+                touchAction: 'none',
+                backgroundColor: 'white'
+              }
+            }}
+            penColor="#111827"
+            minWidth={1.5}
+            maxWidth={2.5}
+            velocityFilterWeight={0.7}
+            onEnd={handleEnd}
+          />
+        </div>
+
+        {/* Feedback */}
+        {hasSignature ? (
+          <div className="mt-3 text-center">
+            <div className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <CheckCircle className="w-4 h-4 text-gray-900" />
+              Signature prête
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 text-center text-xs text-gray-500">
+            Signez avec votre souris, doigt ou stylet
+          </div>
+        )}
+      </div>
+
+      {/* Boutons */}
+      <div className="flex gap-3">
+        {hasSignature && (
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            onClick={clearSignature}
-            disabled={disabled || !hasSignature}
-            className="flex-1"
+            onClick={handleClear}
+            disabled={disabled}
+            className="flex-1 gap-2"
           >
-            <RotateCcw className="w-4 h-4 mr-2" />
+            <X className="w-4 h-4" />
             Effacer
           </Button>
-          
-          <Button
-            type="button"
-            onClick={saveSignature}
-            disabled={disabled || !hasSignature}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-          >
-            <Check className="w-4 h-4 mr-2" />
-            Confirmer signature
-          </Button>
-        </div>
+        )}
+        
+        <Button
+          type="button"
+          onClick={handleSave}
+          disabled={disabled || !hasSignature}
+          className="flex-1 gap-2"
+          style={{
+            backgroundColor: hasSignature ? '#55BA9F' : undefined,
+            color: hasSignature ? 'white' : undefined
+          }}
+          onMouseEnter={(e) => {
+            if (hasSignature) e.currentTarget.style.backgroundColor = '#4AA890';
+          }}
+          onMouseLeave={(e) => {
+            if (hasSignature) e.currentTarget.style.backgroundColor = '#55BA9F';
+          }}
+        >
+          <CheckCircle className="w-4 h-4" />
+          Suivant
+        </Button>
       </div>
-      
-      {!hasSignature && (
-        <p className="text-xs text-gray-500 text-center">
-          Votre signature électronique a la même valeur légale qu'une signature manuscrite
-        </p>
-      )}
     </div>
   );
 };

@@ -38,6 +38,35 @@ export const cleanGuestName = (name: string | null | undefined): string => {
 };
 
 /**
+ * ✅ NOUVEAU : Détecte si un nom est un code Airbnb
+ * Les codes Airbnb suivent des patterns spécifiques : HM + 4-10 caractères, etc.
+ */
+export const isAirbnbCode = (name: string | null | undefined): boolean => {
+  if (!name) return false;
+  
+  const trimmed = name.trim().toUpperCase();
+  
+  // Patterns de codes Airbnb
+  const airbnbPatterns = [
+    /^HM[A-Z0-9]{2,10}$/,     // HM9NJPA3, HMAXNTNAYM, Hm44j
+    /^CL[A-Z0-9]{2,10}$/,     // CL...
+    /^PN[A-Z0-9]{2,10}$/,     // PN...
+    /^ZN[A-Z0-9]{2,10}$/,     // ZN...
+    /^JN[A-Z0-9]{2,10}$/,     // JN...
+    /^UN[A-Z0-9]{2,10}$/,     // UN...
+    /^FN[A-Z0-9]{2,10}$/,     // FN...
+    /^HN[A-Z0-9]{2,10}$/,     // HN...
+    /^KN[A-Z0-9]{2,10}$/,     // KN...
+    /^SN[A-Z0-9]{2,10}$/,     // SN...
+    /^[A-Z]{2}[A-Z0-9]{4,8}$/, // Autres codes courts (2 lettres + 4-8 alphanum)
+    /^UID:[A-Z0-9]+$/,        // UID:7F66
+  ];
+  
+  return airbnbPatterns.some(pattern => pattern.test(trimmed));
+};
+
+
+/**
  * Valide si un nom de guest est réel (pas un code ou placeholder)
  * ✅ AMÉLIORÉ : Validation plus stricte pour éviter les blocages
  */
@@ -123,7 +152,7 @@ export const formatGuestDisplayName = (
 export const getBookingCode = (booking: Booking | AirbnbReservation): string => {
   if ('source' in booking && booking.source === 'airbnb') {
     const airbnb = booking as unknown as AirbnbReservation;
-    return airbnb.airbnbBookingId || airbnb.airbnb_booking_id || '';
+    return airbnb.airbnbBookingId || (airbnb as any).airbnb_booking_id || '';
   }
   
   const regular = booking as Booking;
@@ -167,31 +196,37 @@ export const getUnifiedBookingDisplayText = (
   if (guestName) {
     const cleanedGuestName = cleanGuestName(guestName);
     
-    // ✅ ASSOUPLISSEMENT : Validation moins stricte - juste vérifier qu'il y a des lettres
-    const hasLetters = cleanedGuestName && /[A-Za-zÀ-ÿ]{2,}/.test(cleanedGuestName);
-    const isNotOnlyCode = cleanedGuestName && !/^[A-Z0-9]{6,}$/.test(cleanedGuestName); // Pas un code
-    const isNotUID = cleanedGuestName && !cleanedGuestName.startsWith('UID:'); // Pas un UID
-    
-    if (hasLetters && isNotOnlyCode && isNotUID) {
-      // Si c'est un nom "parfait" (2+ mots avec voyelles), utiliser formatGuestDisplayName
-      if (isValidGuestName(cleanedGuestName)) {
-        const firstName = getFirstName(cleanedGuestName);
-        const totalGuests = isAirbnb 
-          ? (airbnbReservation?.numberOfGuests || 1)
-          : (regularBooking?.guests?.length || 1);
-        return formatGuestDisplayName(firstName, totalGuests);
-      } else {
-        // Sinon, afficher le nom nettoyé tel quel (même s'il n'a qu'un mot)
-        // ✅ NOUVEAU : Capitaliser et afficher le nom même s'il ne passe pas la validation stricte
-        const capitalized = cleanedGuestName.charAt(0).toUpperCase() + cleanedGuestName.slice(1).toLowerCase();
-        const totalGuests = isAirbnb 
-          ? (airbnbReservation?.numberOfGuests || 1)
-          : (regularBooking?.guests?.length || 1);
-        
-        if (totalGuests > 1) {
-          return `${capitalized} +${totalGuests - 1}`;
+    // ✅ NOUVEAU : Vérifier si c'est un code Airbnb - si oui, passer directement au fallback
+    if (isAirbnbCode(cleanedGuestName)) {
+      // C'est un code Airbnb, on ne l'affiche pas - on passe au fallback "Réservation"
+      // Continue vers PRIORITÉ 4
+    } else {
+      // ✅ Validation moins stricte - juste vérifier qu'il y a des lettres
+      const hasLetters = cleanedGuestName && /[A-Za-zÀ-ÿ]{2,}/.test(cleanedGuestName);
+      const isNotOnlyCode = cleanedGuestName && !/^[A-Z0-9]{4,}$/.test(cleanedGuestName); // Pas un code (réduit à 4+)
+      const isNotUID = cleanedGuestName && !cleanedGuestName.startsWith('UID:'); // Pas un UID
+      
+      if (hasLetters && isNotOnlyCode && isNotUID) {
+        // Si c'est un nom "parfait" (2+ mots avec voyelles), utiliser formatGuestDisplayName
+        if (isValidGuestName(cleanedGuestName)) {
+          const firstName = getFirstName(cleanedGuestName);
+          const totalGuests = isAirbnb 
+            ? (airbnbReservation?.numberOfGuests || 1)
+            : (regularBooking?.guests?.length || 1);
+          return formatGuestDisplayName(firstName, totalGuests);
+        } else {
+          // Sinon, afficher le nom nettoyé tel quel (même s'il n'a qu'un mot)
+          // ✅ NOUVEAU : Capitaliser et afficher le nom même s'il ne passe pas la validation stricte
+          const capitalized = cleanedGuestName.charAt(0).toUpperCase() + cleanedGuestName.slice(1).toLowerCase();
+          const totalGuests = isAirbnb 
+            ? (airbnbReservation?.numberOfGuests || 1)
+            : (regularBooking?.guests?.length || 1);
+          
+          if (totalGuests > 1) {
+            return `${capitalized} +${totalGuests - 1}`;
+          }
+          return capitalized;
         }
-        return capitalized;
       }
     }
   }

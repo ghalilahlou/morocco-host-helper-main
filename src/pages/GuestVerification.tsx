@@ -125,6 +125,7 @@ export const GuestVerification = () => {
     token: string; 
     airbnbBookingId?: string; 
   }>();
+  
 
   // ✅ FONCTION UTILITAIRE: Validation des dates
   const validateDates = (checkIn: Date, checkOut: Date): { isValid: boolean; error?: string } => {
@@ -2053,44 +2054,13 @@ export const GuestVerification = () => {
           <>
             <div className="mb-6">
               <p className="text-gray-300 text-sm mb-4">
-                Votre réservation à {propertyName || '((Property name))'} approche à grand pas. 
+                Votre réservation{propertyName ? ` à ${propertyName}` : ''} approche à grand pas. 
                 Réalisez votre check-in en quelques minutes.
               </p>
             </div>
             
-            <div className="mt-auto space-y-3">
-              <div className="text-sm">
-                <span className="text-gray-400">Hébergement</span>
-                <p className="text-white font-medium">{propertyName || '((Property name))'}</p>
-              </div>
-              {checkInDate && checkOutDate ? (
-                <>
-                  <div className="text-sm">
-                    <span className="text-gray-400">Dates</span>
-                    <p className="text-white font-medium">
-                      {format(checkInDate, 'dd/MM/yyyy')} - {format(checkOutDate, 'dd/MM/yyyy')}
-                    </p>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-400">Voyageurs</span>
-                    <p className="text-white font-medium">{numberOfGuests}</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="text-sm">
-                    <span className="text-gray-400">Dates</span>
-                    <p className="text-white font-medium">((Arrival date))-((Departure date))</p>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-400">Voyageurs</span>
-                    <p className="text-white font-medium">((Nb adultes)) / ((Nb enfants))</p>
-                  </div>
-                </>
-              )}
-            </div>
             
-            <div className="mt-6">
+            <div className="mt-auto">
               <p className="text-gray-300 text-sm">
                 Notre engagement : vos documents sont conservés conformément aux exigences légales, 
                 transmis de manière sécurisée et accessibles uniquement par les parties concernées.
@@ -2243,28 +2213,7 @@ export const GuestVerification = () => {
         
         {currentStep === 'signature' && (
           <>
-            <div className="mb-6">
-              <h3 className="text-lg font-bold mb-4">Récapitulatif</h3>
-              <div className="space-y-3">
-                <div className="text-sm">
-                  <span className="text-gray-400">Hébergement</span>
-                  <p className="text-white font-medium">{propertyName || '((Property name))'}</p>
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-400">Dates</span>
-                  <p className="text-white font-medium">
-                    {checkInDate && checkOutDate 
-                      ? `${format(checkInDate, 'dd/MM/yyyy')}-${format(checkOutDate, 'dd/MM/yyyy')}`
-                      : '((Arrival date))-((Departure date))'
-                    }
-                  </p>
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-400">Voyageurs</span>
-                  <p className="text-white font-medium">{numberOfGuests}</p>
-                </div>
-              </div>
-            </div>
+            
             
             <div className="mt-auto">
               <p className="text-gray-300 text-sm">
@@ -2421,7 +2370,10 @@ export const GuestVerification = () => {
                         
                         {/* Zone 4: Bouton flèche verte */}
                         <Button
-                          className="w-14 h-14 rounded-full bg-green-600 hover:bg-green-700 text-white flex-shrink-0 shadow-lg hover:shadow-xl transition-all"
+                          className="w-14 h-14 rounded-full text-white flex-shrink-0 shadow-lg hover:shadow-xl transition-all"
+                          style={{ backgroundColor: '#7DCAB5' }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#6BB9A5'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7DCAB5'}
                           onClick={handleNextStep}
                         >
                           <ArrowRight className="w-6 h-6" />
@@ -2570,7 +2522,10 @@ export const GuestVerification = () => {
                       className="flex justify-end pt-6"
                     >
                       <Button
-                        className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
+                        className="text-white px-8 py-3 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
+                        style={{ backgroundColor: '#7DCAB5' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#6BB9A5'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7DCAB5'}
                         onClick={handleNextStep}
                       >
                         Suivant
@@ -2641,32 +2596,26 @@ export const GuestVerification = () => {
                                 </div>
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                  <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <Users className="w-4 h-4 text-brand-teal" />
-                                      {t('guest.clients.fullName')} <span className="text-red-500">*</span>
-                                    </Label>
-                                    <EnhancedInput
-                                      label=""
+                                  <div className="relative">
+                                    <input
+                                      type="text"
+                                      id={`fullName-${index}`}
                                       value={guest.fullName}
                                       onChange={(e) => updateGuest(index, 'fullName', e.target.value)}
-                                      placeholder={t('guest.clients.fullNamePlaceholder')}
-                                      validation={{
-                                        required: true,
-                                        minLength: 2,
-                                        validator: (value) => {
-                                          if (value.trim().split(' ').length < 2) {
-                                            return "Veuillez saisir le nom et prénom";
-                                          }
-                                          return null;
-                                        }
-                                      }}
+                                      placeholder=" "
+                                      required
+                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
+                                    <label
+                                      htmlFor={`fullName-${index}`}
+                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
+                                    >
+                                      {t('guest.clients.fullName')} <span className="text-red-500">*</span>
+                                    </label>
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <CalendarIcon className="w-4 h-4 text-brand-teal" />
+                                    <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.dateOfBirth')} <span className="text-red-500">*</span>
                                     </Label>
                                     <Popover>
@@ -2699,18 +2648,23 @@ export const GuestVerification = () => {
                                     </Popover>
                                   </div>
                                   
-                                  <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <span className="text-brand-teal">🌍</span>
-                                      {t('guest.clients.nationality')} <span className="text-red-500">*</span>
-                                    </Label>
-                                    <EnhancedInput
+                                  <div className="relative">
+                                    <input
+                                      type="text"
+                                      id={`nationality-${index}`}
                                       value={guest.nationality}
                                       onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
-                                      placeholder="Sélectionnez ou saisissez la nationalité"
-                                      validation={{ required: true }}
+                                      placeholder=" "
+                                      required
                                       list={`nationalities-list-${index}`}
+                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
+                                    <label
+                                      htmlFor={`nationality-${index}`}
+                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
+                                    >
+                                      {t('guest.clients.nationality')} <span className="text-red-500">*</span>
+                                    </label>
                                     <datalist id={`nationalities-list-${index}`}>
                                       {NATIONALITIES.filter(n => n !== '---').map((nationality) => (
                                         <option key={nationality} value={nationality} />
@@ -2718,74 +2672,75 @@ export const GuestVerification = () => {
                                     </datalist>
                                   </div>
                                   
-                                  <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <FileText className="w-4 h-4 text-brand-teal" />
-                                      {t('guest.clients.documentType')} <span className="text-red-500">*</span>
-                                    </Label>
+                                  <div className="relative">
                                     <select
+                                      id={`documentType-${index}`}
                                       value={guest.documentType} 
                                       onChange={(e) => updateGuest(index, 'documentType', e.target.value)}
-                                      className="h-12 w-full border-2 rounded-lg px-4 bg-[#FDFDF9] border-gray-300 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 text-gray-900 font-medium shadow-sm hover:shadow-md"
+                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
                                     >
                                       <option value="passport">{t('guest.clients.passport')}</option>
                                       <option value="national_id">{t('guest.clients.nationalId')}</option>
                                     </select>
-                                  </div>
-                                  
-                                  <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <FileText className="w-4 h-4 text-brand-teal" />
-                                      {t('guest.clients.documentNumber')} <span className="text-red-500">*</span>
-                                    </Label>
-                                    <EnhancedInput
-                                      label=""
-                                      value={guest.documentNumber}
-                                      onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
-                                      placeholder={t('guest.clients.documentNumberPlaceholder')}
-                                      validation={{
-                                        required: true,
-                                        minLength: 5,
-                                        validator: (value) => {
-                                          if (!/^[A-Z0-9]+$/i.test(value.replace(/\s/g, ''))) {
-                                            return "Format de document invalide";
-                                          }
-                                          return null;
-                                        }
-                                      }}
-                                    />
-                                  </div>
-                                  
-                                  <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <span className="text-brand-teal">💼</span>
-                                      Profession
+                                    <label
+                                      htmlFor={`documentType-${index}`}
+                                      className="absolute left-4 top-2 text-gray-500 text-xs pointer-events-none"
+                                    >
+                                      {t('guest.clients.documentType')} <span className="text-red-500">*</span>
                                     </label>
+                                    <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  </div>
+                                  
+                                  <div className="relative">
                                     <input
                                       type="text"
+                                      id={`documentNumber-${index}`}
+                                      value={guest.documentNumber}
+                                      onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
+                                      placeholder=" "
+                                      required
+                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                    />
+                                    <label
+                                      htmlFor={`documentNumber-${index}`}
+                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
+                                    >
+                                      {t('guest.clients.documentNumber')} <span className="text-red-500">*</span>
+                                    </label>
+                                  </div>
+                                  
+                                  <div className="relative">
+                                    <input
+                                      type="text"
+                                      id={`profession-${index}`}
                                       name={`profession-${index}`}
                                       defaultValue={guest.profession || ''}
                                       onInput={(e) => {
                                         const target = e.target as HTMLInputElement;
                                         updateGuest(index, 'profession', target.value);
                                       }}
-                                      placeholder="Ex : Étudiant, Employé, Retraité..."
-                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-[#FDFDF9] px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
-                                  />
+                                      placeholder=" "
+                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                    />
+                                    <label
+                                      htmlFor={`profession-${index}`}
+                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
+                                    >
+                                      Profession
+                                    </label>
                                   </div>
                                   
-                                  <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <CalendarLucide className="w-4 h-4 text-brand-teal" />
-                                      Motif du séjour <span className="text-red-500">*</span>
-                                    </label>
+                                  <div className="relative">
                                     <select
+                                      id={`motifSejour-${index}`}
                                       name={`motifSejour-${index}`}
                                       defaultValue={guest.motifSejour || ''} 
                                       onChange={(e) => {
                                         updateGuest(index, 'motifSejour', e.target.value);
                                       }}
-                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-[#FDFDF9] px-4 py-2 text-sm text-gray-900 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
                                       required
                                     >
                                       <option value="">Sélectionnez un motif</option>
@@ -2796,43 +2751,58 @@ export const GuestVerification = () => {
                                       <option value="MÉDICAL">Médical</option>
                                       <option value="AUTRE">Autre</option>
                                     </select>
+                                    <label
+                                      htmlFor={`motifSejour-${index}`}
+                                      className="absolute left-4 top-2 text-gray-500 text-xs pointer-events-none"
+                                    >
+                                      Motif du séjour <span className="text-red-500">*</span>
+                                    </label>
+                                    <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
                                   </div>
                                   
-                                  <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <span className="text-brand-teal">📍</span>
-                                      Adresse personnelle
-                                    </label>
+                                  <div className="relative">
                                     <input
                                       type="text"
+                                      id={`adresse-${index}`}
                                       name={`adresse-${index}`}
                                       defaultValue={guest.adressePersonnelle || ''}
                                       onInput={(e) => {
                                         const target = e.target as HTMLInputElement;
                                         updateGuest(index, 'adressePersonnelle', target.value);
                                       }}
-                                    placeholder="Votre adresse au Maroc ou à l'étranger"
-                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-[#FDFDF9] px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
+                                      placeholder=" "
+                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
+                                    <label
+                                      htmlFor={`adresse-${index}`}
+                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
+                                    >
+                                      Adresse personnelle
+                                    </label>
                                   </div>
                                   
-                                  <div className="space-y-2">
-                                    <label className="block text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                      <span className="text-brand-teal">✉️</span>
-                                      Courriel <span className="text-red-500">*</span>
-                                    </label>
+                                  <div className="relative">
                                     <input
-                                    type="email"
+                                      type="email"
+                                      id={`email-${index}`}
                                       name={`email-${index}`}
                                       defaultValue={guest.email || ''}
                                       onInput={(e) => {
                                         const target = e.target as HTMLInputElement;
                                         updateGuest(index, 'email', target.value);
                                       }}
-                                      placeholder="votre.email@example.com"
-                                      className="flex h-12 w-full rounded-lg border-2 border-gray-300 bg-[#FDFDF9] px-4 py-2 text-sm text-gray-900 placeholder:text-gray-400 hover:border-brand-teal/50 focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-all duration-200 shadow-sm hover:shadow-md"
+                                      placeholder=" "
                                       required
+                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
+                                    <label
+                                      htmlFor={`email-${index}`}
+                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
+                                    >
+                                      Courriel <span className="text-red-500">*</span>
+                                    </label>
                                   </div>
                                 </div>
                               </Card>
@@ -2866,10 +2836,13 @@ export const GuestVerification = () => {
                         }}
                         disabled={isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current}
                         size="lg"
-                        className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white"
+                        className="px-8 py-3 text-white"
+                        style={{ backgroundColor: '#55BA9F' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#4AA890'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#55BA9F'}
                       >
                         <Sparkles className="w-5 h-5 mr-2" />
-                        {t('guest.cta.sendInfo')}
+                        Suivant
                       </Button>
                     </div>
                   </motion.div>

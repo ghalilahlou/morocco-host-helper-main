@@ -263,9 +263,11 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Route>
           
-          {/* Help pages */}
-          <Route path="/help/airbnb-sync/:propertyId" element={<AirbnbSyncHelp />} />
-          <Route path="/help/client-link/:propertyId" element={<ClientLinkHelp />} />
+          {/* Help pages - WITH LAYOUT */}
+          <Route path="/help" element={<Layout />}>
+            <Route path="airbnb-sync/:propertyId" element={<AirbnbSyncHelp />} />
+            <Route path="client-link/:propertyId" element={<ClientLinkHelp />} />
+          </Route>
           
           {/* User profile routes with layout */}
           <Route path="/profile" element={<Layout><Profile /></Layout>} />

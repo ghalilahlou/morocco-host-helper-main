@@ -599,39 +599,31 @@ export const useBookings = (options?: UseBookingsOptions) => {
             has_documents
             `);
         } else {
-          // ✅ URGENT : Mode debug - Supprimer temporairement les filtres et simplifier la requête
-          const REMOVE_FILTERS_FOR_DEBUG = true; // ✅ TEMPORAIRE : Supprimer les filtres pour voir si des données remontent
-          const SIMPLIFY_QUERY = true; // ✅ TEMPORAIRE : Simplifier la requête pour éviter les erreurs de jointures
+          // ✅ MODE NORMAL : Requête avec filtres
+          const REMOVE_FILTERS_FOR_DEBUG = false;
+          const SIMPLIFY_QUERY = false;
           
           if (REMOVE_FILTERS_FOR_DEBUG && SIMPLIFY_QUERY) {
-            // ✅ TEST : Requête SANS filtres et SANS jointures pour voir si des données remontent
             query = supabase
               .from('bookings')
-              .select(`*`); // ✅ SIMPLIFIÉ : Pas de jointures pour éviter les erreurs de schéma
-            console.log('🔍 [USE BOOKINGS] MODE DEBUG : Requête SANS filtres et SANS jointures', {
-              userId: user.id,
-              propertyId,
-              note: 'Cette requête devrait retourner TOUTES les réservations de la table'
-            });
+              .select(`*`);
           } else if (REMOVE_FILTERS_FOR_DEBUG) {
-            // ✅ TEST : Requête SANS filtres mais AVEC jointures
             query = supabase
               .from('bookings')
               .select(`*, guests (*), property:properties (*)`);
-            // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
-            // console.log('🔍 [USE BOOKINGS] MODE DEBUG : Requête SANS filtres (property_id, user_id)', ...);
           } else {
-            // ✅ MODE NORMAL : Requête avec filtres
+            // ✅ MODE NORMAL : Requête avec filtres par user_id et property_id
+            // Note: Le filtrage des codes Airbnb est géré par calendarData.ts
             query = supabase
               .from('bookings')
               .select(`*, guests (*), property:properties (*)`)
-              .eq('user_id', user.id); // Filtrer par user_id
+              .eq('user_id', user.id);
         
-        // ✅ PHASE 1 : Ajouter le filtre par propriété si fourni
-        if (propertyId) {
-          query = query.eq('property_id', propertyId);
+            // Ajouter le filtre par propriété si fourni
+            if (propertyId) {
+              query = query.eq('property_id', propertyId);
               console.log('🔍 [USE BOOKINGS] Filtering bookings by property_id', { propertyId, userId: user.id });
-        } else {
+            } else {
               console.warn('⚠️ [USE BOOKINGS] No propertyId provided - loading all bookings for user', { userId: user.id });
             }
           }

@@ -534,6 +534,59 @@ serve(async (req) => {
       upsertResult = [];
     }
 
+    // ✅ NOUVEAU : Nettoyage intelligent des anciennes réservations
+    // Supprimer les réservations qui ne sont plus dans le fichier ICS actuel
+    console.log('🧹 Nettoyage des anciennes réservations...');
+    let deletedCount = 0;
+    
+    try {
+      if (reservationData.length > 0) {
+        // Récupérer tous les booking IDs du fichier ICS actuel
+        const currentBookingIds = reservationData.map(r => r.airbnb_booking_id).filter(Boolean);
+        
+        if (currentBookingIds.length > 0) {
+          // Supprimer les réservations de cette propriété qui ne sont plus dans le fichier ICS
+          const { data: deletedReservations, error: deleteError } = await supabaseClient
+            .from('airbnb_reservations')
+            .delete()
+            .eq('property_id', propertyId)
+            .not('airbnb_booking_id', 'in', `(${currentBookingIds.join(',')})`)
+            .select('id, airbnb_booking_id, summary');
+
+          if (deleteError) {
+            console.error('❌ Erreur lors du nettoyage:', deleteError);
+          } else {
+            deletedCount = deletedReservations?.length || 0;
+            console.log(`✅ ${deletedCount} anciennes réservations supprimées`);
+            
+            // Log des réservations supprimées (pour traçabilité)
+            if (deletedCount > 0) {
+              console.log('📋 Réservations supprimées:');
+              deletedReservations?.forEach((r: any) => {
+                console.log(`   - ${r.airbnb_booking_id}: ${r.summary}`);
+              });
+            }
+          }
+        }
+      } else {
+        // Si le fichier ICS est vide, supprimer TOUTES les réservations de cette propriété
+        console.log('⚠️ Fichier ICS vide - suppression de toutes les réservations de cette propriété');
+        const { data: deletedReservations, error: deleteError } = await supabaseClient
+          .from('airbnb_reservations')
+          .delete()
+          .eq('property_id', propertyId)
+          .select('id');
+          
+        if (!deleteError) {
+          deletedCount = deletedReservations?.length || 0;
+          console.log(`✅ ${deletedCount} réservations supprimées (fichier ICS vide)`);
+        }
+      }
+    } catch (cleanupError) {
+      console.error('❌ Erreur lors du nettoyage des anciennes réservations:', cleanupError);
+      // Ne pas faire échouer la synchronisation pour cette erreur
+    }
+
     // ✅ NOUVEAU : Créer automatiquement les tokens sécurisés pour les codes Airbnb HM…
     console.log('🔐 Génération automatique des tokens sécurisés pour les codes Airbnb...');
     let tokensCreated = 0;
@@ -656,8 +709,9 @@ serve(async (req) => {
         reservations_count: reservationData.length,
         count: reservationData.length, // Add count field for compatibility
         tokens_created: tokensCreated,
+        deleted_count: deletedCount, // ✅ NOUVEAU : Nombre de réservations supprimées
         reservations: upsertResult,
-        message: `Unified sync completed successfully. ${reservationData.length} reservations synced, ${tokensCreated} automatic tokens created for Airbnb codes.`
+        message: `Unified sync completed successfully. ${reservationData.length} reservations synced, ${tokensCreated} automatic tokens created for Airbnb codes, ${deletedCount} old reservations removed.`
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

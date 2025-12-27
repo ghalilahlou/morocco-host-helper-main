@@ -44,6 +44,20 @@ export const PropertyDetail = () => {
     if (!property?.id) return;
     
     try {
+      // ✅ NOUVEAU : Vérifier d'abord si le lien ICS est configuré
+      const { data: propertyData, error: propertyError } = await supabase
+        .from('properties')
+        .select('airbnb_ics_url')
+        .eq('id', property.id)
+        .single();
+      
+      // Si pas de lien ICS ou erreur, ne pas compter les réservations Airbnb
+      if (propertyError || !propertyData?.airbnb_ics_url) {
+        console.log('ℹ️ [PROPERTY DETAIL] Pas de lien ICS configuré, comptage Airbnb = 0');
+        setAirbnbReservationsCount(0);
+        return;
+      }
+      
       // ✅ CORRIGÉ : Charger seulement les réservations Airbnb actives (non passées)
       // Pour correspondre à ce qui est affiché dans le calendrier
       const today = new Date();
@@ -65,13 +79,9 @@ export const PropertyDetail = () => {
       // ✅ DIAGNOSTIC : Log pour vérifier le comptage
       console.log('🔍 [PROPERTY DETAIL] Airbnb reservations count:', {
         propertyId: property.id,
+        hasIcsUrl: !!propertyData?.airbnb_ics_url,
         totalReservations: reservations?.length || 0,
-        today: today.toISOString().split('T')[0],
-        reservations: reservations?.map(r => ({
-          id: r.id.substring(0, 8),
-          start: r.start_date,
-          end: r.end_date
-        }))
+        today: today.toISOString().split('T')[0]
       });
       
       setAirbnbReservationsCount(reservations?.length || 0);

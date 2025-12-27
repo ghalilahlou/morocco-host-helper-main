@@ -155,21 +155,134 @@ export const AirbnbSyncHelp = () => {
 
   const handleDeleteUrl = async () => {
     if (!propertyId) return;
+    
+    // Confirmation avant suppression
+    const confirmed = window.confirm(
+      "⚠️ Attention : Cette action supprimera :\n" +
+      "1. Le lien ICS de synchronisation\n" +
+      "2. Toutes les réservations Airbnb (table airbnb_reservations)\n" +
+      "3. Toutes les réservations avec codes Airbnb (table bookings)\n" +
+      "4. Les soumissions de guests associées\n\n" +
+      "Êtes-vous sûr de vouloir continuer ?"
+    );
+    
+    if (!confirmed) return;
+    
     setIsLoading(true);
     try {
+      let deletedAirbnbCount = 0;
+      let deletedBookingsCount = 0;
+      let deletedSubmissionsCount = 0;
+      
+      // 1. Supprimer toutes les réservations Airbnb de airbnb_reservations
+      const { data: deletedAirbnb, error: deleteAirbnbError } = await supabase
+        .from('airbnb_reservations')
+        .delete()
+        .eq('property_id', propertyId)
+        .select('id');
+      
+      if (deleteAirbnbError) {
+        console.error('Erreur lors de la suppression des airbnb_reservations:', deleteAirbnbError);
+        throw deleteAirbnbError;
+      }
+      
+      deletedAirbnbCount = deletedAirbnb?.length || 0;
+      console.log(`✅ ${deletedAirbnbCount} réservations supprimées de airbnb_reservations`);
+      
+      // 2. ✅ NOUVEAU : Récupérer les IDs des bookings avec codes Airbnb
+      const { data: bookingsToDelete, error: fetchError } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('property_id', propertyId)
+        .or('booking_reference.like.HM%,booking_reference.like.CL%,booking_reference.like.PN%,booking_reference.like.ZN%,booking_reference.like.JN%,booking_reference.like.UN%,booking_reference.like.FN%,booking_reference.like.HN%,booking_reference.like.KN%,booking_reference.like.SN%');
+      
+      if (fetchError) {
+        console.error('Erreur lors de la récupération des bookings:', fetchError);
+        throw fetchError;
+      }
+      
+      if (bookingsToDelete && bookingsToDelete.length > 0) {
+        const bookingIds = bookingsToDelete.map(b => b.id);
+        
+        // 3. ✅ IMPORTANT : Supprimer d'abord les guest_submissions (contrainte FK)
+        const { data: deletedSubmissions, error: deleteSubmissionsError } = await supabase
+          .from('guest_submissions')
+          .delete()
+          .in('booking_id', bookingIds)
+          .select('id');
+        
+        if (deleteSubmissionsError) {
+          console.error('Erreur lors de la suppression des guest_submissions:', deleteSubmissionsError);
+          throw deleteSubmissionsError;
+        }
+        
+        deletedSubmissionsCount = deletedSubmissions?.length || 0;
+        console.log(`✅ ${deletedSubmissionsCount} soumissions supprimées de guest_submissions`);
+        
+        // 4. Maintenant supprimer les bookings (plus de contrainte FK)
+        const { data: deletedBookings, error: deleteBookingsError } = await supabase
+          .from('bookings')
+          .delete()
+          .in('id', bookingIds)
+          .select('id');
+        
+        if (deleteBookingsError) {
+          console.error('Erreur lors de la suppression des bookings:', deleteBookingsError);
+          throw deleteBookingsError;
+        }
+        
+        deletedBookingsCount = deletedBookings?.length || 0;
+        console.log(`✅ ${deletedBookingsCount} réservations supprimées de bookings`);
+      }
+      
+      // 5. Supprimer l'URL ICS de la propriété
       const { error } = await supabase
         .from('properties')
         .update({ airbnb_ics_url: null })
         .eq('id', propertyId);
       if (error) throw error;
+      
+      // 6. Invalider tous les caches pour forcer le rafraîchissement
+      console.log('🔄 Invalidation des caches...');
+      
+      try {
+        await AirbnbEdgeFunctionService.invalidateReservationsCache(propertyId);
+        console.log('✅ Cache Airbnb invalidé');
+      } catch (cacheError) {
+        console.warn('⚠️ Erreur lors de l\'invalidation du cache Airbnb:', cacheError);
+      }
+      
+      try {
+        const { multiLevelCache } = await import('@/services/multiLevelCache');
+        await multiLevelCache.invalidatePattern(`bookings-${propertyId}`);
+        await multiLevelCache.invalidatePattern(`bookings-${propertyId}-*`);
+        console.log('✅ Cache bookings invalidé');
+      } catch (cacheError) {
+        console.warn('⚠️ Erreur lors de l\'invalidation du cache bookings:', cacheError);
+      }
+      
       setCurrentIcsUrl(null);
       setAirbnbUrl('');
       setIsEditing(true);
       setLastSync(null);
-      toast.success("URL supprimée");
+      
+      toast.success(
+        `Suppression réussie !\n` +
+        `- ${deletedAirbnbCount} réservations Airbnb\n` +
+        `- ${deletedBookingsCount} réservations avec codes Airbnb\n` +
+        `- ${deletedSubmissionsCount} soumissions de guests\n` +
+        `- Lien ICS supprimé\n` +
+        `- Caches invalidés`
+      );
+      
+      // 7. Rediriger vers le calendrier pour forcer le rafraîchissement
+      setTimeout(() => {
+        navigate(`/dashboard/property/${propertyId}`);
+      }, 1500);
+      
     } catch (err) {
       console.error(err);
-      toast.error("Impossible de supprimer l'URL");
+      toast.error("Impossible de supprimer l'URL et les réservations");
     } finally {
       setIsLoading(false);
     }

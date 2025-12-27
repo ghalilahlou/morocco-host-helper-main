@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { getUnifiedBookingDisplayText, isValidGuestName } from '@/utils/bookingDisplay';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
+import { filterOutAirbnbCodes, logFilteringDebug, getAirbnbFilterClause } from '@/utils/airbnbCodeFilter';
 
 export interface CalendarEvent {
   id: string;
@@ -45,18 +46,31 @@ export async function fetchAirbnbCalendarEvents(
 
     // Fetching Airbnb calendar events
 
-    // ✅ CORRIGÉ : Récupérer les données validées de la table bookings pour enrichir les réservations
+    // ✅ FILTRAGE NIVEAU 1 : SQL - Exclure les codes Airbnb à la source
+    console.log('🔍 [FILTRAGE NIVEAU 1] Requête SQL avec exclusion des codes Airbnb');
+    
     const { data: bookingsData, error: bookingsError } = await supabase
       .from('bookings')
       .select('id, booking_reference, guest_name, check_in_date, check_out_date, status, guest_email')
       .eq('property_id', propertyId)
       .gte('check_in_date', start)
       .lte('check_out_date', end)
+      // ✅ FILTRAGE SQL : Exclure TOUS les codes Airbnb
+      .or(getAirbnbFilterClause())
       .order('check_in_date', { ascending: true });
 
     if (bookingsError) {
       console.error('❌ Error fetching bookings:', bookingsError);
       // Ne pas retourner vide, continuer avec airbnb_reservations seulement
+    }
+
+    // ✅ FILTRAGE NIVEAU 2 : JavaScript - Double vérification
+    console.log('🔍 [FILTRAGE NIVEAU 2] Validation JavaScript côté client');
+    const cleanBookingsData = bookingsData ? filterOutAirbnbCodes(bookingsData as any[]) : [];
+    
+    // Log de débogage
+    if (bookingsData) {
+      logFilteringDebug(bookingsData as any[], 'BOOKINGS');
     }
 
     // ✅ CORRIGÉ : Récupérer les données Airbnb et les enrichir avec les données de bookings
@@ -73,11 +87,18 @@ export async function fetchAirbnbCalendarEvents(
       return [];
     }
 
+    console.log('📊 [DONNÉES CHARGÉES]', {
+      airbnbReservations: airbnbData?.length || 0,
+      bookingsClean: cleanBookingsData.length,
+      bookingsOriginal: bookingsData?.length || 0,
+      filtered: (bookingsData?.length || 0) - cleanBookingsData.length
+    });
+
     // ✅ CORRIGÉ : Enrichir les réservations Airbnb avec les données validées de bookings
     // Match par dates ou booking_reference
     const data = (airbnbData || []).map(ar => {
-      // Chercher une réservation correspondante dans bookings
-      const matchingBooking = bookingsData?.find((b: any) => {
+      // Chercher une réservation correspondante dans bookings NETTOYÉS
+      const matchingBooking = cleanBookingsData?.find((b: any) => {
         // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
         const bookingStart = parseLocalDate(b.check_in_date);
         const bookingEnd = parseLocalDate(b.check_out_date);

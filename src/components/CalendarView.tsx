@@ -28,6 +28,7 @@ import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
+import { filterOutAirbnbCodes, logFilteringDebug } from '@/utils/airbnbCodeFilter';
 import { formatLocalDate } from '@/utils/dateUtils';
 import { hasAllRequiredDocumentsForCalendar, getBookingDocumentStatus } from '@/utils/bookingDocuments';
 
@@ -211,6 +212,22 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
       console.log('⏳ loadAirbnbReservations déjà en cours, appel ignoré');
       return;
     }
+
+    // ✅ NOUVEAU : Vérifier si le lien ICS est configuré pour cette propriété
+    const { data: propertyData, error: propertyError } = await supabase
+      .from('properties')
+      .select('airbnb_ics_url')
+      .eq('id', propertyId)
+      .single();
+    
+    // Si pas de lien ICS ou erreur, ne pas charger les réservations Airbnb
+    if (propertyError || !propertyData?.airbnb_ics_url) {
+      console.log('ℹ️ [CalendarView] Pas de lien ICS configuré, réservations Airbnb non chargées');
+      setAirbnbReservations([]);
+      return;
+    }
+    
+    console.log('✅ [CalendarView] Lien ICS présent, chargement des réservations Airbnb...');
 
     // Déterminer la plage de dates du mois courant
     const year = currentDate.getFullYear();

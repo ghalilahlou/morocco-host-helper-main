@@ -5,6 +5,10 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  // ✅ Fix for sockjs-client "global is not defined" error
+  define: {
+    'global': 'globalThis',
+  },
   server: {
     host: "::",
     port: 3000,

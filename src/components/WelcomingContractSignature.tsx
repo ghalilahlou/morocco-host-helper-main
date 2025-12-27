@@ -35,6 +35,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { MobilePdfViewer } from '@/components/MobilePdfViewer';
 import { cn } from '@/lib/utils';
+import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
+import SignatureCanvas from 'react-signature-canvas';
 
 interface WelcomingContractSignatureProps {
   bookingData: any;
@@ -97,11 +99,10 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
     };
   }, []);
   
-  // ✅ SIMPLIFIÉ : Plus besoin de réinitialiser le canvas car on reste sur la même page
   const [isAgreed, setIsAgreed] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const signaturePadRef = useRef<SignatureCanvas>(null);
   const { toast } = useToast();
   const location = useLocation();
   const t = useT();
@@ -402,6 +403,50 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     }
   }, [canvasInitialized]);
 
+  // Redimensionner le canvas pour qu'il corresponde à sa taille CSS
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const resizeCanvas = () => {
+      const rect = canvas.getBoundingClientRect();
+      
+      // Sauvegarder la signature actuelle si elle existe
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (tempCtx) {
+        tempCtx.drawImage(canvas, 0, 0);
+      }
+
+      // Redimensionner le canvas
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+
+      // Restaurer le contexte
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Restaurer la signature si elle existait
+        if (tempCtx) {
+          ctx.drawImage(tempCanvas, 0, 0, canvas.width, canvas.height);
+        }
+        
+        configureCanvasContext(ctx);
+      }
+    };
+
+    // Redimensionner au montage
+    resizeCanvas();
+
+    // Redimensionner lors du resize de la fenêtre
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [canvasInitialized]);
+
   // Restaurer la signature si elle existe déjà
   useEffect(() => {
     if (signature && canvasRef.current && canvasInitialized) {
@@ -422,10 +467,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     }
   }, [signature, canvasInitialized]);
 
-  // ✅ AMÉLIORÉ : Fonction pour configurer le contexte du canvas avec les bons styles
+  // ✅ AMÉLIORÉ : Fonction pour configurer le contexte du canvas avec les bons styles (style Airbnb)
   const configureCanvasContext = (ctx: CanvasRenderingContext2D) => {
-    ctx.strokeStyle = '#0891b2'; // brand-teal
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#111827'; // Noir style Airbnb
+    ctx.lineWidth = 2; // Plus fin pour plus de fluidité
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.imageSmoothingEnabled = true;
@@ -434,9 +479,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
   const getMousePos = (canvas: HTMLCanvasElement, e: MouseEvent | TouchEvent) => {
     const rect = canvas.getBoundingClientRect();
-    // Utiliser les dimensions logiques (600x250) au lieu des dimensions réelles
-    const scaleX = 600 / rect.width;
-    const scaleY = 250 / rect.height;
     
     let clientX, clientY;
     if (e instanceof MouseEvent) {
@@ -447,23 +489,32 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       clientY = e.touches[0].clientY;
     }
     
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY
-    };
+    // Position relative au canvas
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    
+    // Convertir en coordonnées du canvas (600x250)
+    const canvasX = (x / rect.width) * canvas.width;
+    const canvasY = (y / rect.height) * canvas.height;
+    
+    // Si les dimensions sont invalides, utiliser les coordonnées brutes
+    if (!isFinite(canvasX) || !isFinite(canvasY)) {
+      return { x, y };
+    }
+    
+    return { x: canvasX, y: canvasY };
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
     setIsDrawing(true);
     
-    // ✅ CORRIGÉ : Configurer le contexte À CHAQUE FOIS
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     
-    // ✅ CRITIQUE : Toujours reconfigurer le contexte pour éviter que les styles se perdent
+    // Reconfigurer le contexte
     configureCanvasContext(ctx);
     
     const pos = getMousePos(canvas, e.nativeEvent as MouseEvent | TouchEvent);
@@ -472,17 +523,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
     if (!isDrawing) return;
     
     const canvas = canvasRef.current;
     if (!canvas) return;
     
-    // ✅ CORRIGÉ : Configurer le contexte À CHAQUE FOIS pour éviter que la signature s'efface
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
-    
-    // ✅ CRITIQUE : Toujours reconfigurer le contexte
-    configureCanvasContext(ctx);
     
     const pos = getMousePos(canvas, e.nativeEvent as MouseEvent | TouchEvent);
     ctx.lineTo(pos.x, pos.y);
@@ -789,91 +837,104 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-white to-teal-50 relative overflow-hidden">
-      {/* Éléments décoratifs flottants */}
-      <div className="absolute inset-0 pointer-events-none">
-        <motion.div 
-          variants={floatingIcon}
-          animate="animate"
-          className="absolute top-20 left-20 text-blue-400/20"
-        >
-          <Heart className="w-12 h-12" />
-        </motion.div>
-        <motion.div 
-          variants={floatingIcon}
-          animate="animate"
-          style={{ animationDelay: '1s' }}
-          className="absolute top-32 right-32 text-teal-400/20"
-        >
-          <Home className="w-10 h-10" />
-        </motion.div>
-        <motion.div 
-          variants={floatingIcon}
-          animate="animate"
-          style={{ animationDelay: '2s' }}
-          className="absolute bottom-32 left-40 text-purple-400/20"
-        >
-          <Sparkles className="w-8 h-8" />
-        </motion.div>
+    <div className="min-h-screen flex bg-gray-50">
+      {/* Left Sidebar - Background matching logo - Fixed */}
+      <div className="hidden md:flex w-1/3 lg:w-1/4 text-white p-8 flex-col fixed left-0 top-0 h-screen z-10 rounded-r-2xl" style={{ backgroundColor: '#1E1E1E' }}>
+        <div className="mb-8">
+          <div className="mb-3">
+            <img 
+              src="/lovable-uploads/image.png" 
+              alt="CHECKY Logo" 
+              className="h-10 w-auto object-contain max-w-[180px]"
+            />
+          </div>
+          <p className="text-sm mt-1" style={{ color: '#0BD9D0' }}>Le check-in digitalisé</p>
+        </div>
+        
+        <div className="mb-6">
+          <p className="text-gray-300 text-sm mb-4">
+            Votre réservation{propertyName ? ` à ${propertyName}` : ''} approche à grand pas. 
+            Signez votre contrat pour finaliser votre check-in.
+          </p>
+        </div>
+        
+        <div className="mt-auto">
+          <p className="text-gray-300 text-sm">
+            Notre engagement : vos documents sont conservés conformément aux exigences légales, 
+            transmis de manière sécurisée et accessibles uniquement par les parties concernées.
+          </p>
+        </div>
       </div>
-
-      <div className={cn(
-        "relative z-10 mx-auto",
-        isMobile ? "px-2 py-4 max-w-full" : "px-4 py-8 max-w-5xl"
-      )}>
-        <ErrorBoundary>
-          {/* ✅ SIMPLIFIÉ : Une seule page avec contrat + signature */}
-          {currentStep === 'review' && (
-            <div
-              key="review"
-              className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300"
-            >
-              <div className="text-center space-y-2 sm:space-y-3">
-                <div className={cn(
-                  "inline-flex items-center gap-2 sm:gap-3 rounded-full text-brand-teal font-semibold border-2 border-brand-teal/20 shadow-sm",
-                  isMobile ? "px-3 py-2 text-sm" : "px-6 py-3",
-                  "bg-gradient-to-r from-brand-teal/10 to-teal-100"
-                )}>
-                  <FileText className={cn(isMobile ? "w-4 h-4" : "w-5 h-5")} />
-                  <span className={isMobile ? "text-xs" : ""}>Signature du contrat</span>
-                </div>
-                <h2 className={cn(
-                  "font-bold text-gray-900",
-                  isMobile ? "text-xl" : "text-2xl md:text-3xl"
-                )}>
+      
+      {/* Right Main Content */}
+      <div className="flex-1 flex flex-col md:ml-[33.333%] lg:ml-[25%]" style={{ backgroundColor: '#FDFDF9' }}>
+        {/* Header with Language Switcher */}
+        <div className="p-6 flex justify-end">
+          <LanguageSwitcher />
+        </div>
+        
+        {/* Progress Steps - Centered */}
+        <div className="px-6 pb-8 flex items-center justify-center gap-12">
+          <div className="flex flex-col items-center gap-3 text-[#89D7D2]">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: '#89D7D2', color: 'white' }}>
+              <Home className="w-6 h-6" />
+            </div>
+            <span className="font-semibold text-sm">Réservation</span>
+          </div>
+          
+          {/* Connector Line */}
+          <div className="h-0.5 flex-1 max-w-24" style={{ backgroundColor: '#50ACB4' }} />
+          
+          <div className="flex flex-col items-center gap-3 text-[#89D7D2]">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: '#89D7D2', color: 'white' }}>
+              <FileText className="w-6 h-6" />
+            </div>
+            <span className="font-semibold text-sm">Documents d'identité</span>
+          </div>
+          
+          {/* Connector Line */}
+          <div className="h-0.5 flex-1 max-w-24" style={{ backgroundColor: '#50ACB4' }} />
+          
+          <div className="flex flex-col items-center gap-3 text-[#50ACB4]">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg scale-110" style={{ backgroundColor: '#50ACB4', color: 'white' }}>
+              <Pen className="w-6 h-6" />
+            </div>
+            <span className="font-semibold text-sm">Signature</span>
+            <div className="h-1 w-16 rounded-full mt-1" style={{ backgroundColor: '#50ACB4' }} />
+          </div>
+        </div>
+        
+        {/* Main Content */}
+        <div className="flex-1 px-6 pb-6 overflow-y-auto">
+          <ErrorBoundary>
+            {currentStep === 'review' && (
+              <div className="max-w-4xl mx-auto space-y-8">
+                <motion.h2 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-3xl font-bold text-gray-900 mb-8"
+                >
                   Votre contrat de location
-                </h2>
-                <p className={cn(
-                  "text-gray-600 max-w-2xl mx-auto",
-                  isMobile ? "text-sm px-2" : "text-lg"
-                )}>
-                  Lisez le contrat ci-dessous, acceptez les conditions et signez
-                </p>
-              </div>
+                </motion.h2>
 
               {/* Contrat en haut */}
               <Card className={cn(
-                "shadow-xl border-2 border-gray-200 bg-white",
-                isMobile ? "rounded-lg" : "rounded-xl"
+                "border border-gray-300 bg-white",
+                isMobile ? "rounded-lg" : "rounded-lg"
               )}>
                 <CardHeader className={cn(
-                  "bg-gradient-to-r from-brand-teal/10 via-cyan-50 to-teal-50 border-b-2 border-brand-teal/20",
-                  isMobile ? "p-3" : "p-6"
+                  "border-b border-gray-200",
+                  isMobile ? "p-4" : "p-6"
                 )}>
                   <CardTitle className={cn(
-                    "flex items-center gap-2 sm:gap-3 font-bold text-gray-900",
-                    isMobile ? "text-base" : "text-xl"
+                    "flex items-center gap-3 font-semibold text-gray-900",
+                    isMobile ? "text-base" : "text-lg"
                   )}>
-                    <div className={cn(
-                      "rounded-full bg-gradient-to-br from-brand-teal to-teal-600 flex items-center justify-center shadow-md flex-shrink-0",
-                      isMobile ? "w-6 h-6" : "w-8 h-8"
-                    )}>
-                      <FileText className={cn(
-                        "text-white",
-                        isMobile ? "w-3 h-3" : "w-5 h-5"
-                      )} />
-                    </div>
-                    <span className={isMobile ? "text-sm" : ""}>Contrat de location saisonnière</span>
+                    <FileText className={cn(
+                      "text-gray-900",
+                      isMobile ? "w-5 h-5" : "w-6 h-6"
+                    )} />
+                    <span>Contrat de location saisonnière</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -990,107 +1051,93 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       transition={{ duration: 0.3 }}
                       className="space-y-3 sm:space-y-4"
                     >
-                      <div className="text-center">
+                      <div className="text-center mb-4">
                         <h3 className={cn(
-                          "font-bold text-gray-900 mb-1",
-                          isMobile ? "text-lg" : "text-xl"
+                          "font-semibold text-gray-900",
+                          isMobile ? "text-base" : "text-lg"
                         )}>Votre signature</h3>
                         <p className={cn(
-                          "text-gray-600",
+                          "text-gray-600 mt-1",
                           isMobile ? "text-xs" : "text-sm"
                         )}>Dessinez votre signature ci-dessous</p>
                       </div>
 
-                          <div className="relative w-full max-w-full overflow-hidden">
+                      <div className="relative w-full">
                         <div className={cn(
-                          "relative border-2 border-dashed border-brand-teal/40 rounded-lg bg-gradient-to-br from-white via-white to-cyan-50/30 shadow-md hover:shadow-lg transition-all duration-200",
-                          isMobile ? "p-2" : "p-4"
+                          "relative border border-gray-300 rounded-lg bg-white transition-all duration-200 overflow-hidden",
+                          signature ? 'border-gray-900' : 'hover:border-gray-400'
                         )}>
-
-                          {/* ✨ Canvas container ultra-moderne avec animations - Responsive */}
-                          <div className="relative group w-full">
-                            {/* Glow effect animé */}
-                            <div className={`
-                              absolute inset-0 rounded-3xl transition-all duration-500
-                              ${signature ? 'bg-gradient-to-r from-green-400/20 via-emerald-400/20 to-teal-400/20 animate-pulse' : 'bg-gradient-to-r from-cyan-400/20 via-blue-400/20 to-indigo-400/20 group-hover:from-cyan-500/30 group-hover:via-blue-500/30 group-hover:to-indigo-500/30'}
-                              blur-xl
-                            `} />
-                            
-                            <div className={cn(
-                              "relative bg-gradient-to-br from-white via-white to-cyan-50/30 rounded-xl border-2 transition-all duration-500 shadow-xl overflow-hidden",
-                              signature 
-                                ? 'border-green-400 shadow-green-200/50 ring-4 ring-green-100' 
-                                : 'border-brand-teal/40 group-hover:border-brand-teal/60 group-hover:shadow-brand-teal/20 group-hover:ring-4 group-hover:ring-brand-teal/20',
-                              isMobile && "rounded-lg"
-                            )}>
-                              {/* Badge "Signature complétée" */}
-                              {signature && !isDrawing && (
-                                <motion.div
-                                  initial={{ opacity: 0, scale: 0 }}
-                                  animate={{ opacity: 1, scale: 1 }}
-                                  className={cn(
-                                    "absolute z-10 bg-green-500 text-white rounded-full font-semibold shadow-md flex items-center gap-1",
-                                    isMobile ? "-top-1 right-1 px-2 py-0.5 text-[10px]" : "-top-2 right-2 px-3 py-1 text-xs"
-                                  )}
-                                >
-                                  <CheckCircle className={isMobile ? "w-2.5 h-2.5" : "w-3 h-3"} />
-                                  Validée
-                                </motion.div>
+                          {/* Badge "Signature complétée" */}
+                          {signature && !isDrawing && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              className={cn(
+                                "absolute z-10 bg-gray-900 text-white rounded-full font-medium shadow-sm flex items-center gap-1",
+                                isMobile ? "-top-2 right-2 px-2 py-1 text-[10px]" : "-top-2 right-2 px-3 py-1 text-xs"
                               )}
-                              
-                              <canvas
-                                ref={canvasCallbackRef}
-                                width={600}
-                                height={250}
-                                className={cn(
-                                  "w-full touch-none select-none rounded-lg transition-all duration-200",
-                                  isDrawing ? 'cursor-grabbing' : 'cursor-crosshair',
-                                  isMobile && "touch-pan-none rounded-md"
-                                )}
-                                style={{ 
-                                  touchAction: 'none',
-                                  WebkitTouchCallout: 'none',
-                                  WebkitUserSelect: 'none',
-                                  userSelect: 'none',
-                                  display: 'block',
-                                  height: isMobile ? '120px' : '200px',
-                                  maxHeight: isMobile ? '120px' : '200px',
-                                  width: '100%',
-                                  maxWidth: '100%',
-                                  backgroundColor: 'white',
-                                  border: '1px solid #e5e7eb'
-                                }}
-                                onContextMenu={(e) => e.preventDefault()}
-                                onMouseDown={startDrawing}
-                                onMouseMove={draw}
-                                onMouseUp={stopDrawing}
-                                onMouseLeave={stopDrawing}
-                                onTouchStart={startDrawing}
-                                onTouchMove={draw}
-                                onTouchEnd={stopDrawing}
-                              />
-                              
-                              {/* Guide line simple */}
-                              {!signature && (
-                                <div className="absolute bottom-1/3 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-brand-teal/30 to-transparent pointer-events-none"></div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Feedback simple */}
-                          {signature ? (
-                            <div className="mt-3 text-center">
-                              <div className="inline-flex items-center gap-2 text-sm text-green-700 bg-green-50 px-3 py-1 rounded-full">
-                                <CheckCircle className="w-4 h-4" />
-                                Signature prête
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="mt-3 text-center text-xs text-gray-500">
-                              💡 Signez naturellement avec votre souris, doigt ou stylet
+                            >
+                              <CheckCircle className={isMobile ? "w-3 h-3" : "w-3.5 h-3.5"} />
+                              Signée
+                            </motion.div>
+                          )}
+                          
+                          {/* Texte d'aide - au-dessus du canvas mais sans bloquer les clics */}
+                          {!signature && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                              <p className="text-gray-400 text-sm">Cliquez et dessinez votre signature</p>
                             </div>
                           )}
+                          
+                          {/* Ligne de guide */}
+                          {!signature && (
+                            <div className="absolute bottom-1/3 left-4 right-4 h-[1px] bg-gray-200 pointer-events-none z-10"></div>
+                          )}
+                          
+                          <canvas
+                            ref={canvasCallbackRef}
+                            width={600}
+                            height={250}
+                            className={cn(
+                              "w-full touch-none select-none rounded transition-all duration-200 relative z-0",
+                              isDrawing ? 'cursor-grabbing' : 'cursor-crosshair'
+                            )}
+                            style={{ 
+                              touchAction: 'none',
+                              WebkitTouchCallout: 'none',
+                              WebkitUserSelect: 'none',
+                              userSelect: 'none',
+                              display: 'block',
+                              height: isMobile ? '120px' : '180px',
+                              maxHeight: isMobile ? '120px' : '180px',
+                              width: '100%',
+                              maxWidth: '100%',
+                              backgroundColor: 'white'
+                            }}
+                            onContextMenu={(e) => e.preventDefault()}
+                            onMouseDown={startDrawing}
+                            onMouseMove={draw}
+                            onMouseUp={stopDrawing}
+                            onMouseLeave={stopDrawing}
+                            onTouchStart={startDrawing}
+                            onTouchMove={draw}
+                            onTouchEnd={stopDrawing}
+                          />
                         </div>
+
+                        {/* Feedback simple */}
+                        {signature ? (
+                          <div className="mt-3 text-center">
+                            <div className="inline-flex items-center gap-2 text-sm text-gray-700">
+                              <CheckCircle className="w-4 h-4 text-gray-900" />
+                              Signature prête
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-3 text-center text-xs text-gray-500">
+                            Signez avec votre souris, doigt ou stylet
+                          </div>
+                        )}
                       </div>
 
                       {/* ✅ SIMPLIFIÉ : Un seul bouton principal */}
@@ -1124,9 +1171,20 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                             "flex-1 rounded-xl font-semibold transition-all duration-200",
                             isMobile ? "w-full py-3 text-sm" : "py-4 text-base",
                             signature && isAgreed && !isSubmitting
-                              ? 'bg-brand-teal hover:bg-brand-teal/90 text-white shadow-lg hover:shadow-xl'
+                              ? 'text-white shadow-lg hover:shadow-xl'
                               : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                           )}
+                          style={signature && isAgreed && !isSubmitting ? { backgroundColor: '#55BA9F' } : undefined}
+                          onMouseEnter={(e) => {
+                            if (signature && isAgreed && !isSubmitting) {
+                              e.currentTarget.style.backgroundColor = '#4AA890';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (signature && isAgreed && !isSubmitting) {
+                              e.currentTarget.style.backgroundColor = '#55BA9F';
+                            }
+                          }}
                         >
                           {isSubmitting ? (
                             <>
@@ -1142,7 +1200,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                                 "mr-2",
                                 isMobile ? "w-4 h-4" : "w-5 h-5"
                               )} />
-                              Signer le contrat
+                              Suivant
                             </>
                           )}
                         </Button>
@@ -1291,6 +1349,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           )}
         </ErrorBoundary>
       </div>
+      
+      {/* Footer */}
+      <footer className="px-6 py-4 border-t border-gray-200 bg-[#FDFDF9]">
+        <p className="text-sm text-gray-600 text-center">
+          © 2025 Checky — Tous droits réservés · Mentions légales · Politique de confidentialité · CGV
+        </p>
+      </footer>
     </div>
+  </div>
   );
 };
