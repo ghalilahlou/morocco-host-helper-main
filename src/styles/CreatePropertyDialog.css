@@ -1,0 +1,423 @@
+/* CreatePropertyDialog Styles - Based on Figma Design */
+
+/* Global Font Settings for the Dialog */
+.create-property-dialog,
+.create-property-dialog * {
+  font-family: 'Fira Sans Condensed', 'Inter', sans-serif;
+}
+
+/* Form elements use Inter */
+.create-property-dialog input,
+.create-property-dialog select,
+.create-property-dialog textarea,
+.create-property-dialog button,
+.create-property-dialog label {
+  font-family: 'Inter', sans-serif;
+}
+
+/* Modal Container - Rounded corners all sides */
+.create-property-dialog {
+  background: #FDFDF9;
+  border-radius: 24px !important;
+  max-width: 889px;
+  box-shadow: 0px 8px 30px rgba(0, 0, 0, 0.15);
+  overflow: hidden !important;
+}
+
+/* Scrollable content container */
+.property-dialog-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(85, 186, 159, 0.5) rgba(0, 0, 0, 0.05);
+}
+
+/* Custom Scrollbar for Webkit browsers (Chrome, Safari, Edge) */
+.property-dialog-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+
+.property-dialog-scroll::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 10px;
+  margin: 12px 4px;
+}
+
+.property-dialog-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(85, 186, 159, 0.7) 0%, rgba(85, 186, 159, 0.5) 100%);
+  border-radius: 10px;
+  border: 2px solid rgba(0, 0, 0, 0.03);
+}
+
+.property-dialog-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(85, 186, 159, 0.9) 0%, rgba(85, 186, 159, 0.7) 100%);
+}
+
+/* Overlay */
+.create-property-dialog-overlay {
+  background: rgba(4, 4, 4, 0.67);
+}
+
+/* Title */
+.create-property-dialog .dialog-title {
+  font-family: 'Fira Sans Condensed', sans-serif;
+  font-weight: 400;
+  font-size: 24px;
+  line-height: 36px;
+  color: #040404;
+}
+
+/* Tabs Container */
+.property-tabs {
+  background: #FFFFFF;
+  box-shadow: inset 0px -1px 0px #EBEBEB;
+}
+
+.property-tabs-list {
+  background: #FFFFFF;
+  gap: 24px;
+  padding: 0;
+  height: auto;
+}
+
+.property-tabs-trigger {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 18px;
+  color: #717171;
+  background: transparent;
+  border: none;
+  padding-bottom: 12px;
+  position: relative;
+  border-radius: 0;
+}
+
+.property-tabs-trigger[data-state="active"] {
+  color: #222222;
+}
+
+.property-tabs-trigger[data-state="active"]::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #222222;
+}
+
+/* Form Card - Main container for each section */
+.property-form-card {
+  background: #FFFFFF;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  border: 1px solid #E5E7EB;
+  padding: 0;
+  margin-bottom: 16px;
+}
+
+.property-form-card:last-child {
+  margin-bottom: 0;
+}
+
+/* Spacing inside cards */
+.create-property-dialog .space-y-4 > * + * {
+  margin-top: 16px;
+}
+
+/* Form field spacing */
+.create-property-dialog .grid {
+  gap: 16px;
+}
+
+.create-property-dialog .grid-cols-2 {
+  gap: 24px;
+}
+
+.create-property-dialog .grid-cols-3 {
+  gap: 16px;
+}
+
+/* Section Title */
+.property-section-title {
+  font-family: 'Fira Sans Condensed', sans-serif;
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 36px;
+  color: #040404;
+}
+
+/* Section Description */
+.property-section-description {
+  font-family: 'Fira Sans Condensed', sans-serif;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 36px;
+  color: #4B5563;
+}
+
+/* Form Labels */
+.property-form-label {
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 14px;
+  color: #040404;
+  margin-bottom: 6px;
+  display: block;
+}
+
+/* Form Inputs - Rounded corners like Figma */
+.property-form-input,
+.create-property-dialog input,
+.create-property-dialog textarea {
+  background: #FFFFFF;
+  border: 1px solid #D1D5DB;
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 20px;
+  color: #111827;
+  height: 40px;
+  padding: 8px 14px;
+  width: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.create-property-dialog textarea {
+  height: auto;
+  min-height: 80px;
+  resize: vertical;
+}
+
+.property-form-input::placeholder,
+.create-property-dialog input::placeholder,
+.create-property-dialog textarea::placeholder {
+  color: #9CA3AF;
+}
+
+.property-form-input:focus,
+.create-property-dialog input:focus,
+.create-property-dialog textarea:focus {
+  border-color: rgba(85, 186, 159, 0.76);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(85, 186, 159, 0.15);
+}
+
+/* Select Trigger - Rounded corners like inputs */
+.property-form-select,
+.create-property-dialog [data-radix-select-trigger] {
+  background: #FFFFFF;
+  border: 1px solid #D1D5DB;
+  border-radius: 8px;
+  height: 40px;
+  font-size: 14px;
+  padding: 8px 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.create-property-dialog [data-radix-select-trigger]:focus {
+  border-color: rgba(85, 186, 159, 0.76);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(85, 186, 159, 0.15);
+}
+
+/* Upload Zone - Dark Theme with rounded corners */
+.property-upload-zone {
+  background: #2D2F39;
+  border-radius: 16px;
+  padding: 20px;
+  margin-top: 8px;
+}
+
+.property-upload-zone-inner {
+  background: #1E1E1E;
+  border: 2px dashed #5A5B62;
+  border-radius: 12px;
+  padding: 24px 32px;
+}
+
+.property-upload-zone-text {
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  color: #B0B2BC;
+}
+
+.property-upload-zone-subtext {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-size: 12px;
+  color: rgba(176, 178, 188, 0.5);
+}
+
+.property-upload-button {
+  background: #2D2F39;
+  border: 1px solid #FFFFFF;
+  border-radius: 12px;
+  color: #FFFFFF;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+  padding: 8px 16px;
+}
+
+.property-upload-button:hover {
+  background: #3D3F49;
+}
+
+/* House Rules */
+.house-rule-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 36px;
+  color: #000000;
+}
+
+.house-rule-remove {
+  width: 12px;
+  height: 12px;
+  color: #222222;
+  cursor: pointer;
+}
+
+/* Signature Zone */
+.signature-zone {
+  background: #F3F3F3;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+}
+
+.signature-canvas-container {
+  background: #FFFFFF;
+  border: 1px solid #D9D9D9;
+  border-radius: 8px;
+}
+
+/* Action Buttons - Rounded corners like Figma */
+.property-btn-primary {
+  background: rgba(85, 186, 159, 0.76);
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 24px;
+  color: #040404;
+  padding: 10px 28px;
+  box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.1);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.property-btn-primary:hover {
+  background: rgba(85, 186, 159, 0.9);
+  transform: translateY(-1px);
+  box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+.property-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.property-btn-secondary {
+  background: #FFFFFF;
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 24px;
+  color: #040404;
+  padding: 10px 28px;
+  box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #E5E7EB;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.property-btn-secondary:hover {
+  background: #F9FAFB;
+  border-color: #D1D5DB;
+}
+
+/* Add Button (Green) */
+.property-btn-add {
+  background: rgba(85, 186, 159, 0.76);
+  border-radius: 6px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 20px;
+  color: #040404;
+  padding: 0 11px;
+  height: 19px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Document Preview Items */
+.document-preview-item {
+  background: #E5E7EB;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.document-preview-title {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 36px;
+  color: #000000;
+}
+
+.document-preview-description {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-size: 10px;
+  line-height: 36px;
+  color: #4B5563;
+}
+
+.document-preview-action {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-size: 12px;
+  color: #040404;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .create-property-dialog {
+    max-width: 95vw;
+    margin: 10px;
+  }
+  
+  .property-tabs-list {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  
+  .property-tabs-trigger {
+    font-size: 12px;
+  }
+  
+  .grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+  
+  .grid-cols-3 {
+    grid-template-columns: 1fr;
+  }
+}

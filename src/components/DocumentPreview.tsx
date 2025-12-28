@@ -681,69 +681,68 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
 
   // Vue par défaut : liste des documents
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <FileText className="w-5 h-5" />
-          Documents disponibles
-        </CardTitle>
-        <CardDescription>
-          Prévisualisez les documents qui seront générés pour vos réservations
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-3">
-          {/* Fiche de Police */}
-          <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/5">
-            <div className="flex items-center gap-3">
-              <FileText className="w-5 h-5 text-primary" />
-              <div>
-                <h4 className="font-medium">Fiche de Police</h4>
-                <p className="text-sm text-muted-foreground">
-                  Déclaration d'arrivée pour voyageurs étrangers
-                </p>
-              </div>
+    <div className="space-y-4">
+      <div className="space-y-3">
+        {/* Fiche de Police */}
+        <div 
+          className="flex items-center justify-between p-4 rounded-lg"
+          style={{ background: '#E5E7EB' }}
+        >
+          <div className="flex items-center gap-3">
+            <FileText className="w-5 h-5 text-[#040404]" />
+            <div>
+              <h4 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: '12px', color: '#000000' }}>
+                Fiche de police
+              </h4>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: '10px', color: '#4B5563' }}>
+                Déclaration d'arrivée pour voyageurs étrangers
+              </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedDocument('police')}
-              className="gap-2"
-            >
-              <Eye className="w-4 h-4" />
-              Voir
-            </Button>
           </div>
-
-          {/* Contrat */}
-          <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/5">
-            <div className="flex items-center gap-3">
-              <FileText className="w-5 h-5 text-primary" />
-              <div>
-                <h4 className="font-medium">Contrat de Location</h4>
-                <p className="text-sm text-muted-foreground">
-                  Contrat de location courte durée
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedDocument('contract')}
-              className="gap-2"
-            >
-              <Eye className="w-4 h-4" />
-              Voir
-            </Button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedDocument('police')}
+            className="flex items-center gap-2 text-sm"
+            style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: '12px', color: '#040404' }}
+          >
+            <Eye className="w-4 h-4" />
+            Voir l'aperçu
+          </button>
         </div>
 
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-800">
-            💡 Ces documents sont des modèles qui seront personnalisés automatiquement avec les informations de chaque réservation.
-          </p>
+        {/* Contrat de location */}
+        <div 
+          className="flex items-center justify-between p-4 rounded-lg"
+          style={{ background: '#E5E7EB' }}
+        >
+          <div className="flex items-center gap-3">
+            <FileText className="w-5 h-5 text-[#040404]" />
+            <div>
+              <h4 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: '12px', color: '#000000' }}>
+                Contrat de location
+              </h4>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: '10px', color: '#4B5563' }}>
+                Contrat de location courte durée personnalisé
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedDocument('contract')}
+            className="flex items-center gap-2 text-sm"
+            style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400, fontSize: '12px', color: '#040404' }}
+          >
+            <Eye className="w-4 h-4" />
+            Voir l'aperçu
+          </button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+
+      <div className="p-3 rounded-lg" style={{ background: 'rgba(85, 186, 159, 0.1)', border: '1px solid rgba(85, 186, 159, 0.3)' }}>
+        <p style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
+          💡 Ces documents sont des modèles qui seront personnalisés automatiquement avec les informations de chaque réservation.
+        </p>
+      </div>
+    </div>
   );
 };

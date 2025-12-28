@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -8,12 +8,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Minus, Pen, Upload, Image as ImageIcon, X } from 'lucide-react';
+import { Plus, Minus, Pen, Upload, Image as ImageIcon, X, Home, FileText, Eye } from 'lucide-react';
 import { Property } from '@/types/booking';
 import { useProperties } from '@/hooks/useProperties';
 import { useAuth } from '@/hooks/useAuth';
 import { usePropertyPhotoUpload } from '@/hooks/usePropertyPhotoUpload';
 import { DocumentPreview } from './DocumentPreview';
+import '@/styles/CreatePropertyDialog.css';
 interface CreatePropertyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -382,29 +383,82 @@ export const CreatePropertyDialog = ({
     label: 'Autre'
   }];
   return <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-            <DialogTitle>
+      <DialogContent 
+        className="create-property-dialog sm:max-w-[889px] p-0" 
+        style={{ 
+          background: '#FDFDF9', 
+          borderRadius: '24px', 
+          overflow: 'hidden',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <DialogHeader className="px-6 pt-6 pb-0 flex-shrink-0">
+            <DialogTitle className="dialog-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '24px', color: '#040404' }}>
               {property ? 'Modifier le bien' : 'Ajouter un bien'}
             </DialogTitle>
         </DialogHeader>
         
+        {/* Scrollable content area with custom scrollbar */}
+        <div 
+          className="property-dialog-scroll flex-1 overflow-y-auto px-6 pb-6"
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgba(85, 186, 159, 0.5) transparent'
+          }}
+        >
         <form onSubmit={handleSubmit(onSubmit)}>
           <Tabs value={currentTab} onValueChange={setCurrentTab} className="w-full">
-            <div className="w-full overflow-x-auto">
-              <TabsList className="inline-flex w-max min-w-full sm:grid sm:w-full sm:grid-cols-4">
-                <TabsTrigger value="basic" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-4">1. Infos de base</TabsTrigger>
-                <TabsTrigger value="landlord" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-4">2. Infos Loueur</TabsTrigger>
-                <TabsTrigger value="contract" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-4">3. Configuration</TabsTrigger>
-                <TabsTrigger value="preview" className="flex-shrink-0 text-xs sm:text-sm px-2 sm:px-4">4. Aperçu</TabsTrigger>
+            <div className="property-tabs w-full mt-4" style={{ background: '#FFFFFF', boxShadow: 'inset 0px -1px 0px #EBEBEB' }}>
+              <TabsList className="property-tabs-list inline-flex w-max min-w-full sm:grid sm:w-full sm:grid-cols-4 gap-6 bg-transparent h-auto p-0">
+                <TabsTrigger 
+                  value="basic" 
+                  className="property-tabs-trigger flex-shrink-0 text-sm px-0 py-3 data-[state=active]:text-[#222222] data-[state=inactive]:text-[#717171] bg-transparent border-0 rounded-none relative data-[state=active]:shadow-none"
+                  style={{ fontFamily: "'Inter', sans-serif" }}
+                >
+                  1. Infos de base
+                  <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#222222] transition-opacity" style={{ opacity: currentTab === 'basic' ? 1 : 0 }} />
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="landlord" 
+                  className="property-tabs-trigger flex-shrink-0 text-sm px-0 py-3 data-[state=active]:text-[#222222] data-[state=inactive]:text-[#717171] bg-transparent border-0 rounded-none relative data-[state=active]:shadow-none"
+                  style={{ fontFamily: "'Inter', sans-serif" }}
+                >
+                  2. Infos Loueur
+                  <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#222222] transition-opacity" style={{ opacity: currentTab === 'landlord' ? 1 : 0 }} />
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="contract" 
+                  className="property-tabs-trigger flex-shrink-0 text-sm px-0 py-3 data-[state=active]:text-[#222222] data-[state=inactive]:text-[#717171] bg-transparent border-0 rounded-none relative data-[state=active]:shadow-none"
+                  style={{ fontFamily: "'Inter', sans-serif" }}
+                >
+                  3. Configuration
+                  <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#222222] transition-opacity" style={{ opacity: currentTab === 'contract' ? 1 : 0 }} />
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="preview" 
+                  className="property-tabs-trigger flex-shrink-0 text-sm px-0 py-3 data-[state=active]:text-[#222222] data-[state=inactive]:text-[#717171] bg-transparent border-0 rounded-none relative data-[state=active]:shadow-none"
+                  style={{ fontFamily: "'Inter', sans-serif" }}
+                >
+                  4. Aperçu
+                  <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#222222] transition-opacity" style={{ opacity: currentTab === 'preview' ? 1 : 0 }} />
+                </TabsTrigger>
               </TabsList>
             </div>
             
             <TabsContent value="basic" className="space-y-4 mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Propriété Information</CardTitle>
-                  <CardDescription>Détails de base sur votre propriété — ils doivent correspondre à ceux affichés sur votre page Airbnb.</CardDescription>
+              <Card className="property-form-card border-0" style={{ background: '#FFFFFF', boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)', borderRadius: '12px' }}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Home className="w-5 h-5 text-[#040404]" />
+                    <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
+                      Le logement
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
+                    Les informations renseignées ici doivent correspondre à celles affichées sur votre page Airbnb si ce bien est listé sur cette plateforme.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -484,14 +538,23 @@ export const CreatePropertyDialog = ({
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Photo de la propriété (Optionnel)</Label>
+                    <Label className="property-form-label" style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: '12px', color: '#040404' }}>
+                      Photo du logement (optionnelle)
+                    </Label>
                     {!propertyPhoto ? (
-                      <div className="border-2 border-dashed border-muted-foreground/20 rounded-lg p-6 text-center bg-muted/5">
-                        <ImageIcon className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-                        <p className="text-sm text-muted-foreground mb-3">
-                          Ajoutez une photo de votre propriété pour la rendre plus attrayante
-                        </p>
-                        <div className="relative">
+                      <div className="property-upload-zone rounded-xl p-4" style={{ background: '#2D2F39' }}>
+                        <div className="property-upload-zone-inner flex flex-col items-center justify-center gap-3 p-6 rounded-md" style={{ background: '#1E1E1E', border: '1px dashed #5A5B62' }}>
+                          <Upload className="w-6 h-6 text-[#B0B2BC]" />
+                          <div className="text-center">
+                            <p className="property-upload-zone-text text-sm font-medium" style={{ color: '#B0B2BC' }}>
+                              Glissez-déposez vos documents
+                            </p>
+                            <p className="property-upload-zone-subtext text-xs mt-1" style={{ color: 'rgba(176, 178, 188, 0.5)' }}>
+                              Carte d'identité ou passeport en format PDF, PNG, JPG (5MB max par fichier)
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex justify-center mt-4">
                           <input
                             type="file"
                             accept="image/*"
@@ -500,20 +563,16 @@ export const CreatePropertyDialog = ({
                             id="property-photo-upload"
                             disabled={uploading}
                           />
-                          <Button 
+                          <button
                             type="button"
                             onClick={() => document.getElementById('property-photo-upload')?.click()}
-                            variant="outline"
                             disabled={uploading}
-                            className="gap-2"
+                            className="property-upload-button px-4 py-2 rounded-xl text-sm font-medium"
+                            style={{ background: '#2D2F39', border: '1px solid #FFFFFF', color: '#FFFFFF' }}
                           >
-                            <Upload className="w-4 h-4" />
-                            {uploading ? 'Upload en cours...' : 'Choisir une photo'}
-                          </Button>
+                            {uploading ? 'Upload en cours...' : 'Importer'}
+                          </button>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-2">
-                          JPG, PNG ou GIF. Taille max: 5MB
-                        </p>
                       </div>
                     ) : (
                       <div className="border rounded-lg p-4 bg-muted/5">
@@ -566,10 +625,19 @@ export const CreatePropertyDialog = ({
             </TabsContent>
 
             <TabsContent value="landlord" className="space-y-4 mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Informations du loueur / de l’entreprise</CardTitle>
-                  <CardDescription>Informations qui apparaîtront comme « Le Loueur » dans les contrats.</CardDescription>
+              <Card className="property-form-card border-0" style={{ background: '#FFFFFF', boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)', borderRadius: '12px' }}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-[#040404]" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M10 10a4 4 0 100-8 4 4 0 000 8zM10 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/>
+                    </svg>
+                    <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
+                      Le loueur / l'entreprise
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
+                    Informations qui apparaîtront comme  Le Loueur  dans les contrats.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -637,21 +705,35 @@ export const CreatePropertyDialog = ({
             </TabsContent>
 
             <TabsContent value="contract" className="space-y-4 mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Paramètres du contrat</CardTitle>
-                  <CardDescription>Personnalisez votre modèle de contrat de location.</CardDescription>
+              <Card className="property-form-card border-0" style={{ background: '#FFFFFF', boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)', borderRadius: '12px' }}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-[#040404]" />
+                    <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
+                      Paramètres du contrat
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
+                    Personnalisez votre modèle de contrat de location.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <Label>Règlement intérieur</Label>
-                      <Button type="button" variant="outline" size="sm" onClick={addHouseRule} className="gap-1">
+                      <Label className="property-form-label" style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: '12px', color: '#040404' }}>
+                        Règlement intérieur
+                      </Label>
+                      <button 
+                        type="button" 
+                        onClick={addHouseRule} 
+                        className="property-btn-add flex items-center gap-1 px-3 py-1 rounded-md text-xs font-medium"
+                        style={{ background: 'rgba(85, 186, 159, 0.76)', color: '#040404' }}
+                      >
                         <Plus className="h-3 w-3" />
-                        Ajouter une règle
-                      </Button>
+                        Ajouter
+                      </button>
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-xs" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", color: '#4B5563' }}>
                       Personnalisez les règles qui apparaîtront dans vos contrats de location.
                     </div>
                     
@@ -667,13 +749,17 @@ export const CreatePropertyDialog = ({
                 </CardContent>
               </Card>
               
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Pen className="w-5 h-5" />
-                    Signature du Propriétaire
-                  </CardTitle>
-                  <CardDescription>Ajoutez votre signature qui apparaîtra dans les contrats</CardDescription>
+              <Card className="property-form-card border-0" style={{ background: '#F3F3F3', boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)', borderRadius: '12px' }}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Pen className="w-5 h-5 text-[#040404]" />
+                    <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
+                      Signature / cachet
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
+                    Ajoutez votre signature qui apparaîtra dans les contrats
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   {!isSignatureModeActive && !landlordSignature && (
@@ -796,23 +882,43 @@ export const CreatePropertyDialog = ({
             </TabsContent>
 
             <TabsContent value="preview" className="space-y-4 mt-6">
-              <DocumentPreview 
-                property={property || {} as Property} 
-                formData={{
-                  ...watch(),
-                  house_rules: houseRules,
-                  landlord_signature: landlordSignature || undefined,
-                }} 
-              />
+              <Card className="property-form-card border-0" style={{ background: '#FFFFFF', boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)', borderRadius: '12px' }}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <Eye className="w-5 h-5 text-[#040404]" />
+                    <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
+                      Documents disponibles
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
+                    Aperçu des documents qui seront générés pour cette propriété.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <DocumentPreview 
+                    property={property || {} as Property} 
+                    formData={{
+                      ...watch(),
+                      house_rules: houseRules,
+                      landlord_signature: landlordSignature || undefined,
+                    }} 
+                  />
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
 
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <button 
+              type="button" 
+              onClick={() => onOpenChange(false)}
+              className="property-btn-secondary px-6 py-2 rounded-md text-base font-medium"
+              style={{ background: '#FFFFFF', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
+            >
               Annuler
-            </Button>
+            </button>
             {currentTab === 'basic' && (
-              <Button 
+              <button 
                 type="button" 
                 onClick={() => {
                   if (validateBasicTab()) {
@@ -822,20 +928,23 @@ export const CreatePropertyDialog = ({
                   }
                 }}
                 disabled={!validateBasicTab()}
+                className="property-btn-primary px-6 py-2 rounded-md text-base font-medium disabled:opacity-60"
+                style={{ background: 'rgba(85, 186, 159, 0.76)', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
               >
                 Suivant
-              </Button>
+              </button>
             )}
             {currentTab === 'landlord' && (
               <>
-                <Button 
+                <button 
                   type="button" 
                   onClick={() => setCurrentTab('basic')}
-                  variant="outline"
+                  className="property-btn-secondary px-6 py-2 rounded-md text-base font-medium"
+                  style={{ background: '#FFFFFF', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
                   Précédent
-                </Button>
-                <Button 
+                </button>
+                <button 
                   type="button" 
                   onClick={() => {
                     if (validateLandlordTab()) {
@@ -845,21 +954,24 @@ export const CreatePropertyDialog = ({
                     }
                   }}
                   disabled={!validateLandlordTab()}
+                  className="property-btn-primary px-6 py-2 rounded-md text-base font-medium disabled:opacity-60"
+                  style={{ background: 'rgba(85, 186, 159, 0.76)', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
                   Suivant
-                </Button>
+                </button>
               </>
             )}
             {currentTab === 'contract' && (
               <>
-                <Button 
+                <button 
                   type="button" 
                   onClick={() => setCurrentTab('landlord')}
-                  variant="outline"
+                  className="property-btn-secondary px-6 py-2 rounded-md text-base font-medium"
+                  style={{ background: '#FFFFFF', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
                   Précédent
-                </Button>
-                <Button 
+                </button>
+                <button 
                   type="button" 
                   onClick={() => {
                     if (validateContractTab()) {
@@ -869,34 +981,39 @@ export const CreatePropertyDialog = ({
                     }
                   }}
                   disabled={!validateContractTab()}
+                  className="property-btn-primary px-6 py-2 rounded-md text-base font-medium disabled:opacity-60"
+                  style={{ background: 'rgba(85, 186, 159, 0.76)', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
-                  Aperçu Documents
-                </Button>
+                  Suivant
+                </button>
               </>
             )}
             {currentTab === 'preview' && (
               <>
-                <Button 
+                <button 
                   type="button" 
                   onClick={() => setCurrentTab('contract')}
-                  variant="outline"
+                  className="property-btn-secondary px-6 py-2 rounded-md text-base font-medium"
+                  style={{ background: '#FFFFFF', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
                   Précédent
-                </Button>
-                <Button 
+                </button>
+                <button 
                   type="submit" 
                   disabled={isSubmitting}
                   onClick={() => {
-                    // Ensure form validation and submission
                     handleSubmit(onSubmit)();
                   }}
+                  className="property-btn-primary px-6 py-2 rounded-md text-base font-medium disabled:opacity-60"
+                  style={{ background: 'rgba(85, 186, 159, 0.76)', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
-                  {isSubmitting ? 'Enregistrement...' : property ? 'Mettre à jour' : 'Créer la propriété'}
-                </Button>
+                  {isSubmitting ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
               </>
             )}
           </div>
         </form>
+        </div>
       </DialogContent>
     </Dialog>;
 };
