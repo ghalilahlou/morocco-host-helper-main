@@ -2036,33 +2036,73 @@ export const GuestVerification = () => {
   const currentStepIndex = ['booking', 'documents', 'signature'].indexOf(currentStep);
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
-      {/* Left Sidebar - Background matching logo - Fixed */}
-      <div className="hidden md:flex w-1/3 lg:w-1/4 text-white p-8 flex-col fixed left-0 top-0 h-screen z-10 rounded-r-2xl" style={{ backgroundColor: '#1E1E1E' }}>
-        <div className="mb-8">
-          <div className="mb-3">
-            <img 
-              src="/lovable-uploads/image.png" 
-              alt="CHECKY Logo" 
-              className="h-10 w-auto object-contain max-w-[180px]"
-            />
-          </div>
-          <p className="text-sm mt-1" style={{ color: '#0BD9D0' }}>Le check-in digitalisé</p>
+    <div className="min-h-screen flex" style={{ backgroundColor: '#89D7D2' }}>
+      {/* Left Sidebar - Fixed 436px width matching Figma */}
+      <div 
+        className="hidden md:flex text-white flex-col fixed left-0 top-0 h-screen z-10" 
+        style={{ 
+          backgroundColor: '#1E1E1E',
+          width: '436px',
+          borderRadius: '0px 22px 22px 0px',
+          boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+          padding: '64px 49px'
+        }}
+      >
+        {/* Logo Section */}
+        <div className="flex items-center gap-3 mb-4">
+          <img 
+            src="/lovable-uploads/Checky simple - fond transparent.png" 
+            alt="CHECKY Logo" 
+            className="h-10 w-10 object-contain"
+            onError={(e) => {
+              // Fallback if image doesn't exist
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+          <span style={{ 
+            fontFamily: 'Archivo, sans-serif',
+            fontWeight: 700,
+            fontSize: '38px',
+            lineHeight: '36px',
+            color: '#FFFFFF'
+          }}>CHECKY</span>
         </div>
+        <p style={{ 
+          fontFamily: 'Inter, sans-serif',
+          fontWeight: 300,
+          fontSize: '14px',
+          lineHeight: '36px',
+          letterSpacing: '-0.5px',
+          color: '#0BD9D0',
+          textAlign: 'center'
+        }}>Le check-in digitalisé</p>
         
         {currentStep === 'booking' && (
           <>
-            <div className="mb-6">
-              <p className="text-gray-300 text-sm mb-4">
+            <div className="mt-8">
+              <p style={{ 
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: 800,
+                fontSize: '24px',
+                lineHeight: '36px',
+                letterSpacing: '-0.5px',
+                color: '#FFFFFF'
+              }}>
                 Votre réservation{propertyName ? ` à ${propertyName}` : ''} approche à grand pas. 
                 Réalisez votre check-in en quelques minutes.
               </p>
             </div>
             
-            
             <div className="mt-auto">
-              <p className="text-gray-300 text-sm">
-                Notre engagement : vos documents sont conservés conformément aux exigences légales, 
+              <p style={{ 
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: 800,
+                fontSize: '24px',
+                lineHeight: '36px',
+                letterSpacing: '-0.5px',
+                color: '#FFFFFF'
+              }}>
+                Notre engagement : vos documents sont conservés conforméments aux exigences légales, 
                 transmis de manière sécurisée et accessibles uniquement par les parties concernées.
               </p>
             </div>
@@ -2071,31 +2111,53 @@ export const GuestVerification = () => {
         
         {currentStep === 'documents' && (
           <>
-            <div className="mb-6">
-              {/* Bannière d'import dans la sidebar gauche */}
+            {/* Upload icon header */}
+            <div className="flex items-center gap-3 mt-8 mb-4">
+              <Upload className="w-7 h-7" style={{ color: '#F3F3F3' }} />
+              <h2 style={{
+                fontFamily: 'Fira Sans Condensed, sans-serif',
+                fontWeight: 400,
+                fontSize: '30px',
+                lineHeight: '36px',
+                color: '#FFFFFF'
+              }}>Documents d'identité</h2>
+            </div>
+
+            {/* Upload Zone - Dark Theme matching Figma */}
+            <div 
+              style={{
+                background: '#2D2F39',
+                borderRadius: '12px',
+                padding: '16px',
+                marginTop: '24px'
+              }}
+            >
               <div 
-                className="border-2 border-dashed rounded-lg p-8 cursor-pointer transition-all relative"
+                className="cursor-pointer transition-all"
                 style={{ 
-                  backgroundColor: '#1E1E1E',
-                  borderColor: '#666666'
+                  background: '#1E1E1E',
+                  border: '1px dashed #5A5B62',
+                  borderRadius: '6px',
+                  padding: '16px 24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '12px'
                 }}
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   e.currentTarget.style.borderColor = '#0BD9D0';
-                  e.currentTarget.style.backgroundColor = '#2A2A2A';
                 }}
                 onDragLeave={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  e.currentTarget.style.borderColor = '#666666';
-                  e.currentTarget.style.backgroundColor = '#1E1E1E';
+                  e.currentTarget.style.borderColor = '#5A5B62';
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  e.currentTarget.style.borderColor = '#666666';
-                  e.currentTarget.style.backgroundColor = '#1E1E1E';
+                  e.currentTarget.style.borderColor = '#5A5B62';
                   if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                     handleFileUpload(e.dataTransfer.files);
                   }
@@ -2114,38 +2176,63 @@ export const GuestVerification = () => {
                   input.click();
                 }}
               >
-                <div className="text-center mb-6">
-                  <CloudUpload className="w-16 h-16 mx-auto mb-4" style={{ color: '#0BD9D0' }} />
-                  <p className="text-white font-semibold mb-2 text-base">Glissez-déposez vos documents</p>
-                  <p className="text-white text-sm mb-1">
-                    Carte d'identité ou passeport en format PDF, PNG, JPG
-                  </p>
-                  <p className="text-white text-xs">
-                    (5MB max par fichier)
-                  </p>
-                </div>
-                <div className="flex justify-center">
-                  <Button
-                    className="bg-[#0BD9D0] hover:bg-[#0ac4bb] text-white border-0 rounded-lg px-6 py-2.5 text-sm font-medium shadow-md hover:shadow-lg transition-all"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const input = document.createElement('input');
-                      input.type = 'file';
-                      input.accept = 'image/*,.pdf';
-                      input.multiple = true;
-                      input.onchange = (e) => {
-                        const target = e.target as HTMLInputElement;
-                        if (target.files && target.files.length > 0) {
-                          handleFileUpload(target.files);
-                        }
-                      };
-                      input.click();
-                    }}
-                  >
-                    Importer
-                  </Button>
+                {/* Upload Icon */}
+                <CloudUpload className="w-6 h-6" style={{ color: '#B0B2BC' }} />
+                
+                {/* Text content */}
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 500,
+                    fontSize: '14px',
+                    lineHeight: '17px',
+                    color: '#B0B2BC',
+                    marginBottom: '4px'
+                  }}>Glissez-déposez vos documents</p>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 400,
+                    fontSize: '12px',
+                    lineHeight: '15px',
+                    color: 'rgba(176, 178, 188, 0.5)'
+                  }}>Carte d'identité ou passeport en format PDF, PNG, JPG (5MB max par fichier)</p>
                 </div>
               </div>
+
+              {/* Import button - aligned to right */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '48px' }}>
+                <button
+                  style={{
+                    background: '#7DCAB5',
+                    borderRadius: '4px',
+                    padding: '8px 16px',
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 500,
+                    fontSize: '16px',
+                    lineHeight: '19px',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*,.pdf';
+                    input.multiple = true;
+                    input.onchange = (ev) => {
+                      const target = ev.target as HTMLInputElement;
+                      if (target.files && target.files.length > 0) {
+                        handleFileUpload(target.files);
+                      }
+                    };
+                    input.click();
+                  }}
+                >
+                  Importer
+                </button>
+              </div>
+            </div>
               
               {uploadedDocuments.length > 0 && (
                 <div className="mt-6">
@@ -2200,7 +2287,6 @@ export const GuestVerification = () => {
                   </div>
                 </div>
               )}
-            </div>
             
             <div className="mt-auto">
               <p className="text-gray-300 text-sm">
@@ -2226,81 +2312,116 @@ export const GuestVerification = () => {
       </div>
       
       {/* Right Main Content */}
-      <div className="flex-1 flex flex-col md:ml-[33.333%] lg:ml-[25%]" style={{ backgroundColor: '#FDFDF9' }}>
+      <div 
+        className="flex-1 flex flex-col" 
+        style={{ 
+          backgroundColor: '#FDFDF9',
+          marginLeft: '436px',
+          borderRadius: '12px',
+          minHeight: '100vh'
+        }}
+      >
         {/* Header with Language Switcher */}
         <div className="p-6 flex justify-end">
           <LanguageSwitcher />
         </div>
         
-        {/* Progress Steps - Centered */}
-        <div className="px-6 pb-8 flex items-center justify-center gap-12">
-          <div className={`flex flex-col items-center gap-3 ${currentStep === 'booking' ? 'text-[#50ACB4]' : 'text-[#89D7D2]'}`}>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-              currentStep === 'booking' 
-                ? 'shadow-lg scale-110' 
-                : ''
-            }`} style={{
-              backgroundColor: currentStep === 'booking' ? '#50ACB4' : '#89D7D2',
-              color: 'white'
-            }}>
-              <Home className="w-6 h-6" />
+        {/* Progress Steps - Matching Figma design */}
+        <div className="px-6 pb-8 flex items-center justify-center gap-4">
+          {/* Step 1: Réservation */}
+          <div className="flex flex-col items-center">
+            <div 
+              style={{
+                width: '54px',
+                height: '51px',
+                borderRadius: '16px',
+                background: currentStep === 'booking' ? 'rgba(85, 186, 159, 0.42)' : 'rgba(71, 155, 162, 0.4)',
+                boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Home className="w-8 h-8" style={{ color: '#FFFFFF' }} />
             </div>
-            <span className={`font-semibold text-sm ${currentStep === 'documents' ? 'text-white' : ''}`}>{currentStep === 'booking' ? 'Réservation' : 'Réservation'}</span>
-            {currentStep === 'booking' && (
-              <div className="h-1 w-16 rounded-full mt-1" style={{ backgroundColor: '#50ACB4' }} />
-            )}
+            <span style={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 600,
+              fontSize: '14px',
+              lineHeight: '20px',
+              color: currentStep === 'booking' ? '#000000' : '#6B7280',
+              marginTop: '8px'
+            }}>Réservation</span>
           </div>
           
           {/* Connector Line */}
-          <div className="h-0.5 flex-1 max-w-24" style={{
-            backgroundColor: currentStep === 'booking' || currentStep === 'documents' ? '#50ACB4' : '#89D7D2'
+          <div style={{
+            width: '80px',
+            height: '3px',
+            background: '#040404',
+            marginTop: '-20px'
           }} />
           
-          <div className={`flex flex-col items-center gap-3 ${
-            currentStep === 'documents' 
-              ? 'text-[#50ACB4]' 
-              : 'text-[#89D7D2]'
-          }`}>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-              currentStep === 'documents' 
-                ? 'shadow-lg scale-110' 
-                : ''
-            }`} style={{
-              backgroundColor: currentStep === 'documents' ? '#50ACB4' : '#89D7D2',
-              color: 'white'
-            }}>
-              <FileText className="w-6 h-6" />
+          {/* Step 2: Documents d'identité */}
+          <div className="flex flex-col items-center">
+            <div 
+              style={{
+                width: '54px',
+                height: '51px',
+                borderRadius: '16px',
+                background: currentStep === 'documents' ? '#8EE7E4' : 'rgba(71, 155, 162, 0.4)',
+                boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <FileText className="w-8 h-8" style={{ color: '#FFFFFF' }} />
             </div>
-            <span className={`font-semibold text-sm ${currentStep === 'documents' ? 'text-white' : ''}`}>Documents d'identité</span>
-            {currentStep === 'documents' && (
-              <div className="h-1 w-16 rounded-full mt-1" style={{ backgroundColor: '#50ACB4' }} />
-            )}
+            <span style={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 600,
+              fontSize: '14px',
+              lineHeight: '14px',
+              color: currentStep === 'documents' ? '#000000' : '#6B7280',
+              marginTop: '8px',
+              textAlign: 'center'
+            }}>Documents<br/>d'identité</span>
           </div>
           
           {/* Connector Line */}
-          <div className="h-0.5 flex-1 max-w-24" style={{
-            backgroundColor: currentStep === 'signature' || currentStep === 'documents' ? '#50ACB4' : '#89D7D2'
+          <div style={{
+            width: '80px',
+            height: '3px',
+            background: currentStep === 'signature' ? '#040404' : '#D1D5DB',
+            marginTop: '-20px'
           }} />
           
-          <div className={`flex flex-col items-center gap-3 ${
-            currentStep === 'signature' 
-              ? 'text-[#50ACB4]' 
-              : 'text-[#89D7D2]'
-          }`}>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-              currentStep === 'signature' 
-                ? 'shadow-lg scale-110' 
-                : ''
-            }`} style={{
-              backgroundColor: currentStep === 'signature' ? '#50ACB4' : '#89D7D2',
-              color: 'white'
-            }}>
-              <PenTool className="w-6 h-6" />
+          {/* Step 3: Signature */}
+          <div className="flex flex-col items-center">
+            <div 
+              style={{
+                width: '54px',
+                height: '51px',
+                borderRadius: '16px',
+                background: currentStep === 'signature' ? '#8EE7E4' : 'rgba(71, 155, 162, 0.4)',
+                boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <PenTool className="w-8 h-8" style={{ color: '#FFFFFF' }} />
             </div>
-            <span className={`font-semibold text-sm ${currentStep === 'documents' ? 'text-white' : ''}`}>Signature</span>
-            {currentStep === 'signature' && (
-              <div className="h-1 w-16 rounded-full mt-1" style={{ backgroundColor: '#50ACB4' }} />
-            )}
+            <span style={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 600,
+              fontSize: '14px',
+              lineHeight: '28px',
+              letterSpacing: '-0.5px',
+              color: currentStep === 'signature' ? '#000000' : '#6B7280',
+              marginTop: '8px'
+            }}>Signature</span>
           </div>
         </div>
         
@@ -2542,27 +2663,25 @@ export const GuestVerification = () => {
                     exit={{ opacity: 0, x: -20 }}
                     className="max-w-4xl mx-auto"
                   >
-                    {/* Zone centrale avec informations et image pour intégrer les documents */}
-                    <div className="mb-8 text-center">
-                      <div className="flex flex-col items-center justify-center min-h-[400px]">
-                        <div className="mb-6">
-                          <FileText className="w-24 h-24 mx-auto mb-6" style={{ color: '#50ACB4' }} />
-                        </div>
-                        <h2 className="text-3xl font-bold text-gray-900 mb-4">Importez vos documents</h2>
-                        <p className="text-gray-600 text-lg mb-2 max-w-2xl">
-                          Utilisez la zone d'import à gauche pour télécharger vos pièces d'identité
-                        </p>
-                        <p className="text-gray-500 text-sm max-w-xl">
-                          Vos documents seront automatiquement analysés et les informations seront pré-remplies dans le formulaire ci-dessous
-                        </p>
-                      </div>
+                    {/* Header Section */}
+                    <div className="flex items-center gap-3 mb-4">
+                      <Users className="w-7 h-7" style={{ color: '#000000' }} />
+                      <h2 style={{
+                        fontFamily: 'Fira Sans Condensed, sans-serif',
+                        fontWeight: 400,
+                        fontSize: '30px',
+                        lineHeight: '36px',
+                        color: '#040404'
+                      }}>Informations des voyageurs</h2>
                     </div>
-
-                    <div className="flex items-center gap-2 mb-6">
-                      <Users className="w-6 h-6 text-gray-900" />
-                      <h2 className="text-3xl font-bold text-gray-900">Informations des voyageurs</h2>
-                    </div>
-                    <p className="text-gray-600 mb-6 text-sm">
+                    <p style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 400,
+                      fontSize: '12px',
+                      lineHeight: '15px',
+                      color: '#4B5563',
+                      marginBottom: '24px'
+                    }}>
                       Certains champs seront pré-remplis automatiquement lorsque vous aurez importé vos documents.
                     </p>
                     
@@ -2573,29 +2692,39 @@ export const GuestVerification = () => {
                             <div
                               key={`guest-form-${index}`}
                             >
-                              <Card className="p-8 border-2 border-gray-300 hover:border-brand-teal/40 transition-all duration-300 shadow-lg hover:shadow-2xl bg-white rounded-xl">
-                                <div className="flex items-center justify-between mb-8 pb-4 border-b-2 border-gray-200">
-                                  <h4 className="font-bold text-xl text-gray-900 flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-teal to-teal-600 flex items-center justify-center text-white font-bold text-base shadow-md">
-                                      {index + 1}
-                                    </div>
-                                    <span className="text-gray-900">
-                                      {t('guest.clients.clientNumber', { number: index + 1 })}
-                                    </span>
-                                  </h4>
+                              {/* Guest Card - Figma style */}
+                              <div style={{
+                                background: '#FFFFFF',
+                                boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                                borderRadius: '12px',
+                                padding: '24px'
+                              }}>
+                                {/* Header */}
+                                <div className="flex items-center justify-between mb-6">
+                                  <span style={{
+                                    fontFamily: 'Fira Sans Condensed, sans-serif',
+                                    fontWeight: 400,
+                                    fontSize: '16px',
+                                    lineHeight: '36px',
+                                    color: '#040404'
+                                  }}>Voyageur {index + 1}</span>
                                   {deduplicatedGuests.length > 1 && (
-                                    <Button 
+                                    <button 
                                       onClick={() => removeGuest(index)} 
-                                      variant="destructive" 
-                                      size="sm"
-                                      className="rounded-full hover:scale-110 transition-transform"
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        padding: '4px'
+                                      }}
                                     >
-                                      <X className="w-4 h-4" />
-                                    </Button>
+                                      <X className="w-5 h-5" style={{ color: '#EF4444' }} />
+                                    </button>
                                   )}
                                 </div>
                                 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Form Grid - 2 columns matching Figma */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                   <div className="relative">
                                     <input
                                       type="text"
@@ -2805,24 +2934,20 @@ export const GuestVerification = () => {
                                     </label>
                                   </div>
                                 </div>
-                              </Card>
+                              </div>
                             </div>
                           ))}
                         </div>
                     </div>
                     
-                    <div className="flex justify-between pt-8 mt-8 border-t border-gray-600">
-                      <Button 
-                        variant="outline" 
-                        onClick={handlePrevStep} 
-                        size="lg" 
-                        className="px-8 py-3"
-                      >
-                        <ArrowLeft className="w-5 h-5 mr-2" />
-                        {t('guest.navigation.previous')}
-                      </Button>
-                      
-                      <Button 
+                    {/* Footer navigation - matching Figma */}
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'flex-end', 
+                      paddingTop: '32px', 
+                      marginTop: '32px' 
+                    }}>
+                      <button
                         onClick={(e) => {
                           if (isSubmittingRef.current || isProcessingRef.current || isLoading || navigationInProgressRef.current) {
                             e.preventDefault();
@@ -2835,15 +2960,27 @@ export const GuestVerification = () => {
                           handleSubmit();
                         }}
                         disabled={isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current}
-                        size="lg"
-                        className="px-8 py-3 text-white"
-                        style={{ backgroundColor: '#55BA9F' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#4AA890'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#55BA9F'}
+                        style={{
+                          width: '104px',
+                          height: '44px',
+                          background: 'rgba(85, 186, 159, 0.76)',
+                          boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                          borderRadius: '6px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: 500,
+                          fontSize: '16px',
+                          lineHeight: '28px',
+                          color: '#040404',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '10px'
+                        }}
                       >
-                        <Sparkles className="w-5 h-5 mr-2" />
                         Suivant
-                      </Button>
+                      </button>
                     </div>
                   </motion.div>
                 )}
@@ -2883,10 +3020,21 @@ export const GuestVerification = () => {
                 )}
         </div>
         
-        {/* Footer */}
-        <footer className="px-6 py-4 border-t border-gray-200 bg-[#FDFDF9]">
-          <p className="text-sm text-gray-600 text-center">
-            © 2025 Checky — Tous droits réservés · Mentions légales · Politique de confidentialité · CGV
+        {/* Footer - Matching Figma */}
+        <footer style={{
+          padding: '16px 24px',
+          backgroundColor: '#FDFDF9',
+          marginTop: 'auto'
+        }}>
+          <p style={{
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 400,
+            fontSize: '12px',
+            lineHeight: '15px',
+            color: '#000000',
+            textAlign: 'center'
+          }}>
+            © 2025 Checky — Tous droits réservés, Mentions légales • Politique de confidentialité • CGV
           </p>
         </footer>
       </div>

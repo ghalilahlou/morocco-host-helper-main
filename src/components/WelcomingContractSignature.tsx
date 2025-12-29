@@ -359,6 +359,9 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   const [isDrawing, setIsDrawing] = useState(false);
   const [canvasInitialized, setCanvasInitialized] = useState(false);
   const [signedContractUrl, setSignedContractUrl] = useState<string | null>(null);
+  
+  // ✅ CORRIGÉ : Déclaration manquante de canvasRef
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // ✅ AMÉLIORÉ : Configuration du canvas qui s'initialise dès le montage
   const canvasCallbackRef = useCallback((canvas: HTMLCanvasElement | null) => {
@@ -369,17 +372,17 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
       
-      // Dimensions logiques
-      const logicalWidth = 600;
-      const logicalHeight = 250;
+      // Dimensions logiques - Figma design (565x172)
+      const logicalWidth = 565;
+      const logicalHeight = 172;
       
       // Dimensions réelles avec DPR
       canvas.width = logicalWidth * dpr;
       canvas.height = logicalHeight * dpr;
       
       // Style CSS pour l'affichage
-      canvas.style.width = `${logicalWidth}px`;
-      canvas.style.height = `${logicalHeight}px`;
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
       
       // ✅ CORRIGÉ : Utiliser willReadFrequently dans getContext
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -837,70 +840,258 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
   };
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
-      {/* Left Sidebar - Background matching logo - Fixed */}
-      <div className="hidden md:flex w-1/3 lg:w-1/4 text-white p-8 flex-col fixed left-0 top-0 h-screen z-10 rounded-r-2xl" style={{ backgroundColor: '#1E1E1E' }}>
-        <div className="mb-8">
-          <div className="mb-3">
-            <img 
-              src="/lovable-uploads/image.png" 
-              alt="CHECKY Logo" 
-              className="h-10 w-auto object-contain max-w-[180px]"
-            />
+    <div className="min-h-screen flex" style={{ backgroundColor: 'rgba(137, 215, 210, 0.19)' }}>
+      {/* Left Sidebar - Fixed 436px matching Figma */}
+      <div 
+        className="hidden md:flex text-white flex-col fixed left-0 top-0 z-10" 
+        style={{ 
+          backgroundColor: '#1E1E1E',
+          width: '436px',
+          height: '100vh',
+          borderRadius: '0px 22px 22px 0px',
+          boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+          padding: '64px 49px'
+        }}
+      >
+        {/* Logo Section */}
+        <div className="flex items-center gap-3 mb-4">
+          <img 
+            src="/lovable-uploads/Checky simple - fond transparent.png" 
+            alt="CHECKY Logo" 
+            className="h-10 w-10 object-contain"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+          <span style={{ 
+            fontFamily: 'Archivo, sans-serif',
+            fontWeight: 700,
+            fontSize: '38px',
+            lineHeight: '36px',
+            color: '#FFFFFF'
+          }}>CHECKY</span>
+        </div>
+        <p style={{ 
+          fontFamily: 'Inter, sans-serif',
+          fontWeight: 300,
+          fontSize: '14px',
+          lineHeight: '36px',
+          letterSpacing: '-0.5px',
+          color: '#0BD9D0',
+          textAlign: 'center'
+        }}>Le check-in digitalisé</p>
+        
+        {/* Récapitulatif Section */}
+        <div className="mt-8">
+          <h2 style={{
+            fontFamily: 'Fira Sans Condensed, sans-serif',
+            fontWeight: 400,
+            fontSize: '30px',
+            lineHeight: '36px',
+            color: '#FFFFFF',
+            marginBottom: '24px'
+          }}>Récapitulatif</h2>
+          
+          {/* Navigation Pills */}
+          <div className="space-y-4">
+            {/* Property */}
+            <div style={{
+              border: '1px solid #D3D3D3',
+              borderRadius: '500px',
+              padding: '14px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <Home className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+              <div>
+                <p style={{ 
+                  fontFamily: 'SF Pro, sans-serif',
+                  fontWeight: 590,
+                  fontSize: '12px',
+                  lineHeight: '14px',
+                  color: '#FFFFFF'
+                }}>Propriété</p>
+                <p style={{ 
+                  fontFamily: 'SF Pro, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  lineHeight: '17px',
+                  color: '#717171'
+                }}>{propertyName || 'Votre hébergement'}</p>
+              </div>
+            </div>
+            
+            {/* Dates */}
+            <div style={{
+              border: '1px solid #D3D3D3',
+              borderRadius: '500px',
+              padding: '14px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <Calendar className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+              <div>
+                <p style={{ 
+                  fontFamily: 'SF Pro, sans-serif',
+                  fontWeight: 590,
+                  fontSize: '12px',
+                  lineHeight: '14px',
+                  color: '#FFFFFF'
+                }}>Dates</p>
+                <p style={{ 
+                  fontFamily: 'SF Pro, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  lineHeight: '17px',
+                  color: '#717171'
+                }}>{checkInDate} - {checkOutDate}</p>
+              </div>
+            </div>
+            
+            {/* Voyageurs */}
+            <div style={{
+              border: '1px solid #D3D3D3',
+              borderRadius: '500px',
+              padding: '14px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <Users className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+              <div>
+                <p style={{ 
+                  fontFamily: 'SF Pro, sans-serif',
+                  fontWeight: 590,
+                  fontSize: '12px',
+                  lineHeight: '14px',
+                  color: '#FFFFFF'
+                }}>Voyageurs</p>
+                <p style={{ 
+                  fontFamily: 'SF Pro, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  lineHeight: '17px',
+                  color: '#717171'
+                }}>{guestName} + {(bookingData?.numberOfGuests || 1) - 1} autres</p>
+              </div>
+            </div>
           </div>
-          <p className="text-sm mt-1" style={{ color: '#0BD9D0' }}>Le check-in digitalisé</p>
-        </div>
-        
-        <div className="mb-6">
-          <p className="text-gray-300 text-sm mb-4">
-            Votre réservation{propertyName ? ` à ${propertyName}` : ''} approche à grand pas. 
-            Signez votre contrat pour finaliser votre check-in.
-          </p>
-        </div>
-        
-        <div className="mt-auto">
-          <p className="text-gray-300 text-sm">
-            Notre engagement : vos documents sont conservés conformément aux exigences légales, 
-            transmis de manière sécurisée et accessibles uniquement par les parties concernées.
-          </p>
         </div>
       </div>
       
       {/* Right Main Content */}
-      <div className="flex-1 flex flex-col md:ml-[33.333%] lg:ml-[25%]" style={{ backgroundColor: '#FDFDF9' }}>
+      <div 
+        className="flex-1 flex flex-col" 
+        style={{ 
+          backgroundColor: '#FDFDF9',
+          marginLeft: '436px',
+          borderRadius: '12px',
+          minHeight: '100vh'
+        }}
+      >
         {/* Header with Language Switcher */}
         <div className="p-6 flex justify-end">
           <LanguageSwitcher />
         </div>
         
-        {/* Progress Steps - Centered */}
-        <div className="px-6 pb-8 flex items-center justify-center gap-12">
-          <div className="flex flex-col items-center gap-3 text-[#89D7D2]">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: '#89D7D2', color: 'white' }}>
-              <Home className="w-6 h-6" />
+        {/* Progress Steps - Matching Figma design */}
+        <div className="px-6 pb-8 flex items-center justify-center gap-4">
+          {/* Step 1: Réservation - completed */}
+          <div className="flex flex-col items-center">
+            <div 
+              style={{
+                width: '54px',
+                height: '51px',
+                borderRadius: '16px',
+                background: 'rgba(85, 186, 159, 0.4)',
+                boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Home className="w-8 h-8" style={{ color: '#FFFFFF' }} />
             </div>
-            <span className="font-semibold text-sm">Réservation</span>
+            <span style={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 600,
+              fontSize: '14px',
+              lineHeight: '20px',
+              color: '#6B7280',
+              marginTop: '8px'
+            }}>Réservation</span>
           </div>
           
           {/* Connector Line */}
-          <div className="h-0.5 flex-1 max-w-24" style={{ backgroundColor: '#50ACB4' }} />
+          <div style={{
+            width: '80px',
+            height: '3px',
+            background: '#040404',
+            marginTop: '-20px'
+          }} />
           
-          <div className="flex flex-col items-center gap-3 text-[#89D7D2]">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: '#89D7D2', color: 'white' }}>
-              <FileText className="w-6 h-6" />
+          {/* Step 2: Documents - completed */}
+          <div className="flex flex-col items-center">
+            <div 
+              style={{
+                width: '54px',
+                height: '51px',
+                borderRadius: '16px',
+                background: 'rgba(91, 224, 219, 0.4)',
+                boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <FileText className="w-8 h-8" style={{ color: '#FFFFFF' }} />
             </div>
-            <span className="font-semibold text-sm">Documents d'identité</span>
+            <span style={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 600,
+              fontSize: '14px',
+              lineHeight: '14px',
+              color: '#6B7280',
+              marginTop: '8px',
+              textAlign: 'center'
+            }}>Documents<br/>d'identité</span>
           </div>
           
           {/* Connector Line */}
-          <div className="h-0.5 flex-1 max-w-24" style={{ backgroundColor: '#50ACB4' }} />
+          <div style={{
+            width: '80px',
+            height: '3px',
+            background: '#040404',
+            marginTop: '-20px'
+          }} />
           
-          <div className="flex flex-col items-center gap-3 text-[#50ACB4]">
-            <div className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg scale-110" style={{ backgroundColor: '#50ACB4', color: 'white' }}>
-              <Pen className="w-6 h-6" />
+          {/* Step 3: Signature - active */}
+          <div className="flex flex-col items-center">
+            <div 
+              style={{
+                width: '54px',
+                height: '51px',
+                borderRadius: '16px',
+                background: 'rgba(80, 172, 180, 0.8)',
+                boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <Pen className="w-8 h-8" style={{ color: '#FFFFFF' }} />
             </div>
-            <span className="font-semibold text-sm">Signature</span>
-            <div className="h-1 w-16 rounded-full mt-1" style={{ backgroundColor: '#50ACB4' }} />
+            <span style={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 600,
+              fontSize: '14px',
+              lineHeight: '28px',
+              letterSpacing: '-0.5px',
+              color: '#040404',
+              marginTop: '8px'
+            }}>Signature</span>
           </div>
         </div>
         
@@ -909,34 +1100,35 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           <ErrorBoundary>
             {currentStep === 'review' && (
               <div className="max-w-4xl mx-auto space-y-8">
-                <motion.h2 
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-3xl font-bold text-gray-900 mb-8"
-                >
-                  Votre contrat de location
-                </motion.h2>
+                {/* Header Section */}
+                <div className="flex items-center gap-3 mb-4">
+                  <FileText className="w-9 h-9" style={{ color: '#000000' }} />
+                  <h2 style={{
+                    fontFamily: 'Fira Sans Condensed, sans-serif',
+                    fontWeight: 400,
+                    fontSize: '30px',
+                    lineHeight: '36px',
+                    color: '#040404'
+                  }}>Votre contrat de location</h2>
+                </div>
+                <p style={{
+                  fontFamily: 'Inter, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '12px',
+                  lineHeight: '15px',
+                  color: '#4B5563',
+                  marginBottom: '24px'
+                }}>
+                  Lisez votre contrat ci-dessous et acceptez les conditions en cochant la case sous votre contrat.
+                </p>
 
-              {/* Contrat en haut */}
-              <Card className={cn(
-                "border border-gray-300 bg-white",
-                isMobile ? "rounded-lg" : "rounded-lg"
-              )}>
-                <CardHeader className={cn(
-                  "border-b border-gray-200",
-                  isMobile ? "p-4" : "p-6"
-                )}>
-                  <CardTitle className={cn(
-                    "flex items-center gap-3 font-semibold text-gray-900",
-                    isMobile ? "text-base" : "text-lg"
-                  )}>
-                    <FileText className={cn(
-                      "text-gray-900",
-                      isMobile ? "w-5 h-5" : "w-6 h-6"
-                    )} />
-                    <span>Contrat de location saisonnière</span>
-                  </CardTitle>
-                </CardHeader>
+              {/* Contract Card - with border matching Figma */}
+              <div style={{
+                background: '#FFFFFF',
+                border: '2px solid #F3F3F3',
+                borderRadius: '8px',
+                overflow: 'hidden'
+              }}>
                 <CardContent className="p-0">
                   {loadingContract ? (
                     <div className={cn(
@@ -1002,350 +1194,430 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                     </div>
                   )}
                 </CardContent>
-              </Card>
+              </div>
 
-              {/* Zone de signature et acceptation */}
-              <Card className={cn(
-                "shadow-xl border-2 border-gray-200 bg-white",
-                isMobile ? "rounded-lg" : "rounded-xl"
-              )}>
-                <CardContent className={cn(
-                  "space-y-4 sm:space-y-6",
-                  isMobile ? "p-4" : "p-6"
-                )}>
-                  {/* Accord préalable - toujours visible */}
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={cn(
-                      "flex items-start bg-gradient-to-r from-brand-teal/5 via-cyan-50 to-teal-50 rounded-lg border-2 border-brand-teal/30",
-                      isMobile ? "space-x-2 p-3" : "space-x-3 p-4"
-                    )}
-                  >
+              {/* Checkbox d'acceptation - avec bordure pointillée Figma */}
+              <div style={{
+                border: '1px dashed rgba(85, 186, 159, 0.76)',
+                borderRadius: '8px',
+                padding: '16px 24px',
+                marginTop: '24px'
+              }}>
+                <div className="flex items-start gap-4">
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    background: '#FFFFFF',
+                    border: '1px solid #C2C2C2',
+                    borderRadius: '4px',
+                    flexShrink: 0
+                  }}>
                     <Checkbox 
                       id="agree" 
                       checked={isAgreed}
                       onCheckedChange={(checked) => setIsAgreed(checked as boolean)}
-                      className={cn(
-                        "mt-1 flex-shrink-0",
-                        isMobile && "mt-0.5"
-                      )}
+                      style={{ width: '100%', height: '100%', border: 'none' }}
                     />
-                    <label 
-                      htmlFor="agree" 
-                      className={cn(
-                        "leading-relaxed cursor-pointer text-gray-800 flex-1",
-                        isMobile ? "text-sm" : "text-base"
-                      )}
-                    >
-                      <span className="font-semibold text-gray-900">J'ai lu et j'accepte</span> toutes les conditions du contrat. 
-                      Je confirme que toutes les informations sont exactes.
-                    </label>
-                  </motion.div>
-
-                  {/* Zone de signature - visible dès que l'accord est accepté */}
-                  {isAgreed && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3 }}
-                      className="space-y-3 sm:space-y-4"
-                    >
-                      <div className="text-center mb-4">
-                        <h3 className={cn(
-                          "font-semibold text-gray-900",
-                          isMobile ? "text-base" : "text-lg"
-                        )}>Votre signature</h3>
-                        <p className={cn(
-                          "text-gray-600 mt-1",
-                          isMobile ? "text-xs" : "text-sm"
-                        )}>Dessinez votre signature ci-dessous</p>
-                      </div>
-
-                      <div className="relative w-full">
-                        <div className={cn(
-                          "relative border border-gray-300 rounded-lg bg-white transition-all duration-200 overflow-hidden",
-                          signature ? 'border-gray-900' : 'hover:border-gray-400'
-                        )}>
-                          {/* Badge "Signature complétée" */}
-                          {signature && !isDrawing && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              className={cn(
-                                "absolute z-10 bg-gray-900 text-white rounded-full font-medium shadow-sm flex items-center gap-1",
-                                isMobile ? "-top-2 right-2 px-2 py-1 text-[10px]" : "-top-2 right-2 px-3 py-1 text-xs"
-                              )}
-                            >
-                              <CheckCircle className={isMobile ? "w-3 h-3" : "w-3.5 h-3.5"} />
-                              Signée
-                            </motion.div>
-                          )}
-                          
-                          {/* Texte d'aide - au-dessus du canvas mais sans bloquer les clics */}
-                          {!signature && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                              <p className="text-gray-400 text-sm">Cliquez et dessinez votre signature</p>
-                            </div>
-                          )}
-                          
-                          {/* Ligne de guide */}
-                          {!signature && (
-                            <div className="absolute bottom-1/3 left-4 right-4 h-[1px] bg-gray-200 pointer-events-none z-10"></div>
-                          )}
-                          
-                          <canvas
-                            ref={canvasCallbackRef}
-                            width={600}
-                            height={250}
-                            className={cn(
-                              "w-full touch-none select-none rounded transition-all duration-200 relative z-0",
-                              isDrawing ? 'cursor-grabbing' : 'cursor-crosshair'
-                            )}
-                            style={{ 
-                              touchAction: 'none',
-                              WebkitTouchCallout: 'none',
-                              WebkitUserSelect: 'none',
-                              userSelect: 'none',
-                              display: 'block',
-                              height: isMobile ? '120px' : '180px',
-                              maxHeight: isMobile ? '120px' : '180px',
-                              width: '100%',
-                              maxWidth: '100%',
-                              backgroundColor: 'white'
-                            }}
-                            onContextMenu={(e) => e.preventDefault()}
-                            onMouseDown={startDrawing}
-                            onMouseMove={draw}
-                            onMouseUp={stopDrawing}
-                            onMouseLeave={stopDrawing}
-                            onTouchStart={startDrawing}
-                            onTouchMove={draw}
-                            onTouchEnd={stopDrawing}
-                          />
-                        </div>
-
-                        {/* Feedback simple */}
-                        {signature ? (
-                          <div className="mt-3 text-center">
-                            <div className="inline-flex items-center gap-2 text-sm text-gray-700">
-                              <CheckCircle className="w-4 h-4 text-gray-900" />
-                              Signature prête
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mt-3 text-center text-xs text-gray-500">
-                            Signez avec votre souris, doigt ou stylet
-                          </div>
-                        )}
-                      </div>
-
-                      {/* ✅ SIMPLIFIÉ : Un seul bouton principal */}
-                      <div className={cn(
-                        "flex items-center",
-                        isMobile ? "flex-col gap-2" : "gap-3"
-                      )}>
-                        {signature && (
-                          <Button 
-                            onClick={clearSignature}
-                            variant="outline"
-                            size={isMobile ? "default" : "lg"}
-                            className={cn(
-                              "border-2 border-gray-300 hover:border-red-400 text-gray-700 hover:text-red-700 transition-all",
-                              isMobile ? "w-full px-3 py-2 text-sm" : "px-4 py-3"
-                            )}
-                          >
-                            <X className={cn(
-                              "mr-1",
-                              isMobile ? "w-3 h-3" : "w-4 h-4"
-                            )} />
-                            Effacer
-                          </Button>
-                        )}
-                        
-                        <Button 
-                          onClick={handleSubmitSignature}
-                          disabled={!signature || !isAgreed || isSubmitting}
-                          size={isMobile ? "default" : "lg"}
-                          className={cn(
-                            "flex-1 rounded-xl font-semibold transition-all duration-200",
-                            isMobile ? "w-full py-3 text-sm" : "py-4 text-base",
-                            signature && isAgreed && !isSubmitting
-                              ? 'text-white shadow-lg hover:shadow-xl'
-                              : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                          )}
-                          style={signature && isAgreed && !isSubmitting ? { backgroundColor: '#55BA9F' } : undefined}
-                          onMouseEnter={(e) => {
-                            if (signature && isAgreed && !isSubmitting) {
-                              e.currentTarget.style.backgroundColor = '#4AA890';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (signature && isAgreed && !isSubmitting) {
-                              e.currentTarget.style.backgroundColor = '#55BA9F';
-                            }
-                          }}
-                        >
-                          {isSubmitting ? (
-                            <>
-                              <Loader2 className={cn(
-                                "mr-2 animate-spin",
-                                isMobile ? "w-4 h-4" : "w-5 h-5"
-                              )} />
-                              <span className={isMobile ? "text-xs" : ""}>Signature en cours...</span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle className={cn(
-                                "mr-2",
-                                isMobile ? "w-4 h-4" : "w-5 h-5"
-                              )} />
-                              Suivant
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {!isAgreed && (
-                    <Alert className="bg-amber-50 border-2 border-amber-200 rounded-lg">
-                      <Shield className="w-5 h-5 text-amber-600" />
-                      <AlertDescription className="text-amber-800 font-medium">
-                        Veuillez lire et accepter les conditions du contrat pour pouvoir le signer.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* Étape de confirmation professionnelle */}
-          {currentStep === 'celebration' && (
-            <motion.div
-              key="celebration"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              className="max-w-3xl mx-auto"
-            >
-              <Card className="shadow-xl border-2 border-gray-200 bg-white rounded-xl overflow-hidden">
-                <CardContent className="p-8 md:p-12">
-                  {/* En-tête professionnel */}
-                  <div className="text-center mb-8">
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                      className="mx-auto w-20 h-20 bg-brand-teal rounded-full flex items-center justify-center shadow-lg mb-6"
-                    >
-                      <CheckCircle className="w-10 h-10 text-white" />
-                    </motion.div>
-                    
-                    <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-3">
-                      Contrat signé avec succès
-                    </h1>
-                    <p className="text-lg text-gray-600">
-                      Félicitations ! Votre séjour est maintenant confirmé.
-                    </p>
                   </div>
+                  <label 
+                    htmlFor="agree" 
+                    style={{
+                      fontFamily: 'SF Pro, sans-serif',
+                      fontWeight: 400,
+                      fontSize: '16px',
+                      lineHeight: '19px',
+                      color: '#222222',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    J'ai lu et je m'engage à respecter le règlement intérieur et les modalités de location. Je confirme que les informations fournis sont correctes.
+                  </label>
+                </div>
+              </div>
 
-                  {/* Informations importantes */}
-                  <div className="bg-gradient-to-r from-brand-teal/5 via-cyan-50/50 to-teal-50 rounded-lg p-6 border border-brand-teal/20 mb-8">
-                    <div className="space-y-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-brand-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <CheckCircle className="w-4 h-4 text-brand-teal" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900 mb-1">Confirmation par email</p>
-                          <p className="text-sm text-gray-600">
-                            Vous avez reçu toutes les informations par email, incluant votre contrat signé et les détails de votre réservation.
-                          </p>
-                        </div>
+              {/* Section Signature */}
+              {isAgreed && (
+                <div className="mt-8">
+                  {/* Header */}
+                  <div className="flex items-center gap-3 mb-4">
+                    <Pen className="w-7 h-7" style={{ color: '#000000' }} />
+                    <h2 style={{
+                      fontFamily: 'Fira Sans Condensed, sans-serif',
+                      fontWeight: 400,
+                      fontSize: '30px',
+                      lineHeight: '36px',
+                      color: '#040404'
+                    }}>Votre signature</h2>
+                  </div>
+                  <p style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 400,
+                    fontSize: '12px',
+                    lineHeight: '15px',
+                    color: '#4B5563',
+                    marginBottom: '24px'
+                  }}>
+                    Procédez à la signature pour finaliser votre check-in en ligne en dessinant votre signature ci-dessous.
+                  </p>
+
+                  {/* Signature Container - Figma style - Centré */}
+                  <div style={{
+                    width: '100%',
+                    maxWidth: '597px',
+                    margin: '0 auto',
+                    background: '#F3F3F3',
+                    boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    position: 'relative'
+                  }}>
+                    {/* Badge "Signature complétée" */}
+                    {signature && !isDrawing && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          zIndex: 10,
+                          background: '#1E1E1E',
+                          color: 'white',
+                          borderRadius: '999px',
+                          padding: '4px 12px',
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Signée
                       </div>
+                    )}
+                    
+                    {/* Canvas Area - White background */}
+                    <div style={{
+                      width: '100%',
+                      height: '172px',
+                      background: '#FFFFFF',
+                      border: '1px solid #D9D9D9',
+                      borderRadius: '4px',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      {/* Texte d'aide */}
+                      {!signature && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                          <p className="text-gray-400 text-sm">Cliquez et dessinez votre signature</p>
+                        </div>
+                      )}
                       
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-brand-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <Home className="w-4 h-4 text-brand-teal" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900 mb-1">Informations d'accès</p>
-                          <p className="text-sm text-gray-600">
-                            Les informations d'accès à la propriété vous seront envoyées avant votre arrivée.
-                          </p>
-                        </div>
-                      </div>
+                      {/* Ligne de guide */}
+                      {!signature && (
+                        <div className="absolute bottom-1/3 left-4 right-4 h-[1px] bg-gray-200 pointer-events-none z-10"></div>
+                      )}
                       
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-brand-teal/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <Shield className="w-4 h-4 text-brand-teal" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900 mb-1">Support client</p>
-                          <p className="text-sm text-gray-600">
-                            Notre équipe reste à votre disposition pour toute question ou assistance.
-                          </p>
-                        </div>
-                      </div>
+                      <canvas
+                        ref={canvasCallbackRef}
+                        width={565}
+                        height={172}
+                        className={cn(
+                          "w-full h-full touch-none select-none transition-all duration-200 relative z-0",
+                          isDrawing ? 'cursor-grabbing' : 'cursor-crosshair'
+                        )}
+                        style={{ 
+                          touchAction: 'none',
+                          WebkitTouchCallout: 'none',
+                          WebkitUserSelect: 'none',
+                          userSelect: 'none',
+                          display: 'block',
+                          backgroundColor: 'white'
+                        }}
+                        onContextMenu={(e) => e.preventDefault()}
+                        onMouseDown={startDrawing}
+                        onMouseMove={draw}
+                        onMouseUp={stopDrawing}
+                        onMouseLeave={stopDrawing}
+                        onTouchStart={startDrawing}
+                        onTouchMove={draw}
+                        onTouchEnd={stopDrawing}
+                      />
                     </div>
                   </div>
 
-                  {/* Contrat signé */}
-                  {signedContractUrl && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.4 }}
-                      className="bg-gray-50 rounded-lg p-6 border border-gray-200 mb-8"
-                    >
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 rounded-lg bg-brand-teal/10 flex items-center justify-center">
-                          <FileText className="w-5 h-5 text-brand-teal" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-gray-900">Votre contrat signé</h3>
-                          <p className="text-sm text-gray-600">Document disponible en téléchargement</p>
-                        </div>
+                  {/* Feedback simple */}
+                  {signature ? (
+                    <div className="mt-3 text-center">
+                      <div className="inline-flex items-center gap-2 text-sm text-gray-700">
+                        <CheckCircle className="w-4 h-4 text-gray-900" />
+                        Signature prête
                       </div>
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <Button
-                          onClick={() => window.open(signedContractUrl, '_blank')}
-                          className="flex-1 bg-brand-teal hover:bg-brand-teal/90 text-white"
-                        >
-                          <FileText className="w-4 h-4 mr-2" />
-                          Consulter le contrat
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            const link = document.createElement('a');
-                            link.href = signedContractUrl;
-                            const bookingId = getBookingId();
-                            link.download = `contrat-signe-${bookingId || 'contrat'}.pdf`;
-                            link.click();
-                          }}
-                          variant="outline"
-                          className="flex-1 border-2 border-gray-300 hover:border-brand-teal/50"
-                        >
-                          Télécharger PDF
-                        </Button>
-                      </div>
-                    </motion.div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-center text-xs text-gray-500">
+                      Signez avec votre souris, doigt ou stylet
+                    </div>
                   )}
 
-                  {/* Message de bienvenue professionnel */}
-                  <div className="text-center pt-6 border-t border-gray-200">
-                    <p className="text-gray-700 mb-2">
-                      Nous avons hâte de vous accueillir à
-                    </p>
-                    <p className="text-xl font-semibold text-brand-teal">
-                      {propertyName}
-                    </p>
+                  {/* Boutons */}
+                  <div className={cn(
+                    "flex items-center mt-6",
+                    isMobile ? "flex-col gap-2" : "gap-3"
+                  )}>
+                    {signature && (
+                      <Button 
+                        onClick={clearSignature}
+                        variant="outline"
+                        size={isMobile ? "default" : "lg"}
+                        className={cn(
+                          "border-2 border-gray-300 hover:border-red-400 text-gray-700 hover:text-red-700 transition-all",
+                          isMobile ? "w-full px-3 py-2 text-sm" : "px-4 py-3"
+                        )}
+                      >
+                        <X className={cn(
+                          "mr-1",
+                          isMobile ? "w-3 h-3" : "w-4 h-4"
+                        )} />
+                        Effacer
+                      </Button>
+                    )}
+                    
+                    <Button 
+                      onClick={handleSubmitSignature}
+                      disabled={!signature || !isAgreed || isSubmitting}
+                      size={isMobile ? "default" : "lg"}
+                      className={cn(
+                        "flex-1 rounded-xl font-semibold transition-all duration-200",
+                        isMobile ? "w-full py-3 text-sm" : "py-4 text-base",
+                        signature && isAgreed && !isSubmitting
+                          ? 'text-white shadow-lg hover:shadow-xl'
+                          : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                      )}
+                      style={signature && isAgreed && !isSubmitting ? { backgroundColor: '#55BA9F' } : undefined}
+                      onMouseEnter={(e) => {
+                        if (signature && isAgreed && !isSubmitting) {
+                          e.currentTarget.style.backgroundColor = '#4AA890';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (signature && isAgreed && !isSubmitting) {
+                          e.currentTarget.style.backgroundColor = '#55BA9F';
+                        }
+                      }}
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className={cn(
+                            "mr-2 animate-spin",
+                            isMobile ? "w-4 h-4" : "w-5 h-5"
+                          )} />
+                          <span className={isMobile ? "text-xs" : ""}>Signature en cours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className={cn(
+                            "mr-2",
+                            isMobile ? "w-4 h-4" : "w-5 h-5"
+                          )} />
+                          Suivant
+                        </>
+                      )}
+                    </Button>
                   </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+                </div>
+              )}
+
+              {!isAgreed && (
+                <Alert className="bg-amber-50 border-2 border-amber-200 rounded-lg mt-6">
+                  <Shield className="w-5 h-5 text-amber-600" />
+                  <AlertDescription className="text-amber-800 font-medium">
+                    Veuillez lire et accepter les conditions du contrat pour pouvoir le signer.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
+          )}
+
+          {/* Étape de confirmation - Design Figma */}
+          {currentStep === 'celebration' && (
+            <div 
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: '#1E1E1E',
+                zIndex: 50,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              {/* Logo Checky centré en haut avec effet lumineux */}
+              <div style={{ position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
+                <img 
+                  src="/lovable-uploads/Checky simple - fond transparent.png" 
+                  alt="Checky Logo" 
+                  style={{ 
+                    width: '150px', 
+                    height: 'auto', 
+                    objectFit: 'contain',
+                    filter: 'drop-shadow(0 0 15px rgba(125, 202, 181, 0.8)) drop-shadow(0 0 5px rgba(125, 202, 181, 1))'
+                  }}
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              </div>
+
+              {/* Contenu principal centré */}
+              <div style={{ textAlign: 'center', maxWidth: '648px', padding: '0 24px' }}>
+                {/* Image de confirmation centrée */}
+                <img 
+                  src="/lovable-uploads/7e143ee4-c55a-458e-ad79-e3d4d2d3aefc.png" 
+                  alt="Confirmation" 
+                  style={{ 
+                    width: '120px', 
+                    height: 'auto', 
+                    margin: '0 auto 24px auto',
+                    display: 'block',
+                    objectFit: 'contain'
+                  }}
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+                
+                {/* Titre de confirmation */}
+                <h1 style={{
+                  fontFamily: 'Fira Sans Condensed, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '30px',
+                  lineHeight: '36px',
+                  color: '#FFFFFF',
+                  marginBottom: '24px'
+                }}>
+                  Votre check-in est confirmé
+                </h1>
+
+                {/* Message de description */}
+                <p style={{
+                  fontFamily: 'Inter, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '12px',
+                  lineHeight: '15px',
+                  color: '#FFFFFF',
+                  marginBottom: '48px'
+                }}>
+                  C'est fini ! Le propriétaire de l'hébergement a bien reçu les documents nécessaires à votre check-in. 
+                  Nous vous souhaitons un agréable séjour.
+                </p>
+
+                {/* Récapitulatif - Navigation Pills */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
+                  {/* Propriété */}
+                  <div style={{
+                    width: '273px',
+                    border: '1px solid #D3D3D3',
+                    borderRadius: '500px',
+                    padding: '14px 24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px'
+                  }}>
+                    <Home className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+                    <div style={{ textAlign: 'left' }}>
+                      <p style={{ 
+                        fontFamily: 'SF Pro, Inter, sans-serif',
+                        fontWeight: 590,
+                        fontSize: '12px',
+                        lineHeight: '14px',
+                        color: '#FFFFFF'
+                      }}>Propriété</p>
+                      <p style={{ 
+                        fontFamily: 'SF Pro, Inter, sans-serif',
+                        fontWeight: 400,
+                        fontSize: '14px',
+                        lineHeight: '17px',
+                        color: '#717171'
+                      }}>{propertyName || 'Votre hébergement'}</p>
+                    </div>
+                  </div>
+
+                  {/* Dates */}
+                  <div style={{
+                    width: '273px',
+                    border: '1px solid #D3D3D3',
+                    borderRadius: '500px',
+                    padding: '14px 24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px'
+                  }}>
+                    <Calendar className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+                    <div style={{ textAlign: 'left' }}>
+                      <p style={{ 
+                        fontFamily: 'SF Pro, Inter, sans-serif',
+                        fontWeight: 590,
+                        fontSize: '12px',
+                        lineHeight: '14px',
+                        color: '#FFFFFF'
+                      }}>Dates</p>
+                      <p style={{ 
+                        fontFamily: 'SF Pro, Inter, sans-serif',
+                        fontWeight: 400,
+                        fontSize: '14px',
+                        lineHeight: '17px',
+                        color: '#717171'
+                      }}>{checkInDate} - {checkOutDate}</p>
+                    </div>
+                  </div>
+
+                  {/* Voyageurs */}
+                  <div style={{
+                    width: '273px',
+                    border: '1px solid #D3D3D3',
+                    borderRadius: '500px',
+                    padding: '14px 24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px'
+                  }}>
+                    <Users className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+                    <div style={{ textAlign: 'left' }}>
+                      <p style={{ 
+                        fontFamily: 'SF Pro, Inter, sans-serif',
+                        fontWeight: 590,
+                        fontSize: '12px',
+                        lineHeight: '14px',
+                        color: '#FFFFFF'
+                      }}>Voyageurs</p>
+                      <p style={{ 
+                        fontFamily: 'SF Pro, Inter, sans-serif',
+                        fontWeight: 400,
+                        fontSize: '14px',
+                        lineHeight: '17px',
+                        color: '#717171'
+                      }}>{guestName}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <footer style={{
+                position: 'absolute',
+                bottom: '24px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                fontFamily: 'Inter, sans-serif',
+                fontWeight: 400,
+                fontSize: '12px',
+                lineHeight: '15px',
+                color: '#FFFFFF',
+                textAlign: 'center'
+              }}>
+                © 2025 Checky — Tous droits réservés, Mentions légales • Politique de confidentialité • CGV
+              </footer>
+            </div>
           )}
         </ErrorBoundary>
       </div>

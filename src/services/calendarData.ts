@@ -209,15 +209,47 @@ export async function fetchAllCalendarEvents(
     // Fetch Airbnb events
     const airbnbEvents = await fetchAirbnbCalendarEvents(propertyId, start, end);
     
-    // Map regular bookings to calendar events
-    const bookingEvents: CalendarEvent[] = bookings.map(booking => ({
-      id: booking.id,
-      title: booking.guestName || booking.title || 'Booking',
-      start: `${booking.checkInDate}T00:00:00`,
-      end: `${booking.checkOutDate}T00:00:00`,
-      allDay: true,
-      source: 'booking'
-    }));
+    // ✅ CORRECTION : Filtrer les bookings par date range et utiliser getUnifiedBookingDisplayText
+    const rangeStart = parseLocalDate(start);
+    const rangeEnd = parseLocalDate(end);
+    
+    const bookingEvents: CalendarEvent[] = bookings
+      .filter(booking => {
+        // Filtrer par date range : la réservation doit chevaucher la plage demandée
+        const checkIn = parseLocalDate(booking.checkInDate);
+        const checkOut = parseLocalDate(booking.checkOutDate);
+        
+        // Une réservation est incluse si elle chevauche la plage [start, end]
+        return checkIn <= rangeEnd && checkOut >= rangeStart;
+      })
+      .map(booking => {
+        // ✅ CORRECTION : Utiliser getUnifiedBookingDisplayText pour obtenir le titre approprié
+        // Cela gère automatiquement la logique de priorité (guest_name, realGuestNames, code Airbnb, etc.)
+        const title = getUnifiedBookingDisplayText(booking, true);
+        
+        // ✅ CORRECTION : Calculer la date de fin pour FullCalendar (+1 jour car date exclusive)
+        const checkOutDate = parseLocalDate(booking.checkOutDate);
+        const endDateForCalendar = new Date(checkOutDate);
+        endDateForCalendar.setDate(endDateForCalendar.getDate() + 1);
+        const endStr = formatLocalDate(endDateForCalendar);
+        
+        return {
+          id: booking.id,
+          title: title,
+          start: `${booking.checkInDate}T00:00:00`,
+          end: `${endStr}T00:00:00`, // ✅ +1 jour pour FullCalendar
+          allDay: true,
+          source: 'booking' as const,
+          booking: booking // ✅ Garder la référence complète pour le modal
+        };
+      });
+
+    console.log('📊 [fetchAllCalendarEvents] Événements chargés:', {
+      airbnbEvents: airbnbEvents.length,
+      bookingEvents: bookingEvents.length,
+      total: airbnbEvents.length + bookingEvents.length,
+      dateRange: `${start} → ${end}`
+    });
 
     // Combine and return all events
     const allEvents = [...airbnbEvents, ...bookingEvents];

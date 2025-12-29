@@ -252,8 +252,14 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     isLoadingRef.current = true;
     
     try {
-      // Fetch calendar events pour la plage voulue
-      const calendarEvents = await fetchAirbnbCalendarEvents(propertyId, startStr, endStr);
+      // ✅ CORRECTION : Utiliser fetchAllCalendarEvents pour charger TOUS les types de réservations
+      // (Airbnb + réservations normales) au lieu de seulement les réservations Airbnb
+      const calendarEvents = await fetchAllCalendarEvents(
+        propertyId, 
+        startStr, 
+        endStr, 
+        bookingsRef.current // ✅ Passer les bookings actuels pour les afficher dans le calendrier
+      );
       
       // ✅ CORRIGÉ : Convertir les événements en réservations Airbnb avec enrichissement
       // ⚠️ IMPORTANT : event.end est +1 jour pour l'affichage FullCalendar (date exclusive)

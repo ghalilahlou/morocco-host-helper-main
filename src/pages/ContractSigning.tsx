@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { WelcomingContractSignature } from '@/components/WelcomingContractSignature';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Home, Heart, Sparkles } from 'lucide-react';
+import { Loader2, Home, Heart, Sparkles, Calendar, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useT } from '@/i18n/GuestLocaleProvider';
@@ -489,54 +489,190 @@ export const ContractSigning: React.FC = () => {
   }
 
   if (isContractSigned) {
+    // Extraire les données pour l'affichage
+    const propertyName = propertyData?.name || submissionData?.booking_data?.propertyName || 'Votre hébergement';
+    const checkInDate = submissionData?.booking_data?.checkInDate || '';
+    const checkOutDate = submissionData?.booking_data?.checkOutDate || '';
+    const guestName = submissionData?.guest_data?.guests?.[0]?.fullName || submissionData?.booking_data?.guests?.[0]?.fullName || 'Invité';
+
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: "spring", stiffness: 300 }}
-          className="max-w-lg mx-auto"
-        >
-          <Card className="p-8 shadow-2xl border-green-200 bg-white/90 backdrop-blur-sm">
-            <CardContent className="text-center space-y-6">
-              <motion.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
-                className="w-20 h-20 mx-auto bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center"
-              >
-                <Heart className="w-10 h-10 text-white" />
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="space-y-4"
-              >
-                <h2 className="text-3xl font-bold text-gray-900">Contrat signé avec succès ! 🎉</h2>
-                <p className="text-xl text-gray-600">
-                  Félicitations ! Votre séjour est maintenant confirmé.
-                </p>
-                <div className="bg-green-50 p-6 rounded-2xl border border-green-200">
-                  <p className="text-green-800 font-medium">
-                    ✨ Vous recevrez toutes les informations par email<br/>
-                    🏠 Nous avons hâte de vous accueillir !
-                  </p>
-                </div>
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.6 }}
-                className="flex justify-center gap-4 text-3xl"
-              >
-                <motion.span animate={{ rotate: [0, 10, -10, 0] }} transition={{ duration: 2, repeat: Infinity }}>🎉</motion.span>
-                <motion.span animate={{ scale: [1, 1.2, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>❤️</motion.span>
-                <motion.span animate={{ rotate: [0, -10, 10, 0] }} transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}>🏠</motion.span>
-              </motion.div>
-            </CardContent>
-          </Card>
-        </motion.div>
+      <div 
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: '#1E1E1E',
+          zIndex: 50,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+      >
+        {/* Logo Checky centré en haut avec effet lumineux */}
+        <div style={{ position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
+          <img 
+            src="/lovable-uploads/Checky simple - fond transparent.png" 
+            alt="Checky Logo" 
+            style={{ 
+              width: '150px', 
+              height: 'auto', 
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 0 15px rgba(125, 202, 181, 0.8)) drop-shadow(0 0 5px rgba(125, 202, 181, 1))'
+            }}
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+        </div>
+
+        {/* Contenu principal centré */}
+        <div style={{ textAlign: 'center', maxWidth: '648px', padding: '0 24px' }}>
+          {/* Image de confirmation centrée */}
+          <img 
+            src="/lovable-uploads/7e143ee4-c55a-458e-ad79-e3d4d2d3aefc.png" 
+            alt="Confirmation" 
+            style={{ 
+              width: '120px', 
+              height: 'auto', 
+              margin: '0 auto 24px auto',
+              display: 'block',
+              objectFit: 'contain'
+            }}
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+          
+          {/* Titre de confirmation */}
+          <h1 style={{
+            fontFamily: 'Fira Sans Condensed, sans-serif',
+            fontWeight: 400,
+            fontSize: '30px',
+            lineHeight: '36px',
+            color: '#FFFFFF',
+            marginBottom: '24px'
+          }}>
+            Votre check-in est confirmé
+          </h1>
+
+          {/* Message de description */}
+          <p style={{
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 400,
+            fontSize: '12px',
+            lineHeight: '15px',
+            color: '#FFFFFF',
+            marginBottom: '48px'
+          }}>
+            C'est fini ! Le propriétaire de l'hébergement a bien reçu les documents nécessaires à votre check-in. 
+            Nous vous souhaitons un agréable séjour.
+          </p>
+
+          {/* Récapitulatif - Navigation Pills */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center' }}>
+            {/* Propriété */}
+            <div style={{
+              width: '273px',
+              border: '1px solid #D3D3D3',
+              borderRadius: '500px',
+              padding: '14px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <Home className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ 
+                  fontFamily: 'SF Pro, Inter, sans-serif',
+                  fontWeight: 590,
+                  fontSize: '12px',
+                  lineHeight: '14px',
+                  color: '#FFFFFF'
+                }}>Propriété</p>
+                <p style={{ 
+                  fontFamily: 'SF Pro, Inter, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  lineHeight: '17px',
+                  color: '#717171'
+                }}>{propertyName}</p>
+              </div>
+            </div>
+
+            {/* Dates */}
+            <div style={{
+              width: '273px',
+              border: '1px solid #D3D3D3',
+              borderRadius: '500px',
+              padding: '14px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <Calendar className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ 
+                  fontFamily: 'SF Pro, Inter, sans-serif',
+                  fontWeight: 590,
+                  fontSize: '12px',
+                  lineHeight: '14px',
+                  color: '#FFFFFF'
+                }}>Dates</p>
+                <p style={{ 
+                  fontFamily: 'SF Pro, Inter, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  lineHeight: '17px',
+                  color: '#717171'
+                }}>{checkInDate} - {checkOutDate}</p>
+              </div>
+            </div>
+
+            {/* Voyageurs */}
+            <div style={{
+              width: '273px',
+              border: '1px solid #D3D3D3',
+              borderRadius: '500px',
+              padding: '14px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <Users className="w-6 h-6" style={{ color: '#FFFFFF' }} />
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ 
+                  fontFamily: 'SF Pro, Inter, sans-serif',
+                  fontWeight: 590,
+                  fontSize: '12px',
+                  lineHeight: '14px',
+                  color: '#FFFFFF'
+                }}>Voyageurs</p>
+                <p style={{ 
+                  fontFamily: 'SF Pro, Inter, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  lineHeight: '17px',
+                  color: '#717171'
+                }}>{guestName}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <footer style={{
+          position: 'absolute',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          fontFamily: 'Inter, sans-serif',
+          fontWeight: 400,
+          fontSize: '12px',
+          lineHeight: '15px',
+          color: '#FFFFFF',
+          textAlign: 'center'
+        }}>
+          © 2025 Checky — Tous droits réservés, Mentions légales • Politique de confidentialité • CGV
+        </footer>
       </div>
     );
   }

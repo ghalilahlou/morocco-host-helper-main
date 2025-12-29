@@ -80,20 +80,11 @@ export const Dashboard = memo(({
         return false; // Exclure cette réservation
       }
       
-      // ✅ FILTRE 2 : Dans la vue Cards, n'afficher que les réservations avec documents complets
-      if (viewMode === 'cards') {
-        // Vérifier que la réservation est completed ET a tous les documents requis
-        if (booking.status === 'completed') {
-          const hasAllDocs = hasAllRequiredDocumentsForCalendar(booking);
-          if (!hasAllDocs) {
-            return false; // Exclure si documents manquants
-          }
-        } else if (booking.status !== 'confirmed') {
-          // Exclure les réservations qui ne sont ni completed ni confirmed
-          return false;
-        }
-        // Pour 'confirmed', on affiche aussi (en cours de traitement)
-      }
+      // ✅ CORRECTION : Afficher TOUTES les réservations dans les cartes
+      // Le filtre précédent excluait les réservations sans documents complets
+      // Cela créait une incohérence entre les statistiques et l'affichage
+      // Maintenant, toutes les réservations sont affichées, et les cartes peuvent
+      // indiquer visuellement quels documents manquent
       
       // ✅ FILTRE 3 : Recherche par terme
       const matchesSearch = !searchTerm || 

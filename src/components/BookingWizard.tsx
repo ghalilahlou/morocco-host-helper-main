@@ -298,9 +298,24 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         
         // ✅ FALLBACK : Utiliser l'userId initial si l'appel échoue (déconnexion temporaire)
         const userId = userData.user?.id || initialUserIdRef.current;
+        
+        // ✅ VALIDATION CRITIQUE : S'assurer que userId n'est JAMAIS null ou undefined
         if (!userId) {
-          throw new Error('User not authenticated');
+          console.error('❌ [CRITICAL] userId est null ou undefined!', {
+            userDataUserId: userData.user?.id,
+            initialUserIdRef: initialUserIdRef.current,
+            userData: userData
+          });
+          toast({
+            title: "Erreur d'authentification",
+            description: "Impossible de créer la réservation : utilisateur non authentifié. Veuillez vous reconnecter.",
+            variant: "destructive"
+          });
+          setIsSubmitting(false);
+          return;
         }
+        
+        console.log('✅ [VALIDATION] userId validé:', userId);
 
         console.log('📝 Création booking avec données:', {
           bookingId,
@@ -384,6 +399,14 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         }
 
         console.log('✅ [DIAGNOSTIC] Propriété vérifiée:', propertyCheck.name);
+
+        // ✅ PROTECTION ULTIME : Vérifier une dernière fois que userId n'est pas NULL
+        if (!userId) {
+          console.error('❌ [CRITICAL] userId est NULL juste avant insertion!');
+          throw new Error('CRITICAL: userId is NULL before database insertion');
+        }
+
+        console.log('🔒 [SECURITY] userId confirmé avant insertion:', userId);
 
         // ✅ NOUVEAU : Créer la réservation avec statut 'draft' initialement
         // Elle ne sera validée (passage à 'pending'/'completed') qu'après génération complète des documents

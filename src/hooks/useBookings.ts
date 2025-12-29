@@ -1011,11 +1011,38 @@ export const useBookings = (options?: UseBookingsOptions) => {
             .lte('check_out_date', dateRange.end.toISOString().split('T')[0]);
         }
         
+        
+        // ✅ DIAGNOSTIC URGENT : Logger les paramètres de la requête
+        console.log('🔍 [DIAGNOSTIC] Paramètres de la requête SQL:', {
+          propertyId,
+          userId: user.id,
+          dateRange: dateRange ? {
+            start: dateRange.start.toISOString().split('T')[0],
+            end: dateRange.end.toISOString().split('T')[0]
+          } : null,
+          limit: Math.min(limit, 100)
+        });
+        
         // ✅ CORRIGÉ : Utiliser check_in_date au lieu de created_at pour un meilleur tri
         // Les réservations "completed" peuvent être plus anciennes par created_at mais plus récentes par check_in_date
         const { data: fallbackData, error: fallbackError } = await fallbackQuery
           .order('check_in_date', { ascending: false })
           .limit(Math.min(limit, 100)); // ✅ AUGMENTÉ : Limite à 100 pour inclure plus de réservations "completed"
+        
+        // ✅ DIAGNOSTIC URGENT : Logger les résultats bruts de la requête
+        console.log('🔍 [DIAGNOSTIC] Résultats bruts de la requête SQL:', {
+          count: fallbackData?.length || 0,
+          hasError: !!fallbackError,
+          errorMessage: fallbackError?.message,
+          firstBooking: fallbackData?.[0] ? {
+            id: fallbackData[0].id?.substring(0, 8),
+            propertyId: fallbackData[0].property_id,
+            userId: fallbackData[0].user_id,
+            guestName: fallbackData[0].guest_name,
+            status: fallbackData[0].status,
+            checkIn: fallbackData[0].check_in_date
+          } : null
+        });
         
         // ✅ DEBUG : Logs détaillés pour diagnostiquer le problème
         debug('📊 [LOAD BOOKINGS] Résultats du fallback', {
@@ -1047,13 +1074,11 @@ export const useBookings = (options?: UseBookingsOptions) => {
           return;
         }
         
-        // Utiliser les données du fallback
-        const filteredBookingsData = fallbackData?.filter(booking => {
-          if (booking.status === 'draft' || (booking.status as any) === 'draft') {
-            return false;
-          }
-          return true;
-        }) || [];
+        // ✅ CORRECTION CRITIQUE : Ne PAS filtrer par 'draft' car cette valeur n'existe pas dans l'enum booking_status
+        // L'enum booking_status contient uniquement: 'pending', 'completed', 'confirmed'
+        // Le filtrage par 'draft' ou 'archived' cause des erreurs SQL
+        const filteredBookingsData = fallbackData || [];
+        
         
         // ✅ DEBUG : Logs après filtrage
         debug('📊 [LOAD BOOKINGS] Réservations après filtrage draft', {
@@ -1154,10 +1179,34 @@ export const useBookings = (options?: UseBookingsOptions) => {
           return;
         }
         
-        // ✅ ISOLATION STRICTE : Filtrer par propertyId avant de mettre en cache
+        
+        // ✅ CORRECTION : Filtrage plus intelligent par propertyId
+        // Ne filtrer que si propertyId est défini ET que les bookings ont des propertyId valides
         const enrichedBookingsFiltered = propertyId
-          ? enrichedBookings.filter(b => b.propertyId === propertyId)
-          : enrichedBookings;
+          ? enrichedBookings.filter(b => {
+              // Vérifier que le booking a un propertyId valide
+              if (!b.propertyId) {
+                console.warn('⚠️ [USE BOOKINGS] Booking sans propertyId détecté et exclu:', {
+                  bookingId: b.id.substring(0, 8),
+                  guestName: b.guest_name,
+                  checkIn: b.checkInDate
+                });
+                return false; // Exclure les bookings sans propertyId
+              }
+              return b.propertyId === propertyId;
+            })
+          : enrichedBookings.filter(b => {
+              // Même sans propertyId de filtre, exclure les bookings sans propertyId
+              if (!b.propertyId) {
+                console.warn('⚠️ [USE BOOKINGS] Booking sans propertyId exclu:', {
+                  bookingId: b.id.substring(0, 8),
+                  guestName: b.guest_name
+                });
+                return false;
+              }
+              return true;
+            });
+        
         
         // ✅ OPTIMISATION : Cache augmenté à 60s
         await multiLevelCache.set(cacheKey, enrichedBookingsFiltered, 60000); // 60s memory, 5min IndexedDB
