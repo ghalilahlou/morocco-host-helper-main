@@ -591,7 +591,8 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
           name,
           address,
           contact_info,
-          is_active
+          is_active,
+          user_id
         )
       `)
       .eq('token', token)
@@ -697,6 +698,7 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
         .from('bookings')
         .insert({
           property_id: tokenData.property.id,
+          user_id: tokenData.property.user_id,
           check_in_date: checkInDate,
           check_out_date: checkOutDate,
           guest_name: reservationData.guestName || `${guestInfo.firstName} ${guestInfo.lastName}`,
@@ -813,9 +815,30 @@ async function saveGuestDataInternal(
       }
     }
 
+    // ✅ CRITIQUE : Récupérer le user_id depuis la propriété pour éviter l'erreur NULL
+    const { data: propertyData, error: propertyError } = await supabase
+      .from('properties')
+      .select('user_id')
+      .eq('id', booking.propertyId)
+      .single();
+
+    if (propertyError || !propertyData || !propertyData.user_id) {
+      log('error', 'Impossible de récupérer user_id de la propriété', { 
+        error: propertyError,
+        propertyId: booking.propertyId 
+      });
+      throw new Error(`user_id de la propriété introuvable: ${propertyError?.message || 'Propriété non trouvée'}`);
+    }
+
+    log('info', 'user_id récupéré depuis la propriété', { 
+      userId: propertyData.user_id,
+      propertyId: booking.propertyId 
+    });
+
     let savedBooking;
     const bookingData = {
       property_id: booking.propertyId,
+      user_id: propertyData.user_id, // ✅ AJOUTÉ : user_id récupéré depuis properties
       check_in_date: booking.checkIn,
       check_out_date: booking.checkOut,
       guest_name: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`,
@@ -5012,29 +5035,58 @@ async function generatePoliceFormsPDF(client: any, booking: any, isPreview: bool
   const guests = booking.guests || [];
   let property = booking.property || {};
   
-  // ✅ AMÉLIORATION : Si contract_template n'est pas chargé, le récupérer explicitement
-  if (!property.contract_template && property.id) {
-    log('info', '[Police] contract_template manquant, récupération explicite...');
-    const { data: propertyData } = await client
+  
+  // ✅ AMÉLIORATION : TOUJOURS récupérer contract_template explicitement pour debug
+  // (Retrait de la condition !property.contract_template pour forcer la récupération)
+  if (property.id) {
+    log('info', '[Police] Force fetch contract_template for debug...', {
+      propertyId: property.id,
+      hasContractTemplateBefore: !!property.contract_template
+    });
+    
+    const { data: propertyData, error: propertyError } = await client
       .from('properties')
       .select('contract_template')
       .eq('id', property.id)
       .single();
     
-    if (propertyData?.contract_template) {
+    if (propertyError) {
+      log('error', '[Police] ❌ Erreur récupération contract_template:', { 
+        error: propertyError,
+        propertyId: property.id,
+        message: propertyError.message,
+        details: propertyError.details
+      });
+    } else {
+      log('info', '[Police] ✅ contract_template récupéré:', {
+        hasContractTemplate: !!propertyData?.contract_template,
+        contractTemplateType: typeof propertyData?.contract_template,
+        contractTemplateKeys: propertyData?.contract_template ? Object.keys(propertyData.contract_template) : [],
+        hasLandlordSignature: !!(propertyData?.contract_template as any)?.landlord_signature,
+        landlordSignatureType: (propertyData?.contract_template as any)?.landlord_signature ? typeof (propertyData.contract_template as any).landlord_signature : 'none',
+        landlordSignatureLength: (propertyData?.contract_template as any)?.landlord_signature ? (propertyData.contract_template as any).landlord_signature.length : 0,
+        landlordSignaturePreview: (propertyData?.contract_template as any)?.landlord_signature ? (propertyData.contract_template as any).landlord_signature.substring(0, 50) + '...' : 'none'
+      });
+      
       property.contract_template = propertyData.contract_template;
-      log('info', '[Police] contract_template récupéré avec succès');
+      log('info', '[Police] ✅ contract_template assigné à property');
     }
+  } else {
+    log('warn', '[Police] ⚠️ property.id manquant, impossible de récupérer contract_template');
   }
   
   // ✅ DIAGNOSTIC : Log de la propriété avant génération
-  log('info', '[Police] Données propriété:', {
+  log('info', '[Police] 🔍 Données propriété COMPLÈTES:', {
     hasProperty: !!property,
     propertyId: property.id,
+    propertyName: property.name,
     hasContractTemplate: !!property.contract_template,
     contractTemplateType: typeof property.contract_template,
     contractTemplateKeys: property.contract_template ? Object.keys(property.contract_template) : [],
-    hasLandlordSignature: !!(property.contract_template as any)?.landlord_signature
+    hasLandlordSignature: !!(property.contract_template as any)?.landlord_signature,
+    landlordSignatureType: (property.contract_template as any)?.landlord_signature ? typeof (property.contract_template as any).landlord_signature : 'none',
+    landlordSignatureLength: (property.contract_template as any)?.landlord_signature ? (property.contract_template as any).landlord_signature.length : 0,
+    landlordSignaturePreview: (property.contract_template as any)?.landlord_signature ? (property.contract_template as any).landlord_signature.substring(0, 50) + '...' : 'none'
   });
   
   // Configuration PDF - Format officiel A4 identique au modèle

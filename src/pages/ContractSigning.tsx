@@ -511,16 +511,15 @@ export const ContractSigning: React.FC = () => {
           justifyContent: 'center'
         }}
       >
-        {/* Logo Checky centré en haut avec effet lumineux */}
-        <div style={{ position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
+        {/* Logo Checky centré proche du titre */}
+        <div style={{ position: 'absolute', top: '140px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
           <img 
             src="/lovable-uploads/Checky simple - fond transparent.png" 
             alt="Checky Logo" 
             style={{ 
               width: '150px', 
               height: 'auto', 
-              objectFit: 'contain',
-              filter: 'drop-shadow(0 0 15px rgba(125, 202, 181, 0.8)) drop-shadow(0 0 5px rgba(125, 202, 181, 1))'
+              objectFit: 'contain'
             }}
             onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
@@ -528,20 +527,6 @@ export const ContractSigning: React.FC = () => {
 
         {/* Contenu principal centré */}
         <div style={{ textAlign: 'center', maxWidth: '648px', padding: '0 24px' }}>
-          {/* Image de confirmation centrée */}
-          <img 
-            src="/lovable-uploads/7e143ee4-c55a-458e-ad79-e3d4d2d3aefc.png" 
-            alt="Confirmation" 
-            style={{ 
-              width: '120px', 
-              height: 'auto', 
-              margin: '0 auto 24px auto',
-              display: 'block',
-              objectFit: 'contain'
-            }}
-            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-          />
-          
           {/* Titre de confirmation */}
           <h1 style={{
             fontFamily: 'Fira Sans Condensed, sans-serif',

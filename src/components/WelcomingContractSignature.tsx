@@ -23,7 +23,9 @@ import {
   MapPin,
   Star,
   Gift,
-  X
+  X,
+  PenTool,
+  Menu
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -102,6 +104,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const [isAgreed, setIsAgreed] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false); // Menu caché par défaut
   const signaturePadRef = useRef<SignatureCanvas>(null);
   const { toast } = useToast();
   const location = useLocation();
@@ -991,13 +994,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           minHeight: '100vh'
         }}
       >
-        {/* Header with Language Switcher */}
-        <div className="p-6 flex justify-end">
-          <LanguageSwitcher />
-        </div>
+
         
-        {/* Progress Steps - Matching Figma design */}
-        <div className="px-6 pb-8 flex items-center justify-center gap-4">
+        {/* Progress Steps - Matching GuestVerification */}
+        <div className="px-6 pb-8 flex items-start justify-center gap-16">
           {/* Step 1: Réservation - completed */}
           <div className="flex flex-col items-center">
             <div 
@@ -1005,7 +1005,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
-                background: 'rgba(85, 186, 159, 0.4)',
+                background: 'rgba(85, 186, 159, 0.42)', // Complété
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -1019,18 +1019,24 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               fontWeight: 600,
               fontSize: '14px',
               lineHeight: '20px',
-              color: '#6B7280',
-              marginTop: '8px'
-            }}>Réservation</span>
+              color: '#000000',
+              marginTop: '8px',
+              minHeight: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              textAlign: 'center',
+              flexDirection: 'column'
+            }}>
+              <span>Réservation</span>
+              {/* Ligne noire sous Réservation complétée */}
+              <div style={{
+                width: '100%',
+                height: '2px',
+                backgroundColor: '#000000',
+                marginTop: '4px'
+              }} />
+            </span>
           </div>
-          
-          {/* Connector Line */}
-          <div style={{
-            width: '80px',
-            height: '3px',
-            background: '#040404',
-            marginTop: '-20px'
-          }} />
           
           {/* Step 2: Documents - completed */}
           <div className="flex flex-col items-center">
@@ -1039,7 +1045,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
-                background: 'rgba(91, 224, 219, 0.4)',
+                background: '#D7EFED', // Complété = turquoise clair
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -1052,20 +1058,25 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               fontFamily: 'Inter, sans-serif',
               fontWeight: 600,
               fontSize: '14px',
-              lineHeight: '14px',
-              color: '#6B7280',
+              lineHeight: '20px',
+              color: '#000000',
               marginTop: '8px',
-              textAlign: 'center'
-            }}>Documents<br/>d'identité</span>
+              minHeight: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              textAlign: 'center',
+              flexDirection: 'column'
+            }}>
+              <span>Documents</span>
+              {/* Ligne noire sous Documents complétés */}
+              <div style={{
+                width: '100%',
+                height: '2px',
+                backgroundColor: '#000000',
+                marginTop: '4px'
+              }} />
+            </span>
           </div>
-          
-          {/* Connector Line */}
-          <div style={{
-            width: '80px',
-            height: '3px',
-            background: '#040404',
-            marginTop: '-20px'
-          }} />
           
           {/* Step 3: Signature - active */}
           <div className="flex flex-col items-center">
@@ -1074,24 +1085,37 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
-                background: 'rgba(80, 172, 180, 0.8)',
+                background: 'rgba(80, 172, 180, 0.8)', // Actif = #50ACB4 à 80%
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
               }}
             >
-              <Pen className="w-8 h-8" style={{ color: '#FFFFFF' }} />
+              <PenTool className="w-8 h-8" style={{ color: '#FFFFFF' }} />
             </div>
             <span style={{
               fontFamily: 'Inter, sans-serif',
               fontWeight: 600,
               fontSize: '14px',
-              lineHeight: '28px',
-              letterSpacing: '-0.5px',
-              color: '#040404',
-              marginTop: '8px'
-            }}>Signature</span>
+              lineHeight: '20px',
+              color: '#000000',
+              marginTop: '8px',
+              minHeight: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              textAlign: 'center',
+              flexDirection: 'column'
+            }}>
+              <span>Signature</span>
+              {/* Ligne noire sous Signature active */}
+              <div style={{
+                width: '100%',
+                height: '2px',
+                backgroundColor: '#000000',
+                marginTop: '4px'
+              }} />
+            </span>
           </div>
         </div>
         
@@ -1101,7 +1125,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
             {currentStep === 'review' && (
               <div className="max-w-4xl mx-auto space-y-8">
                 {/* Header Section */}
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center justify-center gap-3 mb-4">
                   <FileText className="w-9 h-9" style={{ color: '#000000' }} />
                   <h2 style={{
                     fontFamily: 'Fira Sans Condensed, sans-serif',
@@ -1157,9 +1181,9 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       />
                     ) : (
                       <iframe 
-                        src={contractUrl} 
+                        src={`${contractUrl}#zoom=60`}
                         title="Contrat de location" 
-                        className="w-full h-[400px] rounded-b-lg" 
+                        className="w-full h-[600px] rounded-b-lg" 
                       />
                     )
                   ) : contractError ? (
@@ -1260,51 +1284,27 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                     Procédez à la signature pour finaliser votre check-in en ligne en dessinant votre signature ci-dessous.
                   </p>
 
-                  {/* Signature Container - Figma style - Centré */}
-                  <div style={{
-                    width: '100%',
+                  {/* Signature Container - Style CreatePropertyDialog */}
+                  <div className="relative w-full" style={{
                     maxWidth: '597px',
-                    margin: '0 auto',
-                    background: '#F3F3F3',
-                    boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
-                    borderRadius: '12px',
-                    padding: '16px',
-                    position: 'relative'
+                    margin: '0 auto'
                   }}>
-                    {/* Badge "Signature complétée" */}
-                    {signature && !isDrawing && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '8px',
-                          right: '8px',
-                          zIndex: 10,
-                          background: '#1E1E1E',
-                          color: 'white',
-                          borderRadius: '999px',
-                          padding: '4px 12px',
-                          fontSize: '12px',
-                          fontWeight: 500,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        Signée
-                      </div>
-                    )}
-                    
-                    {/* Canvas Area - White background */}
-                    <div style={{
-                      width: '100%',
-                      height: '172px',
-                      background: '#FFFFFF',
-                      border: '1px solid #D9D9D9',
-                      borderRadius: '4px',
-                      position: 'relative',
-                      overflow: 'hidden'
-                    }}>
+                    <div className={cn(
+                      "relative border rounded-lg bg-white transition-all duration-200 overflow-hidden",
+                      signature ? 'border-gray-900' : 'border-gray-300 hover:border-gray-400'
+                    )}>
+                      {/* Badge \"Signature complétée\" */}
+                      {signature && !isDrawing && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="absolute -top-2 right-2 z-10 bg-gray-900 text-white rounded-full px-3 py-1 text-xs font-medium shadow-sm flex items-center gap-1"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Signée
+                        </motion.div>
+                      )}
+                      
                       {/* Texte d'aide */}
                       {!signature && (
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
@@ -1322,7 +1322,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         width={565}
                         height={172}
                         className={cn(
-                          "w-full h-full touch-none select-none transition-all duration-200 relative z-0",
+                          "w-full h-[172px] rounded-lg touch-none select-none transition-all duration-200 relative z-0",
                           isDrawing ? 'cursor-grabbing' : 'cursor-crosshair'
                         )}
                         style={{ 
@@ -1455,16 +1455,15 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 justifyContent: 'center'
               }}
             >
-              {/* Logo Checky centré en haut avec effet lumineux */}
-              <div style={{ position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
+              {/* Logo Checky centré proche du titre */}
+              <div style={{ position: 'absolute', top: '140px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
                 <img 
                   src="/lovable-uploads/Checky simple - fond transparent.png" 
                   alt="Checky Logo" 
                   style={{ 
                     width: '150px', 
                     height: 'auto', 
-                    objectFit: 'contain',
-                    filter: 'drop-shadow(0 0 15px rgba(125, 202, 181, 0.8)) drop-shadow(0 0 5px rgba(125, 202, 181, 1))'
+                    objectFit: 'contain'
                   }}
                   onError={(e) => { e.currentTarget.style.display = 'none'; }}
                 />
@@ -1472,20 +1471,6 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
               {/* Contenu principal centré */}
               <div style={{ textAlign: 'center', maxWidth: '648px', padding: '0 24px' }}>
-                {/* Image de confirmation centrée */}
-                <img 
-                  src="/lovable-uploads/7e143ee4-c55a-458e-ad79-e3d4d2d3aefc.png" 
-                  alt="Confirmation" 
-                  style={{ 
-                    width: '120px', 
-                    height: 'auto', 
-                    margin: '0 auto 24px auto',
-                    display: 'block',
-                    objectFit: 'contain'
-                  }}
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
-                
                 {/* Titre de confirmation */}
                 <h1 style={{
                   fontFamily: 'Fira Sans Condensed, sans-serif',
