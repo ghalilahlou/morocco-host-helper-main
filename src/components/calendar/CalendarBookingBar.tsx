@@ -104,7 +104,17 @@ export const CalendarBookingBar = memo(({
       };
     }
 
-    // 2. Utiliser la couleur depuis colorOverrides si disponible (convertir tailwind en hex)
+    // ✅ PRIORITÉ 2 (ABSOLUE): INDEPENDENT_BOOKING confirmées/completed → TOUJOURS GRIS
+    // Cette vérification AVANT bookingData.color garantit que les réservations 
+    // indépendantes validées restent grises même avec la sync ICS activée
+    if (isIndependentConfirmed) {
+      return {
+        barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5
+        textColor: 'text-gray-900'
+      };
+    }
+
+    // 3. Utiliser la couleur depuis colorOverrides si disponible (convertir tailwind en hex)
     if (bookingData.color) {
       // Extraire la couleur hex depuis la classe tailwind
       let hexColor = bookingData.color;
@@ -130,7 +140,7 @@ export const CalendarBookingBar = memo(({
       };
     }
 
-    // 3. ✅ PRIORITÉ : NOIR pour réservations avec CODE Airbnb/ICS (comme dans Figma)
+    // 4. ✅ PRIORITÉ : NOIR pour réservations avec CODE Airbnb/ICS (comme dans Figma)
     // Vérifier D'ABORD si c'est un code AVANT de vérifier si c'est un nom valide
     // Codes : EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL..., etc.
     if (hasAirbnbCode || isAirbnb) {
@@ -140,18 +150,17 @@ export const CalendarBookingBar = memo(({
       };
     }
 
-    // 4. ✅ GRIS pour réservations avec NOM VALIDE (Mouhcine, Zaineb, etc.)
+    // 5. ✅ GRIS pour réservations avec NOM VALIDE (Mouhcine, Zaineb, etc.)
     // OU pour réservations completed (validées par le système)
-    // OU pour réservations indépendantes confirmées
     // Cette vérification vient APRÈS les codes pour éviter les faux positifs
-    if (isValidName || isCompleted || isIndependentConfirmed) {
+    if (isValidName || isCompleted) {
       return {
         barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5 pour validées
         textColor: 'text-gray-900'
       };
     }
 
-    // 5. Noir pour autres réservations en attente
+    // 6. Noir pour autres réservations en attente
     return {
       barColor: BOOKING_COLORS.default.hex, // Noir #1A1A1A pour réservations en attente
       textColor: 'text-white'
