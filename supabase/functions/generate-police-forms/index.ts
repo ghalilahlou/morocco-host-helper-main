@@ -408,32 +408,58 @@ async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
     
     // Try to add landlord signature image if available
     try {
+      console.log('🔍 Début de la section signature du loueur');
+      
       const contractTemplate = property.contract_template || {};
+      console.log('📋 contract_template exists:', !!property.contract_template);
+      console.log('📋 contract_template keys:', Object.keys(contractTemplate));
+      
       const landlordSignature = contractTemplate.landlord_signature;
+      console.log('🖊️ landlordSignature exists:', !!landlordSignature);
+      console.log('🖊️ landlordSignature type:', typeof landlordSignature);
+      
+      if (landlordSignature) {
+        console.log('🖊️ landlordSignature length:', landlordSignature.length);
+        console.log('🖊️ landlordSignature preview:', landlordSignature.substring(0, 50) + '...');
+      }
+      
       if (landlordSignature && landlordSignature.trim()) {
+        console.log('✅ Signature trouvée, tentative d\'embedding...');
         try {
           // Vérifier que c'est une data URL valide
           if (!landlordSignature.startsWith('data:image/')) {
+            console.error('❌ Format invalide : ne commence pas par data:image/');
             throw new Error('Invalid signature format');
           }
+          console.log('✅ Format data:image/ validé');
           
           const clean = landlordSignature.replace(/^data:image\/[^;]+;base64,/, '');
+          console.log('🧹 Base64 nettoyé, longueur:', clean.length);
           
           // Vérifier que le base64 est valide
           if (!clean || clean.length === 0) {
+            console.error('❌ Base64 vide après nettoyage');
             throw new Error('Empty base64 data');
           }
+          console.log('✅ Base64 non vide');
           
           let img;
           try {
+            console.log('🖼️ Tentative embedPng...');
             img = await pdfDoc.embedPng(Uint8Array.from(atob(clean), (c) => c.charCodeAt(0)));
-          } catch {
+            console.log('✅ Signature PNG embedded');
+          } catch (pngError) {
+            console.log('⚠️ PNG failed, tentative JPEG...', pngError);
             try {
               img = await pdfDoc.embedJpg(Uint8Array.from(atob(clean), (c) => c.charCodeAt(0)));
-            } catch {
+              console.log('✅ Signature JPEG embedded');
+            } catch (jpgError) {
+              console.error('❌ PNG et JPEG ont échoué', { pngError, jpgError });
               throw new Error('Failed to decode image');
             }
           }
+          
+          console.log('📐 Image dimensions:', { width: img.width, height: img.height });
           
           // ✅ CORRIGÉ : Dimensions limitées pour éviter le débordement
           // Calculer la largeur disponible (pageWidth - 2*margin)
@@ -451,6 +477,8 @@ async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
             height = maxHeight;
             width = maxHeight * aspect;
           }
+          
+          console.log('📏 Dimensions calculées:', { width, height, aspect });
           
           // ✅ NOUVEAU : Vérifier que la signature ne déborde pas à droite
           const signatureX = leftColumn;
@@ -474,21 +502,32 @@ async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
             });
           }
           
+          console.log('🎨 Position signature:', {
+            x: signatureX,
+            y: yPosition - finalHeight - 10,
+            width: finalWidth,
+            height: finalHeight
+          });
+          
           page.drawImage(img, {
             x: signatureX,
             y: yPosition - finalHeight - 10,
             width: finalWidth,
             height: finalHeight
           });
-          console.log('✅ Landlord signature embedded');
+          console.log('✅✅✅ Landlord signature embedded successfully!');
         } catch (signatureError) {
+          console.error('❌ ERREUR lors de l\'embedding de la signature:', signatureError);
+          console.error('❌ Stack trace:', signatureError.stack);
           console.warn('⚠️ Skipped landlord signature (invalid format):', signatureError.message);
           // Continuer sans la signature
         }
       } else {
-        console.log('ℹ️ No landlord signature');
+        console.log('ℹ️ No landlord signature (empty or null)');
       }
     } catch (e) {
+      console.error('❌ ERREUR CRITIQUE dans la section signature:', e);
+      console.error('❌ Stack trace:', e.stack);
       console.warn('⚠️ Signature section error:', e.message);
     }
     
