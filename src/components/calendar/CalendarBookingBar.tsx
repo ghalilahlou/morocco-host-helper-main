@@ -3,7 +3,7 @@ import { Booking } from '@/types/booking';
 import { BookingLayout } from './CalendarUtils';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
-import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
+import { getUnifiedBookingDisplayText, isAirbnbCode } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { Check, X } from 'lucide-react';
 
@@ -15,51 +15,38 @@ interface CalendarBookingBarProps {
 }
 
 /**
- * Détermine si une chaîne est un nom valide (comme "Marcel", "Michel", "Jean Dupont")
- * vs un code (comme "HM8548HWET", "UID:...", etc.)
+ * ✅ CORRIGÉ : Fonction simplifiée pour détecter si un nom est valide
+ * On ne vérifie plus le nombre de mots, juste si ce n'est pas un code Airbnb
+ * Les noms à un seul mot comme "Mouhcine" sont maintenant acceptés
  */
 const isValidGuestName = (value: string): boolean => {
   if (!value || value.trim().length === 0) return false;
   
   const trimmed = value.trim();
   
-  // Si c'est "Réservation" ou "Airbnb", ce n'est pas un nom
-  const lower = trimmed.toLowerCase();
-  if (lower === 'réservation' || lower === 'airbnb') return false;
-  
-  // Si ça commence par "UID:" ou contient des patterns de codes, ce n'est pas un nom
-  if (/^(UID|HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9\-:]+/i.test(trimmed)) {
+  // ✅ PRIORITÉ 1 : Vérifier si c'est un code Airbnb (retourne false si oui)
+  if (isAirbnbCode(trimmed)) {
     return false;
   }
   
-  // Si c'est principalement des lettres majuscules et chiffres sans espaces (code alphanumérique)
-  // Exemples: "HM8548HWET", "HM4AWWQFRB", "HMBEANEF3K"
+  // ✅ PRIORITÉ 2 : Si c'est "Réservation" exact, ce n'est pas un nom
+  const lower = trimmed.toLowerCase();
+  if (lower === 'réservation' || lower === 'airbnb') return false;
+  
+  // ✅ PRIORITÉ 3 : Un nom valide doit contenir au moins une lettre
+  if (!/[a-zA-ZÀ-ÿ]/.test(trimmed)) return false;
+  
+  // ✅ PRIORITÉ 4 : Un nom valide doit avoir au moins 2 caractères
+  if (trimmed.length < 2) return false;
+  
+  // ✅ PRIORITÉ 5 : Pattern de codes alphanumériques (HM4A, CL123, etc.)
   const condensed = trimmed.replace(/\s+/g, '');
   if (/^[A-Z0-9\-]{5,}$/.test(condensed) && !/[a-z]/.test(trimmed)) {
     return false; // Code alphanumérique en majuscules
   }
   
-  // Si ça ressemble à un code (que des majuscules + chiffres, pas d'espaces, pas de minuscules)
-  // Même pour des codes courts comme "HM4A"
-  if (!/[a-z]/.test(trimmed) && !trimmed.includes(' ') && /^[A-Z0-9]+$/.test(condensed) && condensed.length >= 4) {
-    return false;
-  }
-  
-  // Un nom valide doit contenir au moins une lettre
-  if (!/[a-zA-ZÀ-ÿ]/.test(trimmed)) return false;
-  
-  // Un nom valide doit avoir au moins 2 caractères
-  if (trimmed.length < 2) return false;
-  
-  // Un nom valide ne doit pas être trop long
-  if (trimmed.length > 50) return false;
-  
-  // Si ça contient des mots interdits, ce n'est pas un nom
-  const forbiddenWords = ['phone', 'airbnb', 'reservation', 'guest', 'client', 'booking'];
-  if (forbiddenWords.some(word => lower.includes(word))) return false;
-  
-  // Si on arrive ici, c'est probablement un nom (comme "Marcel", "Michel", "Jean Dupont")
-  // Les noms ont généralement des minuscules ou des espaces
+  // ✅ ACCEPTÉ : Un nom à un seul mot est valide (Mouhcine, Marcel, etc.)
+  // Supprimé la vérification "au moins 2 mots" qui rejetait "Mouhcine"
   return true;
 };
 
