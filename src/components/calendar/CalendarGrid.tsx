@@ -62,7 +62,7 @@ export const CalendarGrid = memo(({
             Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1 : 1;
           // ✅ MOBILE-FRIENDLY : Augmenter significativement les tailles pour mobile
           const baseHeight = isMobile ? 40 : 32; // Augmenté de 28 à 40 pour mobile
-          const spacing = isMobile ? 16 : 14; // Augmenté de 12 à 16 pour mobile
+          const spacing = isMobile ? 24 : 22; // ✅ FIGMA : Augmenté pour correspondre au design (était 16:14)
           const headerSpace = isMobile ? 60 : 45; // Augmenté de 42 à 60 pour mobile
           const padding = isMobile ? 32 : 25; // Augmenté de 24 à 32 pour mobile
           const calculatedHeight = headerSpace + (layersInWeek * (baseHeight + spacing)) + padding;
@@ -70,9 +70,9 @@ export const CalendarGrid = memo(({
           const cellHeight = Math.max(minHeight, calculatedHeight);
           
           return (
-            <div key={weekIndex} className="relative" style={{ minHeight: `${cellHeight}px` }}>
+            <div key={weekIndex} className="relative mb-6" style={{ minHeight: `${cellHeight}px` }}>
               {/* Week Row with Days */}
-              <div className="grid grid-cols-7 gap-3 relative" style={{ minHeight: `${cellHeight}px` }}>
+              <div className="grid grid-cols-7 gap-4 relative" style={{ minHeight: `${cellHeight}px` }}>
                 {week.map((day, dayIndex) => {
                   const isToday = day.date.toDateString() === new Date().toDateString();
                   
@@ -138,8 +138,8 @@ export const CalendarGrid = memo(({
                     const spaceAfterNumber = dayNumberHeight + dayNumberMargin;
                     
                     // ✅ ESPACEMENT AMÉLIORÉ : Augmenté significativement pour mobile
-                    const minSpacing = isMobile ? 12 : 12; // Augmenté de 8 à 12 pour mobile
-                    const idealSpacing = isMobile ? 18 : 18; // Augmenté de 14 à 18 pour mobile
+                    const minSpacing = isMobile ? 18 : 18; // ✅ FIGMA : Augmenté pour correspondre au design (était 12:12)
+                    const idealSpacing = isMobile ? 24 : 24; // ✅ FIGMA : Augmenté pour correspondre au design (était 18:18)
                     const availableSpace = cellHeight - cellPadding - spaceAfterNumber - cellPadding;
                     const totalRequiredSpace = maxLayers * baseHeight + (maxLayers > 1 ? (maxLayers - 1) * idealSpacing : 0);
                     
@@ -180,7 +180,7 @@ export const CalendarGrid = memo(({
                         }}
                       >
                         <div 
-                          className="grid grid-cols-7 h-full gap-3"
+                          className="grid grid-cols-7 h-full gap-4"
                           style={{
                             // ✅ CRITIQUE : S'assurer que la grille correspond exactement aux cellules
                             height: `${cellHeight}px`,

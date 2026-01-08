@@ -19,6 +19,7 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
+        sans: ['Fira Sans Condensed', 'system-ui', 'sans-serif'],
         inter: ['Inter', 'system-ui', 'sans-serif'],
       },
       colors: {
@@ -86,16 +87,6 @@ const config: Config = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
-      },
-      keyframes: {
-        "accordion-down": {
-          from: { height: "0" },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: "0" },
-        },
       },
       keyframes: {
         "accordion-down": {

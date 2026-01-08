@@ -2036,7 +2036,7 @@ export const GuestVerification = () => {
   const currentStepIndex = ['booking', 'documents', 'signature'].indexOf(currentStep);
 
   return (
-    <div className="min-h-screen flex" style={{ backgroundColor: '#89D7D2' }}>
+    <div className="min-h-screen flex" style={{ backgroundColor: '#FDFDF9' }}>
       {/* Left Sidebar - Fixed 436px width matching Figma */}
       <div 
         className="hidden md:flex text-white flex-col fixed left-0 top-0 h-screen z-10" 
@@ -2048,59 +2048,69 @@ export const GuestVerification = () => {
           padding: '64px 49px'
         }}
       >
-        {/* Logo Section */}
-        <div className="flex items-center gap-3 mb-4">
-          <img 
-            src="/lovable-uploads/Checky simple - fond transparent.png" 
-            alt="CHECKY Logo" 
-            className="h-10 w-10 object-contain"
-            onError={(e) => {
-              // Fallback if image doesn't exist
-              e.currentTarget.style.display = 'none';
-            }}
-          />
-          <span style={{ 
-            fontFamily: 'Archivo, sans-serif',
-            fontWeight: 700,
-            fontSize: '38px',
+        {/* Logo Section - CENTRÉ */}
+        <div className="flex flex-col items-center" style={{ marginBottom: '80px' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <img 
+              src="/lovable-uploads/Checky simple - fond transparent.png" 
+              alt="CHECKY Logo" 
+              className="h-12 w-12 object-contain"
+              onError={(e) => {
+                console.log('Logo Checky not found');
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+            <span style={{ 
+              fontFamily: 'Fira Sans Condensed, sans-serif',
+              fontWeight: 700,
+              fontSize: '32px',
+              lineHeight: '36px',
+              color: '#FFFFFF'
+            }}>CHECKY</span>
+          </div>
+          <p style={{ 
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 300,
+            fontSize: '14px',
             lineHeight: '36px',
-            color: '#FFFFFF'
-          }}>CHECKY</span>
+            letterSpacing: '-0.5px',
+            color: '#0BD9D0',
+            textAlign: 'center'
+          }}>Le check-in digitalisé</p>
         </div>
-        <p style={{ 
-          fontFamily: 'Inter, sans-serif',
-          fontWeight: 300,
-          fontSize: '14px',
-          lineHeight: '36px',
-          letterSpacing: '-0.5px',
-          color: '#0BD9D0',
-          textAlign: 'center'
-        }}>Le check-in digitalisé</p>
         
         {currentStep === 'booking' && (
           <>
-            <div className="mt-8">
+            {/* Premier paragraphe - Réservation */}
+            <div>
               <p style={{ 
                 fontFamily: 'Inter, sans-serif',
-                fontWeight: 800,
-                fontSize: '24px',
-                lineHeight: '36px',
+                fontWeight: 400,
+                fontSize: '16px',
+                lineHeight: '24px',
                 letterSpacing: '-0.5px',
-                color: '#FFFFFF'
+                color: '#FFFFFF',
+                width: '309px',
+                marginBottom: '0'
               }}>
                 Votre réservation{propertyName ? ` à ${propertyName}` : ''} approche à grand pas. 
                 Réalisez votre check-in en quelques minutes.
               </p>
             </div>
             
-            <div className="mt-auto">
+            {/* Spacer pour pousser le dernier paragraphe en bas */}
+            <div style={{ flex: 1 }}></div>
+            
+            {/* Dernier paragraphe - Notre engagement */}
+            <div>
               <p style={{ 
                 fontFamily: 'Inter, sans-serif',
-                fontWeight: 800,
-                fontSize: '24px',
-                lineHeight: '36px',
+                fontWeight: 400,
+                fontSize: '12px',
+                lineHeight: '18px',
                 letterSpacing: '-0.5px',
-                color: '#FFFFFF'
+                color: '#FFFFFF',
+                width: '309px'
               }}>
                 Notre engagement : vos documents sont conservés conforméments aux exigences légales, 
                 transmis de manière sécurisée et accessibles uniquement par les parties concernées.
@@ -2317,17 +2327,22 @@ export const GuestVerification = () => {
         style={{ 
           backgroundColor: '#FDFDF9',
           marginLeft: '436px',
-          borderRadius: '12px',
           minHeight: '100vh'
         }}
       >
-        {/* Header with Language Switcher */}
-        <div className="p-6 flex justify-end">
+        {/* Header with Logo and Language Switcher */}
+        <div className="p-6 flex justify-between items-center">
+          {/* Logo Checky - Masqué */}
+          <div className="flex items-center" style={{ visibility: 'hidden' }}>
+            {/* Logo retiré à la demande de l'utilisateur */}
+          </div>
+          
+          {/* Language Switcher */}
           <LanguageSwitcher />
         </div>
         
         {/* Progress Steps - Matching Figma design */}
-        <div className="px-6 pb-8 flex items-center justify-center gap-4">
+        <div className="px-6 pb-8 flex items-start justify-center gap-16">
           {/* Step 1: Réservation */}
           <div className="flex flex-col items-center">
             <div 
@@ -2335,7 +2350,9 @@ export const GuestVerification = () => {
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
-                background: currentStep === 'booking' ? 'rgba(85, 186, 159, 0.42)' : 'rgba(71, 155, 162, 0.4)',
+                background: currentStep === 'booking'
+                  ? '#55BA9F'  // Vert quand actif
+                  : 'rgba(85, 186, 159, 0.42)', // #55BA9F à 42% quand complété
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -2350,17 +2367,24 @@ export const GuestVerification = () => {
               fontSize: '14px',
               lineHeight: '20px',
               color: currentStep === 'booking' ? '#000000' : '#6B7280',
-              marginTop: '8px'
-            }}>Réservation</span>
+              marginTop: '8px',
+              minHeight: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              textAlign: 'center',
+              flexDirection: 'column'
+            }}>
+              <span>Réservation</span>
+              {currentStep === 'booking' && (
+                <div style={{
+                  width: '100%',
+                  height: '2px',
+                  backgroundColor: '#000000',
+                  marginTop: '4px'
+                }} />
+              )}
+            </span>
           </div>
-          
-          {/* Connector Line */}
-          <div style={{
-            width: '80px',
-            height: '3px',
-            background: '#040404',
-            marginTop: '-20px'
-          }} />
           
           {/* Step 2: Documents d'identité */}
           <div className="flex flex-col items-center">
@@ -2369,7 +2393,11 @@ export const GuestVerification = () => {
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
-                background: currentStep === 'documents' ? '#8EE7E4' : 'rgba(71, 155, 162, 0.4)',
+                background: currentStep === 'documents'
+                  ? '#8EE7E4'  // Turquoise quand actif
+                  : currentStep === 'signature'
+                  ? '#D7EFED'  // Turquoise clair quand complété
+                  : 'rgba(71, 155, 162, 0.4)', // Gris turquoise pour inactif
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -2382,20 +2410,26 @@ export const GuestVerification = () => {
               fontFamily: 'Inter, sans-serif',
               fontWeight: 600,
               fontSize: '14px',
-              lineHeight: '14px',
+              lineHeight: '20px',
               color: currentStep === 'documents' ? '#000000' : '#6B7280',
               marginTop: '8px',
-              textAlign: 'center'
-            }}>Documents<br/>d'identité</span>
+              minHeight: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              textAlign: 'center',
+              flexDirection: 'column'
+            }}>
+              <span>Documents</span>
+              {currentStep === 'documents' && (
+                <div style={{
+                  width: '100%',
+                  height: '2px',
+                  backgroundColor: '#000000',
+                  marginTop: '4px'
+                }} />
+              )}
+            </span>
           </div>
-          
-          {/* Connector Line */}
-          <div style={{
-            width: '80px',
-            height: '3px',
-            background: currentStep === 'signature' ? '#040404' : '#D1D5DB',
-            marginTop: '-20px'
-          }} />
           
           {/* Step 3: Signature */}
           <div className="flex flex-col items-center">
@@ -2404,7 +2438,9 @@ export const GuestVerification = () => {
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
-                background: currentStep === 'signature' ? '#8EE7E4' : 'rgba(71, 155, 162, 0.4)',
+                background: currentStep === 'signature'
+                  ? 'rgba(80, 172, 180, 0.8)'  // #50ACB4 à 80% quand actif
+                  : 'rgba(71, 155, 162, 0.4)', // #479BA2 à 40% quand pas encore atteint
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -2417,11 +2453,25 @@ export const GuestVerification = () => {
               fontFamily: 'Inter, sans-serif',
               fontWeight: 600,
               fontSize: '14px',
-              lineHeight: '28px',
-              letterSpacing: '-0.5px',
+              lineHeight: '20px',
               color: currentStep === 'signature' ? '#000000' : '#6B7280',
-              marginTop: '8px'
-            }}>Signature</span>
+              marginTop: '8px',
+              minHeight: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              textAlign: 'center',
+              flexDirection: 'column'
+            }}>
+              <span>Signature</span>
+              {currentStep === 'signature' && (
+                <div style={{
+                  width: '100%',
+                  height: '2px',
+                  backgroundColor: '#000000',
+                  marginTop: '4px'
+                }} />
+              )}
+            </span>
           </div>
         </div>
         
@@ -2436,7 +2486,7 @@ export const GuestVerification = () => {
                     <motion.h2 
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="text-3xl font-bold text-gray-900 mb-8"
+                      className="text-3xl font-normal text-gray-900 mb-8 text-center"
                     >
                       Votre check-in commence ici
                     </motion.h2>
@@ -2474,7 +2524,7 @@ export const GuestVerification = () => {
                         
                         {/* Zone 3: Qui ? - Cliquable */}
                         <div 
-                          className="flex-1 cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors"
+                          className="flex-1 cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors relative"
                           onClick={() => {
                             setShowGuestsPanel(!showGuestsPanel);
                             setShowCalendarPanel(false);
@@ -2487,6 +2537,175 @@ export const GuestVerification = () => {
                               : 'Nombre de voyageurs'
                             }
                           </div>
+                          
+                          {/* Panneau flottant - Voyageurs DIRECTEMENT EN DESSOUS */}
+                          {showGuestsPanel && (
+                            <motion.div 
+                              ref={guestsPanelRef}
+                              initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                              className="absolute top-full left-0 mt-3 z-50"
+                            >
+                              <div 
+                                style={{
+                                  width: '250px',
+                                  height: '118px',
+                                  background: '#FFFFFF',
+                                  border: '1px solid #D3D3D3',
+                                  boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
+                                  borderRadius: '25px',
+                                  padding: '20px 24px',
+                                  fontFamily: 'Fira Sans Condensed, sans-serif',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  justifyContent: 'space-between'
+                                }}
+                              >
+                                {/* Adultes - Simple */}
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}>
+                                  <div style={{
+                                    fontFamily: 'Fira Sans Condensed, sans-serif',
+                                    fontWeight: 400,
+                                    fontSize: '16px',
+                                    lineHeight: '20px',
+                                    color: '#1E1E1E'
+                                  }}>Adultes</div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setNumberOfAdults(Math.max(1, numberOfAdults - 1));
+                                        const total = Math.max(1, numberOfAdults - 1) + numberOfChildren;
+                                        setNumberOfGuests(total);
+                                      }}
+                                      disabled={numberOfAdults <= 1}
+                                      style={{
+                                        width: '36px',
+                                        height: '36px',
+                                        borderRadius: '50%',
+                                        border: '1px solid #D3D3D3',
+                                        background: '#FFFFFF',
+                                        cursor: numberOfAdults <= 1 ? 'not-allowed' : 'pointer',
+                                        opacity: numberOfAdults <= 1 ? 0.5 : 1,
+                                        fontSize: '20px',
+                                        fontWeight: 400,
+                                        color: '#1E1E1E',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                    >−</button>
+                                    <span style={{
+                                      fontFamily: 'Fira Sans Condensed, sans-serif',
+                                      fontSize: '18px',
+                                      fontWeight: 400,
+                                      color: '#1E1E1E',
+                                      minWidth: '28px',
+                                      textAlign: 'center'
+                                    }}>{numberOfAdults}</span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setNumberOfAdults(numberOfAdults + 1);
+                                        const total = (numberOfAdults + 1) + numberOfChildren;
+                                        setNumberOfGuests(total);
+                                      }}
+                                      style={{
+                                        width: '36px',
+                                        height: '36px',
+                                        borderRadius: '50%',
+                                        border: '1px solid #D3D3D3',
+                                        background: '#FFFFFF',
+                                        cursor: 'pointer',
+                                        fontSize: '20px',
+                                        fontWeight: 400,
+                                        color: '#1E1E1E',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                    >+</button>
+                                  </div>
+                                </div>
+                                
+                                {/* Enfants - Simple */}
+                                <div style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between'
+                                }}>
+                                  <div style={{
+                                    fontFamily: 'Fira Sans Condensed, sans-serif',
+                                    fontWeight: 400,
+                                    fontSize: '16px',
+                                    lineHeight: '20px',
+                                    color: '#1E1E1E'
+                                  }}>Enfants</div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setNumberOfChildren(Math.max(0, numberOfChildren - 1));
+                                        const total = numberOfAdults + Math.max(0, numberOfChildren - 1);
+                                        setNumberOfGuests(total);
+                                      }}
+                                      disabled={numberOfChildren <= 0}
+                                      style={{
+                                        width: '36px',
+                                        height: '36px',
+                                        borderRadius: '50%',
+                                        border: '1px solid #D3D3D3',
+                                        background: '#FFFFFF',
+                                        cursor: numberOfChildren <= 0 ? 'not-allowed' : 'pointer',
+                                        opacity: numberOfChildren <= 0 ? 0.5 : 1,
+                                        fontSize: '20px',
+                                        fontWeight: 400,
+                                        color: '#1E1E1E',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                    >−</button>
+                                    <span style={{
+                                      fontFamily: 'Fira Sans Condensed, sans-serif',
+                                      fontSize: '18px',
+                                      fontWeight: 400,
+                                      color: '#1E1E1E',
+                                      minWidth: '28px',
+                                      textAlign: 'center'
+                                    }}>{numberOfChildren}</span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setNumberOfChildren(numberOfChildren + 1);
+                                        const total = numberOfAdults + (numberOfChildren + 1);
+                                        setNumberOfGuests(total);
+                                      }}
+                                      style={{
+                                        width: '36px',
+                                        height: '36px',
+                                        borderRadius: '50%',
+                                        border: '1px solid #D3D3D3',
+                                        background: '#FFFFFF',
+                                        cursor: 'pointer',
+                                        fontSize: '20px',
+                                        fontWeight: 400,
+                                        color: '#1E1E1E',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                    >+</button>
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
                         </div>
                         
                         {/* Zone 4: Bouton flèche verte */}
@@ -2501,138 +2720,39 @@ export const GuestVerification = () => {
                         </Button>
                       </motion.div>
                       
-                      {/* Panneau flottant - Calendrier */}
+                      {/* Panneau flottant - Calendrier CENTRÉ */}
                       {showCalendarPanel && (
                         <motion.div 
                           ref={calendarPanelRef}
                           initial={{ opacity: 0, y: -10, scale: 0.95 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
                           exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                          className="absolute top-full left-0 mt-3 w-full bg-white rounded-xl shadow-2xl z-50 p-6"
+                          className="absolute top-full left-0 right-0 mt-3 flex justify-center z-50"
                         >
-                          <div className="mb-4">
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">Sélectionnez vos dates</h3>
-                            <p className="text-sm text-gray-600">Choisissez vos dates d'arrivée et de départ</p>
+                          <div className="bg-white rounded-xl shadow-2xl p-6">
+                            <div className="mb-4 text-center">
+                              <h3 className="text-xl font-bold text-gray-900 mb-2">Sélectionnez vos dates</h3>
+                              <p className="text-sm text-gray-600">Choisissez vos dates d'arrivée et de départ</p>
+                            </div>
+                            
+                            <EnhancedCalendar
+                              mode="range"
+                              rangeStart={checkInDate}
+                              rangeEnd={checkOutDate}
+                              onRangeSelect={(checkIn, checkOut) => {
+                                // ✅ CORRIGÉ : Normaliser les dates à minuit local pour éviter les problèmes de comparaison
+                                const normalizedCheckIn = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
+                                const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
+                                setCheckInDate(normalizedCheckIn);
+                                setCheckOutDate(normalizedCheckOut);
+                                setShowCalendarPanel(false);
+                              }}
+                              className="mx-auto"
+                            />
                           </div>
-                          
-                          <EnhancedCalendar
-                            mode="range"
-                            rangeStart={checkInDate}
-                            rangeEnd={checkOutDate}
-                            onRangeSelect={(checkIn, checkOut) => {
-                              // ✅ CORRIGÉ : Normaliser les dates à minuit local pour éviter les problèmes de comparaison
-                              const normalizedCheckIn = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
-                              const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
-                              setCheckInDate(normalizedCheckIn);
-                              setCheckOutDate(normalizedCheckOut);
-                              setShowCalendarPanel(false);
-                            }}
-                            className="w-full"
-                          />
                         </motion.div>
                       )}
                       
-                      {/* Panneau flottant - Voyageurs */}
-                      {showGuestsPanel && (
-                        <motion.div 
-                          ref={guestsPanelRef}
-                          initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                          className="absolute top-full left-0 mt-3 w-full bg-[#FDFDF9] rounded-xl border border-gray-200 shadow-2xl z-50 p-6"
-                        >
-                          <h3 className="text-xl font-bold text-gray-900 mb-6">Nombre de voyageurs</h3>
-                          
-                          {/* Adultes */}
-                          <div className="flex items-center justify-between mb-6 pb-6 border-b border-gray-200">
-                            <div>
-                              <Label className="text-base font-semibold text-gray-900 block mb-1">Adultes</Label>
-                              <p className="text-sm text-gray-500">13 ans et plus</p>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="w-10 h-10 rounded-full"
-                                onClick={() => setNumberOfAdults(Math.max(1, numberOfAdults - 1))}
-                                disabled={numberOfAdults <= 1}
-                              >
-                                -
-                              </Button>
-                              <span className="w-12 text-center text-xl font-semibold">{numberOfAdults}</span>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="w-10 h-10 rounded-full"
-                                onClick={() => setNumberOfAdults(numberOfAdults + 1)}
-                              >
-                                +
-                              </Button>
-                            </div>
-                          </div>
-                          
-                          {/* Enfants */}
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <Label className="text-base font-semibold text-gray-900 block mb-1">Enfants</Label>
-                              <p className="text-sm text-gray-500">De 2 à 12 ans</p>
-                            </div>
-                            <div className="flex items-center gap-4">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="w-10 h-10 rounded-full"
-                                onClick={() => setNumberOfChildren(Math.max(0, numberOfChildren - 1))}
-                                disabled={numberOfChildren <= 0}
-                              >
-                                -
-                              </Button>
-                              <span className="w-12 text-center text-xl font-semibold">{numberOfChildren}</span>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="w-10 h-10 rounded-full"
-                                onClick={() => setNumberOfChildren(numberOfChildren + 1)}
-                              >
-                                +
-                              </Button>
-                            </div>
-                          </div>
-                          
-                          <Button
-                            className="w-full mt-6 bg-green-600 hover:bg-green-700 text-white"
-                            onClick={() => {
-                              const total = numberOfAdults + numberOfChildren;
-                              setNumberOfGuests(total);
-                              setGuests(prevGuests => {
-                                const currentGuests = [...prevGuests];
-                                if (total > currentGuests.length) {
-                                  const toAdd = total - currentGuests.length;
-                                  for (let i = 0; i < toAdd; i++) {
-                                    currentGuests.push({
-                                      fullName: '',
-                                      dateOfBirth: undefined,
-                                      nationality: '',
-                                      documentNumber: '',
-                                      documentType: 'passport',
-                                      profession: '',
-                                      motifSejour: 'TOURISME',
-                                      adressePersonnelle: '',
-                                      email: ''
-                                    });
-                                  }
-                                } else if (total < currentGuests.length) {
-                                  currentGuests.splice(total);
-                                }
-                                return currentGuests;
-                              });
-                              setShowGuestsPanel(false);
-                            }}
-                          >
-                            Confirmer
-                          </Button>
-                        </motion.div>
-                      )}
                     </div>
                     
                     {/* Bouton Suivant - Bas à droite */}
@@ -2640,7 +2760,7 @@ export const GuestVerification = () => {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.3 }}
-                      className="flex justify-end pt-6"
+                      className="flex justify-end pt-24"
                     >
                       <Button
                         className="text-white px-8 py-3 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
@@ -2725,22 +2845,19 @@ export const GuestVerification = () => {
                                 
                                 {/* Form Grid - 2 columns matching Figma */}
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                                  <div className="relative">
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
+                                      {t('guest.clients.fullName')} <span className="text-red-500">*</span>
+                                    </Label>
                                     <input
                                       type="text"
                                       id={`fullName-${index}`}
                                       value={guest.fullName}
                                       onChange={(e) => updateGuest(index, 'fullName', e.target.value)}
-                                      placeholder=" "
+                                      placeholder=""
                                       required
-                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
-                                    <label
-                                      htmlFor={`fullName-${index}`}
-                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
-                                    >
-                                      {t('guest.clients.fullName')} <span className="text-red-500">*</span>
-                                    </label>
                                   </div>
                                   
                                   <div className="space-y-2">
@@ -2777,23 +2894,20 @@ export const GuestVerification = () => {
                                     </Popover>
                                   </div>
                                   
-                                  <div className="relative">
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
+                                      {t('guest.clients.nationality')} <span className="text-red-500">*</span>
+                                    </Label>
                                     <input
                                       type="text"
                                       id={`nationality-${index}`}
                                       value={guest.nationality}
                                       onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
-                                      placeholder=" "
+                                      placeholder=""
                                       required
                                       list={`nationalities-list-${index}`}
-                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
-                                    <label
-                                      htmlFor={`nationality-${index}`}
-                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
-                                    >
-                                      {t('guest.clients.nationality')} <span className="text-red-500">*</span>
-                                    </label>
                                     <datalist id={`nationalities-list-${index}`}>
                                       {NATIONALITIES.filter(n => n !== '---').map((nationality) => (
                                         <option key={nationality} value={nationality} />
@@ -2801,46 +2915,45 @@ export const GuestVerification = () => {
                                     </datalist>
                                   </div>
                                   
-                                  <div className="relative">
-                                    <select
-                                      id={`documentType-${index}`}
-                                      value={guest.documentType} 
-                                      onChange={(e) => updateGuest(index, 'documentType', e.target.value)}
-                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
-                                    >
-                                      <option value="passport">{t('guest.clients.passport')}</option>
-                                      <option value="national_id">{t('guest.clients.nationalId')}</option>
-                                    </select>
-                                    <label
-                                      htmlFor={`documentType-${index}`}
-                                      className="absolute left-4 top-2 text-gray-500 text-xs pointer-events-none"
-                                    >
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.documentType')} <span className="text-red-500">*</span>
-                                    </label>
-                                    <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
+                                    </Label>
+                                    <div className="relative">
+                                      <select
+                                        id={`documentType-${index}`}
+                                        value={guest.documentType} 
+                                        onChange={(e) => updateGuest(index, 'documentType', e.target.value)}
+                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
+                                      >
+                                        <option value="passport">{t('guest.clients.passport')}</option>
+                                        <option value="national_id">{t('guest.clients.nationalId')}</option>
+                                      </select>
+                                      <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </div>
                                   </div>
                                   
-                                  <div className="relative">
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
+                                      {t('guest.clients.documentNumber')} <span className="text-red-500">*</span>
+                                    </Label>
                                     <input
                                       type="text"
                                       id={`documentNumber-${index}`}
                                       value={guest.documentNumber}
                                       onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
-                                      placeholder=" "
+                                      placeholder=""
                                       required
-                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
-                                    <label
-                                      htmlFor={`documentNumber-${index}`}
-                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
-                                    >
-                                      {t('guest.clients.documentNumber')} <span className="text-red-500">*</span>
-                                    </label>
                                   </div>
                                   
-                                  <div className="relative">
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
+                                      Profession
+                                    </Label>
                                     <input
                                       type="text"
                                       id={`profession-${index}`}
@@ -2850,48 +2963,44 @@ export const GuestVerification = () => {
                                         const target = e.target as HTMLInputElement;
                                         updateGuest(index, 'profession', target.value);
                                       }}
-                                      placeholder=" "
-                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      placeholder=""
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
-                                    <label
-                                      htmlFor={`profession-${index}`}
-                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
-                                    >
-                                      Profession
-                                    </label>
                                   </div>
                                   
-                                  <div className="relative">
-                                    <select
-                                      id={`motifSejour-${index}`}
-                                      name={`motifSejour-${index}`}
-                                      defaultValue={guest.motifSejour || ''} 
-                                      onChange={(e) => {
-                                        updateGuest(index, 'motifSejour', e.target.value);
-                                      }}
-                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
-                                      required
-                                    >
-                                      <option value="">Sélectionnez un motif</option>
-                                      <option value="TOURISME">Tourisme</option>
-                                      <option value="AFFAIRES">Affaires</option>
-                                      <option value="FAMILLE">Famille</option>
-                                      <option value="ÉTUDES">Études</option>
-                                      <option value="MÉDICAL">Médical</option>
-                                      <option value="AUTRE">Autre</option>
-                                    </select>
-                                    <label
-                                      htmlFor={`motifSejour-${index}`}
-                                      className="absolute left-4 top-2 text-gray-500 text-xs pointer-events-none"
-                                    >
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
                                       Motif du séjour <span className="text-red-500">*</span>
-                                    </label>
-                                    <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
+                                    </Label>
+                                    <div className="relative">
+                                      <select
+                                        id={`motifSejour-${index}`}
+                                        name={`motifSejour-${index}`}
+                                        defaultValue={guest.motifSejour || ''} 
+                                        onChange={(e) => {
+                                          updateGuest(index, 'motifSejour', e.target.value);
+                                        }}
+                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
+                                        required
+                                      >
+                                        <option value="">Sélectionnez un motif</option>
+                                        <option value="TOURISME">Tourisme</option>
+                                        <option value="AFFAIRES">Affaires</option>
+                                        <option value="FAMILLE">Famille</option>
+                                        <option value="ÉTUDES">Études</option>
+                                        <option value="MÉDICAL">Médical</option>
+                                        <option value="AUTRE">Autre</option>
+                                      </select>
+                                      <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </div>
                                   </div>
                                   
-                                  <div className="relative">
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
+                                      Adresse personnelle
+                                    </Label>
                                     <input
                                       type="text"
                                       id={`adresse-${index}`}
@@ -2901,18 +3010,15 @@ export const GuestVerification = () => {
                                         const target = e.target as HTMLInputElement;
                                         updateGuest(index, 'adressePersonnelle', target.value);
                                       }}
-                                      placeholder=" "
-                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      placeholder=""
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
-                                    <label
-                                      htmlFor={`adresse-${index}`}
-                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
-                                    >
-                                      Adresse personnelle
-                                    </label>
                                   </div>
                                   
-                                  <div className="relative">
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
+                                      Courriel <span className="text-red-500">*</span>
+                                    </Label>
                                     <input
                                       type="email"
                                       id={`email-${index}`}
@@ -2922,16 +3028,10 @@ export const GuestVerification = () => {
                                         const target = e.target as HTMLInputElement;
                                         updateGuest(index, 'email', target.value);
                                       }}
-                                      placeholder=" "
+                                      placeholder=""
                                       required
-                                      className="peer w-full px-4 pt-6 pb-2 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
-                                    <label
-                                      htmlFor={`email-${index}`}
-                                      className="absolute left-4 top-4 text-gray-500 text-base transition-all peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs pointer-events-none"
-                                    >
-                                      Courriel <span className="text-red-500">*</span>
-                                    </label>
                                   </div>
                                 </div>
                               </div>

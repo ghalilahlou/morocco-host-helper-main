@@ -513,6 +513,22 @@ serve(async (req) => {
           endDateType: typeof reservationData.endDate
         });
         
+        // ✅ CRITIQUE : Récupérer le user_id de la propriété AVANT de créer la réservation
+        console.log('🔍 Récupération du user_id de la propriété...');
+        const { data: propertyData, error: propertyError } = await server
+          .from('properties')
+          .select('user_id')
+          .eq('id', propertyId)
+          .single();
+        
+        if (propertyError || !propertyData || !propertyData.user_id) {
+          console.error('❌ Impossible de récupérer le user_id de la propriété:', propertyError);
+          throw new Error('Property owner (user_id) not found - cannot create booking');
+        }
+        
+        const propertyOwnerId = propertyData.user_id;
+        console.log('✅ user_id de la propriété récupéré:', propertyOwnerId.substring(0, 8) + '...');
+        
         // ✅ CORRIGÉ : Utiliser extractDateOnly pour éviter le décalage timezone
         // Les dates peuvent être des objets Date JavaScript ou des chaînes ISO
         const checkInDate = extractDateOnly(reservationData.startDate);
@@ -570,6 +586,7 @@ serve(async (req) => {
               const { data: newBooking, error: createError } = await server
                 .from('bookings')
                 .insert({
+                  user_id: propertyOwnerId, // ✅ CORRECTION CRITIQUE : Ajouter le user_id du propriétaire
                   property_id: propertyId,
                   check_in_date: checkInDate,
                   check_out_date: checkOutDate,

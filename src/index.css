@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 /* Import des animations personnalisées */
 @import './styles/animations.css';
 
@@ -96,6 +96,6 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "Inter", sans-serif;
+    font-family: "Fira Sans Condensed", "Inter", sans-serif;
   }
 }
