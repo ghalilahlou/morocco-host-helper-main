@@ -1707,6 +1707,10 @@ export const GuestVerification = () => {
         localStorage.setItem('currentBookingData', JSON.stringify(bookingData));
         localStorage.setItem('currentGuestData', JSON.stringify(guestInfo));
         localStorage.setItem('contractUrl', result.contractUrl);
+        // ✅ NOUVEAU: Sauvegarder le nom de propriété pour la page de confirmation
+        if (propertyName) {
+          localStorage.setItem('currentPropertyName', propertyName);
+        }
         if (result.policeUrl) {
           localStorage.setItem('policeUrl', result.policeUrl);
         }
@@ -1727,8 +1731,24 @@ export const GuestVerification = () => {
       
       const navigationState = { 
         bookingId, 
-        bookingData, 
-        guestData: guestInfo, // ✅ Utiliser les données unifiées
+        bookingData: {
+          ...bookingData,
+          // ✅ AJOUT : Inclure les guests dans bookingData pour le récapitulatif
+          guests: deduplicatedGuests.map(g => ({
+            fullName: g.fullName,
+            nationality: g.nationality,
+            documentNumber: g.documentNumber
+          }))
+        }, 
+        guestData: {
+          ...guestInfo,
+          // ✅ AJOUT : Inclure le tableau guests pour le récapitulatif de confirmation
+          guests: deduplicatedGuests.map(g => ({
+            fullName: g.fullName,
+            nationality: g.nationality,
+            documentNumber: g.documentNumber
+          }))
+        },
         contractUrl: result.contractUrl,
         policeUrl: result.policeUrl,
         propertyId,

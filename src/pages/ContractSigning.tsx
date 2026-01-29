@@ -496,8 +496,28 @@ export const ContractSigning: React.FC = () => {
   }
 
   if (isContractSigned) {
-    // Extraire les données pour l'affichage
-    const propertyName = propertyData?.name || submissionData?.booking_data?.propertyName || 'Votre hébergement';
+    // ✅ AMÉLIORATION: Récupérer les données depuis plusieurs sources
+    // Essayer d'abord localStorage, puis les props, puis les valeurs par défaut
+    let storedPropertyName = '';
+    let storedGuestName = '';
+    try {
+      storedPropertyName = localStorage.getItem('currentPropertyName') || '';
+      const storedGuestData = localStorage.getItem('currentGuestData');
+      if (storedGuestData) {
+        const parsed = JSON.parse(storedGuestData);
+        storedGuestName = parsed?.guests?.[0]?.fullName || parsed?.fullName || '';
+      }
+    } catch (e) {
+      console.log('Erreur lecture localStorage:', e);
+    }
+    
+    // Extraire les données pour l'affichage avec fallbacks multiples
+    const propertyName = storedPropertyName || 
+                         propertyData?.name || 
+                         submissionData?.booking_data?.propertyName || 
+                         submissionData?.propertyName ||
+                         tokenData?.property?.name ||
+                         'Votre hébergement';
     
     // ✅ AMÉLIORATION: Formater les dates en français
     const formatDateFr = (dateStr: string) => {
@@ -515,13 +535,20 @@ export const ContractSigning: React.FC = () => {
       }
     };
     
-    const checkInDate = formatDateFr(submissionData?.booking_data?.checkInDate || '');
-    const checkOutDate = formatDateFr(submissionData?.booking_data?.checkOutDate || '');
+    const checkInDate = formatDateFr(submissionData?.booking_data?.checkInDate || submissionData?.booking_data?.checkIn || '');
+    const checkOutDate = formatDateFr(submissionData?.booking_data?.checkOutDate || submissionData?.booking_data?.checkOut || '');
     
-    // ✅ AMÉLIORATION: Calculer le nombre total d'invités et afficher correctement
-    const allGuests = submissionData?.guest_data?.guests || submissionData?.booking_data?.guests || [];
-    const totalGuests = allGuests.length;
-    const firstGuestName = allGuests[0]?.fullName || 'Invité';
+    // ✅ AMÉLIORATION: Calculer le nombre total d'invités avec fallbacks multiples
+    const allGuests = submissionData?.guest_data?.guests || 
+                      submissionData?.guestData?.guests ||
+                      submissionData?.booking_data?.guests || 
+                      [];
+    const totalGuests = Array.isArray(allGuests) ? allGuests.length : 0;
+    const firstGuestName = storedGuestName || 
+                           allGuests[0]?.fullName || 
+                           allGuests[0]?.full_name ||
+                           allGuests[0]?.name ||
+                           'Invité';
     
     let guestDisplay = firstGuestName;
     if (totalGuests > 1) {
@@ -532,11 +559,14 @@ export const ContractSigning: React.FC = () => {
     // ✅ LOG: Diagnostiquer les données du récapitulatif
     console.log('📋 [RÉCAPITULATIF] Données affichées:', {
       propertyName,
+      storedPropertyName,
+      propertyDataName: propertyData?.name,
       checkInDate,
       checkOutDate,
       totalGuests,
       firstGuestName,
-      guestDisplay
+      guestDisplay,
+      submissionData
     });
 
     return (
@@ -555,13 +585,13 @@ export const ContractSigning: React.FC = () => {
           justifyContent: 'center'
         }}
       >
-        {/* Logo Checky centré proche du titre */}
-        <div style={{ position: 'absolute', top: '140px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
+        {/* Logo Checky centré AU-DESSUS du titre - remonté pour ne pas chevaucher */}
+        <div style={{ position: 'absolute', top: '60px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
           <img 
             src="/lovable-uploads/Checky simple - fond transparent.png" 
             alt="Checky Logo" 
             style={{ 
-              width: '150px', 
+              width: '120px', 
               height: 'auto', 
               objectFit: 'contain'
             }}
