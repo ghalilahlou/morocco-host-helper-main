@@ -99,8 +99,7 @@ serve(async (req: Request) => {
         *,
         property:properties(
           *,
-          contract_template,
-          user:profiles(*)
+          contract_template
         )
       `)
       .eq('id', bookingId)
@@ -110,12 +109,26 @@ serve(async (req: Request) => {
       throw new Error(`Booking non trouvé: ${bookingError?.message}`);
     }
 
+    // ✅ ÉTAPE 1b: Récupérer le profil du propriétaire séparément
+    let ownerProfile = null;
+    if (booking.property?.user_id) {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', booking.property.user_id)
+        .single();
+      
+      if (profile && !profileError) {
+        ownerProfile = profile;
+      }
+    }
+
     log('info', '✅ Booking récupéré', {
       bookingId: booking.id,
       propertyId: booking.property?.id,
       propertyUserId: booking.property?.user_id,
-      propertyUserEmail: booking.property?.user?.email,
-      propertyUserPhone: booking.property?.user?.phone,
+      ownerEmail: ownerProfile?.email,
+      ownerPhone: ownerProfile?.phone,
       checkIn: booking.check_in_date,
       checkOut: booking.check_out_date
     });
