@@ -851,7 +851,7 @@ const handleOpenConfig = useCallback(() => {
     
     // ✅ CORRECTION : Filtrer les réservations pour n'afficher que celles avec tous les documents requis
     // Une réservation doit avoir : contrat + police + identité pour apparaître
-    const SHOW_ALL_BOOKINGS = false; // ✅ Filtrer par documents requis (police, contrat, identité)
+    const SHOW_ALL_BOOKINGS = true; // ✅ TEMPORAIRE: Afficher toutes les réservations même sans police (en attendant le fix de génération)
     
     // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
     // Ce log était dans un useMemo et s'exécutait à chaque re-render

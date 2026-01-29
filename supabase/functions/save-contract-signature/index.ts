@@ -286,6 +286,39 @@ serve(async (req) => {
       // Ne pas faire échouer la fonction pour cette erreur
     }
 
+    // ✅ NOUVEAU : Régénérer la fiche de police avec la signature du guest
+    console.log('🔄 Génération/Régénération de la fiche de police avec signature guest...');
+    
+    try {
+      const policeGenerationUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/regenerate-police-with-signature`;
+      const policeResponse = await fetch(policeGenerationUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+        },
+        body: JSON.stringify({
+          action: 'regenerate_police_with_signature',
+          bookingId: body.bookingId
+        })
+      });
+
+      if (!policeResponse.ok) {
+        const errorText = await policeResponse.text();
+        console.warn('⚠️ Échec de la génération de la fiche de police:', errorText);
+      } else {
+        const policeResult = await policeResponse.json();
+        console.log('✅ Fiche de police régénérée avec signature guest:', {
+          success: policeResult.success,
+          hasSignature: policeResult.hasGuestSignature || false,
+          message: policeResult.message
+        });
+      }
+    } catch (policeRegenError) {
+      console.warn('⚠️ Erreur lors de la régénération de la fiche de police:', policeRegenError);
+      // Ne pas faire échouer la fonction pour cette erreur  
+    }
+
     console.log('✅ Fonction save-contract-signature terminée avec succès');
 
     // Successful response

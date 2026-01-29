@@ -367,13 +367,10 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
         console.log('🔍 Police booking data being sent:', booking);
         console.log('🔍 Police contract template:', booking.property.contract_template);
 
-        // ✅ CORRECTION : Utiliser submit-guest-info-unified avec mode preview
-        // Cette fonction utilise la logique complète de génération de police avec support arabe
-        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+        // ✅ NOUVEAU: Utiliser la nouvelle Edge Function dédiée
+        const { data, error } = await supabase.functions.invoke('generate-police-form', {
           body: { 
-            action: 'generate_police_only',
-            // Mode preview : passer l'objet booking directement
-            booking: booking
+            bookingId: booking.id
           }
         });
         if (error) throw error as any;

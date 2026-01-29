@@ -87,18 +87,18 @@ export const ContractSigning: React.FC = () => {
             token: navigationState.token,
             property: { 
               id: navigationState.propertyId,
-              name: 'Propriété',
-              address: 'Adresse',
-              contract_template: null,
-              contact_info: null,
-              house_rules: []
+              name: navigationState.propertyName || navigationState.property?.name || 'Propriété',
+              address: navigationState.propertyAddress || navigationState.property?.address || 'Adresse',
+              contract_template: navigationState.property?.contract_template || null,
+              contact_info: navigationState.property?.contact_info || null,
+              house_rules: navigationState.property?.house_rules || []
             }
           });
           
           setPropertyData({
             id: navigationState.propertyId,
-            name: 'Propriété',
-            address: 'Adresse'
+            name: navigationState.propertyName || navigationState.property?.name || 'Propriété',
+            address: navigationState.propertyAddress || navigationState.property?.address || 'Adresse'
           });
           
           // ✅ CORRIGÉ : S'assurer que booking_data existe, sinon le créer depuis bookingData
@@ -207,6 +207,13 @@ export const ContractSigning: React.FC = () => {
           is_active: true
         };
         const propertyData = tokenVerification.property;
+
+        // ✅ LOG: Diagnostiquer propertyData
+        console.log('🏠 [CONTRACT SIGNING] PropertyData récupéré:', {
+          propertyData,
+          propertyName: propertyData?.name,
+          propertyId: propertyData?.id
+        });
 
         setTokenData(tokenData);
         setPropertyData(propertyData);
@@ -491,9 +498,46 @@ export const ContractSigning: React.FC = () => {
   if (isContractSigned) {
     // Extraire les données pour l'affichage
     const propertyName = propertyData?.name || submissionData?.booking_data?.propertyName || 'Votre hébergement';
-    const checkInDate = submissionData?.booking_data?.checkInDate || '';
-    const checkOutDate = submissionData?.booking_data?.checkOutDate || '';
-    const guestName = submissionData?.guest_data?.guests?.[0]?.fullName || submissionData?.booking_data?.guests?.[0]?.fullName || 'Invité';
+    
+    // ✅ AMÉLIORATION: Formater les dates en français
+    const formatDateFr = (dateStr: string) => {
+      if (!dateStr) return '';
+      try {
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('fr-FR', { 
+          weekday: 'long', 
+          day: 'numeric', 
+          month: 'long', 
+          year: 'numeric' 
+        });
+      } catch {
+        return dateStr;
+      }
+    };
+    
+    const checkInDate = formatDateFr(submissionData?.booking_data?.checkInDate || '');
+    const checkOutDate = formatDateFr(submissionData?.booking_data?.checkOutDate || '');
+    
+    // ✅ AMÉLIORATION: Calculer le nombre total d'invités et afficher correctement
+    const allGuests = submissionData?.guest_data?.guests || submissionData?.booking_data?.guests || [];
+    const totalGuests = allGuests.length;
+    const firstGuestName = allGuests[0]?.fullName || 'Invité';
+    
+    let guestDisplay = firstGuestName;
+    if (totalGuests > 1) {
+      const othersCount = totalGuests - 1;
+      guestDisplay = `${firstGuestName} + ${othersCount} autre${othersCount > 1 ? 's' : ''}`;
+    }
+    
+    // ✅ LOG: Diagnostiquer les données du récapitulatif
+    console.log('📋 [RÉCAPITULATIF] Données affichées:', {
+      propertyName,
+      checkInDate,
+      checkOutDate,
+      totalGuests,
+      firstGuestName,
+      guestDisplay
+    });
 
     return (
       <div 
@@ -527,6 +571,8 @@ export const ContractSigning: React.FC = () => {
 
         {/* Contenu principal centré */}
         <div style={{ textAlign: 'center', maxWidth: '648px', padding: '0 24px' }}>
+
+          
           {/* Titre de confirmation */}
           <h1 style={{
             fontFamily: 'Fira Sans Condensed, sans-serif',

@@ -220,9 +220,13 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
     }`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-            <div className="space-y-1">
+          <div className="space-y-1">
               <div className="flex items-center space-x-2">
-                <h3 className="font-semibold text-foreground">{booking.guests?.[0]?.fullName || `Réservation #${booking.id.slice(-6)}`}</h3>
+                <h3 className="font-semibold text-foreground">
+                  {booking.guests?.[0]?.fullName || 
+                   booking.guest_name || 
+                   'Réservation sans nom'}
+                </h3>
                 {getStatusBadge()}
                 {/* ✅ NOUVEAU : Indicateur d'alerte si completed sans documents */}
                 {isCompletedWithoutDocuments && (
@@ -355,14 +359,14 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
                     timestamp: new Date().toISOString()
                   });
 
-                  const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+                  // ✅ NOUVEAU: Utiliser la nouvelle Edge Function dédiée
+                  const { data, error } = await supabase.functions.invoke('generate-police-form', {
                     body: { 
-                      bookingId: booking.id,
-                      action: 'generate_police_only'
+                      bookingId: booking.id
                     }
                   });
 
-                  console.log('🔍 APRÈS APPEL generate-police-forms:', {
+                  console.log('🔍 APRÈS APPEL generate-police-form:', {
                     data,
                     error,
                     hasData: !!data,

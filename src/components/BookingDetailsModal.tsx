@@ -159,14 +159,13 @@ export const BookingDetailsModal = ({
   const handleGeneratePolice = async () => {
     try {
       console.log('👮 Generating police forms for booking:', booking.id);
-      // ✅ CORRECTION : Utiliser submit-guest-info-unified au lieu de generate-police-forms
+      // ✅ NOUVEAU: Utiliser la nouvelle Edge Function dédiée
       const {
         data,
         error
-      } = await supabase.functions.invoke('submit-guest-info-unified', {
+      } = await supabase.functions.invoke('generate-police-form', {
         body: {
-          bookingId: booking.id,
-          action: 'generate_police_only'
+          bookingId: booking.id
         }
       });
       console.log('👮 Police generation response:', {

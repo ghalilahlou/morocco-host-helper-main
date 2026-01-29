@@ -77,7 +77,10 @@ export const MobileBookingCard = ({
             <div className="flex-1 min-w-0">
               <div className="flex items-center space-x-2 mb-2">
                 <h3 className="font-semibold text-gray-900 truncate text-lg">
-                  {primaryGuest?.full_name || `Réservation #${booking.id.slice(-6)}`}
+                  {primaryGuest?.full_name || 
+                   booking.guest_name || 
+                   booking.guestName || 
+                   'Réservation sans nom'}
                 </h3>
                 <Badge className={`text-xs ${getStatusColor(booking.status)}`}>
                   {getStatusLabel(booking.status)}

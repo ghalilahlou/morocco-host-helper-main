@@ -82,7 +82,16 @@ serve(async (req) => {
     const requestData = await req.json();
     console.log('📥 Request data:', requestData);
 
-    const { bookingId, booking: previewBooking } = requestData;
+    const { bookingId, booking: previewBooking, guestSignature } = requestData;
+    
+    // Log de la signature du guest si présente
+    if (guestSignature) {
+      console.log('🖊️ Guest signature reçue:', {
+        hasData: !!guestSignature.data,
+        hasTimestamp: !!guestSignature.timestamp,
+        dataLength: guestSignature.data?.length || 0
+      });
+    }
 
     let booking: Booking;
 
@@ -149,8 +158,8 @@ serve(async (req) => {
 
     console.log(`📋 Generating police forms for ${guests.length} validated guests`);
 
-    // Generate police forms avec la logique complète
-    const documentUrl = await generatePoliceFormsPDF(client, booking);
+    // Generate police forms avec la logique complète ET la signature du guest
+    const documentUrl = await generatePoliceFormsPDF(client, booking, guestSignature);
     
     // ✅ CORRECTION : Ne sauvegarder en base que si bookingId existe (mode normal, pas preview)
     let documentRecord = null;
@@ -299,8 +308,23 @@ async function saveDocumentToDatabase(
 }
 
 // Generate police forms PDF - Format officiel marocain bilingue EXACT
-async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
+async function generatePoliceFormsPDF(
+  client: any,
+  booking: Booking, 
+  guestSignature?: { data: string; timestamp: string } | null
+): Promise<string> {
   console.log('📄 Creating police forms PDF...');
+  
+  // Log de la signature du guest
+  if (guestSignature) {
+    console.log('🖊️ Guest signature disponible pour intégration:', {
+      hasData: !!guestSignature.data,
+      hasTimestamp: !!guestSignature.timestamp,
+      dataLength: guestSignature.data?.length || 0
+    });
+  } else {
+    console.log('⚠️ Aucune signature guest fournie');
+  }
   
   const { PDFDocument, StandardFonts, rgb } = await import('https://esm.sh/pdf-lib@1.17.1');
   
@@ -529,6 +553,125 @@ async function generatePoliceFormsPDF(booking: Booking): Promise<string> {
       console.error('❌ ERREUR CRITIQUE dans la section signature:', e);
       console.error('❌ Stack trace:', e.stack);
       console.warn('⚠️ Signature section error:', e.message);
+    }
+    
+    // ✅ NOUVEAU : Ajouter la signature du GUEST si disponible
+    yPosition -= 80; // Espace après la signature du landlord
+    
+    page.drawText('DATE ET SIGNATURE DU LOCATAIRE:', {
+      x: leftColumn,
+      y: yPosition,
+      size: fontSize,
+      font: boldFont
+    });
+    
+    if (guestSignature && guestSignature.data) {
+      try {
+        console.log('🖊️ Début intégration signature guest dans PDF');
+        
+        const guestSigData = guestSignature.data;
+        
+        // Vérifier que c'est une data URL valide
+        if (!guestSigData.startsWith('data:image/')) {
+          console.error('❌ Format invalide signature guest : ne commence pas par data:image/');
+          throw new Error('Invalid guest signature format');
+        }
+        console.log('✅ Format data:image/ validé pour signature guest');
+        
+        const cleanGuestSig = guestSigData.replace(/^data:image\/[^;]+;base64,/, '');
+        console.log('🧹 Base64 nettoyé signature guest, longueur:', cleanGuestSig.length);
+        
+        if (!cleanGuestSig || cleanGuestSig.length === 0) {
+          console.error('❌ Base64 vide après nettoyage signature guest');
+          throw new Error('Empty base64 data for guest signature');
+        }
+        
+        let guestImg;
+        try {
+          console.log('🖼️ Tentative embedPng signature guest...');
+          guestImg = await pdfDoc.embedPng(Uint8Array.from(atob(cleanGuestSig), (c) => c.charCodeAt(0)));
+          console.log('✅ Signature guest PNG embedded');
+        } catch (pngError) {
+          console.log('⚠️ PNG failed pour signature guest, tentative JPEG...', pngError);
+          try {
+            guestImg = await pdfDoc.embedJpg(Uint8Array.from(atob(cleanGuestSig), (c) => c.charCodeAt(0)));
+            console.log('✅ Signature guest JPEG embedded');
+          } catch (jpgError) {
+            console.error('❌ PNG et JPEG ont échoué pour signature guest', { pngError, jpgError });
+            throw new Error('Failed to decode guest signature image');
+          }
+        }
+        
+        console.log('📐 Image dimensions signature guest:', { width: guestImg.width, height: guestImg.height });
+        
+        // Calculer les dimensions pour la signature guest
+        const maxGuestWidth = Math.min(180, (pageWidth - (margin * 2)) * 0.8);
+        const maxGuestHeight = 60;
+        
+        const guestAspect = guestImg.width / guestImg.height;
+        let guestWidth = Math.min(maxGuestWidth, guestImg.width);
+        let guestHeight = guestWidth / guestAspect;
+        if (guestHeight > maxGuestHeight) {
+          guestHeight = maxGuestHeight;
+          guestWidth = maxGuestHeight * guestAspect;
+        }
+        
+        const guestSignatureX = leftColumn;
+        const guestSignatureRightEdge = guestSignatureX + guestWidth;
+        const maxRightEdge = pageWidth - margin;
+        
+        let finalGuestWidth = guestWidth;
+        let finalGuestHeight = guestHeight;
+        if (guestSignatureRightEdge > maxRightEdge) {
+          const overflow = guestSignatureRightEdge - maxRightEdge;
+          const reductionFactor = (guestWidth - overflow) / guestWidth;
+          finalGuestWidth = guestWidth * reductionFactor;
+          finalGuestHeight = guestHeight * reductionFactor;
+          console.warn('⚠️ Signature guest débordait, dimensions réduites:', {
+            originalWidth: guestWidth,
+            originalHeight: guestHeight,
+            finalGuestWidth,
+            finalGuestHeight,
+            overflow
+          });
+        }
+        
+        console.log('🎨 Position signature guest:', {
+          x: guestSignatureX,
+          y: yPosition - finalGuestHeight - 10,
+          width: finalGuestWidth,
+          height: finalGuestHeight
+        });
+        
+        page.drawImage(guestImg, {
+          x: guestSignatureX,
+          y: yPosition - finalGuestHeight - 10,
+          width: finalGuestWidth,
+          height: finalGuestHeight
+        });
+        
+        console.log('✅✅✅ Guest signature embedded successfully!');
+        
+        // Ajouter la date de signature
+        if (guestSignature.timestamp) {
+          yPosition -= finalGuestHeight + 15;
+          const signedDate = new Date(guestSignature.timestamp).toLocaleDateString('fr-FR');
+          page.drawText(`Signé le: ${signedDate}`, {
+            x: leftColumn,
+            y: yPosition,
+            size: fontSize - 1,
+            font: font
+          });
+        }
+        
+      } catch (guestSigError) {
+        console.error('❌ ERREUR lors de l\'embedding de la signature guest:', guestSigError);
+        console.error('❌ Stack trace:', guestSigError.stack);
+        console.warn('⚠️ Skipped guest signature (invalid format):', guestSigError.message);
+        // Continuer sans la signature guest
+      }
+    } else {
+      console.log('ℹ️ No guest signature available');
     }
     
     yPosition -= 60;

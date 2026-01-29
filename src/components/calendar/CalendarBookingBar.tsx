@@ -104,17 +104,8 @@ export const CalendarBookingBar = memo(({
       };
     }
 
-    // ✅ PRIORITÉ 2 (ABSOLUE): INDEPENDENT_BOOKING confirmées/completed → TOUJOURS GRIS
-    // Cette vérification AVANT bookingData.color garantit que les réservations 
-    // indépendantes validées restent grises même avec la sync ICS activée
-    if (isIndependentConfirmed) {
-      return {
-        barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5
-        textColor: 'text-gray-900'
-      };
-    }
-
-    // 3. Utiliser la couleur depuis colorOverrides si disponible (convertir tailwind en hex)
+    // 2. Utiliser la couleur depuis colorOverrides si disponible (convertir tailwind en hex)
+    // MAIS cette couleur peut être overridée par les vérifications suivantes (ex: independent confirmed)
     if (bookingData.color) {
       // Extraire la couleur hex depuis la classe tailwind
       let hexColor = bookingData.color;
@@ -131,12 +122,30 @@ export const CalendarBookingBar = memo(({
         hexColor = BOOKING_COLORS.conflict.hex; // #FF5A5F
       }
       
+      // ✅ CRITIQUE: Vérifier si c'est une réservation indépendante confirmée APRÈS avoir extrait la couleur
+      // Cela garantit que les réservations indépendantes confirmées restent grises même avec ICS sync
+      if (isIndependentConfirmed) {
+        return {
+          barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5
+          textColor: 'text-gray-900'
+        };
+      }
+      
       // Déterminer la couleur du texte selon la couleur de fond
       const textColorClass = hexColor === BOOKING_COLORS.completed.hex ? 'text-gray-900' : 'text-white';
       
       return {
         barColor: hexColor,
         textColor: textColorClass
+      };
+    }
+
+    // 3. ✅ PRIORITÉ: INDEPENDENT_BOOKING confirmées/completed → TOUJOURS GRIS
+    // Cette vérification s'applique même si bookingData.color n'est pas défini
+    if (isIndependentConfirmed) {
+      return {
+        barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5
+        textColor: 'text-gray-900'
       };
     }
 

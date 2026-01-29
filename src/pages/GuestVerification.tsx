@@ -71,7 +71,7 @@ import { validateTokenDirect } from '@/utils/tokenValidation';
 import { Guest } from '@/types/booking'; // ✅ Importer le type centralisé
 import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
 import { AnimatePresence } from 'framer-motion';
-
+import { useIsMobile } from '@/hooks/use-mobile';
 // Liste complète des nationalités
 const NATIONALITIES = [
   'Morocco', '---', 'France', 'Spain', 'Italy', 'Germany', 'United Kingdom', 'Belgium', 'Netherlands', 'Portugal',
@@ -153,6 +153,7 @@ export const GuestVerification = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const t = useT();
+  const isMobile = useIsMobile(); // ✅ NOUVEAU: Détection mobile pour UI responsive
   const [isLoading, setIsLoading] = useState(false);
   const [submissionComplete, setSubmissionComplete] = useState(false);
   const [isValidToken, setIsValidToken] = useState(false);
@@ -994,7 +995,7 @@ export const GuestVerification = () => {
           )
         );
 
-        // ✅ CORRIGÉ : Vérifier si les données sont valides AVANT de mettre à jour les guests
+        // ✅ AMÉLIORÉ : Accepter le document même si certains champs manquent
         if (extractedData && Object.keys(extractedData).length > 0) {
           const hasRequiredIdFields = extractedData.fullName && 
                                     extractedData.documentNumber && 
@@ -1002,22 +1003,21 @@ export const GuestVerification = () => {
                                     extractedData.documentType;
 
           if (!hasRequiredIdFields) {
+            // ✅ NOUVEAU : Au lieu de rejeter, accepter et demander complétion manuelle
+            const missingFields = [];
+            if (!extractedData.fullName) missingFields.push('nom complet');
+            if (!extractedData.documentNumber) missingFields.push('numéro de document');
+            if (!extractedData.nationality) missingFields.push('nationalité');
+            if (!extractedData.documentType) missingFields.push('type de document');
+            
             toast({
-              title: t('upload.docInvalid.title'),
-              description: t('upload.docInvalid.desc'),
-              variant: "destructive",
+              title: "Document partiellement reconnu",
+              description: `Certaines informations n'ont pas pu être extraites automatiquement (${missingFields.join(', ')}). Veuillez les compléter manuellement ci-dessous.`,
+              variant: "default",
             });
             
-            // ✅ SIMPLIFIÉ : Marquer comme invalide (SANS startTransition)
-            setUploadedDocuments(prev => 
-              prev.map(doc => 
-                doc.url === url 
-                  ? { ...doc, processing: false, extractedData: null, isInvalid: true }
-                  : doc
-              )
-            );
-            // ✅ CORRIGÉ : Utiliser un flag pour sortir du try et continuer la boucle
-            throw new Error('INVALID_DOCUMENT'); // Utiliser throw pour sortir du try
+            // ✅ ACCEPTER le document avec les données partielles
+            // L'utilisateur pourra compléter manuellement
           }
 
           // ✅ RÉACTIVÉ : La mise à jour automatique fonctionne maintenant avec des select natifs (pas de Portals)
@@ -1406,7 +1406,8 @@ export const GuestVerification = () => {
       const bookingData = {
         checkInDate: formatLocalDate(checkInDate),
         checkOutDate: formatLocalDate(checkOutDate),
-        numberOfGuests: deduplicatedGuests.length // ✅ CORRIGÉ : Utiliser le nombre réel de guests dédupliqués
+        numberOfGuests: deduplicatedGuests.length, // ✅ CORRIGÉ : Utiliser le nombre réel de guests dédupliqués
+        propertyName: propertyName || 'Votre hébergement' // ✅ AJOUTÉ : Nom de la propriété
       };
 
       // ✅ CORRIGÉ : SUPPRESSION DE L'UPLOAD MANUEL DUPLIQUÉ
@@ -1731,6 +1732,7 @@ export const GuestVerification = () => {
         contractUrl: result.contractUrl,
         policeUrl: result.policeUrl,
         propertyId,
+        propertyName: propertyName || 'Votre hébergement', // ✅ AJOUTÉ : Nom de la propriété
         token,
         // ✅ AJOUTER : Timestamp pour éviter les conflits
         timestamp: Date.now()
@@ -2036,8 +2038,81 @@ export const GuestVerification = () => {
   const currentStepIndex = ['booking', 'documents', 'signature'].indexOf(currentStep);
 
   return (
-    <div className="min-h-screen flex" style={{ backgroundColor: '#FDFDF9' }}>
-      {/* Left Sidebar - Fixed 436px width matching Figma */}
+    <div className="min-h-screen flex flex-col md:flex-row" style={{ backgroundColor: '#FDFDF9' }}>
+      
+      {/* ========================================
+          MOBILE HEADER - Visible uniquement sur mobile
+          ======================================== */}
+      {isMobile && (
+        <div className="mobile-header safe-area-top">
+          {/* Logo CHECKY */}
+          <div className="flex items-center gap-2">
+            <img 
+              src="/lovable-uploads/Checky simple - fond transparent.png" 
+              alt="CHECKY" 
+              className="h-8 w-8 object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+            <span style={{ 
+              fontFamily: 'Fira Sans Condensed, sans-serif',
+              fontWeight: 700,
+              fontSize: '20px',
+              color: '#FFFFFF'
+            }}>CHECKY</span>
+          </div>
+          
+          {/* Stepper compact mobile */}
+          <div className="flex items-center gap-2">
+            {/* Step 1 */}
+            <div 
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                currentStep === 'booking' 
+                  ? 'bg-teal-400/80' 
+                  : currentStepIndex > 0 ? 'bg-teal-200' : 'bg-gray-500/40'
+              }`}
+            >
+              <CalendarLucide className="w-4 h-4 text-white" />
+            </div>
+            
+            {/* Connector */}
+            <div className={`w-4 h-0.5 ${currentStepIndex >= 1 ? 'bg-teal-400' : 'bg-gray-500/40'}`} />
+            
+            {/* Step 2 */}
+            <div 
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                currentStep === 'documents' 
+                  ? 'bg-teal-400/80' 
+                  : currentStepIndex > 1 ? 'bg-teal-200' : 'bg-gray-500/40'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-white" />
+            </div>
+            
+            {/* Connector */}
+            <div className={`w-4 h-0.5 ${currentStepIndex >= 2 ? 'bg-teal-400' : 'bg-gray-500/40'}`} />
+            
+            {/* Step 3 */}
+            <div 
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                currentStep === 'signature' 
+                  ? 'bg-teal-400/80' 
+                  : 'bg-gray-500/40'
+              }`}
+            >
+              <PenTool className="w-4 h-4 text-white" />
+            </div>
+          </div>
+          
+          {/* Language Switcher */}
+          <LanguageSwitcher />
+        </div>
+      )}
+      
+      {/* ========================================
+          LEFT SIDEBAR - Visible uniquement sur desktop (md:)
+          ======================================== */}
       <div 
         className="hidden md:flex text-white flex-col fixed left-0 top-0 h-screen z-10" 
         style={{ 
@@ -2482,64 +2557,97 @@ export const GuestVerification = () => {
                 {/* ✅ CORRIGÉ : Retirer AnimatePresence pour éviter les conflits avec les Portals Radix UI */}
                 {/* Utiliser simplement des div conditionnelles avec des clés stables */}
                 {currentStep === 'booking' && (
-                  <div className="max-w-4xl mx-auto space-y-8 relative">
+                  <div className={`mx-auto space-y-6 relative ${isMobile ? 'max-w-full px-4' : 'max-w-4xl'}`}>
+                    {/* Titre - adapté mobile */}
                     <motion.h2 
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="text-3xl font-normal text-gray-900 mb-8 text-center"
+                      className={`font-normal text-gray-900 text-center ${
+                        isMobile ? 'text-xl mb-4 mt-2' : 'text-3xl mb-8'
+                      }`}
                     >
-                      Votre check-in commence ici
+                      {isMobile ? 'Votre check-in' : 'Votre check-in commence ici'}
                     </motion.h2>
                     
-                    {/* Central Search Bar - 4 zones cliquables */}
+                    {/* Central Search Bar - Responsive */}
                     <div className="relative">
                       <motion.div 
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1 }}
-                        className="bg-[#FDFDF9] rounded-2xl border border-gray-200 p-5 flex items-end gap-4 shadow-lg hover:shadow-xl transition-all duration-300"
+                        className={`bg-white rounded-2xl border border-gray-200 shadow-lg transition-all duration-300 ${
+                          isMobile 
+                            ? 'p-4 flex flex-col gap-3' 
+                            : 'p-5 flex items-end gap-4 hover:shadow-xl'
+                        }`}
                       >
                         {/* Zone 1: Hébergement */}
-                        <div className="flex-1 cursor-default">
-                          <Label className="text-xs text-gray-500 mb-1.5 block font-normal uppercase tracking-wide">Hébergement</Label>
-                          <div className="text-lg font-semibold text-gray-900">{propertyName || 'studio casa'}</div>
+                        <div className={`cursor-default ${
+                          isMobile 
+                            ? 'p-3 bg-gray-50 rounded-xl border border-gray-100' 
+                            : 'flex-1'
+                        }`}>
+                          <Label className={`text-gray-500 block font-normal uppercase tracking-wide ${
+                            isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'
+                          }`}>Hébergement</Label>
+                          <div className={`font-semibold text-gray-900 ${
+                            isMobile ? 'text-base' : 'text-lg'
+                          }`}>{propertyName || 'Propriété'}</div>
                         </div>
                         
                         {/* Zone 2: Quand ? - Cliquable */}
                         <div 
-                          className="flex-1 cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors"
+                          className={`cursor-pointer transition-colors ${
+                            isMobile 
+                              ? 'p-3 bg-gray-50 rounded-xl border border-gray-100 active:bg-gray-100' 
+                              : 'flex-1 hover:bg-gray-50 rounded-lg p-2 -m-2'
+                          }`}
                           onClick={() => {
                             setShowCalendarPanel(!showCalendarPanel);
                             setShowGuestsPanel(false);
                           }}
                         >
-                          <Label className="text-xs text-gray-500 mb-1.5 block font-normal uppercase tracking-wide">Quand ?</Label>
-                          <div className="text-lg font-semibold text-gray-900">
+                          <Label className={`text-gray-500 block font-normal uppercase tracking-wide ${
+                            isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'
+                          }`}>Quand ?</Label>
+                          <div className={`font-semibold text-gray-900 ${
+                            isMobile ? 'text-base' : 'text-lg'
+                          }`}>
                             {checkInDate && checkOutDate 
-                              ? `${format(checkInDate, 'dd/MM/yyyy')} - ${format(checkOutDate, 'dd/MM/yyyy')}`
-                              : 'Dates'
+                              ? isMobile 
+                                ? `${format(checkInDate, 'dd/MM')} → ${format(checkOutDate, 'dd/MM/yy')}`
+                                : `${format(checkInDate, 'dd/MM/yyyy')} - ${format(checkOutDate, 'dd/MM/yyyy')}`
+                              : 'Sélectionner les dates'
                             }
                           </div>
                         </div>
                         
                         {/* Zone 3: Qui ? - Cliquable */}
                         <div 
-                          className="flex-1 cursor-pointer hover:bg-gray-50 rounded-lg p-2 -m-2 transition-colors relative"
+                          className={`cursor-pointer transition-colors relative ${
+                            isMobile 
+                              ? 'p-3 bg-gray-50 rounded-xl border border-gray-100 active:bg-gray-100' 
+                              : 'flex-1 hover:bg-gray-50 rounded-lg p-2 -m-2'
+                          }`}
                           onClick={() => {
                             setShowGuestsPanel(!showGuestsPanel);
                             setShowCalendarPanel(false);
                           }}
                         >
-                          <Label className="text-xs text-gray-500 mb-1.5 block font-normal uppercase tracking-wide">Qui ?</Label>
-                          <div className="text-lg font-semibold text-gray-900">
+                          <Label className={`text-gray-500 block font-normal uppercase tracking-wide ${
+                            isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'
+                          }`}>Qui ?</Label>
+                          <div className={`font-semibold text-gray-900 ${
+                            isMobile ? 'text-base' : 'text-lg'
+                          }`}>
                             {numberOfAdults + numberOfChildren > 0 
                               ? `${numberOfAdults + numberOfChildren} voyageur${numberOfAdults + numberOfChildren > 1 ? 's' : ''}`
                               : 'Nombre de voyageurs'
                             }
                           </div>
                           
-                          {/* Panneau flottant - Voyageurs DIRECTEMENT EN DESSOUS */}
-                          {showGuestsPanel && (
+                          {/* Panneau flottant Voyageurs - Desktop only ici, Mobile = bottom sheet */}
+                          {showGuestsPanel && !isMobile && (
                             <motion.div 
                               ref={guestsPanelRef}
                               initial={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -2562,7 +2670,7 @@ export const GuestVerification = () => {
                                   justifyContent: 'space-between'
                                 }}
                               >
-                                {/* Adultes - Simple */}
+                                {/* Adultes - Desktop */}
                                 <div style={{
                                   display: 'flex',
                                   alignItems: 'center',
@@ -2633,7 +2741,7 @@ export const GuestVerification = () => {
                                   </div>
                                 </div>
                                 
-                                {/* Enfants - Simple */}
+                                {/* Enfants - Desktop */}
                                 <div style={{
                                   display: 'flex',
                                   alignItems: 'center',
@@ -2708,17 +2816,105 @@ export const GuestVerification = () => {
                           )}
                         </div>
                         
-                        {/* Zone 4: Bouton flèche verte */}
-                        <Button
-                          className="w-14 h-14 rounded-full text-white flex-shrink-0 shadow-lg hover:shadow-xl transition-all"
-                          style={{ backgroundColor: '#7DCAB5' }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#6BB9A5'}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7DCAB5'}
-                          onClick={handleNextStep}
-                        >
-                          <ArrowRight className="w-6 h-6" />
-                        </Button>
+                        {/* Zone 4: Bouton continuer - Desktop seulement */}
+                        {!isMobile && (
+                          <Button
+                            className="w-14 h-14 rounded-full text-white flex-shrink-0 shadow-lg hover:shadow-xl transition-all"
+                            style={{ backgroundColor: '#7DCAB5' }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#6BB9A5'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7DCAB5'}
+                            onClick={handleNextStep}
+                          >
+                            <ArrowRight className="w-6 h-6" />
+                          </Button>
+                        )}
                       </motion.div>
+                      
+                      {/* ========================================
+                          MOBILE BOTTOM SHEET - Voyageurs
+                          ======================================== */}
+                      {isMobile && showGuestsPanel && (
+                        <>
+                          {/* Overlay */}
+                          <div 
+                            className="mobile-overlay"
+                            onClick={() => setShowGuestsPanel(false)}
+                          />
+                          
+                          {/* Bottom Sheet */}
+                          <motion.div
+                            initial={{ y: '100%' }}
+                            animate={{ y: 0 }}
+                            exit={{ y: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            className="mobile-bottom-sheet"
+                          >
+                            <div className="mobile-bottom-sheet-handle" />
+                            
+                            <div className="mobile-bottom-sheet-content">
+                              <h3 className="text-lg font-semibold text-gray-900 mb-4">Voyageurs</h3>
+                              
+                              {/* Adultes */}
+                              <div className="mobile-guests-row">
+                                <span className="mobile-guests-label">Adultes</span>
+                                <div className="mobile-guests-controls">
+                                  <button
+                                    className="mobile-guests-btn"
+                                    onClick={() => {
+                                      setNumberOfAdults(Math.max(1, numberOfAdults - 1));
+                                      const total = Math.max(1, numberOfAdults - 1) + numberOfChildren;
+                                      setNumberOfGuests(total);
+                                    }}
+                                    disabled={numberOfAdults <= 1}
+                                  >−</button>
+                                  <span className="mobile-guests-count">{numberOfAdults}</span>
+                                  <button
+                                    className="mobile-guests-btn"
+                                    onClick={() => {
+                                      setNumberOfAdults(numberOfAdults + 1);
+                                      const total = (numberOfAdults + 1) + numberOfChildren;
+                                      setNumberOfGuests(total);
+                                    }}
+                                  >+</button>
+                                </div>
+                              </div>
+                              
+                              {/* Enfants */}
+                              <div className="mobile-guests-row">
+                                <span className="mobile-guests-label">Enfants</span>
+                                <div className="mobile-guests-controls">
+                                  <button
+                                    className="mobile-guests-btn"
+                                    onClick={() => {
+                                      setNumberOfChildren(Math.max(0, numberOfChildren - 1));
+                                      const total = numberOfAdults + Math.max(0, numberOfChildren - 1);
+                                      setNumberOfGuests(total);
+                                    }}
+                                    disabled={numberOfChildren <= 0}
+                                  >−</button>
+                                  <span className="mobile-guests-count">{numberOfChildren}</span>
+                                  <button
+                                    className="mobile-guests-btn"
+                                    onClick={() => {
+                                      setNumberOfChildren(numberOfChildren + 1);
+                                      const total = numberOfAdults + (numberOfChildren + 1);
+                                      setNumberOfGuests(total);
+                                    }}
+                                  >+</button>
+                                </div>
+                              </div>
+                              
+                              {/* Bouton Confirmer */}
+                              <Button
+                                className="w-full mt-6 mobile-btn-primary"
+                                onClick={() => setShowGuestsPanel(false)}
+                              >
+                                Confirmer
+                              </Button>
+                            </div>
+                          </motion.div>
+                        </>
+                      )}
                       
                       {/* Panneau flottant - Calendrier CENTRÉ */}
                       {showCalendarPanel && (

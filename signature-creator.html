@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Créateur de Signature - Morocco Host Helper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .canvas-container {
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            background: white;
+            margin-bottom: 20px;
+            cursor: crosshair;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        
+        canvas {
+            display: block;
+            border-radius: 8px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            flex: 1;
+            min-width: 140px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        
+        .output {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .output h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            resize: vertical;
+            background: white;
+            color: #333;
+        }
+        
+        .instructions {
+            background: #e7f3ff;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .instructions h3 {
+            color: #1976D2;
+            margin-bottom: 10px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+            color: #555;
+        }
+        
+        .instructions li {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid #e0e0e0;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #28a745;
+            display: none;
+        }
+        
+        .success-message.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖊️ Créateur de Signature</h1>
+        <p class="subtitle">Pour les fiches de police - Morocco Host Helper</p>
+        
+        <div class="canvas-container">
+            <canvas id="signatureCanvas" width="700" height="200"></canvas>
+        </div>
+        
+        <div class="controls">
+            <button onclick="clearCanvas()" class="btn-secondary">🗑️ Effacer</button>
+            <button onclick="generateBase64()" class="btn-success">✅ Générer Base64</button>
+        </div>
+        
+        <div class="output" id="outputSection" style="display: none;">
+            <h3>📋 Signature en Base64 (copier-coller dans SQL)</h3>
+            <textarea id="base64Output" readonly></textarea>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="charCount">0</div>
+                    <div class="stat-label">Caractères</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="fileSize">0 KB</div>
+                    <div class="stat-label">Taille</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="dimensions">0x0</div>
+                    <div class="stat-label">Dimensions</div>
+                </div>
+            </div>
+            
+            <div class="success-message" id="successMessage">
+                ✅ Base64 généré avec succès! Copiez le contenu et utilisez-le dans le script SQL.
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h3>📖 Instructions</h3>
+            <ol>
+                <li><strong>Dessinez votre signature</strong> sur le canvas ci-dessus</li>
+                <li>Cliquez sur <strong>"Générer Base64"</strong></li>
+                <li><strong>Copiez</strong> le contenu du champ texte</li>
+                <li>Ouvrez <code>scripts/ajouter-signature-vraie.sql</code></li>
+                <li><strong>Remplacez</strong> <code>VOTRE_SIGNATURE_ICI</code> par le Base64 copié</li>
+                <li>Exécutez le script SQL dans Supabase</li>
+                <li>Régénérez la fiche de police</li>
+            </ol>
+        </div>
+    </div>
+    
+    <script>
+        const canvas = document.getElementById('signatureCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        
+        // Configuration du dessin
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        // Événements de dessin
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+        
+        // Support tactile
+        canvas.addEventListener('touchstart', handleTouch);
+        canvas.addEventListener('touchmove', handleTouch);
+        canvas.addEventListener('touchend', stopDrawing);
+        
+        function startDrawing(e) {
+            isDrawing = true;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+        
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(e.offsetX, e.offsetY);
+            ctx.stroke();
+            
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+        }
+        
+        function stopDrawing() {
+            isDrawing = false;
+        }
+        
+        function handleTouch(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            
+            if (e.type === 'touchstart') {
+                isDrawing = true;
+                [lastX, lastY] = [x, y];
+            } else if (e.type === 'touchmove' && isDrawing) {
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(x, y);
+                ctx.stroke();
+                [lastX, lastY] = [x, y];
+            }
+        }
+        
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('outputSection').style.display = 'none';
+            document.getElementById('successMessage').classList.remove('show');
+        }
+        
+        function generateBase64() {
+            const base64 = canvas.toDataURL('image/png');
+            const textarea = document.getElementById('base64Output');
+            const outputSection = document.getElementById('outputSection');
+            const successMessage = document.getElementById('successMessage');
+            
+            textarea.value = base64;
+            outputSection.style.display = 'block';
+            
+            // Statistiques
+            document.getElementById('charCount').textContent = base64.length.toLocaleString();
+            document.getElementById('fileSize').textContent = (base64.length / 1024).toFixed(2) + ' KB';
+            document.getElementById('dimensions').textContent = canvas.width + 'x' + canvas.height;
+            
+            // Message de succès
+            successMessage.classList.add('show');
+            
+            // Auto-sélection
+            textarea.select();
+            
+            // Copier automatiquement
+            try {
+                navigator.clipboard.writeText(base64);
+                console.log('✅ Base64 copié dans le presse-papier!');
+            } catch (err) {
+                console.log('⚠️ Copie manuelle nécessaire');
+            }
+        }
+    </script>
+</body>
+</html>

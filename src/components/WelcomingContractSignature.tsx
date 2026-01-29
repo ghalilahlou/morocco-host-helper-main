@@ -169,9 +169,113 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const [loadingContract, setLoadingContract] = useState<boolean>(false);
   const [contractError, setContractError] = useState<string | null>(null);
 
+  // ✅ NOUVEAU: Récupérer les vraies données des guests depuis guest_submissions
+  const [realGuestData, setRealGuestData] = useState<any>(null);
+  const [totalGuestsCount, setTotalGuestsCount] = useState<number>(1);
+  const [realPropertyName, setRealPropertyName] = useState<string>(''); // ✅ NOUVEAU: State pour le vrai nom de la propriété
+
+  // ✅ NOUVEAU: Récupérer le nom de la propriété depuis la base de données
+  useEffect(() => {
+    const fetchPropertyName = async () => {
+      const propertyId = propertyData?.id;
+      if (!propertyId) return;
+
+      try {
+        const { data: property, error } = await supabase
+          .from('properties')
+          .select('name')
+          .eq('id', propertyId)
+          .single();
+
+        if (error) {
+          console.error('❌ Erreur récupération nom propriété:', error);
+          return;
+        }
+
+        if (property?.name) {
+          console.log('✅ [RÉCAPITULATIF] Nom de la propriété récupéré depuis DB:', property.name);
+          setRealPropertyName(property.name);
+        }
+      } catch (error) {
+        console.error('❌ Erreur fetch property name:', error);
+      }
+    };
+
+    fetchPropertyName();
+  }, [propertyData?.id]);
+
+  useEffect(() => {
+    const fetchRealGuestData = async () => {
+      const bookingId = getBookingId();
+      if (!bookingId) return;
+
+      try {
+        // Récupérer les données du premier guest
+        const { data: submissions, error } = await supabase
+          .from('guest_submissions')
+          .select('guest_data')  // ✅ CORRIGÉ: Retirer extracted_data qui n'existe pas
+          .eq('booking_id', bookingId)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('❌ Erreur récupération guest data:', error);
+          return;
+        }
+
+        if (submissions && submissions.length > 0) {
+          // Compter le nombre total de guests
+          setTotalGuestsCount(submissions.length);
+
+          // Récupérer les données du premier guest
+          const firstSubmission = submissions[0];
+          const guestData = (firstSubmission.guest_data || {}) as any; // ✅ Cast pour éviter les erreurs TypeScript avec Json
+          
+          const mappedData = {
+            fullName: guestData.full_name || guestData.fullName || guestData.name || '',
+            email: guestData.email || '',
+            nationality: guestData.nationality || guestData.nationalite || '',
+            phone: guestData.phone || guestData.telephone || ''
+          };
+
+          console.log('✅ [RÉCAPITULATIF] Données guests récupérées:', {
+            totalGuests: submissions.length,
+            firstGuest: mappedData
+          });
+
+          setRealGuestData(mappedData);
+        }
+      } catch (error) {
+        console.error('❌ Erreur fetch guest data:', error);
+      }
+    };
+
+    fetchRealGuestData();
+  }, [bookingData?.id]);
+
   // Données d'accueil personnalisées
-  const guestName = guestData?.guests?.[0]?.fullName || bookingData?.guests?.[0]?.fullName || 'Cher invité';
-  const propertyName = propertyData?.name || 'Notre magnifique propriété';
+  const guestName = realGuestData?.fullName || 
+                    guestData?.guests?.[0]?.fullName || 
+                    bookingData?.guests?.[0]?.fullName || 
+                    'Cher invité';
+  
+  // ✅ CORRIGÉ: Utiliser realPropertyName (récupéré depuis DB) en priorité
+  const propertyName = realPropertyName || 
+                       propertyData?.name || 
+                       propertyData?.property_name || 
+                       bookingData?.property?.name || 
+                       bookingData?.propertyName || 
+                       'Propriété';
+  
+  // ✅ LOG: Diagnostiquer le nom de la propriété
+  console.log('🏠 [RÉCAPITULATIF] Nom de la propriété:', {
+    realPropertyName,
+    propertyDataName: propertyData?.name,
+    propertyDataPropertyName: propertyData?.property_name,
+    bookingPropertyName: bookingData?.property?.name,
+    bookingPropertyNameDirect: bookingData?.propertyName,
+    finalPropertyName: propertyName
+  });
+  
   const checkInDate = bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR', { 
     weekday: 'long', 
     year: 'numeric', 
@@ -757,10 +861,34 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           if (data?.success && data?.contractUrl && isMountedRef.current) {
             setSignedContractUrl(data.contractUrl);
           }
-        } catch (generateError) {
-          console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
-        }
-      });
+          } catch (generateError) {
+            console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
+          }
+        });
+      
+        // ✅ NOUVEAU : Générer automatiquement la fiche de police après la signature (non-blocking)
+        Promise.resolve().then(async () => {
+          try {
+            console.log('📄 [AUTO] Génération automatique de la fiche de police après signature...');
+            
+            const { data: policeData, error: policeError } = await supabase.functions.invoke('generate-police-form', {
+              body: {
+                bookingId: bookingId
+              }
+            });
+            
+            if (policeError) {
+              console.warn('⚠️ Erreur lors de la génération automatique de la fiche de police:', policeError);
+              return;
+            }
+            
+            if (policeData?.success && policeData?.policeUrl) {
+              console.log('✅ [AUTO] Fiche de police générée automatiquement:', policeData.policeUrl);
+            }
+          } catch (policeGenerateError) {
+            console.error('⚠️ Failed to auto-generate police form:', policeGenerateError);
+          }
+        });
   
       // Notify property owner (non-blocking)
       Promise.resolve().then(async () => {
@@ -973,11 +1101,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 }}>Voyageurs</p>
                 <p style={{ 
                   fontFamily: 'SF Pro, sans-serif',
-                  fontWeight: 400,
                   fontSize: '14px',
                   lineHeight: '17px',
                   color: '#717171'
-                }}>{guestName} + {(bookingData?.numberOfGuests || 1) - 1} autres</p>
+                }}>{guestName}</p>
               </div>
             </div>
           </div>
@@ -1471,6 +1598,8 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
               {/* Contenu principal centré */}
               <div style={{ textAlign: 'center', maxWidth: '648px', padding: '0 24px' }}>
+
+                
                 {/* Titre de confirmation */}
                 <h1 style={{
                   fontFamily: 'Fira Sans Condensed, sans-serif',

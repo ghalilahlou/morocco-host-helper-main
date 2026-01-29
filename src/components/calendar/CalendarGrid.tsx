@@ -58,6 +58,7 @@ export const CalendarGrid = memo(({
           }
 
           // ✅ CALCULER les valeurs une seule fois par semaine pour cohérence
+          // Note: layersInWeek n'est plus utilisé car toutes les réservations sont alignées
           const layersInWeek = bookingLayout[weekIndex] ? 
             Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1 : 1;
           // ✅ MOBILE-FRIENDLY : Augmenter significativement les tailles pour mobile
@@ -65,8 +66,9 @@ export const CalendarGrid = memo(({
           const spacing = isMobile ? 24 : 22; // ✅ FIGMA : Augmenté pour correspondre au design (était 16:14)
           const headerSpace = isMobile ? 60 : 45; // Augmenté de 42 à 60 pour mobile
           const padding = isMobile ? 32 : 25; // Augmenté de 24 à 32 pour mobile
-          const calculatedHeight = headerSpace + (layersInWeek * (baseHeight + spacing)) + padding;
-          const minHeight = isMobile ? 180 : 150; // Augmenté de 120 à 180 pour mobile
+          // ✅ ALIGNEMENT : Hauteur fixe car toutes les réservations sont à la même position
+          const calculatedHeight = headerSpace + baseHeight + padding;
+          const minHeight = isMobile ? 140 : 120; // Réduit car pas de cascade
           const cellHeight = Math.max(minHeight, calculatedHeight);
           
           return (
@@ -153,8 +155,8 @@ export const CalendarGrid = memo(({
                       actualSpacing = Math.max(minSpacing, calculatedSpacing);
                     }
                     
-                    // ✅ POSITION VERTICALE : Depuis le haut de la cellule (inclut le padding)
-                    const topOffset = cellPadding + spaceAfterNumber + (layer * (baseHeight + actualSpacing));
+                    // ✅ ALIGNEMENT : Toutes les réservations à la même hauteur (pas de cascade)
+                    const topOffset = cellPadding + spaceAfterNumber;
 
                     // ✅ CRITIQUE : Clé stable et unique pour éviter les erreurs removeChild
                     const bookingId = bookingData.booking?.id || `unknown-${arrayIndex}`;

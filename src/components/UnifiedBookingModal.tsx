@@ -1224,7 +1224,7 @@ export const UnifiedBookingModal = ({
     onClose();
   };
   
-  // ✅ NOUVEAU : Fonction pour générer les documents manquants
+  // ✅ CORRIGÉ : Fonction pour générer les documents manquants individuellement
   const handleGenerateMissingDocuments = async () => {
     setIsGeneratingMissingDocs(true);
     try {
@@ -1241,31 +1241,34 @@ export const UnifiedBookingModal = ({
         return;
       }
       
-      // ✅ Appeler l'Edge Function pour générer les documents manquants
-      const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
-        body: {
-          bookingId: booking.id,
-          action: 'generate_missing_documents',
-          documentTypes: missingDocs
+      console.log('📄 Génération des documents manquants:', missingDocs);
+      
+      // ✅ Générer le contrat si manquant
+      if (missingDocs.includes('contract')) {
+        try {
+          await handleGenerateContract();
+        } catch (error) {
+          console.error('❌ Erreur génération contrat:', error);
         }
+      }
+      
+      // ✅ Générer la fiche de police si manquante
+      if (missingDocs.includes('police')) {
+        try {
+          await handleGeneratePolice();
+        } catch (error) {
+          console.error('❌ Erreur génération police:', error);
+        }
+      }
+      
+      toast({
+        title: "Documents générés",
+        description: `Les documents manquants (${missingDocs.join(', ')}) ont été générés avec succès.`,
       });
       
-      if (error) {
-        throw error;
-      }
+      // ✅ Rafraîchir les documents
+      await refreshBookings();
       
-      if (data?.success) {
-        toast({
-          title: "Documents générés",
-          description: `Les documents manquants (${missingDocs.join(', ')}) ont été générés avec succès.`,
-        });
-        
-        // ✅ Rafraîchir les documents
-        // Le useEffect se déclenchera automatiquement après le refresh
-        await refreshBookings();
-      } else {
-        throw new Error(data?.message || 'Erreur lors de la génération des documents');
-      }
     } catch (error: any) {
       console.error('❌ Erreur lors de la génération des documents manquants:', error);
       toast({
@@ -1413,7 +1416,8 @@ export const UnifiedBookingModal = ({
                     </p>
                     <div className="flex flex-wrap gap-2 text-xs text-red-600">
                       {!documents.contractUrl && <span className="px-2 py-1 bg-red-100 rounded">❌ Contrat manquant</span>}
-                      {!documents.policeUrl && <span className="px-2 py-1 bg-red-100 rounded">❌ Police manquante</span>}
+                      {/* ✅ MODIFIÉ: Ne pas afficher "Police manquante" si le contrat est signé (génération automatique) */}
+                      {!documents.policeUrl && !documents.contractUrl && <span className="px-2 py-1 bg-red-100 rounded">❌ Police manquante</span>}
                       {documents.identityDocuments.length === 0 && <span className="px-2 py-1 bg-red-100 rounded">❌ ID manquant</span>}
                     </div>
                     <Button

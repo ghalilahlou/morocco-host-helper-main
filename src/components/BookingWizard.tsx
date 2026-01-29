@@ -774,9 +774,9 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
           // Générer la police
           try {
-                  const { data: policeData, error: policeError } = await supabase.functions.invoke('submit-guest-info-unified', {
+                  // ✅ NOUVEAU: Utiliser la nouvelle Edge Function dédiée
+                  const { data: policeData, error: policeError } = await supabase.functions.invoke('generate-police-form', {
                     body: {
-                      action: 'generate_police_only',
                 bookingId: bookingId
                     }
                   });

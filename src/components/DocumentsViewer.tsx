@@ -167,10 +167,15 @@ export const DocumentsViewer = ({
       });
 
       // ✅ CORRECTION : Transformer les documents pour l'affichage
+      const policeDocsTransformed = bookingData.documents.police.map((doc: UnifiedDocument) => ({
+        name: doc.fileName || `Police_${doc.guestName || 'form'}`,
+        url: doc.url
+      }));
+      
       const transformedDocs = {
         guestDocuments: transformToDisplayDocuments(bookingData.documents.identity),
         contract: bookingData.documents.contract.length > 0 ? bookingData.documents.contract[0].url : null,
-        policeForms: transformToDisplayDocuments(bookingData.documents.police)
+        policeForms: policeDocsTransformed
       };
 
       console.log('📋 Transformed documents:', {
@@ -178,7 +183,8 @@ export const DocumentsViewer = ({
         contractUrl: transformedDocs.contract?.substring(0, 50) + '...',
         contractUrlFull: transformedDocs.contract,
         guestDocsCount: transformedDocs.guestDocuments.length,
-        policeFormsCount: transformedDocs.policeForms.length
+        policeFormsCount: transformedDocs.policeForms.length,
+        policeFormsDetails: transformedDocs.policeForms.map(pf => ({ name: pf.name, urlPreview: pf.url?.substring(0, 50) }))
       });
       
       // ✅ DEBUG : Vérifier la validité des URLs
@@ -1077,15 +1083,14 @@ export const DocumentsViewer = ({
                               try {
                                 console.log('🔍 Génération PDF police pour:', booking.id);
                                 
-                                // ✅ CORRECTION : Utiliser submit-guest-info-unified au lieu de generate-police-forms
-                                const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+                                // ✅ NOUVEAU: Utiliser la nouvelle Edge Function dédiée
+                                const { data, error } = await supabase.functions.invoke('generate-police-form', {
                                   body: { 
-                                    bookingId: booking.id,
-                                    action: 'generate_police_only'
+                                    bookingId: booking.id
                                   }
                                 });
                                 
-                                console.log('📄 Réponse submit-guest-info-unified:', { data, error });
+                                console.log('📄 Réponse generate-police-form:', { data, error });
                                 
                                 if (error) {
                                   console.error('❌ Erreur génération police:', error);

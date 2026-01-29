@@ -327,8 +327,9 @@ export class UnifiedDocumentService {
 
   /**
    * Générer et télécharger les fiches de police pour tous les guests d'une réservation
+   * ✅ NOUVELLE VERSION: Utilise la fonction dédiée generate-police-form
    */
-  static async downloadPoliceFormsForAllGuests(booking: Booking): Promise<void> {
+  static async downloadPoliceFormsForAllGuests(booking: Booking): Promise<string> {
     try {
       console.log('📄 [UnifiedDocumentService] Génération fiches police pour booking:', booking.id);
 
@@ -336,10 +337,9 @@ export class UnifiedDocumentService {
         throw new Error('Booking ID manquant');
       }
 
-      // Appeler l'Edge Function submit-guest-info-unified avec l'action generate_police_only
-      const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+      // ✅ NOUVEAU: Appeler la nouvelle Edge Function dédiée generate-police-form
+      const { data, error } = await supabase.functions.invoke('generate-police-form', {
         body: {
-          action: 'generate_police_only',
           bookingId: booking.id
         }
       });
@@ -349,28 +349,25 @@ export class UnifiedDocumentService {
         throw new Error(`Erreur lors de la génération des fiches de police: ${error.message}`);
       }
 
-      if (!data?.success && !data?.policeUrl) {
+      if (!data?.success || !data?.policeUrl) {
         console.error('❌ [UnifiedDocumentService] Pas de policeUrl dans la réponse:', data);
         throw new Error('Aucune URL de fiche de police retournée par l\'Edge Function');
       }
 
-      const policeUrl = data.policeUrl || data.data?.policeUrl;
+      const policeUrl = data.policeUrl;
       
-      if (!policeUrl) {
-        throw new Error('URL de fiche de police manquante dans la réponse');
-      }
+      console.log('✅ [UnifiedDocumentService] Fiche de police générée:', {
+        url: policeUrl,
+        guestsCount: data.guestsCount,
+        hasGuestSignature: data.hasGuestSignature,
+        processingTime: data.processingTime
+      });
 
-      console.log('✅ [UnifiedDocumentService] Fiche de police générée:', policeUrl);
-
-      // Télécharger automatiquement le PDF
-      const link = document.createElement('a');
-      link.href = policeUrl;
-      link.download = `fiche-police-${booking.id}-${Date.now()}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      console.log('✅ [UnifiedDocumentService] Fiche de police téléchargée avec succès');
+      // ✅ NOUVEAU: Ne pas télécharger automatiquement, juste retourner l'URL
+      // L'utilisateur pourra cliquer sur "Voir" ou "Télécharger" dans le dashboard
+      console.log('✅ [UnifiedDocumentService] Fiche de police disponible (pas de téléchargement auto)');
+      
+      return policeUrl;
 
     } catch (error) {
       console.error('❌ [UnifiedDocumentService] Erreur dans downloadPoliceFormsForAllGuests:', error);
