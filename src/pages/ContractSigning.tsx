@@ -683,7 +683,7 @@ export const ContractSigning: React.FC = () => {
                   fontSize: '14px',
                   lineHeight: '17px',
                   color: '#717171'
-                }}>{guestName}</p>
+                }}>{guestDisplay}</p>
               </div>
             </div>
           </div>
