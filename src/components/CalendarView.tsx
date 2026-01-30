@@ -721,11 +721,20 @@ const handleOpenConfig = useCallback(() => {
           /[a-zA-ZÀ-ÿ]{2,}/.test(displayText) && // Contient au moins 2 lettres
           !/^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test(displayText); // Pas un code
         
-        // ✅ LOGIQUE : PRIORITÉ AUX CODES
-        // 1. Si c'est un code Airbnb ET pas validé → NOIR
-        // 2. Si c'est validé (avec nom de guest) → GRIS
-        // 3. Si le displayText est un NOM (pas un code) → GRIS
-        if (hasAirbnbCode && !isValidated && !hasValidName) {
+        // ✅ LOGIQUE : PRIORITÉ AUX CODES (ALIGNÉE AVEC CalendarBookingBar)
+        // 1. Si c'est un code Airbnb ET complété/confirmé → GRIS
+        // 2. Si c'est un code Airbnb ET pas complété/confirmé → NOIR
+        // 3. Si c'est validé (avec nom de guest) → GRIS
+        // 4. Si le displayText est un NOM (pas un code) → GRIS
+        
+        const isCompleted = booking.status === 'completed';
+        const isConfirmed = booking.status === 'confirmed';
+        
+        // ✅ FIX : Vérifier d'abord si la réservation ICS/Airbnb est complétée
+        if (hasAirbnbCode && (isCompleted || isConfirmed || hasValidName)) {
+          // GRIS pour codes Airbnb complétés/confirmés (guest a validé)
+          overrides[booking.id] = BOOKING_COLORS.completed.tailwind; // Gris clair #E5E5E5
+        } else if (hasAirbnbCode && !isValidated && !hasValidName) {
           // NOIR pour codes Airbnb en attente (HM52S5FSAZ, HMKNEJMCRM, etc.)
           overrides[booking.id] = 'bg-[#222222]';
         } else if (isValidated || updatedMatchedBookings.includes(booking.id) || hasValidName) {
