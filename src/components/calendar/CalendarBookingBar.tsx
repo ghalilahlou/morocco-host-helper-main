@@ -149,19 +149,26 @@ export const CalendarBookingBar = memo(({
       };
     }
 
-    // 4. ✅ PRIORITÉ : NOIR pour réservations avec CODE Airbnb/ICS (comme dans Figma)
-    // Vérifier D'ABORD si c'est un code AVANT de vérifier si c'est un nom valide
+    // 4. ✅ GRIS pour réservations ICS/Airbnb COMPLÉTÉES (validées par le guest)
+    // Vérifier si c'est une réservation ICS/Airbnb ET qu'elle est complétée
+    if ((hasAirbnbCode || isAirbnb) && (isCompleted || isValidName)) {
+      return {
+        barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5 pour validées
+        textColor: 'text-gray-900'
+      };
+    }
+
+    // 5. ✅ NOIR pour réservations ICS/Airbnb EN ATTENTE (non complétées)
     // Codes : EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL..., etc.
     if (hasAirbnbCode || isAirbnb) {
       return {
-        barColor: '#222222', // Noir pour codes Airbnb/ICS (comme dans Figma)
+        barColor: '#222222', // Noir pour codes Airbnb/ICS en attente
         textColor: 'text-white'
       };
     }
 
-    // 5. ✅ GRIS pour réservations avec NOM VALIDE (Mouhcine, Zaineb, etc.)
+    // 6. ✅ GRIS pour réservations avec NOM VALIDE (Mouhcine, Zaineb, etc.)
     // OU pour réservations completed (validées par le système)
-    // Cette vérification vient APRÈS les codes pour éviter les faux positifs
     if (isValidName || isCompleted) {
       return {
         barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5 pour validées
