@@ -1,219 +1,138 @@
-# ✅ Récapitulatif des Corrections Appliquées
+# ✅ CORRECTIONS APPLIQUÉES - RÉSERVATIONS INDÉPENDANTES
 
-## 🎯 Session de Corrections - 27 Nov 2025
-
-### Bugs Critiques Résolus
-
-#### 1. ✅ Bug-3: Signature host croppée sur fiche de police
-**Fichier**: `supabase/functions/submit-guest-info-unified/index.ts`  
-**Ligne**: 5403-5410  
-**Correction**:
-```typescript
-// AVANT
-const maxWidth = 180;
-const maxHeight = 60;
-
-// APRÈS  
-const maxWidth = 250; // +70px
-const maxHeight = 80;  // +20px
-const scale = Math.min(
-  maxWidth / signatureImage.width,
-  maxHeight / signatureImage.height,
-  1.0 // ✅ Ne jamais agrandir au-delà de la taille originale
-);
-```
-**Impact**: Signature visible entièrement, plus de crop
+**Date** : 30 janvier 2026  
+**Statut** : ✅ Phase 1 complétée
 
 ---
 
-#### 2. ✅ Bug-4: Message synchronisation Airbnb ambigu
-**Fichier**: `src/components/CalendarView.tsx`  
-**Ligne**: 505-507  
-**Correction**:
-```typescript
-// AVANT
-description: `${result.count || 0} réservations synchronisées.`
+## 🎯 PROBLÈME RÉSOLU
 
-// APRÈS
-description: `${result.count || 0} réservations synchronisées. Naviguez dans le calendrier pour voir toutes les réservations.`
-```
-**Impact**: Les utilisateurs comprennent que les 20 réservations sont bien importées, mais que le calendrier n'affiche que le mois visible
+### Symptôme
+Les réservations indépendantes ne s'enregistraient pas correctement quand un même guest avait plusieurs réservations. Le système bloquait avec le message "Un workflow est déjà en cours".
+
+### Cause identifiée
+Un **garde global** (`isUnifiedWorkflowRunning`) bloquait TOUTES les soumissions en parallèle, même pour des réservations différentes.
 
 ---
 
-#### 3. ✅ Bug-5: Numéro RC manquant dans contrats entreprise
-**Fichier**: `supabase/functions/submit-guest-info-unified/index.ts`  
-**Ligne**: 4634-4647  
-**Correction**:
+## ✅ CORRECTION APPLIQUÉE (Phase 1)
+
+### Fichier modifié
+`src/services/documentServiceUnified.ts`
+
+### Changement
+**AVANT** : Garde global qui bloque tout
 ```typescript
-// AVANT
-if (host.company_name || host.ice) {
-  let legalInfo = '';
-  if (host.company_name) {
-    legalInfo += `Entreprise : ${host.company_name}`;
-  }
-  if (host.ice) {
-    legalInfo += ` - ICE : ${host.ice}`;
-  }
+let isUnifiedWorkflowRunning = false;
+
+if (isUnifiedWorkflowRunning) {
+  throw new Error('Un workflow est déjà en cours. Veuillez patienter.');
 }
+isUnifiedWorkflowRunning = true;
+```
 
-// APRÈS
-if (host.company_name || host.ice || host.registration) {
-  let legalInfo = '';
-  if (host.company_name) {
-    legalInfo += `Entreprise : ${host.company_name}`;
-  }
-  if (host.registration) {
-    legalInfo += ` - RC : ${host.registration}`;
-  }
-  if (host.ice) {
-    legalInfo += ` - ICE : ${host.ice}`;
-  }
+**APRÈS** : Garde par réservation
+```typescript
+const runningWorkflows = new Map<string, boolean>();
+
+const workflowKey = `${request.token}-${request.airbnbCode}`;
+
+if (runningWorkflows.get(workflowKey)) {
+  throw new Error('Cette réservation est déjà en cours de traitement.');
+}
+runningWorkflows.set(workflowKey, true);
+
+// ... traitement ...
+
+finally {
+  runningWorkflows.delete(workflowKey);
 }
 ```
-**Impact**: Le numéro RC (Registre Commerce) apparaît maintenant dans les contrats PDF pour les entreprises
+
+### Impact
+✅ **Un guest peut maintenant remplir plusieurs réservations en parallèle**
+- Réservation A (15-17 fév) → En cours
+- Réservation B (20-22 fév) → Peut démarrer immédiatement
+
+✅ **Chaque réservation est protégée individuellement**
+- Pas de soumission double pour la même réservation
+- Pas de blocage entre réservations différentes
 
 ---
 
-#### 4. ✅ Bug-6: Barres réservations ne dépassent plus vers next day
-**Fichier**: `src/components/calendar/CalendarGrid.tsx`  
-**Ligne**: 208-218  
-**Correction**:
-```typescript
-// AVANT
-style={{
-  left: '0px',
-  right: '0px',
-  width: '100%',
-}}
+## 🧪 TESTS RECOMMANDÉS
 
-// APRÈS
-style={{
-  left: '0px',
-  right: bookingData.span < 7 ? '-12px' : '0px', // ✅ Dépasser de 12px
-  width: bookingData.span < 7 ? 'calc(100% + 12px)' : '100%', // ✅ Étendre
-}}
+### Test 1 : Même guest, 2 réservations différentes
+1. Créer 2 liens ICS pour "John Doe"
+   - Lien A : 15-17 février
+   - Lien B : 20-22 février
+2. Ouvrir les 2 liens dans 2 onglets différents
+3. Remplir les 2 formulaires en même temps
+4. ✅ **Résultat attendu** : Les 2 réservations se créent sans blocage
+
+### Test 2 : Protection contre double soumission
+1. Créer 1 lien ICS
+2. Remplir le formulaire
+3. Cliquer 2 fois rapidement sur "Soumettre"
+4. ✅ **Résultat attendu** : Message "Cette réservation est déjà en cours de traitement"
+
+---
+
+## 📋 PROCHAINES ÉTAPES (Optionnel)
+
+### Phase 2 : Amélioration de la détection de doublon (30 min)
+**Fichier** : `supabase/functions/submit-guest-info-unified/index.ts`
+
+Améliorer la vérification pour `INDEPENDENT_BOOKING` en ajoutant `guest_name + check_in_date` à la requête de détection de doublon.
+
+**Bénéfice** : Évite les confusions entre réservations de guests différents.
+
+### Phase 3 : Contraintes en base de données (1 heure)
+Ajouter des contraintes uniques en base de données pour garantir l'unicité :
+- Pour Airbnb : `property_id + booking_reference`
+- Pour INDEPENDENT : `property_id + guest_name + check_in_date`
+
+**Bénéfice** : Protection absolue contre les doublons, même en cas de race condition.
+
+---
+
+## 📊 RÉSUMÉ
+
+| Aspect | Avant | Après |
+|--------|-------|-------|
+| **Guest avec 2 réservations** | ❌ Bloqué | ✅ Fonctionne |
+| **Soumissions parallèles** | ❌ Impossible | ✅ Possible |
+| **Protection double soumission** | ✅ Oui | ✅ Oui (amélioré) |
+| **Message d'erreur** | "Un workflow est déjà en cours" | "Cette réservation est déjà en cours" |
+
+---
+
+## 🚀 DÉPLOIEMENT
+
+Pour déployer cette correction :
+
+```bash
+# 1. Build
+npm run build
+
+# 2. Commit
+git add src/services/documentServiceUnified.ts
+git commit -m "Fix: Garde par réservation pour permettre soumissions parallèles
+
+- Remplace le garde global par une Map de gardes par réservation
+- Permet à un guest de remplir plusieurs réservations en parallèle
+- Améliore le message d'erreur pour être plus spécifique"
+
+# 3. Push
+git push origin main
 ```
-**Impact**: Les barres dépassent légèrement (12px) vers le jour suivant pour indiquer visuellement le checkout
 
 ---
 
-#### 5. ✅ Bug-7: Affichage code réservation au lieu du nom guest
-**Fichier**: `src/utils/bookingDisplay.ts`  
-**Ligne**: 162-202  
-**Correction**:
-```typescript
-// AVANT (Validation stricte)
-const isValid = isValidGuestName(cleanedGuestName); // Nécessitait 2+ mots, voyelles, etc.
-if (isValid) {
-  return formatGuestDisplayName(firstName, totalGuests);
-} else {
-  return bookingCode; // ❌ Affichait le code si pas parfait
-}
+## ✅ CONCLUSION
 
-// APRÈS (Validation assouplie)
-const hasLetters = /[A-Za-zÀ-ÿ]{2,}/.test(cleanedGuestName);
-const isNotOnlyCode = !/^[A-Z0-9]{6,}$/.test(cleanedGuestName);
-const isNotUID = !cleanedGuestName.startsWith('UID:');
+La correction de Phase 1 est **appliquée et prête à être testée**.
 
-if (hasLetters && isNotOnlyCode && isNotUID) {
-  if (isValidGuestName(cleanedGuestName)) {
-    return formatGuestDisplayName(firstName, totalGuests);
-  } else {
-    // ✅ Afficher le nom même s'il n'est pas "parfait"
-    const capitalized = cleanedGuestName.charAt(0).toUpperCase() + cleanedGuestName.slice(1).toLowerCase();
-    return totalGuests > 1 ? `${capitalized} +${totalGuests - 1}` : capitalized;
-  }
-}
-```
-**Impact**: Les noms avec une seule partie (ex: "Marcel") ou sans voyelles sont maintenant affichés au lieu du code
+Le problème principal (blocage des soumissions parallèles) est **résolu**.
 
----
-
-#### 6. ✅ Bug-2: Règlement intérieur en anglais
-**Statut**: Déjà résolu dans le code  
-**Vérification effectuée**:
-- `supabase/functions/submit-guest-info-unified/index.ts` (ligne 3924-3930, 4600-4605): ✅ Français
-- `src/components/DocumentPreview.tsx` (ligne 450-457): ✅ Français
-- Tous les fallbacks par défaut: ✅ Français
-
-**Conclusion**: Les règlements intérieurs par défaut sont tous en français. Si l'utilisateur voit de l'anglais, c'est qu'il a configuré des règles personnalisées en anglais dans les paramètres de la propriété.
-
----
-
-### 🚀 Améliorations Déployées
-
-#### 1. URL Courte + Copie Mobile (Déjà déployée avant cette session)
-**Fichiers modifiés**:
-- `src/lib/mobileClipboard.ts` (créé)
-- `src/lib/clipboardUtils.ts`
-- `src/hooks/useGuestVerification.ts`
-- `src/pages/VerifyToken.tsx`
-- `src/App.tsx`
-
-**Impact**:
-- URLs courtes: `/v/{token}` au lieu de `/guest-verification/{propertyId}/{token}?...`
-- Copie directe sur iOS/Android avec événement utilisateur préservé
-- Fallback robuste pour tous les navigateurs
-
----
-
-## 📊 Statistiques
-
-- **Bugs résolus**: 7/8 (87.5%)
-- **Fichiers modifiés**: 8
-- **Lignes modifiées**: ~150
-- **Commits**: 5
-- **Temps**: ~2h30
-
----
-
-## ⏭️ Bugs Restants
-
-### Bug-1: Emails signup lents (+30 min)
-**Type**: Configuration Supabase  
-**Action requise**: Configuration SMTP dans Supabase Dashboard  
-**Priorité**: Haute  
-**Guide**: Voir `GUIDE_BUGS_RESTANTS.md`
-
-### Bug-8: Modification infos extracted by AI
-**Type**: Feature manquante  
-**Action requise**: Développement UI  
-**Priorité**: Moyenne  
-**Estimation**: 4-6h de dev  
-**Guide**: Voir `GUIDE_BUGS_RESTANTS.md`
-
----
-
-## 🔍 Diagnostic & Refactoring
-
-### Points identifiés pour amélioration future
-
-1. **Logs de debug trop verbeux** ⚠️
-   - console.log() partout en production
-   - Recommandation: Logger conditionnel
-
-2. **Gestion d'erreurs à standardiser**
-   - Try-catch avec messages génériques
-   - Recommandation: Error codes + messages centralisés
-
-3. **Performance**: Bien optimisé ✅
-   - Cache déjà implémenté
-   - Requêtes raisonnables
-
-4. **Sécurité**: RLS actif ✅
-   - Row Level Security configuré
-   - Tokens sécurisés
-
----
-
-## 🎉 Résumé
-
-Tous les bugs critiques UI/UX ont été résolus et déployés.  
-Les bugs restants nécessitent:
-- Configuration externe (Supabase SMTP)
-- Développement de features supplémentaires
-
-Le code est maintenant **plus cohérent**, **performant** et **user-friendly**.
-
-
+Les Phases 2 et 3 sont **optionnelles** et peuvent être appliquées ultérieurement pour renforcer la robustesse.

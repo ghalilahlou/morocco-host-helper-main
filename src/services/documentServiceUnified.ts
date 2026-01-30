@@ -60,9 +60,9 @@ export interface GeneratedDocuments {
   expiresAt: string;
 }
 
-// ✅ CRITIQUE : Garde global pour éviter les appels multiples simultanés
-let isUnifiedWorkflowRunning = false;
-let currentWorkflowRequestId: string | null = null;
+// ✅ CORRIGÉ : Garde par réservation au lieu d'un garde global
+// Permet à un guest de remplir plusieurs réservations en parallèle
+const runningWorkflows = new Map<string, boolean>();
 
 /**
  * NOUVELLE FONCTION UNIFIÉE - Un seul appel pour tout faire
@@ -72,23 +72,24 @@ export async function submitDocumentsUnified(
   request: DocumentGenerationRequest
 ): Promise<GeneratedDocuments> {
   
-  // ✅ CRITIQUE : Générer un ID unique pour cette requête
-  const requestId = `${request.token}-${request.airbnbCode}-${Date.now()}`;
+  // ✅ CRITIQUE : Générer une clé unique pour cette réservation spécifique
+  const workflowKey = `${request.token}-${request.airbnbCode}`;
+  const requestId = `${workflowKey}-${Date.now()}`;
   
-  // ✅ CRITIQUE : Vérifier si un workflow est déjà en cours
-  if (isUnifiedWorkflowRunning) {
-    console.warn('⚠️ [DocumentServiceUnified] Workflow déjà en cours, appel ignoré', {
-      currentRequestId: currentWorkflowRequestId,
-      newRequestId: requestId
+  // ✅ CRITIQUE : Vérifier si un workflow est déjà en cours POUR CETTE RÉSERVATION
+  if (runningWorkflows.get(workflowKey)) {
+    console.warn('⚠️ [DocumentServiceUnified] Workflow déjà en cours pour cette réservation', {
+      workflowKey,
+      requestId
     });
-    throw new Error('Un workflow est déjà en cours. Veuillez patienter.');
+    throw new Error('Cette réservation est déjà en cours de traitement. Veuillez patienter.');
   }
   
-  // ✅ CRITIQUE : Marquer comme en cours immédiatement
-  isUnifiedWorkflowRunning = true;
-  currentWorkflowRequestId = requestId;
+  // ✅ CRITIQUE : Marquer cette réservation comme en cours
+  runningWorkflows.set(workflowKey, true);
   
   console.log('🚀 [DocumentServiceUnified] Starting unified submission...', {
+    workflowKey,
     requestId,
     timestamp: new Date().toISOString()
   });
@@ -204,10 +205,10 @@ export async function submitDocumentsUnified(
     
     throw error;
   } finally {
-    // ✅ CRITIQUE : Toujours réinitialiser le flag, même en cas d'erreur
-    isUnifiedWorkflowRunning = false;
-    currentWorkflowRequestId = null;
+    // ✅ CRITIQUE : Toujours supprimer la clé de la Map, même en cas d'erreur
+    runningWorkflows.delete(workflowKey);
     console.log('🔄 [DocumentServiceUnified] Workflow flag reset', {
+      workflowKey,
       requestId,
       timestamp: new Date().toISOString()
     });

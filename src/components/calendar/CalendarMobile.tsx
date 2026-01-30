@@ -208,23 +208,32 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
           
           const isConflict = conflicts.includes(booking.id);
           
+          // ✅ Vérifier le statut de la réservation
+          const status = 'status' in booking ? (booking as Booking).status : undefined;
+          const isCompleted = status === 'completed';
+          const isConfirmed = status === 'confirmed';
+          
           let color: string;
           let textColor: string;
           
-          // ✅ CORRIGÉ : Couleurs selon le design Figma - PRIORITÉ AUX CODES
+          // ✅ CORRIGÉ : Couleurs selon le design Figma - ALIGNÉ AVEC CalendarBookingBar
           // 1. Rouge pour conflits
-          // 2. NOIR pour codes Airbnb/ICS (EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL...)
-          // 3. GRIS pour noms valides (Mouhcine, Zaineb)
+          // 2. GRIS pour codes Airbnb/ICS COMPLÉTÉS/CONFIRMÉS
+          // 3. NOIR pour codes Airbnb/ICS EN ATTENTE
+          // 4. GRIS pour noms valides
           if (isConflict) {
             color = BOOKING_COLORS.conflict.hex; // Rouge #FF5A5F
             textColor = 'text-white';
+          } else if ((hasAirbnbCode || isAirbnb) && (isCompleted || isConfirmed || isValidName)) {
+            // ✅ FIX : GRIS pour codes Airbnb/ICS complétés/confirmés
+            color = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
+            textColor = 'text-gray-900';
           } else if (hasAirbnbCode || isAirbnb) {
-            // ✅ PRIORITÉ : NOIR pour codes Airbnb/ICS (vérifier D'ABORD)
-            // Codes : EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL..., etc.
+            // NOIR pour codes Airbnb/ICS en attente
             color = '#222222'; // Noir pour codes (comme dans Figma)
             textColor = 'text-white';
           } else if (isValidName) {
-            // ✅ GRIS pour noms valides (vérifier APRÈS les codes)
+            // GRIS pour noms valides (vérifier APRÈS les codes)
             color = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
             textColor = 'text-gray-900';
           } else {
