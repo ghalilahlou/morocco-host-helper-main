@@ -2,10 +2,8 @@ import { memo } from 'react';
 import { Booking } from '@/types/booking';
 import { BookingLayout } from './CalendarUtils';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
-import { EnrichedBooking } from '@/services/guestSubmissionService';
-import { getUnifiedBookingDisplayText, isAirbnbCode } from '@/utils/bookingDisplay';
+import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
-import { Check, X } from 'lucide-react';
 
 interface CalendarBookingBarProps {
   bookingData: BookingLayout;
@@ -19,34 +17,37 @@ interface CalendarBookingBarProps {
  * On ne vérifie plus le nombre de mots, juste si ce n'est pas un code Airbnb
  * Les noms à un seul mot comme "Mouhcine" sont maintenant acceptés
  */
+// ✅ UNIFIÉ AVEC MOBILE : Fonction pour vérifier si un nom est valide
+// Copié exactement de CalendarMobile.tsx (lignes 58-77)
 const isValidGuestName = (value: string): boolean => {
   if (!value || value.trim().length === 0) return false;
   
   const trimmed = value.trim();
-  
-  // ✅ PRIORITÉ 1 : Vérifier si c'est un code Airbnb (retourne false si oui)
-  if (isAirbnbCode(trimmed)) {
-    return false;
-  }
-  
-  // ✅ PRIORITÉ 2 : Si c'est "Réservation" exact, ce n'est pas un nom
   const lower = trimmed.toLowerCase();
+  
+  // Rejeter les mots-clés génériques
   if (lower === 'réservation' || lower === 'airbnb') return false;
   
-  // ✅ PRIORITÉ 3 : Un nom valide doit contenir au moins une lettre
+  // Rejeter les codes ICS/Airbnb (UID:, HM, CL, etc.)
+  if (/^(UID|HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9\-:]+/i.test(trimmed)) return false;
+  
+  // Rejeter les codes alphanumériques en majuscules (5+ caractères sans minuscules)
+  const condensed = trimmed.replace(/\s+/g, '');
+  if (/^[A-Z0-9\-]{5,}$/.test(condensed) && !/[a-z]/.test(trimmed)) return false;
+  
+  // Rejeter les codes courts (4+ caractères majuscules/chiffres sans espaces ni minuscules)
+  if (!/[a-z]/.test(trimmed) && !trimmed.includes(' ') && /^[A-Z0-9]+$/.test(condensed) && condensed.length >= 4) return false;
+  
+  // Doit contenir au moins une lettre
   if (!/[a-zA-ZÀ-ÿ]/.test(trimmed)) return false;
   
-  // ✅ PRIORITÉ 4 : Un nom valide doit avoir au moins 2 caractères
-  if (trimmed.length < 2) return false;
+  // Doit avoir entre 2 et 50 caractères
+  if (trimmed.length < 2 || trimmed.length > 50) return false;
   
-  // ✅ PRIORITÉ 5 : Pattern de codes alphanumériques (HM4A, CL123, etc.)
-  const condensed = trimmed.replace(/\s+/g, '');
-  if (/^[A-Z0-9\-]{5,}$/.test(condensed) && !/[a-z]/.test(trimmed)) {
-    return false; // Code alphanumérique en majuscules
-  }
+  // Rejeter les mots interdits
+  const forbiddenWords = ['phone', 'airbnb', 'reservation', 'guest', 'client', 'booking'];
+  if (forbiddenWords.some(word => lower.includes(word))) return false;
   
-  // ✅ ACCEPTÉ : Un nom à un seul mot est valide (Mouhcine, Marcel, etc.)
-  // Supprimé la vérification "au moins 2 mots" qui rejetait "Mouhcine"
   return true;
 };
 
@@ -91,97 +92,35 @@ export const CalendarBookingBar = memo(({
   const isAirbnb = 'airbnb_booking_id' in booking || 
     ('source' in booking && (booking as any).source === 'airbnb');
 
-  // ✅ CORRIGÉ : Palette visuelle des barres - PRIORITÉ AUX CODES (comme dans Figma)
+  // ✅ COPIÉ EXACTEMENT DE CalendarMobile.tsx (lignes 224-242)
+  // Couleurs selon le design Figma - ALIGNÉ AVEC MOBILE
   // 1. Rouge pour conflits
-  // 2. NOIR pour codes Airbnb/ICS (EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL...)
-  // 3. GRIS pour noms valides (Mouhcine, Zaineb) ET réservations indépendantes confirmées
-  const { barColor, textColor } = (() => {
-    // 1. Rouge pour conflit (priorité absolue)
-    if (isConflict) {
-      return {
-        barColor: BOOKING_COLORS.conflict.hex, // Rouge #FF5A5F
-        textColor: 'text-white'
-      };
-    }
+  // 2. GRIS pour codes Airbnb/ICS COMPLÉTÉS/CONFIRMÉS OU avec nom valide
+  // 3. NOIR pour codes Airbnb/ICS EN ATTENTE
+  // 4. GRIS pour noms valides
+  // 5. NOIR par défaut
+  let barColor: string;
+  let textColor: string;
 
-    // 2. Utiliser la couleur depuis colorOverrides si disponible (convertir tailwind en hex)
-    // MAIS cette couleur peut être overridée par les vérifications suivantes (ex: independent confirmed)
-    if (bookingData.color) {
-      // Extraire la couleur hex depuis la classe tailwind
-      let hexColor = bookingData.color;
-      
-      // Si c'est une classe tailwind avec couleur arbitraire [hex]
-      const hexMatch = bookingData.color.match(/\[#([0-9A-Fa-f]{6})\]/);
-      if (hexMatch) {
-        hexColor = `#${hexMatch[1]}`;
-      } else if (bookingData.color.includes('gray-200') || bookingData.color.includes('completed')) {
-        hexColor = BOOKING_COLORS.completed.hex; // #E5E5E5 - Gris pour validées
-      } else if (bookingData.color.includes('gray-900') || bookingData.color.includes('default') || bookingData.color.includes('manual')) {
-        hexColor = BOOKING_COLORS.default.hex; // #1A1A1A
-      } else if (bookingData.color.includes('red') || bookingData.color.includes('conflict')) {
-        hexColor = BOOKING_COLORS.conflict.hex; // #FF5A5F
-      }
-      
-      // ✅ CRITIQUE: Vérifier si c'est une réservation indépendante confirmée APRÈS avoir extrait la couleur
-      // Cela garantit que les réservations indépendantes confirmées restent grises même avec ICS sync
-      if (isIndependentConfirmed) {
-        return {
-          barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5
-          textColor: 'text-gray-900'
-        };
-      }
-      
-      // Déterminer la couleur du texte selon la couleur de fond
-      const textColorClass = hexColor === BOOKING_COLORS.completed.hex ? 'text-gray-900' : 'text-white';
-      
-      return {
-        barColor: hexColor,
-        textColor: textColorClass
-      };
-    }
-
-    // 3. ✅ PRIORITÉ: INDEPENDENT_BOOKING confirmées/completed → TOUJOURS GRIS
-    // Cette vérification s'applique même si bookingData.color n'est pas défini
-    if (isIndependentConfirmed) {
-      return {
-        barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5
-        textColor: 'text-gray-900'
-      };
-    }
-
-    // 4. ✅ GRIS pour réservations ICS/Airbnb COMPLÉTÉES (validées par le guest)
-    // Vérifier si c'est une réservation ICS/Airbnb ET qu'elle est complétée
-    if ((hasAirbnbCode || isAirbnb) && (isCompleted || isValidName)) {
-      return {
-        barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5 pour validées
-        textColor: 'text-gray-900'
-      };
-    }
-
-    // 5. ✅ NOIR pour réservations ICS/Airbnb EN ATTENTE (non complétées)
-    // Codes : EBXCFOIGUE, ZIUFIHGIHDF, HM..., CL..., etc.
-    if (hasAirbnbCode || isAirbnb) {
-      return {
-        barColor: '#222222', // Noir pour codes Airbnb/ICS en attente
-        textColor: 'text-white'
-      };
-    }
-
-    // 6. ✅ GRIS pour réservations avec NOM VALIDE (Mouhcine, Zaineb, etc.)
-    // OU pour réservations completed (validées par le système)
-    if (isValidName || isCompleted) {
-      return {
-        barColor: BOOKING_COLORS.completed.hex, // Gris clair #E5E5E5 pour validées
-        textColor: 'text-gray-900'
-      };
-    }
-
-    // 6. Noir pour autres réservations en attente
-    return {
-      barColor: BOOKING_COLORS.default.hex, // Noir #1A1A1A pour réservations en attente
-      textColor: 'text-white'
-    };
-  })();
+  if (isConflict) {
+    barColor = BOOKING_COLORS.conflict.hex; // Rouge #FF5A5F
+    textColor = 'text-white';
+  } else if ((hasAirbnbCode || isAirbnb) && (isCompleted || isConfirmed || isValidName)) {
+    // ✅ EXACTEMENT COMME MOBILE : GRIS pour codes Airbnb/ICS complétés/confirmés ou avec nom valide
+    barColor = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
+    textColor = 'text-gray-900';
+  } else if (hasAirbnbCode || isAirbnb) {
+    // NOIR pour codes Airbnb/ICS en attente
+    barColor = '#222222'; // Noir pour codes (comme dans Figma)
+    textColor = 'text-white';
+  } else if (isValidName) {
+    // GRIS pour noms valides (vérifier APRÈS les codes)
+    barColor = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
+    textColor = 'text-gray-900';
+  } else {
+    barColor = BOOKING_COLORS.default.hex; // Noir #1A1A1A pour autres réservations en attente
+    textColor = 'text-white';
+  }
   
   // ✅ CRITIQUE : Vérifier que booking existe
   if (!bookingData.booking) {
@@ -224,51 +163,54 @@ export const CalendarBookingBar = memo(({
       }}
       title={displayLabel}
     >
+      {/* ✅ COPIÉ EXACTEMENT DE CalendarMobile.tsx (lignes 608-658) */}
       {bookingData.isStart && (
-        <div className="flex items-center gap-2 w-full min-w-0">
-          {/* Icône de statut à gauche - paramètres alignés sur le modèle Figma */}
-          <div
-            className="flex items-center justify-center flex-shrink-0"
-            style={{
-              width: 22,   // légèrement plus large que le vecteur Figma (~18)
-              height: 16   // légèrement plus haut pour garder les proportions
-            }}
-          >
+        <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
+          {/* ✅ Icône de statut : ✓ vert ou ✕ blanc/rouge */}
+          <div className="flex items-center gap-1 flex-shrink-0">
             {isConflict ? (
-              // ❌ ROUGE : Croix rouge pour conflits
-              <X
-                className="w-full h-full"
-                style={{ color: '#DC2626' }}
-                strokeWidth={2}
-              />
-            ) : barColor === BOOKING_COLORS.completed.hex || barColor === '#E5E5E5' ? (
-              // ✅ VERT : Checkmark vert pour barres GRISES (réservations validées)
-              <Check
-                className="w-full h-full"
-                style={{ color: '#0BD9D0' }}
-                strokeWidth={2}
-              />
-            ) : barColor === '#222222' || (hasAirbnbCode && !isCompleted) ? (
-              // ❌ BLANC : Croix blanche pour barres NOIRES (codes Airbnb en attente)
-              <X
-                className="w-full h-full"
-                style={{ color: '#FFFFFF' }}
-                strokeWidth={2}
-              />
-            ) : (
-              // Par défaut : checkmark vert
-              <Check
-                className="w-full h-full"
-                style={{ color: '#0BD9D0' }}
-                strokeWidth={2}
-              />
-            )}
+              // ❌ Croix blanche pour conflits (fond rouge)
+              <span className="text-white text-sm font-bold leading-none">✕</span>
+            ) : barColor === '#222222' ? (
+              // ❌ Croix blanche pour codes Airbnb en attente (barres noires)
+              <span className="text-white text-sm font-bold leading-none">✕</span>
+            ) : isValidName ? (
+              // ✅ Checkmark vert pour réservations validées (barres grises)
+              <span className="text-green-600 text-sm font-bold leading-none">✓</span>
+            ) : null}
           </div>
-
-          {/* Label de réservation */}
-          <span className="truncate flex-1">
-            {displayLabel}
-          </span>
+          
+          {/* ✅ Avatar avec initiales (seulement pour noms valides) */}
+          {isValidName && (
+            <div
+              className="w-5 h-5 sm:w-6 sm:h-6 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden bg-white/20"
+            >
+              <span className={`text-[9px] sm:text-[10px] font-bold ${textColor}`}>
+                {displayLabel.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').toUpperCase().slice(0, 2) || 'CL'}
+              </span>
+            </div>
+          )}
+          
+          {/* ✅ Nom OU Code de réservation */}
+          <div className={`flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1 ${textColor}`}>
+            <span className="text-xs sm:text-sm font-semibold truncate leading-tight">
+              {isValidName 
+                ? displayLabel.split(' ')[0]
+                : displayLabel.substring(0, 10) + (displayLabel.length > 10 ? '...' : '')
+              }
+            </span>
+            {/* ✅ Compteur de guests (+1, +2, etc.) */}
+            {(() => {
+              const guestCount = 'numberOfGuests' in booking 
+                ? (booking as any).numberOfGuests || 1
+                : (booking as any).guests?.length || 1;
+              return guestCount > 1 ? (
+                <span className="text-[10px] sm:text-[11px] font-medium opacity-80 flex-shrink-0 leading-tight">
+                  +{guestCount - 1}
+                </span>
+              ) : null;
+            })()}
+          </div>
         </div>
       )}
     </div>

@@ -1192,6 +1192,7 @@ const handleOpenConfig = useCallback(() => {
                 bookingLayout={bookingLayout}
                 conflicts={conflicts}
                 onBookingClick={handleBookingClick}
+                allReservations={allReservations}
               />
             </motion.div>
           </AnimatePresence>

@@ -10,6 +10,8 @@ interface CalendarGridProps {
   bookingLayout: { [key: string]: BookingLayout[] };
   conflicts: string[];
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
+  // ✅ NOUVEAU : Ajouter allReservations pour avoir accès au statut des réservations
+  allReservations?: (Booking | AirbnbReservation)[];
 }
 
 // Libellés de jours pour desktop, comme sur la maquette ("lun.", "mar.", ...)
@@ -20,7 +22,8 @@ export const CalendarGrid = memo(({
   calendarDays, 
   bookingLayout, 
   conflicts, 
-  onBookingClick 
+  onBookingClick,
+  allReservations = []
 }: CalendarGridProps) => {
   const isMobile = useIsMobile();
   // Calculate weeks for layout
@@ -128,6 +131,14 @@ export const CalendarGrid = memo(({
                       return null;
                     }
                     
+                    // ✅ NOUVEAU : Enrichir bookingData.booking avec les données originales de allReservations
+                    // Cela permet de récupérer le statut (completed/confirmed) qui peut être perdu dans bookingLayout
+                    const originalReservation = allReservations.find(r => r.id === bookingData.booking.id);
+                    const enrichedBookingData = {
+                      ...bookingData,
+                      booking: originalReservation || bookingData.booking
+                    };
+                    
                     const layer = bookingData.layer || 0;
                     const maxLayers = layersInWeek;
                     
@@ -214,13 +225,13 @@ export const CalendarGrid = memo(({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 
-                                if (bookingData.booking && onBookingClick) {
-                                  onBookingClick(bookingData.booking);
+                                if (enrichedBookingData.booking && onBookingClick) {
+                                  onBookingClick(enrichedBookingData.booking);
                                 }
                               }}
                             >
                               <CalendarBookingBar
-                                bookingData={bookingData}
+                                bookingData={enrichedBookingData}
                                 bookingIndex={layer}
                                 conflicts={conflicts}
                                 onBookingClick={onBookingClick}

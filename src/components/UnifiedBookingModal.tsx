@@ -1285,12 +1285,14 @@ export const UnifiedBookingModal = ({
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className={cn(
         "max-h-[90vh] overflow-y-auto",
-        isMobile ? "max-w-full w-full h-full m-0 rounded-none" : "max-w-4xl w-[95vw] sm:w-full"
+        isMobile 
+          ? "max-w-full w-full min-h-screen m-0 rounded-none px-3 py-4 pb-safe" 
+          : "max-w-4xl w-[95vw] sm:w-full"
       )}>
-        <DialogHeader className={cn(isMobile ? "p-4" : "")}>
+        <DialogHeader className={cn(isMobile ? "px-1 py-2" : "")}>
           <div className={cn(
-            "flex items-center justify-between",
-            isMobile ? "flex-col gap-3" : ""
+            "flex items-center justify-between gap-2",
+            isMobile ? "flex-wrap" : ""
           )}>
             <DialogTitle className={cn(
               "flex items-center gap-2",
@@ -1338,17 +1340,15 @@ export const UnifiedBookingModal = ({
         </DialogHeader>
 
         <div className={cn(
-          "space-y-4 sm:space-y-6",
-          isMobile ? "p-4" : ""
+          isMobile ? "space-y-3 px-1" : "space-y-6"
         )}>
           {/* ✅ UNIFIÉ : Section Référence */}
           <Card>
-            <CardHeader className={cn(isMobile ? "p-4" : "")}>
+            <CardHeader className={cn(isMobile ? "p-3 pb-2" : "")}>
               <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>Référence</CardTitle>
             </CardHeader>
             <CardContent className={cn(
-              "space-y-3 sm:space-y-4",
-              isMobile ? "p-4 pt-0" : ""
+              isMobile ? "p-3 pt-0 space-y-2" : "space-y-4"
             )}>
               <div>
                 <p className={cn(
@@ -1397,13 +1397,21 @@ export const UnifiedBookingModal = ({
               - La réservation est en attente (pending) ET a des données clients (guests complets OU pièces d'identité) */}
           {(status === 'completed' || (status === 'pending' && hasGuestData)) && !isAirbnb && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-brand-teal" />
+              <CardHeader className={cn(isMobile ? "p-3 pb-2" : "")}>
+                <CardTitle className={cn(
+                  "flex items-center gap-2",
+                  isMobile ? "text-base" : "text-lg"
+                )}>
+                  <FileText className={cn(
+                    "text-brand-teal",
+                    isMobile ? "w-4 h-4" : "w-5 h-5"
+                  )} />
                   Documents enregistrés
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className={cn(
+                isMobile ? "p-3 pt-0 space-y-2" : "space-y-4"
+              )}>
                 {/* ✅ NOUVEAU : Afficher un avertissement si documents manquants pour réservation completed */}
                 {status === 'completed' && !hasAllRequiredDocuments && !documents.loading && (
                   <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 space-y-3">
