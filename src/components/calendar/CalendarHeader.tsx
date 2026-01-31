@@ -271,21 +271,22 @@ export const CalendarHeader = ({
           </div>
         </div>
         
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {/* Sync Airbnb Button - Redirige vers la page d'aide */}
           <Button 
             variant="outline" 
             size="sm"
             onClick={onOpenConfig}
-            className="flex items-center space-x-1 min-w-0 justify-center sm:space-x-2 sm:min-w-[140px] lg:min-w-[160px] hover:bg-gray-100 border-gray-300 bg-white text-gray-900"
+            className="flex items-center gap-1 sm:gap-2 hover:bg-gray-100 border-gray-300 bg-white text-gray-900 px-2 sm:px-3"
             data-tutorial="sync-airbnb"
           >
             {hasIcs ? (
-              <Wifi className="h-4 w-4" />
+              <Wifi className="h-4 w-4 flex-shrink-0" />
             ) : (
-              <WifiOff className="h-4 w-4" />
+              <WifiOff className="h-4 w-4 flex-shrink-0" />
             )}
-            <span className="text-sm font-medium">Synchronisation</span>
+            <span className="text-sm font-medium hidden sm:inline">Synchronisation</span>
+            <span className="text-sm font-medium sm:hidden">Sync</span>
           </Button>
           
           {/* Bouton Créer une réservation */}
@@ -294,11 +295,12 @@ export const CalendarHeader = ({
               variant="default" 
               size="sm"
               onClick={onCreateBooking}
-              className="flex items-center space-x-1 min-w-0 justify-center sm:space-x-2 bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white sm:min-w-[180px] lg:min-w-[200px]"
+              className="flex items-center gap-1 sm:gap-2 bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white px-2 sm:px-3"
               data-tutorial="add-booking"
             >
-              <Plus className="h-4 w-4" />
-              <span className="text-sm font-medium">Créer une réservation</span>
+              <Plus className="h-4 w-4 flex-shrink-0" />
+              <span className="text-sm font-medium hidden sm:inline">Créer une réservation</span>
+              <span className="text-sm font-medium sm:hidden">Créer</span>
             </Button>
           )}
         </div>

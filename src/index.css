@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 /* Import des animations personnalisées */
 @import './styles/animations.css';
+/* Import des styles mobiles */
+@import './styles/mobile.css';
 
 @tailwind base;
 @tailwind components;
