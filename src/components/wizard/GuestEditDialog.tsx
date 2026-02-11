@@ -317,6 +317,18 @@ export const GuestEditDialog = ({
               />
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="guestEmail">Email (optionnel)</Label>
+              <Input
+                id="guestEmail"
+                type="email"
+                value={formData.email || ''}
+                onChange={(e) => setFormData(prev => prev ? { ...prev, email: e.target.value.trim() || undefined } : null)}
+                placeholder="email@exemple.com"
+                disabled={isProcessing}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="dateOfBirth">Date de naissance</Label>

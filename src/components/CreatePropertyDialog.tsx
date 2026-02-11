@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -14,6 +14,8 @@ import { useProperties } from '@/hooks/useProperties';
 import { useAuth } from '@/hooks/useAuth';
 import { usePropertyPhotoUpload } from '@/hooks/usePropertyPhotoUpload';
 import { DocumentPreview } from './DocumentPreview';
+import { SignaturePad } from './SignaturePad';
+import { useT } from '@/i18n/GuestLocaleProvider';
 import '@/styles/CreatePropertyDialog.css';
 interface CreatePropertyDialogProps {
   open: boolean;
@@ -47,6 +49,7 @@ export const CreatePropertyDialog = ({
   property,
   onSuccess
 }: CreatePropertyDialogProps) => {
+  const t = useT();
   const {
     addProperty,
     updateProperty
@@ -58,8 +61,18 @@ export const CreatePropertyDialog = ({
   const [landlordSignature, setLandlordSignature] = useState<string | null>(null);
   const [isSignatureModeActive, setIsSignatureModeActive] = useState(false);
   const [propertyPhoto, setPropertyPhoto] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [houseRules, setHouseRules] = useState<string[]>(property?.house_rules || ['No unauthorized guests or parties', 'No smoking inside the property', 'Respect neighbors and building rules', 'Report any damage immediately', 'Check-out by agreed time']);
+  const getDefaultHouseRules = useCallback(() => [
+    t('property.defaultRule.noParties'),
+    t('property.defaultRule.noSmoking'),
+    t('property.defaultRule.respectNeighbors'),
+    t('property.defaultRule.reportDamage'),
+    t('property.defaultRule.checkoutTime')
+  ], [t]);
+  const defaultHouseRulesRef = useRef<string[]>([]);
+  defaultHouseRulesRef.current = getDefaultHouseRules();
+  const [houseRules, setHouseRules] = useState<string[]>(() =>
+    property?.house_rules?.length ? property.house_rules : getDefaultHouseRules()
+  );
   const {
     register,
     handleSubmit,
@@ -147,7 +160,7 @@ export const CreatePropertyDialog = ({
       setValue('landlord_phone', property.contract_template?.landlord_phone || '');
       setValue('landlord_email', property.contract_template?.landlord_email || '');
       setPropertyPhoto(property.photo_url || null);
-      setHouseRules(property.house_rules.length > 0 ? property.house_rules : ['No unauthorized guests or parties', 'No smoking inside the property', 'Respect neighbors and building rules', 'Report any damage immediately', 'Check-out by agreed time']);
+      setHouseRules(property.house_rules.length > 0 ? property.house_rules : defaultHouseRulesRef.current);
     } else {
       // Reset form for new property and pre-fill email with user's email
       reset();
@@ -156,7 +169,7 @@ export const CreatePropertyDialog = ({
       if (user?.email) {
         setValue('landlord_email', user.email);
       }
-      setHouseRules(['No unauthorized guests or parties', 'No smoking inside the property', 'Respect neighbors and building rules', 'Report any damage immediately', 'Check-out by agreed time']);
+      setHouseRules(defaultHouseRulesRef.current);
     }
   }, [property, setValue, reset, user?.email]);
 
@@ -222,106 +235,9 @@ export const CreatePropertyDialog = ({
     setHouseRules(updated);
   };
   
-  // Signature canvas logic
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !isSignatureModeActive) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Setup canvas for better quality
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    
-    ctx.scale(dpr, dpr);
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-
-    // Anti-aliasing and smooth lines
-    ctx.imageSmoothingEnabled = true;
-    ctx.strokeStyle = '#1f2937';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    let isDrawing = false;
-
-    const startDrawing = (e: MouseEvent | TouchEvent) => {
-      isDrawing = true;
-      const rect = canvas.getBoundingClientRect();
-      let x, y;
-      
-      if (e instanceof MouseEvent) {
-        x = e.clientX - rect.left;
-        y = e.clientY - rect.top;
-      } else {
-        e.preventDefault();
-        x = e.touches[0].clientX - rect.left;
-        y = e.touches[0].clientY - rect.top;
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-    };
-
-    const draw = (e: MouseEvent | TouchEvent) => {
-      if (!isDrawing) return;
-      
-      const rect = canvas.getBoundingClientRect();
-      let x, y;
-      
-      if (e instanceof MouseEvent) {
-        x = e.clientX - rect.left;
-        y = e.clientY - rect.top;
-      } else {
-        e.preventDefault();
-        x = e.touches[0].clientX - rect.left;
-        y = e.touches[0].clientY - rect.top;
-      }
-
-      ctx.lineTo(x, y);
-      ctx.stroke();
-    };
-
-    const stopDrawing = () => {
-      isDrawing = false;
-      setLandlordSignature(canvas.toDataURL());
-    };
-
-    canvas.addEventListener('mousedown', startDrawing);
-    canvas.addEventListener('mousemove', draw);
-    canvas.addEventListener('mouseup', stopDrawing);
-    canvas.addEventListener('touchstart', startDrawing);
-    canvas.addEventListener('touchmove', draw);
-    canvas.addEventListener('touchend', stopDrawing);
-
-    // Setup canvas
-    ctx.strokeStyle = '#1f2937';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-
-    return () => {
-      canvas.removeEventListener('mousedown', startDrawing);
-      canvas.removeEventListener('mousemove', draw);
-      canvas.removeEventListener('mouseup', stopDrawing);
-      canvas.removeEventListener('touchstart', startDrawing);
-      canvas.removeEventListener('touchmove', draw);
-      canvas.removeEventListener('touchend', stopDrawing);
-    };
-  }, [isSignatureModeActive]);
+  // Signature is now handled by SignaturePad component
 
   const clearSignature = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     setLandlordSignature(null);
   };
   
@@ -371,16 +287,16 @@ export const CreatePropertyDialog = ({
   
   const propertyTypes = [{
     value: 'apartment',
-    label: 'Appartement'
+    label: t('property.types.apartment')
   }, {
     value: 'house',
-    label: 'Maison'
+    label: t('property.types.house')
   }, {
     value: 'room',
-    label: 'Chambre'
+    label: t('property.types.room')
   }, {
     value: 'other',
-    label: 'Autre'
+    label: t('property.types.other')
   }];
   return <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent 
@@ -396,7 +312,7 @@ export const CreatePropertyDialog = ({
       >
         <DialogHeader className="px-6 pt-6 pb-0 flex-shrink-0">
             <DialogTitle className="dialog-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '24px', color: '#040404' }}>
-              {property ? 'Modifier le bien' : 'Ajouter un bien'}
+              {property ? t('property.dialog.editTitle') : t('property.dialog.addTitle')}
             </DialogTitle>
         </DialogHeader>
         
@@ -417,7 +333,7 @@ export const CreatePropertyDialog = ({
                   className="property-tabs-trigger flex-shrink-0 text-sm px-0 py-3 data-[state=active]:text-[#222222] data-[state=inactive]:text-[#717171] bg-transparent border-0 rounded-none relative data-[state=active]:shadow-none"
                   style={{ fontFamily: "'Inter', sans-serif" }}
                 >
-                  1. Infos de base
+                  {t('property.tabs.basic')}
                   <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#222222] transition-opacity" style={{ opacity: currentTab === 'basic' ? 1 : 0 }} />
                 </TabsTrigger>
                 <TabsTrigger 
@@ -425,7 +341,7 @@ export const CreatePropertyDialog = ({
                   className="property-tabs-trigger flex-shrink-0 text-sm px-0 py-3 data-[state=active]:text-[#222222] data-[state=inactive]:text-[#717171] bg-transparent border-0 rounded-none relative data-[state=active]:shadow-none"
                   style={{ fontFamily: "'Inter', sans-serif" }}
                 >
-                  2. Infos Loueur
+                  {t('property.tabs.landlord')}
                   <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#222222] transition-opacity" style={{ opacity: currentTab === 'landlord' ? 1 : 0 }} />
                 </TabsTrigger>
                 <TabsTrigger 
@@ -433,7 +349,7 @@ export const CreatePropertyDialog = ({
                   className="property-tabs-trigger flex-shrink-0 text-sm px-0 py-3 data-[state=active]:text-[#222222] data-[state=inactive]:text-[#717171] bg-transparent border-0 rounded-none relative data-[state=active]:shadow-none"
                   style={{ fontFamily: "'Inter', sans-serif" }}
                 >
-                  3. Configuration
+                  {t('property.tabs.contract')}
                   <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#222222] transition-opacity" style={{ opacity: currentTab === 'contract' ? 1 : 0 }} />
                 </TabsTrigger>
                 <TabsTrigger 
@@ -441,7 +357,7 @@ export const CreatePropertyDialog = ({
                   className="property-tabs-trigger flex-shrink-0 text-sm px-0 py-3 data-[state=active]:text-[#222222] data-[state=inactive]:text-[#717171] bg-transparent border-0 rounded-none relative data-[state=active]:shadow-none"
                   style={{ fontFamily: "'Inter', sans-serif" }}
                 >
-                  4. Aperçu
+                  {t('property.tabs.preview')}
                   <span className="absolute bottom-0 left-0 right-0 h-[3px] bg-[#222222] transition-opacity" style={{ opacity: currentTab === 'preview' ? 1 : 0 }} />
                 </TabsTrigger>
               </TabsList>
@@ -453,32 +369,32 @@ export const CreatePropertyDialog = ({
                   <div className="flex items-center gap-2">
                     <Home className="w-5 h-5 text-[#040404]" />
                     <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
-                      Le logement
+                      {t('property.basic.title')}
                     </CardTitle>
                   </div>
                   <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
-                    Les informations renseignées ici doivent correspondre à celles affichées sur votre page Airbnb si ce bien est listé sur cette plateforme.
+                    {t('property.basic.subtitle')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="name">Titre de votre Annonce *</Label>
-                      <Input id="name" placeholder="e.g. Downtown Apartment" {...register('name', {
+                      <Label htmlFor="name">{t('property.basic.nameLabel')}</Label>
+                      <Input id="name" placeholder={t('property.basic.namePlaceholder')} {...register('name', {
                       required: 'Property name is required'
                     })} />
                       {errors.name && <span className="text-sm text-destructive">{errors.name.message}</span>}
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="property_type">Type de logement *</Label>
+                      <Label htmlFor="property_type">{t('property.basic.typeLabel')}</Label>
                       <Controller name="property_type" control={control} rules={{
                       required: 'Property type is required'
                     }} render={({
                       field
                     }) => <Select value={field.value} onValueChange={field.onChange}>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Sélectionnez le type de logement" />
+                              <SelectValue placeholder={t('property.basic.typePlaceholder')} />
                             </SelectTrigger>
                             <SelectContent className="z-[1120]">
                               {propertyTypes.map(type => <SelectItem key={type.value} value={type.value}>
@@ -491,24 +407,24 @@ export const CreatePropertyDialog = ({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="address">Adresse *</Label>
-                    <Input id="address" placeholder="ex: 123 Rue Mohammed V" {...register('address', { required: 'L\'adresse est obligatoire' })} />
+                    <Label htmlFor="address">{t('property.basic.addressLabel')}</Label>
+                    <Input id="address" placeholder={t('property.basic.addressPlaceholder')} {...register('address', { required: 'L\'adresse est obligatoire' })} />
                     {errors.address && <span className="text-sm text-destructive">{errors.address.message}</span>}
                   </div>
 
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="postal_code">Code postal *</Label>
-                      <Input id="postal_code" placeholder="ex: 20000" {...register('postal_code', { required: 'Le code postal est obligatoire' })} />
+                      <Label htmlFor="postal_code">{t('property.basic.postalCodeLabel')}</Label>
+                      <Input id="postal_code" placeholder={t('property.basic.postalCodePlaceholder')} {...register('postal_code', { required: 'Le code postal est obligatoire' })} />
                       {errors.postal_code && <span className="text-sm text-destructive">{errors.postal_code.message}</span>}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="city">Ville *</Label>
-                      <Input id="city" placeholder="ex: Casablanca" {...register('city', { required: 'La ville est obligatoire' })} />
+                      <Label htmlFor="city">{t('property.basic.cityLabel')}</Label>
+                      <Input id="city" placeholder={t('property.basic.cityPlaceholder')} {...register('city', { required: 'La ville est obligatoire' })} />
                       {errors.city && <span className="text-sm text-destructive">{errors.city.message}</span>}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="country">Pays *</Label>
+                      <Label htmlFor="country">{t('property.basic.countryLabel')}</Label>
                       <Input id="country" {...register('country', { required: 'Le pays est obligatoire' })} />
                       {errors.country && <span className="text-sm text-destructive">{errors.country.message}</span>}
                     </div>
@@ -516,7 +432,7 @@ export const CreatePropertyDialog = ({
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="max_occupancy">Capacité maximale *</Label>
+                      <Label htmlFor="max_occupancy">{t('property.basic.maxOccupancyLabel')}</Label>
                       <Input id="max_occupancy" type="number" min="1" max="20" {...register('max_occupancy', {
                       required: 'Maximum occupancy is required',
                       min: {
@@ -533,13 +449,13 @@ export const CreatePropertyDialog = ({
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="description">Description (Optionnel)</Label>
-                    <Textarea id="description" placeholder="Brève description de votre propriété…" rows={3} {...register('description')} />
+                    <Label htmlFor="description">{t('property.basic.descriptionLabel')}</Label>
+                    <Textarea id="description" placeholder={t('property.basic.descriptionPlaceholder')} rows={3} {...register('description')} />
                   </div>
 
                   <div className="space-y-2">
                     <Label className="property-form-label" style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: '12px', color: '#040404' }}>
-                      Photo du logement (optionnelle)
+                      {t('property.basic.photoLabel')}
                     </Label>
                     {!propertyPhoto ? (
                       <div className="property-upload-zone rounded-xl p-4" style={{ background: '#2D2F39' }}>
@@ -547,10 +463,10 @@ export const CreatePropertyDialog = ({
                           <Upload className="w-6 h-6 text-[#B0B2BC]" />
                           <div className="text-center">
                             <p className="property-upload-zone-text text-sm font-medium" style={{ color: '#B0B2BC' }}>
-                              Glissez-déposez vos documents
+                              {t('property.basic.photoDropTitle')}
                             </p>
                             <p className="property-upload-zone-subtext text-xs mt-1" style={{ color: 'rgba(176, 178, 188, 0.5)' }}>
-                              Carte d'identité ou passeport en format PDF, PNG, JPG (5MB max par fichier)
+                              {t('property.basic.photoDropSubtitle')}
                             </p>
                           </div>
                         </div>
@@ -570,13 +486,13 @@ export const CreatePropertyDialog = ({
                             className="property-upload-button px-4 py-2 rounded-xl text-sm font-medium"
                             style={{ background: '#2D2F39', border: '1px solid #FFFFFF', color: '#FFFFFF' }}
                           >
-                            {uploading ? 'Upload en cours...' : 'Importer'}
+                            {uploading ? t('property.basic.photoUploading') : t('property.basic.photoUpload')}
                           </button>
                         </div>
                       </div>
                     ) : (
                       <div className="border rounded-lg p-4 bg-muted/5">
-                        <p className="text-sm text-muted-foreground mb-3">Photo actuelle:</p>
+                        <p className="text-sm text-muted-foreground mb-3">{t('property.basic.photoCurrent')}</p>
                         <div className="relative">
                           <img 
                             src={propertyPhoto} 
@@ -591,7 +507,7 @@ export const CreatePropertyDialog = ({
                             className="absolute top-2 right-2 gap-1"
                           >
                             <X className="w-3 h-3" />
-                            Supprimer
+                            {t('property.basic.photoRemove')}
                           </Button>
                         </div>
                         <div className="mt-3">
@@ -613,7 +529,7 @@ export const CreatePropertyDialog = ({
                               className="gap-1"
                             >
                               <ImageIcon className="w-3 h-3" />
-                              {uploading ? 'Upload en cours...' : 'Changer la photo'}
+                              {uploading ? t('property.basic.photoUploading') : t('property.basic.photoChange')}
                             </Button>
                           </div>
                         </div>
@@ -632,16 +548,16 @@ export const CreatePropertyDialog = ({
                       <path d="M10 10a4 4 0 100-8 4 4 0 000 8zM10 12c-5.33 0-8 2.67-8 4v2h16v-2c0-1.33-2.67-4-8-4z"/>
                     </svg>
                     <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
-                      Le loueur / l'entreprise
+                      {t('property.landlord.title')}
                     </CardTitle>
                   </div>
                   <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
-                    Informations qui apparaîtront comme  Le Loueur  dans les contrats.
+                    {t('property.landlord.subtitle')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="landlord_status">Statut *</Label>
+                    <Label htmlFor="landlord_status">{t('property.landlord.statusLabel')}</Label>
                     <Controller 
                       name="landlord_status" 
                       control={control} 
@@ -649,11 +565,11 @@ export const CreatePropertyDialog = ({
                       render={({ field }) => (
                         <Select value={field.value} onValueChange={field.onChange}>
                           <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Sélectionnez votre statut" />
+                            <SelectValue placeholder={t('property.landlord.statusPlaceholder')} />
                           </SelectTrigger>
                           <SelectContent className="z-[1120] bg-background border shadow-lg">
-                            <SelectItem value="particulier">Particulier</SelectItem>
-                            <SelectItem value="entreprise">Entreprise</SelectItem>
+                            <SelectItem value="particulier">{t('property.landlord.statusIndividual')}</SelectItem>
+                            <SelectItem value="entreprise">{t('property.landlord.statusCompany')}</SelectItem>
                           </SelectContent>
                         </Select>
                       )}
@@ -663,39 +579,39 @@ export const CreatePropertyDialog = ({
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="landlord_name">Nom complet ou personne de contact *</Label>
+                      <Label htmlFor="landlord_name">{t('property.landlord.nameLabel')}</Label>
                       <Input id="landlord_name" placeholder="ex: Mohamed Flane" {...register('landlord_name', { required: 'Le nom complet est obligatoire' })} />
                       {errors.landlord_name && <span className="text-sm text-destructive">{errors.landlord_name.message}</span>}
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="landlord_company">Raison sociale (Nom de l’entreprise) {watchedLandlordStatus === 'entreprise' && '*'}</Label>
+                      <Label htmlFor="landlord_company">{t('property.landlord.companyLabel')} {watchedLandlordStatus === 'entreprise' && '*'}</Label>
                       <Input id="landlord_company" placeholder="ex: Casablanca Properties SARL" {...register('landlord_company', watchedLandlordStatus === 'entreprise' ? { required: 'La raison sociale est obligatoire' } : {})} />
                       {errors.landlord_company && <span className="text-sm text-destructive">{errors.landlord_company.message}</span>}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="landlord_registration">Numéro d’immatriculation {watchedLandlordStatus === 'entreprise' && '*'}</Label>
+                    <Label htmlFor="landlord_registration">{t('property.landlord.registrationLabel')} {watchedLandlordStatus === 'entreprise' && '*'}</Label>
                     <Input id="landlord_registration" placeholder="ex: 10101010101010101" {...register('landlord_registration', watchedLandlordStatus === 'entreprise' ? { required: 'Le numéro d’immatriculation est obligatoire' } : {})} />
                     {errors.landlord_registration && <span className="text-sm text-destructive">{errors.landlord_registration.message}</span>}
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="landlord_address">Adresse *</Label>
+                    <Label htmlFor="landlord_address">{t('property.landlord.addressLabel')}</Label>
                     <Textarea id="landlord_address" placeholder="ex: 45 Boulevard Mohammed V, 4ème étage, Maarif, Casablanca" rows={3} {...register('landlord_address', { required: 'L’adresse est obligatoire' })} />
                     {errors.landlord_address && <span className="text-sm text-destructive">{errors.landlord_address.message}</span>}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="landlord_phone">Numéro de téléphone *</Label>
+                    <Label htmlFor="landlord_phone">{t('property.landlord.phoneLabel')}</Label>
                       <Input id="landlord_phone" placeholder="ex: +212 6 61 10 10 10" {...register('landlord_phone', { required: 'Le numéro de téléphone est obligatoire' })} />
                       {errors.landlord_phone && <span className="text-sm text-destructive">{errors.landlord_phone.message}</span>}
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="landlord_email">Adresse e‑mail *</Label>
+                      <Label htmlFor="landlord_email">{t('property.landlord.emailLabel')}</Label>
                       <Input id="landlord_email" type="email" placeholder="ex: contact@casablancaproperties.ma" {...register('landlord_email', { required: 'L’adresse e‑mail est obligatoire' })} />
                       {errors.landlord_email && <span className="text-sm text-destructive">{errors.landlord_email.message}</span>}
                     </div>
@@ -710,18 +626,18 @@ export const CreatePropertyDialog = ({
                   <div className="flex items-center gap-2">
                     <FileText className="w-5 h-5 text-[#040404]" />
                     <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
-                      Paramètres du contrat
+                      {t('property.contract.title')}
                     </CardTitle>
                   </div>
                   <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
-                    Personnalisez votre modèle de contrat de location.
+                    {t('property.contract.subtitle')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <Label className="property-form-label" style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: '12px', color: '#040404' }}>
-                        Règlement intérieur
+                        {t('property.contract.rulesLabel')}
                       </Label>
                       <button 
                         type="button" 
@@ -730,16 +646,16 @@ export const CreatePropertyDialog = ({
                         style={{ background: 'rgba(85, 186, 159, 0.76)', color: '#040404' }}
                       >
                         <Plus className="h-3 w-3" />
-                        Ajouter
+                        {t('property.contract.addRule')}
                       </button>
                     </div>
                     <div className="text-xs" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", color: '#4B5563' }}>
-                      Personnalisez les règles qui apparaîtront dans vos contrats de location.
+                      {t('property.contract.rulesHelp')}
                     </div>
                     
                     <div className="space-y-3">
                       {houseRules.map((rule, index) => <div key={index} className="flex gap-2">
-                          <Input value={rule} onChange={e => updateHouseRule(index, e.target.value)} placeholder="Saisissez une règle du logement…" className="flex-1" />
+                          <Input value={rule} onChange={e => updateHouseRule(index, e.target.value)} placeholder={t('property.contract.rulePlaceholder')} className="flex-1" />
                           {houseRules.length > 1 && <Button type="button" variant="outline" size="sm" onClick={() => removeHouseRule(index)} className="px-2">
                               <Minus className="h-3 w-3" />
                             </Button>}
@@ -754,11 +670,11 @@ export const CreatePropertyDialog = ({
                   <div className="flex items-center gap-2">
                     <Pen className="w-5 h-5 text-[#040404]" />
                     <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
-                      Signature / cachet
+                      {t('property.contract.signatureTitle')}
                     </CardTitle>
                   </div>
                   <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
-                    Ajoutez votre signature qui apparaîtra dans les contrats
+                    {t('property.contract.signatureSubtitle')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -771,7 +687,7 @@ export const CreatePropertyDialog = ({
                         className="w-full"
                       >
                         <Pen className="w-4 h-4 mr-2" />
-                        Signer à la main
+                        {t('property.contract.signManually')}
                       </Button>
                       
                       <div className="relative">
@@ -789,60 +705,39 @@ export const CreatePropertyDialog = ({
                           className="w-full"
                         >
                           <Upload className="w-4 h-4 mr-2" />
-                          Uploader signature/cachet
+                          {t('property.contract.uploadSignature')}
                         </Button>
                       </div>
                       
                       <p className="text-xs text-muted-foreground text-center">
-                        Vous pouvez signer directement ou uploader une image de votre signature avec cachet d'entreprise
+                        {t('property.contract.signatureHint')}
                       </p>
                     </div>
                   )}
                   
                   {isSignatureModeActive && (
                     <div className="space-y-4">
-                      <div className="border-2 border-dashed border-muted-foreground/20 rounded-lg p-4 bg-muted/5">
-                        <p className="text-sm text-muted-foreground mb-2">
-                          Signez dans la zone ci-dessous:
-                        </p>
-                        <canvas
-                          ref={canvasRef}
-                          width={400}
-                          height={150}
-                          className="w-full border rounded bg-background cursor-crosshair"
-                        />
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <Button 
-                          type="button"
-                          onClick={clearSignature}
-                          variant="outline"
-                          className="flex-1"
-                        >
-                          Effacer
-                        </Button>
-                        <Button 
-                          type="button"
-                          onClick={() => setIsSignatureModeActive(false)}
-                          variant="outline"
-                          className="flex-1"
-                        >
-                          Terminer
-                        </Button>
-                      </div>
-                      
-                      {landlordSignature && (
-                        <div className="text-center">
-                          <p className="text-sm text-green-600 font-medium">✓ Signature ajoutée</p>
-                        </div>
-                      )}
+                      <SignaturePad 
+                        onSignature={(data) => {
+                          setLandlordSignature(data);
+                          setIsSignatureModeActive(false);
+                        }}
+                      />
+                      <Button 
+                        type="button"
+                        onClick={() => setIsSignatureModeActive(false)}
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-gray-500 hover:text-gray-700"
+                      >
+                        {t('dashboard.cancel')}
+                      </Button>
                     </div>
                   )}
                   
                   {landlordSignature && !isSignatureModeActive && (
                     <div className="border rounded-lg p-4 bg-muted/5">
-                      <p className="text-sm text-muted-foreground mb-2">Signature actuelle:</p>
+                      <p className="text-sm text-muted-foreground mb-2">{t('property.contract.currentSignature')}</p>
                       <img src={landlordSignature} alt="Signature" className="border rounded max-h-20 max-w-full object-contain" />
                       <div className="flex gap-2 mt-3">
                         <Button 
@@ -853,7 +748,7 @@ export const CreatePropertyDialog = ({
                           className="flex-1"
                         >
                           <Pen className="w-3 h-3 mr-1" />
-                          Modifier signature
+                          {t('property.contract.editSignature')}
                         </Button>
                         <div className="relative flex-1">
                           <input
@@ -871,7 +766,7 @@ export const CreatePropertyDialog = ({
                             className="w-full"
                           >
                             <ImageIcon className="w-3 h-3 mr-1" />
-                            Changer image
+                            {t('property.contract.changeImage')}
                           </Button>
                         </div>
                       </div>
@@ -887,11 +782,11 @@ export const CreatePropertyDialog = ({
                   <div className="flex items-center gap-2">
                     <Eye className="w-5 h-5 text-[#040404]" />
                     <CardTitle className="property-section-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '16px', color: '#040404' }}>
-                      Documents disponibles
+                      {t('property.preview.title')}
                     </CardTitle>
                   </div>
                   <CardDescription className="property-section-description" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '12px', color: '#4B5563' }}>
-                    Aperçu des documents qui seront générés pour cette propriété.
+                    {t('property.preview.subtitle')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -915,7 +810,7 @@ export const CreatePropertyDialog = ({
               className="property-btn-secondary px-6 py-2 rounded-md text-base font-medium"
               style={{ background: '#FFFFFF', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
             >
-              Annuler
+              {t('dashboard.cancel')}
             </button>
             {currentTab === 'basic' && (
               <button 
@@ -931,7 +826,7 @@ export const CreatePropertyDialog = ({
                 className="property-btn-primary px-6 py-2 rounded-md text-base font-medium disabled:opacity-60"
                 style={{ background: 'rgba(85, 186, 159, 0.76)', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
               >
-                Suivant
+                {t('guest.navigation.next')}
               </button>
             )}
             {currentTab === 'landlord' && (
@@ -942,7 +837,7 @@ export const CreatePropertyDialog = ({
                   className="property-btn-secondary px-6 py-2 rounded-md text-base font-medium"
                   style={{ background: '#FFFFFF', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
-                  Précédent
+                  {t('guest.navigation.previous')}
                 </button>
                 <button 
                   type="button" 
@@ -957,7 +852,7 @@ export const CreatePropertyDialog = ({
                   className="property-btn-primary px-6 py-2 rounded-md text-base font-medium disabled:opacity-60"
                   style={{ background: 'rgba(85, 186, 159, 0.76)', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
-                  Suivant
+                  {t('guest.navigation.next')}
                 </button>
               </>
             )}
@@ -969,7 +864,7 @@ export const CreatePropertyDialog = ({
                   className="property-btn-secondary px-6 py-2 rounded-md text-base font-medium"
                   style={{ background: '#FFFFFF', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
-                  Précédent
+                  {t('guest.navigation.previous')}
                 </button>
                 <button 
                   type="button" 
@@ -984,7 +879,7 @@ export const CreatePropertyDialog = ({
                   className="property-btn-primary px-6 py-2 rounded-md text-base font-medium disabled:opacity-60"
                   style={{ background: 'rgba(85, 186, 159, 0.76)', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
-                  Suivant
+                  {t('guest.navigation.next')}
                 </button>
               </>
             )}
@@ -996,7 +891,7 @@ export const CreatePropertyDialog = ({
                   className="property-btn-secondary px-6 py-2 rounded-md text-base font-medium"
                   style={{ background: '#FFFFFF', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
-                  Précédent
+                  {t('guest.navigation.previous')}
                 </button>
                 <button 
                   type="submit" 
@@ -1007,7 +902,7 @@ export const CreatePropertyDialog = ({
                   className="property-btn-primary px-6 py-2 rounded-md text-base font-medium disabled:opacity-60"
                   style={{ background: 'rgba(85, 186, 159, 0.76)', boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)', color: '#040404' }}
                 >
-                  {isSubmitting ? 'Enregistrement...' : 'Enregistrer'}
+                  {isSubmitting ? t('property.actions.saving') : t('property.actions.save')}
                 </button>
               </>
             )}

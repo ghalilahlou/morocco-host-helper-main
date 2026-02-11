@@ -4,8 +4,9 @@ import { MapPin, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { format, differenceInDays } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import { enUS, fr, es } from 'date-fns/locale';
 import { EnhancedCalendar } from './enhanced-calendar';
+import { useGuestLocale } from '@/i18n/GuestLocaleProvider';
 
 interface IntuitiveBookingPickerProps {
   checkInDate?: Date;
@@ -28,6 +29,8 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
   propertyName = "Hébergement",
   className
 }) => {
+  const { locale } = useGuestLocale();
+  const dateLocale = locale === 'en' ? enUS : locale === 'es' ? es : fr;
   const [step, setStep] = useState<PickerStep>('dates');
   const [tempCheckIn, setTempCheckIn] = useState<Date | undefined>(checkInDate);
   const [tempCheckOut, setTempCheckOut] = useState<Date | undefined>(checkOutDate);
@@ -157,7 +160,8 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                     <div className="flex items-center justify-between">
                       <div className="space-y-1">
                         <div className="font-medium text-gray-900">
-                          {format(tempCheckIn, 'dd MMMM yyyy', { locale: fr })} → {format(tempCheckOut, 'dd MMMM yyyy', { locale: fr })}
+                          {format(tempCheckIn, 'dd MMMM yyyy', { locale: dateLocale })} →{' '}
+                          {format(tempCheckOut, 'dd MMMM yyyy', { locale: dateLocale })}
                         </div>
                         <div className="text-sm text-gray-600">
                           {nights} nuit{nights > 1 ? 's' : ''} à {propertyName}
@@ -203,7 +207,8 @@ export const IntuitiveBookingPicker: React.FC<IntuitiveBookingPickerProps> = ({
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium text-blue-900">
-                          {format(tempCheckIn, 'dd MMMM', { locale: fr })} → {format(tempCheckOut, 'dd MMMM', { locale: fr })}
+                          {format(tempCheckIn, 'dd MMMM', { locale: dateLocale })} →{' '}
+                          {format(tempCheckOut, 'dd MMMM', { locale: dateLocale })}
                         </div>
                         <div className="text-sm text-blue-700">
                           {nights} nuit{nights > 1 ? 's' : ''}

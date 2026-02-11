@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Wifi, WifiOff, RefreshCw, Settings, Calendar, Grid3X3, Plus, Link } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -10,6 +10,7 @@ import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useT } from '@/i18n/GuestLocaleProvider';
 import { cn } from '@/lib/utils';
 interface CalendarHeaderProps {
   currentDate: Date;
@@ -41,10 +42,7 @@ interface CalendarHeaderProps {
   onBookingClick?: (booking: Booking | AirbnbReservation) => void;
 }
 
-const monthNames = [
-  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
-];
+const monthKeys = ['calendar.monthJan', 'calendar.monthFeb', 'calendar.monthMar', 'calendar.monthApr', 'calendar.monthMay', 'calendar.monthJun', 'calendar.monthJul', 'calendar.monthAug', 'calendar.monthSep', 'calendar.monthOct', 'calendar.monthNov', 'calendar.monthDec'] as const;
 
 export const CalendarHeader = ({ 
   currentDate, 
@@ -62,10 +60,12 @@ export const CalendarHeader = ({
   allReservations = [],
   onBookingClick
 }: CalendarHeaderProps) => {
+  const t = useT();
   const isMobile = useIsMobile();
   const isMountedRef = useRef(true);
   const [showNotConfigured, setShowNotConfigured] = useState(false);
   const [tooltipOpen, setTooltipOpen] = useState(false);
+  const monthNames = useMemo(() => monthKeys.map((k) => t(k)), [t]);
 
   // ✅ CORRIGÉ : Cleanup lors du démontage pour éviter les erreurs Portal
   useEffect(() => {
@@ -97,7 +97,7 @@ export const CalendarHeader = ({
               className="w-full h-12 bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-gray-900 font-semibold rounded-xl flex items-center justify-center gap-2"
             >
               <Plus className="h-5 w-5" />
-              <span>Ajouter</span>
+              <span>{t('dashboard.add')}</span>
             </Button>
           )}
           
@@ -114,7 +114,7 @@ export const CalendarHeader = ({
             <button
               onClick={onOpenConfig}
               className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-              aria-label="Synchronisation"
+              aria-label={t('dashboard.sync')}
             >
               <Wifi className={cn(
                 "h-5 w-5",
@@ -256,7 +256,7 @@ export const CalendarHeader = ({
               variant="ghost" 
               size="icon" 
               className="h-8 w-8 text-gray-700 hover:bg-gray-100"
-              title="Vue calendrier"
+              title={t('dashboard.viewCalendar')}
             >
               <Calendar className="h-4 w-4" />
             </Button>
@@ -264,7 +264,7 @@ export const CalendarHeader = ({
               variant="ghost" 
               size="icon" 
               className="h-8 w-8 text-gray-500 hover:bg-gray-100"
-              title="Vue grille"
+              title={t('dashboard.viewGrid')}
             >
               <Grid3X3 className="h-4 w-4" />
             </Button>
@@ -285,8 +285,8 @@ export const CalendarHeader = ({
             ) : (
               <WifiOff className="h-4 w-4 flex-shrink-0" />
             )}
-            <span className="text-sm font-medium hidden sm:inline">Synchronisation</span>
-            <span className="text-sm font-medium sm:hidden">Sync</span>
+            <span className="text-sm font-medium hidden sm:inline">{t('dashboard.sync')}</span>
+            <span className="text-sm font-medium sm:hidden">{t('dashboard.syncShort')}</span>
           </Button>
           
           {/* Bouton Créer une réservation */}
@@ -299,8 +299,8 @@ export const CalendarHeader = ({
               data-tutorial="add-booking"
             >
               <Plus className="h-4 w-4 flex-shrink-0" />
-              <span className="text-sm font-medium hidden sm:inline">Créer une réservation</span>
-              <span className="text-sm font-medium sm:hidden">Créer</span>
+              <span className="text-sm font-medium hidden sm:inline">{t('dashboard.createBooking')}</span>
+              <span className="text-sm font-medium sm:hidden">{t('dashboard.createShort')}</span>
             </Button>
           )}
         </div>
@@ -318,14 +318,14 @@ export const CalendarHeader = ({
               size="sm"
               className="text-sm font-medium text-gray-700 hover:bg-gray-100"
             >
-              Complétées ({stats.completed})
+              {t('dashboard.completedCount', { count: stats.completed })}
             </Button>
             <Button
               variant="ghost"
               size="sm"
               className="text-sm font-medium text-gray-700 hover:bg-gray-100"
             >
-              En attente ({stats.pending})
+              {t('dashboard.pendingCount', { count: stats.pending })}
             </Button>
             </div>
           
@@ -341,7 +341,7 @@ export const CalendarHeader = ({
                     <TooltipTrigger asChild>
                       <div className="flex items-center space-x-2 shrink-0 cursor-help">
                         <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: BOOKING_COLORS.conflict.hex }}></div>
-                        <span className="text-muted-foreground whitespace-nowrap">Conflits ({stats.conflicts})</span>
+                        <span className="text-muted-foreground whitespace-nowrap">{t('dashboard.conflicts', { count: stats.conflicts })}</span>
                       </div>
                     </TooltipTrigger>
                     <TooltipContent 
@@ -361,7 +361,7 @@ export const CalendarHeader = ({
                       }}
                     >
                     <div className="space-y-2">
-                      <div className="font-semibold text-sm mb-2">Dates en conflit :</div>
+                      <div className="font-semibold text-sm mb-2">{t('dashboard.datesInConflict')}</div>
                       {conflictDetails.length > 0 ? (
                         <div className="space-y-3 max-h-64 overflow-y-auto">
                           {conflictDetails.map((conflict, index) => {
@@ -386,7 +386,7 @@ export const CalendarHeader = ({
                                         onBookingClick(reservation1);
                                       }
                                     }}
-                                    title={reservation1 && onBookingClick ? "Cliquez pour voir les détails" : ""}
+                                    title={reservation1 && onBookingClick ? t('dashboard.clickForDetails') : ""}
                                   >
                                     📅 {conflict.name1}: {conflict.start1} → {conflict.end1}
                                   </div>
@@ -399,7 +399,7 @@ export const CalendarHeader = ({
                                         onBookingClick(reservation2);
                                       }
                                     }}
-                                    title={reservation2 && onBookingClick ? "Cliquez pour voir les détails" : ""}
+                                    title={reservation2 && onBookingClick ? t('dashboard.clickForDetails') : ""}
                                   >
                                     📅 {conflict.name2}: {conflict.start2} → {conflict.end2}
                                   </div>
@@ -409,7 +409,7 @@ export const CalendarHeader = ({
                           })}
                         </div>
                       ) : (
-                        <div className="text-xs text-muted-foreground">Aucun détail disponible</div>
+                        <div className="text-xs text-muted-foreground">{t('dashboard.noConflictDetails')}</div>
                       )}
                     </div>
                   </TooltipContent>
@@ -424,15 +424,15 @@ export const CalendarHeader = ({
       <AlertDialog open={showNotConfigured} onOpenChange={setShowNotConfigured}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Synchronisation non configurée</AlertDialogTitle>
+            <AlertDialogTitle>{t('dashboard.syncNotConfigured')}</AlertDialogTitle>
             <AlertDialogDescription>
-              La synchronisation Airbnb n’est pas encore configurée pour cette propriété.
+              {t('dashboard.syncNotConfiguredDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('dashboard.cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={() => { setShowNotConfigured(false); onOpenConfig(); }}>
-              Configurer maintenant
+              {t('dashboard.configureNow')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

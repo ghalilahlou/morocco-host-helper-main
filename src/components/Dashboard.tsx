@@ -9,6 +9,7 @@ import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { debug } from '@/lib/logger';
 import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 // ✅ OPTIMISATION : Lazy loading pour CalendarView (composant lourd)
 const CalendarView = lazy(() => import('./CalendarView'));
@@ -31,6 +32,7 @@ export const Dashboard = memo(({
   onRefreshBookings,
   propertyId
 }: DashboardProps) => {
+  const t = useT();
   // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
   const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings({ propertyId });
   
@@ -44,9 +46,14 @@ export const Dashboard = memo(({
   const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('calendar');
   
   // Refresh bookings when component mounts
+  // ✅ CORRECTION : Ajouter handleRefreshBookings dans les dépendances pour éviter les appels multiples
   useEffect(() => {
-    handleRefreshBookings();
-  }, []);
+    // ✅ PROTECTION : Ne rafraîchir que si propertyId est défini
+    if (propertyId) {
+      handleRefreshBookings();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyId]); // ✅ Ne dépendre que de propertyId, pas de handleRefreshBookings pour éviter les boucles
   
   // Log bookings changes for debugging
   useEffect(() => {
@@ -119,12 +126,93 @@ export const Dashboard = memo(({
   }, [bookings, searchTerm, statusFilter, viewMode]);
 
   // 🚀 OPTIMISATION: Memoize stats pour éviter les re-calculs
-  const stats = useMemo(() => ({
-    total: bookings.length,
-    pending: bookings.filter(b => b.status === 'pending').length,
-    completed: bookings.filter(b => b.status === 'completed').length,
-    archived: bookings.filter(b => b.status === 'archived').length
-  }), [bookings]);
+  // ✅ CORRIGÉ: Une réservation est "Terminée" si elle a tous ses documents générés OU si son statut est 'completed'
+  // ✅ AMÉLIORATION : Les réservations archivées ne sont comptées que dans 'archived', pas dans 'pending' ou 'completed'
+  const stats = useMemo(() => {
+    const isBookingCompleted = (b: any) => {
+      // Exclure les réservations archivées
+      if (b.status === 'archived') return false;
+      
+      // ✅ CORRECTION : Vérifier que les documents sont vraiment générés (avec URLs)
+      const hasPoliceForm = (b.documentsGenerated?.policeForm === true || 
+                             b.documentsGenerated?.police === true) &&
+                            !!b.documentsGenerated?.policeUrl;
+      const hasContract = b.documentsGenerated?.contract === true &&
+                         !!b.documentsGenerated?.contractUrl;
+      
+      // ✅ CORRECTION : Une réservation est "completed" seulement si :
+      // 1. Le statut est 'completed' ET les documents sont vraiment générés (avec URLs)
+      // 2. OU les deux documents sont générés avec URLs (même si le statut n'est pas 'completed')
+      const isCompleted = (b.status === 'completed' && hasPoliceForm && hasContract) ||
+                          (hasPoliceForm && hasContract);
+      
+      // 🔴 DIAGNOSTIC : Log pour identifier les réservations comptées comme "completed"
+      if (isCompleted) {
+        console.log('🔴 [DIAGNOSTIC COMPLETED] Réservation comptée comme terminée:', {
+          id: b.id?.substring(0, 8),
+          fullId: b.id,
+          status: b.status,
+          hasPoliceForm,
+          hasContract,
+          policeForm: b.documentsGenerated?.policeForm,
+          police: b.documentsGenerated?.police,
+          contract: b.documentsGenerated?.contract,
+          contractUrl: b.documentsGenerated?.contractUrl ? 'présent' : 'absent',
+          policeUrl: b.documentsGenerated?.policeUrl ? 'présent' : 'absent',
+          documentsGenerated: JSON.stringify(b.documentsGenerated),
+          reason: b.status === 'completed' && hasPoliceForm && hasContract 
+            ? 'status=completed + documents avec URLs' 
+            : hasPoliceForm && hasContract 
+            ? 'documents avec URLs (statut non-completed)' 
+            : 'autre',
+          checkInDate: b.checkInDate,
+          checkOutDate: b.checkOutDate,
+          guestName: b.guest_name
+        });
+      } else if (b.status === 'completed') {
+        // 🔴 DIAGNOSTIC : Log pour les réservations avec status='completed' mais sans documents
+        console.warn('⚠️ [DIAGNOSTIC] Réservation avec status=completed mais documents incomplets:', {
+          id: b.id?.substring(0, 8),
+          fullId: b.id,
+          status: b.status,
+          hasPoliceForm,
+          hasContract,
+          policeForm: b.documentsGenerated?.policeForm,
+          police: b.documentsGenerated?.police,
+          contract: b.documentsGenerated?.contract,
+          contractUrl: b.documentsGenerated?.contractUrl ? 'présent' : 'absent',
+          policeUrl: b.documentsGenerated?.policeUrl ? 'présent' : 'absent',
+          documentsGenerated: JSON.stringify(b.documentsGenerated)
+        });
+      }
+      
+      return isCompleted;
+    };
+    
+    // Filtrer les réservations non-archivées pour les compteurs pending/completed
+    const nonArchivedBookings = bookings.filter(b => b.status !== 'archived');
+    
+    const completedBookings = nonArchivedBookings.filter(b => isBookingCompleted(b));
+    
+    // 🔴 DIAGNOSTIC : Log du résultat final
+    console.log('🔴 [DIAGNOSTIC STATS] Calcul des statistiques:', {
+      total: bookings.length,
+      nonArchived: nonArchivedBookings.length,
+      completed: completedBookings.length,
+      completedIds: completedBookings.map(b => ({
+        id: b.id?.substring(0, 8),
+        status: b.status,
+        hasDocs: !!(b.documentsGenerated?.policeForm || b.documentsGenerated?.police) && !!b.documentsGenerated?.contract
+      }))
+    });
+    
+    return {
+      total: bookings.length,
+      pending: nonArchivedBookings.filter(b => !isBookingCompleted(b)).length,
+      completed: completedBookings.length,
+      archived: bookings.filter(b => b.status === 'archived').length
+    };
+  }, [bookings]);
 
   // Écouter l'événement de création de réservation depuis CalendarHeader
   useEffect(() => {
@@ -141,9 +229,9 @@ export const Dashboard = memo(({
     <div className="space-y-6">
       {/* Header Tableau de bord selon modèle Figma */}
       <div>
-        <h1 className="text-2xl md:text-3xl font-bold text-black">Tableau de bord</h1>
+        <h1 className="text-2xl md:text-3xl font-bold text-black">{t('dashboard.title')}</h1>
         <p className="text-sm md:text-base text-gray-600 mt-2">
-          Gérez vos réservations et générez les documents obligatoires
+          {t('dashboard.subtitle')}
         </p>
       </div>
 
@@ -157,7 +245,7 @@ export const Dashboard = memo(({
           className={viewMode === 'calendar' ? 'bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white' : 'hover:bg-gray-100 border-gray-300'}
             >
           <CalendarDays className="w-4 h-4 mr-2" />
-          Calendrier
+          {t('dashboard.calendar')}
             </Button>
             <Button
           variant={viewMode === 'cards' ? 'default' : 'outline'}
@@ -166,7 +254,7 @@ export const Dashboard = memo(({
           className={viewMode === 'cards' ? 'bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white' : 'hover:bg-gray-100 border-gray-300'}
             >
           <Grid className="w-4 h-4 mr-2" />
-          Cards
+          {t('dashboard.cards')}
             </Button>
       </div>
 
@@ -176,7 +264,7 @@ export const Dashboard = memo(({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
-              placeholder="Rechercher par référence ou nom du client..."
+              placeholder={t('dashboard.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -185,13 +273,13 @@ export const Dashboard = memo(({
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-full sm:w-48">
               <Filter className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Filtrer par statut" />
+              <SelectValue placeholder={t('dashboard.filterByStatus')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tous les statuts</SelectItem>
-              <SelectItem value="pending">En attente</SelectItem>
-              <SelectItem value="completed">Terminées</SelectItem>
-              <SelectItem value="archived">Archivées</SelectItem>
+              <SelectItem value="all">{t('dashboard.allStatuses')}</SelectItem>
+              <SelectItem value="pending">{t('dashboard.pending')}</SelectItem>
+              <SelectItem value="completed">{t('dashboard.completedPlural')}</SelectItem>
+              <SelectItem value="archived">{t('dashboard.archived')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -205,18 +293,18 @@ export const Dashboard = memo(({
               <Plus className="w-12 h-12 text-muted-foreground" />
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">
-              {bookings.length === 0 ? 'Aucune réservation' : 'Aucun résultat'}
+              {bookings.length === 0 ? t('dashboard.noBooking') : t('dashboard.noResult')}
             </h3>
             <p className="text-muted-foreground mb-4">
               {bookings.length === 0 
-                ? 'Créez votre première réservation pour commencer à générer les documents obligatoires.'
-                : 'Aucune réservation ne correspond à vos critères de recherche.'
+                ? t('dashboard.createFirst')
+                : t('dashboard.noMatch')
               }
             </p>
             {bookings.length === 0 && (
               <Button onClick={onNewBooking} variant="professional">
                 <Plus className="w-4 h-4 mr-2" />
-                Créer une réservation
+                {t('dashboard.createBooking')}
               </Button>
             )}
           </div>

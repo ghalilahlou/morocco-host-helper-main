@@ -30,12 +30,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { UnifiedDocumentService } from '@/services/unifiedDocumentService';
-import { ContractService } from '@/services/contractService';
+import { ContractService, getContractPdfUrl } from '@/services/contractService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { ShareModal } from '@/components/ShareModal';
 import { isMobile as isMobileDevice } from '@/lib/shareUtils';
 import { parseLocalDate } from '@/utils/dateUtils';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface UnifiedBookingModalProps {
   booking: Booking | EnrichedBooking | AirbnbReservation | null;
@@ -77,7 +78,10 @@ export const UnifiedBookingModal = ({
   });
   const [isGeneratingContract, setIsGeneratingContract] = useState(false);
   const [isGeneratingPolice, setIsGeneratingPolice] = useState(false);
-  const [hasGuestData, setHasGuestData] = useState(false); // ✅ NOUVEAU : Vérifier si la réservation a des données clients
+  const [contractLocale, setContractLocale] = useState<'fr' | 'en' | 'es'>('fr');
+  const [isOpeningContractView, setIsOpeningContractView] = useState(false);
+  const [hasGuestData, setHasGuestData] = useState(false);
+  const t = useT();
   const [showManualCheck, setShowManualCheck] = useState(false); // ✅ NOUVEAU : Afficher bouton vérification manuelle
   const [docsGeneratedState, setDocsGeneratedState] = useState<any>(null); // ✅ NOUVEAU : Stocker documents_generated pour l'affichage
   const [bookingDocsGeneratedState, setBookingDocsGeneratedState] = useState<any>(null); // ✅ NOUVEAU : Stocker documents_generated depuis DB
@@ -1048,7 +1052,7 @@ export const UnifiedBookingModal = ({
     setIsGeneratingContract(true);
     try {
       const bookingTyped = booking as Booking;
-      const result = await ContractService.generateAndDownloadContract(bookingTyped);
+      const result = await ContractService.generateAndDownloadContract(bookingTyped, { locale: contractLocale });
       
       if (result.success) {
         toast({
@@ -1540,29 +1544,74 @@ export const UnifiedBookingModal = ({
                   })()}
                   {documents.contractUrl ? (
                     <div className={cn(
-                      "flex gap-2",
+                      "flex flex-wrap items-center gap-2",
                       isMobile ? "w-full justify-end" : ""
                     )}>
+                      <select
+                        value={contractLocale}
+                        onChange={(e) => setContractLocale(e.target.value as 'fr' | 'en' | 'es')}
+                        aria-label={t('contract.language.label')}
+                        className={cn(
+                          "h-10 rounded-md border-2 border-brand-teal/30 bg-background px-3 py-2 text-sm w-[130px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-teal/50",
+                          isMobile && "flex-1 min-w-0"
+                        )}
+                      >
+                        <option value="fr">{t('contract.language.fr')}</option>
+                        <option value="en">{t('contract.language.en')}</option>
+                        <option value="es">{t('contract.language.es')}</option>
+                      </select>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => window.open(documents.contractUrl!, '_blank')}
+                        disabled={isOpeningContractView}
+                        onClick={async () => {
+                          const bookingId = (booking as any)?.id;
+                          if (!bookingId) return;
+                          setIsOpeningContractView(true);
+                          try {
+                            const url = await getContractPdfUrl({
+                              supabase,
+                              bookingId,
+                              isPreview: false,
+                              locale: contractLocale,
+                            });
+                            if (url.startsWith('data:application/pdf')) {
+                              const w = window.open('', '_blank');
+                              if (w) w.document.write(`<iframe title="Contrat" src="${url}" style="width:100%;height:100%;border:0" />`);
+                            } else {
+                              window.open(url, '_blank');
+                            }
+                          } catch (err: any) {
+                            toast({ title: 'Erreur', description: err?.message || 'Impossible d\'ouvrir le contrat', variant: 'destructive' });
+                          } finally {
+                            setIsOpeningContractView(false);
+                          }
+                        }}
                         className={cn(
                           "border-2 border-brand-teal/30 hover:border-brand-teal/50",
                           isMobile && "flex-1"
                         )}
                       >
-                        <FileText className="w-4 h-4 mr-2" />
-                        Voir
+                        {isOpeningContractView ? (
+                          <>
+                            <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                            Ouverture...
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="w-4 h-4 mr-2" />
+                            Voir
+                          </>
+                        )}
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          const link = document.createElement('a');
-                          link.href = documents.contractUrl!;
-                          link.download = `contrat-${getReservationCode()}.pdf`;
-                          link.click();
+                        onClick={async () => {
+                          const bookingTyped = booking as Booking;
+                          const result = await ContractService.generateAndDownloadContract(bookingTyped, { locale: contractLocale });
+                          if (result.success) toast({ title: 'Contrat téléchargé', description: result.message });
+                          else toast({ title: 'Erreur', description: result.message, variant: 'destructive' });
                         }}
                         className={cn(
                           "border-2 border-brand-teal/30 hover:border-brand-teal/50",
@@ -1573,7 +1622,20 @@ export const UnifiedBookingModal = ({
                       </Button>
                     </div>
                   ) : (hasGuestData || (docsGeneratedState?.contract === true) || (bookingDocsGeneratedState?.contract === true)) ? (
-                    <div className={cn(isMobile && "w-full flex justify-end")}>
+                    <div className={cn("flex flex-wrap items-center gap-2", isMobile && "w-full justify-end")}>
+                      <select
+                        value={contractLocale}
+                        onChange={(e) => setContractLocale(e.target.value as 'fr' | 'en' | 'es')}
+                        aria-label={t('contract.language.label')}
+                        className={cn(
+                          "h-10 rounded-md border-2 border-brand-teal/30 bg-background px-3 py-2 text-sm w-[130px] cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-teal/50",
+                          isMobile && "flex-1 min-w-0"
+                        )}
+                      >
+                        <option value="fr">{t('contract.language.fr')}</option>
+                        <option value="en">{t('contract.language.en')}</option>
+                        <option value="es">{t('contract.language.es')}</option>
+                      </select>
                       <Button
                         variant="outline"
                         size="sm"
@@ -1581,7 +1643,7 @@ export const UnifiedBookingModal = ({
                         disabled={isGeneratingContract}
                         className={cn(
                           "border-2 border-brand-teal/30 hover:border-brand-teal/50",
-                          isMobile && "w-full sm:w-auto"
+                          isMobile && "flex-1 sm:flex-initial"
                         )}
                       >
                         {isGeneratingContract ? (

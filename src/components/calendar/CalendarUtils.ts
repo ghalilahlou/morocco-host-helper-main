@@ -16,12 +16,14 @@ export interface BookingLayout {
   startDayIndex: number;
   span: number;
   isStart: boolean;
-  // Indique si ce segment contient la fin effective de la réservation (veille du check-out)
+  /** Segment contient le jour de départ (check-out) : barre légèrement raccourcie pour laisser un espace */
   isEnd?: boolean;
   weekIndex: number;
   color: string;
   isAirbnb?: boolean;
   layer?: number;
+  /** Quand une autre réservation se termine ce jour-là (même ligne), décaler le début de la barre pour un léger espace */
+  startOffsetPercent?: number;
 }
 
 // ✅ CORRIGÉ : Palette bleu turquoise pour les réservations (rouge réservé aux conflits)
@@ -75,15 +77,14 @@ export const generateCalendarDays = (currentDate: Date): CalendarDay[] => {
   return days;
 };
 
-// Helper function to check if two booking periods overlap in days
+// Chevauchement strict : deux périodes se chevauchent seulement si elles partagent des jours (pas juste se toucher).
+// Ainsi 06-08 et 08-10 sont sur la même ligne avec un léger espace le jour 8.
 const doBookingPeriodsOverlap = (booking1: BookingLayout, booking2: BookingLayout): boolean => {
   const start1 = booking1.startDayIndex;
   const end1 = booking1.startDayIndex + booking1.span - 1;
   const start2 = booking2.startDayIndex;
   const end2 = booking2.startDayIndex + booking2.span - 1;
-  
-  // Check if ranges overlap: start1 <= end2 && start2 <= end1
-  return start1 <= end2 && start2 <= end1;
+  return start1 < end2 && end1 > start2;
 };
 
 // ✅ OPTIMISÉ : Algorithme amélioré pour l'espacement des réservations avec gestion intelligente des chevauchements
@@ -292,9 +293,7 @@ export const calculateBookingLayout = (
         //   console.log('🔍 [ANALYSE POSITION] Comparaison dates:', ...);
         // }
         
-        // ✅ NOUVELLE LOGIQUE VISUELLE :
-        // La réservation inclut le jour d'arrivée (inclusif) et va jusqu'à la date de check-out (incluse pour l'affichage),
-        // afin que la barre visuelle s'étende jusqu'à la cellule du check-out (comme dans la maquette).
+        // ✅ La barre s’étend jusqu’au jour de départ (inclus) ; un léger espace visuel évite le chevauchement.
         const isInBookingPeriod = dayDate.getTime() >= normalizedCheckIn.getTime() && dayDate.getTime() <= normalizedCheckOut.getTime();
         
         if (isInBookingPeriod) {
@@ -351,7 +350,7 @@ export const calculateBookingLayout = (
         const firstDayDate = normalizeDate(new Date(week[startIndex].date.getFullYear(), week[startIndex].date.getMonth(), week[startIndex].date.getDate()));
         const isStart = firstDayDate.getTime() === normalizedCheckIn.getTime();
         
-        // Déterminer si ce segment contient la date de check-out (pour l'affichage visuel)
+        // Segment contient le jour de départ : on raccourcit légèrement la barre pour laisser un espace avant la suivante.
         const lastDayDate = normalizeDate(new Date(week[endIndex].date.getFullYear(), week[endIndex].date.getMonth(), week[endIndex].date.getDate()));
         const isEnd = lastDayDate.getTime() === normalizedCheckOut.getTime();
         
@@ -440,6 +439,23 @@ export const calculateBookingLayout = (
         return layerA - layerB;
       }
       return a.startDayIndex - b.startDayIndex;
+    });
+
+    // Léger espace entre barres qui se touchent (ex. 06-08 et 08-10) : une se termine, l’autre commence le même jour.
+    const GAP_PERCENT = 12;
+    sortedBookings.forEach((layout) => {
+      if (!layout.isStart) return;
+      const myStart = layout.startDayIndex;
+      const myLayer = layout.layer ?? 0;
+      const otherEndsHere = sortedBookings.some(
+        (other) =>
+          (other.layer ?? 0) === myLayer &&
+          other.booking.id !== layout.booking.id &&
+          other.startDayIndex + other.span - 1 === myStart
+      );
+      if (otherEndsHere) {
+        layout.startOffsetPercent = GAP_PERCENT;
+      }
     });
     
     // ✅ DEBUG : Log pour vérifier les réservations dans chaque semaine (uniquement en développement)

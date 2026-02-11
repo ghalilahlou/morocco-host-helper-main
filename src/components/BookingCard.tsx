@@ -338,71 +338,8 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
             <Button
               variant="outline"
               size="sm"
-              onClick={async () => {
-                try {
-                  console.log('🚨 Generating police forms for booking:', booking.id);
-                  
-                  // ✅ CORRECTION: Validation avant génération
-                  if (!booking.guests || booking.guests.length === 0) {
-                    toast({
-                      title: "Impossible de générer",
-                      description: "Aucun invité trouvé pour cette réservation",
-                      variant: "destructive"
-                    });
-                    return;
-                  }
-
-                  console.log('🔍 AVANT APPEL generate-police-forms:', {
-                    bookingId: booking.id,
-                    documentType: 'police',
-                    supabaseUrl: supabase.supabaseUrl,
-                    timestamp: new Date().toISOString()
-                  });
-
-                  // ✅ NOUVEAU: Utiliser la nouvelle Edge Function dédiée
-                  const { data, error } = await supabase.functions.invoke('generate-police-form', {
-                    body: { 
-                      bookingId: booking.id
-                    }
-                  });
-
-                  console.log('🔍 APRÈS APPEL generate-police-form:', {
-                    data,
-                    error,
-                    hasData: !!data,
-                    hasError: !!error,
-                    errorDetails: error ? JSON.stringify(error) : null
-                  });
-
-                  if (error) {
-                    console.error('❌ Police generation error:', error);
-                    throw new Error(error.message || 'Erreur lors de la génération');
-                  }
-
-                  // ✅ CORRECTION: Mise à jour sécurisée du statut
-                  await updateBooking(booking.id, {
-                    documentsGenerated: {
-                      ...booking.documentsGenerated,
-                      policeForm: true,
-                    },
-                  });
-
-                  toast({
-                    title: "Fiches de police générées",
-                    description: `${booking.guests.length} fiche(s) de police générée(s) avec succès`,
-                  });
-
-                  setShowDocuments('police-form');
-                } catch (error: any) {
-                  console.error('❌ Error generating police forms:', error);
-                  toast({
-                    title: "Erreur de génération",
-                    description: error.message || "Impossible de générer les fiches de police",
-                    variant: "destructive"
-                  });
-                }
-              }}
-              disabled={!canGenerateDocuments}
+              onClick={() => setShowDocuments('police-form')}
+              disabled={false}
               className="text-xs"
             >
               <Download className="w-3 h-3 sm:mr-1" />
@@ -411,45 +348,7 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
             <Button
               variant="outline"
               size="sm"
-              onClick={async () => {
-                try {
-                  console.log('📄 Generating contract for booking:', booking.id);
-                  
-                  const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
-                    body: { 
-                      bookingId: booking.id, 
-                      action: 'generate_contract_only' 
-                    }
-                  });
-
-                  if (error) {
-                    console.error('❌ Contract generation error:', error);
-                    throw new Error(error.message || 'Erreur lors de la génération du contrat');
-                  }
-
-                  // ✅ CORRECTION: Mise à jour sécurisée du statut
-                  await updateBooking(booking.id, {
-                    documentsGenerated: {
-                      ...booking.documentsGenerated,
-                      contract: true,
-                    },
-                  });
-
-                  toast({
-                    title: "Contrat généré",
-                    description: "Le contrat a été généré avec succès",
-                  });
-
-                  setShowDocuments('contract');
-                } catch (error: any) {
-                  console.error('❌ Error generating contract:', error);
-                  toast({
-                    title: "Erreur de génération",
-                    description: error.message || "Impossible de générer le contrat",
-                    variant: "destructive"
-                  });
-                }
-              }}
+              onClick={() => setShowDocuments('contract')}
               className="text-xs"
             >
               <Download className="w-3 h-3 sm:mr-1" />

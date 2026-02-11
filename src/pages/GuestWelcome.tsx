@@ -380,7 +380,10 @@ export const GuestWelcome = () => {
               >
                 <Button 
                   onClick={handleStartCheckin}
-                  className="relative inline-flex items-center justify-center px-12 py-6 text-xl font-bold rounded-2xl shadow-2xl hover:shadow-3xl transition-all duration-300 group min-w-[350px] bg-brand-teal hover:bg-brand-teal/90 text-white border-0"
+                  className="relative inline-flex items-center justify-center px-12 py-6 text-xl font-bold shadow-2xl hover:shadow-3xl transition-all duration-300 group min-w-[350px] text-white border-0"
+                  style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
                 >
                   <motion.span
                     className="relative z-10"

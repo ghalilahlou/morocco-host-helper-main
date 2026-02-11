@@ -7,7 +7,8 @@ import { UserMenu } from '@/components/UserMenu';
 import { SubscriptionModal } from '@/components/SubscriptionModal';
 import { ContactModal } from '@/components/ContactModal';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useT } from '@/i18n/GuestLocaleProvider';
+import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
 
 interface LayoutProps {
   children?: React.ReactNode;
@@ -19,6 +20,7 @@ export const Layout: React.FC<LayoutProps> = ({
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const t = useT();
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
   const [contactModalOpen, setContactModalOpen] = useState(false);
   
@@ -38,7 +40,7 @@ export const Layout: React.FC<LayoutProps> = ({
               <button 
                 onClick={() => navigate('/dashboard')} 
                 className="focus:outline-none transition-transform hover:scale-105 flex items-center space-x-2"
-                aria-label="Retour au tableau de bord"
+                aria-label={t('app.layout.backToDashboard')}
               >
                 <img 
                   src="/dashimage.png" 
@@ -50,6 +52,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
             {/* Navigation droite - Desktop: texte complet, Mobile: icônes seulement */}
             <div className="flex items-center space-x-2 md:space-x-4">
+              <LanguageSwitcher />
               {isMobile ? (
                 <>
                   <Button 
@@ -81,7 +84,7 @@ export const Layout: React.FC<LayoutProps> = ({
                     className="flex items-center space-x-2 rounded-full border-gray-300 bg-[#E5E7EB] hover:bg-[#E5E7EB]/80 text-gray-900 h-9 px-4"
                   >
                     <Crown className="w-4 h-4 text-gray-700" />
-                    <span className="text-sm font-medium">Mon forfait</span>
+                    <span className="text-sm font-medium">{t('app.layout.myPlan')}</span>
                   </Button>
                   
                   <Button 
@@ -91,7 +94,7 @@ export const Layout: React.FC<LayoutProps> = ({
                     className="flex items-center space-x-2 rounded-full border-gray-300 bg-[#E5E7EB] hover:bg-[#E5E7EB]/80 text-gray-900 h-9 px-4"
                   >
                     <MessageCircle className="w-4 h-4 text-gray-700" />
-                    <span className="text-sm font-medium">Contact</span>
+                    <span className="text-sm font-medium">{t('app.layout.contact')}</span>
                   </Button>
                   
                   <UserMenu onSignOut={handleSignOut} />
@@ -111,24 +114,15 @@ export const Layout: React.FC<LayoutProps> = ({
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
-              <span>© 2025 Checky — Tous droits réservés</span>
+              <span>{t('app.footer.copyright')}</span>
               <span className="hidden sm:inline">•</span>
-              <a href="#" className="hover:text-gray-700">Mentions légales</a>
+              <a href="#" className="hover:text-gray-700">{t('guestVerification.footerLegal')}</a>
               <span>•</span>
-              <a href="#" className="hover:text-gray-700">Politique de confidentialité</a>
+              <a href="#" className="hover:text-gray-700">{t('guestVerification.footerPrivacy')}</a>
               <span>•</span>
-              <a href="#" className="hover:text-gray-700">CGV</a>
+              <a href="#" className="hover:text-gray-700">{t('guestVerification.footerTerms')}</a>
             </div>
-            <Select defaultValue="fr">
-              <SelectTrigger className="w-[140px] h-8 text-sm border-gray-300">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fr">Français (FR)</SelectItem>
-                <SelectItem value="en">English (EN)</SelectItem>
-                <SelectItem value="ar">العربية (AR)</SelectItem>
-              </SelectContent>
-            </Select>
+            <LanguageSwitcher />
           </div>
         </div>
       </footer>

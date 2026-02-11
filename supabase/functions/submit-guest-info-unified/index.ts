@@ -33,6 +33,7 @@ interface GuestInfo {
   idType?: string;
   idNumber?: string;
   dateOfBirth?: string;
+  documentIssueDate?: string; // ✅ Date de délivrance de la pièce d'identité
   profession?: string;
   motifSejour?: string;
   adressePersonnelle?: string;
@@ -965,20 +966,37 @@ async function saveGuestDataInternal(
         created_at: new Date().toISOString()
       };
       
-      // ✅ CORRIGÉ : Vérifier à nouveau juste avant l'insertion pour éviter les doublons
-      // (protection contre les race conditions entre la vérification et l'insertion)
-      const lastCheck = await supabase
+      // ✅ FIX CRITIQUE : Vérifier à nouveau juste avant l'insertion pour éviter les doublons
+      // MAIS utiliser les MÊMES critères que la recherche initiale pour éviter les faux positifs
+      // Pour INDEPENDENT_BOOKING, on doit aussi vérifier guest_name + check_in_date
+      // Pour les réservations Airbnb, booking_reference suffit car il est unique
+      let lastCheckQuery = supabase
         .from('bookings')
         .select('id, status')
         .eq('property_id', booking.propertyId)
-        .eq('booking_reference', booking.airbnbCode)
-        .maybeSingle();
+        .eq('booking_reference', booking.airbnbCode);
+      
+      // ✅ FIX CRITIQUE : Pour les réservations indépendantes, ajouter les critères supplémentaires
+      // Sinon TOUTES les réservations indépendantes de la même propriété seraient considérées comme doublons !
+      if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
+        lastCheckQuery = lastCheckQuery
+          .eq('guest_name', bookingData.guest_name)
+          .eq('check_in_date', booking.checkIn);
+        log('info', '🔍 Vérification doublon pour réservation indépendante', {
+          propertyId: booking.propertyId,
+          guestName: bookingData.guest_name,
+          checkIn: booking.checkIn
+        });
+      }
+      
+      const lastCheck = await lastCheckQuery.maybeSingle();
       
       if (lastCheck.data) {
-        // Une réservation a été créée entre-temps, utiliser celle-ci
+        // Une réservation IDENTIQUE a été créée entre-temps, utiliser celle-ci
         log('warn', 'Réservation créée entre-temps (race condition évitée)', { 
           bookingId: lastCheck.data.id,
-          status: lastCheck.data.status
+          status: lastCheck.data.status,
+          isIndependent: booking.airbnbCode === 'INDEPENDENT_BOOKING'
         });
         const foundBooking = lastCheck.data;
         // Revenir à la logique de mise à jour
@@ -996,24 +1014,39 @@ async function saveGuestDataInternal(
         savedBooking = updateData;
       } else {
         // Pas de doublon, créer la réservation
-      const { data, error: insertError } = await supabase
-        .from('bookings')
-        .insert(newBookingData)
-        .select()
-        .single();
+        log('info', '✅ Aucun doublon détecté, création de la nouvelle réservation', {
+          propertyId: booking.propertyId,
+          airbnbCode: booking.airbnbCode,
+          guestName: bookingData.guest_name,
+          checkIn: booking.checkIn
+        });
+        
+        const { data, error: insertError } = await supabase
+          .from('bookings')
+          .insert(newBookingData)
+          .select()
+          .single();
       
         if (insertError) {
           // ✅ CORRIGÉ : Si erreur de contrainte unique (doublon), récupérer la réservation existante
           if (insertError.code === '23505') { // Unique constraint violation
             log('warn', 'Violation contrainte unique détectée (doublon évité)', { error: insertError });
             
-            // Récupérer la réservation existante
-            const { data: existingData } = await supabase
+            // Récupérer la réservation existante avec les MÊMES critères
+            let existingQuery = supabase
               .from('bookings')
               .select('id')
               .eq('property_id', booking.propertyId)
-              .eq('booking_reference', booking.airbnbCode)
-              .maybeSingle();
+              .eq('booking_reference', booking.airbnbCode);
+            
+            // ✅ FIX CRITIQUE : Pour les réservations indépendantes, ajouter les critères supplémentaires
+            if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
+              existingQuery = existingQuery
+                .eq('guest_name', bookingData.guest_name)
+                .eq('check_in_date', booking.checkIn);
+            }
+            
+            const { data: existingData } = await existingQuery.maybeSingle();
             
             if (existingData) {
               // Mettre à jour la réservation existante
@@ -1034,13 +1067,18 @@ async function saveGuestDataInternal(
               throw new Error(`Erreur lors de la création de la réservation: ${insertError.message}`);
             }
           } else {
-        log('error', 'Échec création réservation', { error: insertError });
+            log('error', 'Échec création réservation', { error: insertError });
             throw new Error(`Erreur lors de la création de la réservation: ${insertError.message}`);
-      }
+          }
         } else if (!data) {
           throw new Error('Erreur lors de la création de la réservation: Aucune donnée retournée');
         } else {
-      savedBooking = data;
+          savedBooking = data;
+          log('info', '✅ Nouvelle réservation créée avec succès', { 
+            bookingId: data.id,
+            propertyId: data.property_id,
+            guestName: data.guest_name
+          });
         }
       }
       
@@ -1143,6 +1181,7 @@ async function saveGuestDataInternal(
     }
 
     // ✅ CRITIQUE : Sauvegarder TOUTES les données du guest pour la variabilisation complète
+    // ❌ IMPORTANT : La table 'guests' n'a PAS de colonne 'email' - l'email est dans bookings.guest_email
     const guestData: any = {
       booking_id: bookingId,
       full_name: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`,
@@ -1150,7 +1189,8 @@ async function saveGuestDataInternal(
       document_type: sanitizedGuest.idType || 'passport',
       document_number: sanitizedGuest.idNumber || '',
       date_of_birth: processedDateOfBirth,
-      phone: sanitizedGuest.phone || null, // ✅ AJOUT : Téléphone du guest
+      document_issue_date: sanitizedGuest.documentIssueDate || null, // ✅ Date de délivrance
+      phone: sanitizedGuest.phone || null,
       // ✅ CRITIQUE : Ajouter tous les champs pour la variabilisation complète
       place_of_birth: '', // Non disponible dans GuestInfo pour l'instant
       profession: sanitizedGuest.profession || '',
@@ -1160,11 +1200,8 @@ async function saveGuestDataInternal(
       updated_at: new Date().toISOString()
     };
     
-    // ✅ CRITIQUE : Essayer d'ajouter email seulement si la colonne existe
-    // (géré par Supabase - si la colonne n'existe pas, elle sera ignorée)
-    if (sanitizedGuest.email) {
-      guestData.email = sanitizedGuest.email;
-    }
+    // ❌ SUPPRIMÉ : Ne PAS ajouter email - la colonne n'existe pas dans la table 'guests'
+    // L'email est stocké dans bookings.guest_email et récupéré via la relation
     
     log('info', 'Sauvegarde données invité', {
       guestName: guestData.full_name,
@@ -1172,9 +1209,9 @@ async function saveGuestDataInternal(
       originalDateOfBirth: sanitizedGuest.dateOfBirth,
       hasDateOfBirth: !!guestData.date_of_birth,
       processedDateOfBirth,
-      email: guestData.email, // ✅ DIAGNOSTIC : Log de l'email
-      phone: guestData.phone, // ✅ DIAGNOSTIC : Log du téléphone
-      hasEmail: !!guestData.email,
+      // ✅ DIAGNOSTIC : L'email est dans booking, pas dans guestData (table guests n'a pas de colonne email)
+      bookingEmail: booking.guestEmail || sanitizedGuest.email,
+      phone: guestData.phone,
       hasPhone: !!guestData.phone
     });
 
@@ -1195,29 +1232,28 @@ async function saveGuestDataInternal(
 
     const maxGuests = booking.numberOfGuests || 1;
 
+    // ✅ CORRECTION MAJEURE : Logique améliorée pour éviter l'écrasement
+    // L'identification d'un guest se fait par: booking_id + (full_name OU document_number)
+    
     if (maxGuests === 1) {
       // Cas réservation pour 1 invité: on met à jour l'unique ligne au lieu d'insérer
       if (existingGuest && existingGuest.id) {
-        // ✅ CRITIQUE : Construire l'objet de mise à jour avec gestion conditionnelle de l'email
+        // ✅ Guest trouvé avec même nom ET document - mise à jour
         const updateData: any = {
-            full_name: guestData.full_name,
-            nationality: guestData.nationality,
-            document_type: guestData.document_type,
-            document_number: guestData.document_number,
-            date_of_birth: guestData.date_of_birth,
-            phone: guestData.phone, // ✅ AJOUT : Téléphone du guest
-          // ✅ CRITIQUE : Mettre à jour tous les champs pour la variabilisation complète
+          full_name: guestData.full_name,
+          nationality: guestData.nationality,
+          document_type: guestData.document_type,
+          document_number: guestData.document_number,
+          date_of_birth: guestData.date_of_birth,
+          document_issue_date: guestData.document_issue_date, // ✅ Date de délivrance
+          phone: guestData.phone,
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
           motif_sejour: guestData.motif_sejour,
           adresse_personnelle: guestData.adresse_personnelle,
-            updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString()
         };
-        
-        // ✅ CRITIQUE : Ajouter email seulement si présent (colonne peut ne pas exister)
-        if (guestData.email) {
-          updateData.email = guestData.email;
-        }
+        // ❌ Ne PAS ajouter email - colonne inexistante
         
         const { error: updateErr } = await supabase
           .from('guests')
@@ -1226,40 +1262,70 @@ async function saveGuestDataInternal(
         if (updateErr) {
           log('warn', 'Avertissement mise à jour invité (single booking)', { error: updateErr });
         } else {
-          log('info', 'Invité mis à jour (single booking)');
+          log('info', 'Invité mis à jour (single booking)', { guestId: existingGuest.id });
         }
       } else if (Array.isArray(existingGuestsForBooking) && existingGuestsForBooking.length > 0) {
-        // Une ligne existe déjà pour cette réservation: la mettre à jour
+        // ✅ CORRECTION : Vérifier si c'est le MÊME guest (par document_number) avant d'écraser
+        // Si document_number différent, c'est un NOUVEAU guest qui remplace l'ancien
         const firstGuestId = existingGuestsForBooking[0].id;
-        // ✅ CRITIQUE : Construire l'objet de mise à jour avec gestion conditionnelle de l'email
-        const updateData: any = {
+        
+        // Récupérer les détails du guest existant pour comparaison
+        const { data: existingGuestDetails } = await supabase
+          .from('guests')
+          .select('full_name, document_number')
+          .eq('id', firstGuestId)
+          .single();
+        
+        const isSameGuest = existingGuestDetails && (
+          existingGuestDetails.document_number === guestData.document_number ||
+          existingGuestDetails.full_name === guestData.full_name
+        );
+        
+        if (isSameGuest) {
+          // Même guest - mise à jour
+          const updateData: any = {
             full_name: guestData.full_name,
             nationality: guestData.nationality,
             document_type: guestData.document_type,
             document_number: guestData.document_number,
             date_of_birth: guestData.date_of_birth,
-            phone: guestData.phone, // ✅ AJOUT : Téléphone du guest
-          // ✅ CRITIQUE : Mettre à jour tous les champs pour la variabilisation complète
-          place_of_birth: guestData.place_of_birth,
-          profession: guestData.profession,
-          motif_sejour: guestData.motif_sejour,
-          adresse_personnelle: guestData.adresse_personnelle,
+            document_issue_date: guestData.document_issue_date, // ✅ Date de délivrance
+            phone: guestData.phone,
+            place_of_birth: guestData.place_of_birth,
+            profession: guestData.profession,
+            motif_sejour: guestData.motif_sejour,
+            adresse_personnelle: guestData.adresse_personnelle,
             updated_at: new Date().toISOString()
-        };
-        
-        // ✅ CRITIQUE : Ajouter email seulement si présent (colonne peut ne pas exister)
-        if (guestData.email) {
-          updateData.email = guestData.email;
-        }
-        
-        const { error: updateErr } = await supabase
-          .from('guests')
-          .update(updateData)
-          .eq('id', firstGuestId);
-        if (updateErr) {
-          log('warn', 'Avertissement mise à jour invité existant (single booking)', { error: updateErr });
+          };
+          
+          const { error: updateErr } = await supabase
+            .from('guests')
+            .update(updateData)
+            .eq('id', firstGuestId);
+          if (updateErr) {
+            log('warn', 'Avertissement mise à jour invité existant (single booking)', { error: updateErr });
+          } else {
+            log('info', 'Invité existant mis à jour (single booking)', { guestId: firstGuestId });
+          }
         } else {
-          log('info', 'Invité existant mis à jour (single booking)');
+          // ✅ NOUVEAU guest différent - supprimer l'ancien et créer le nouveau
+          log('info', 'Nouveau guest différent détecté, remplacement', {
+            oldGuest: existingGuestDetails?.full_name,
+            newGuest: guestData.full_name
+          });
+          
+          // Supprimer l'ancien guest
+          await supabase.from('guests').delete().eq('id', firstGuestId);
+          
+          // Insérer le nouveau
+          const { error: guestError } = await supabase
+            .from('guests')
+            .insert(guestData);
+          if (guestError) {
+            log('warn', 'Avertissement sauvegarde nouveau invité (single booking)', { error: guestError });
+          } else {
+            log('info', 'Nouveau invité sauvegardé (single booking)');
+          }
         }
       } else {
         // Aucune ligne existante: insérer l'unique invité
@@ -1273,28 +1339,73 @@ async function saveGuestDataInternal(
         }
       }
     } else {
-      // Réservations multi-invités: éviter doublons et ne pas dépasser le maximum
+      // ✅ Réservations multi-invités: chaque guest est identifié par document_number
       if (existingGuest) {
-        log('info', 'Invité déjà existant, pas de doublon créé', { 
-          guestId: existingGuest.id,
-          guestName: guestData.full_name 
-        });
-      } else {
-        const currentCount = Array.isArray(existingGuestsForBooking) ? existingGuestsForBooking.length : 0;
-        if (currentCount >= maxGuests) {
-          log('warn', 'Nombre maximum d\'invités atteint pour la réservation, insertion ignorée', {
-            bookingId,
-            maxGuests,
-            currentCount
-          });
+        // Guest avec même nom ET document existe - mise à jour
+        const updateData: any = {
+          full_name: guestData.full_name,
+          nationality: guestData.nationality,
+          document_type: guestData.document_type,
+          document_number: guestData.document_number,
+          date_of_birth: guestData.date_of_birth,
+          document_issue_date: guestData.document_issue_date, // ✅ Date de délivrance
+          phone: guestData.phone,
+          place_of_birth: guestData.place_of_birth,
+          profession: guestData.profession,
+          motif_sejour: guestData.motif_sejour,
+          adresse_personnelle: guestData.adresse_personnelle,
+          updated_at: new Date().toISOString()
+        };
+        
+        const { error: updateErr } = await supabase
+          .from('guests')
+          .update(updateData)
+          .eq('id', existingGuest.id);
+        if (updateErr) {
+          log('warn', 'Avertissement mise à jour invité (multi booking)', { error: updateErr });
         } else {
-          const { error: guestError } = await supabase
+          log('info', 'Invité mis à jour (multi booking)', { guestId: existingGuest.id });
+        }
+      } else {
+        // Vérifier si un guest avec le même document_number existe déjà
+        const { data: guestByDoc } = await supabase
+          .from('guests')
+          .select('id')
+          .eq('booking_id', bookingId)
+          .eq('document_number', guestData.document_number)
+          .maybeSingle();
+        
+        if (guestByDoc) {
+          // Guest avec même document existe - mise à jour (peut-être changement de nom)
+          log('info', 'Guest trouvé par document_number, mise à jour', { guestId: guestByDoc.id });
+          const { error: updateErr } = await supabase
             .from('guests')
-            .insert(guestData);
-          if (guestError) {
-            log('warn', 'Avertissement sauvegarde invité (multi booking)', { error: guestError });
+            .update({
+              ...guestData,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', guestByDoc.id);
+          if (updateErr) {
+            log('warn', 'Erreur mise à jour guest par document', { error: updateErr });
+          }
+        } else {
+          // Nouveau guest - vérifier la limite
+          const currentCount = Array.isArray(existingGuestsForBooking) ? existingGuestsForBooking.length : 0;
+          if (currentCount >= maxGuests) {
+            log('warn', 'Nombre maximum d\'invités atteint pour la réservation, insertion ignorée', {
+              bookingId,
+              maxGuests,
+              currentCount
+            });
           } else {
-            log('info', 'Informations invité sauvegardées (multi booking)');
+            const { error: guestError } = await supabase
+              .from('guests')
+              .insert(guestData);
+            if (guestError) {
+              log('warn', 'Avertissement sauvegarde invité (multi booking)', { error: guestError });
+            } else {
+              log('info', 'Informations invité sauvegardées (multi booking)');
+            }
           }
         }
       }
@@ -1516,8 +1627,10 @@ async function saveGuestDataInternal(
       log('info', 'Aucun document d\'identité à traiter');
     }
 
-    // 4. Création de l'entrée guest_submissions pour le suivi complet
-    log('info', 'Création de l\'entrée de suivi');
+    // 4. Création/mise à jour de l'entrée guest_submissions pour le suivi complet
+    // ✅ CORRECTION CRITIQUE : Utiliser upsert avec clé unique booking_id + document_number pour éviter les doublons
+    log('info', 'Création/mise à jour de l\'entrée de suivi');
+    
     // Trouver le token_id correspondant - on utilise le premier token actif pour cette propriété
     const { data: tokenData } = await supabase
       .from('property_verification_tokens')
@@ -1527,8 +1640,18 @@ async function saveGuestDataInternal(
       .limit(1)
       .single();
 
+    const fullName = `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`.trim().toUpperCase();
+    const documentNumber = (sanitizedGuest.idNumber || '').trim().toUpperCase();
+    
+    // ✅ NOUVEAU : Vérifier si une soumission existe déjà pour ce booking + guest
+    const { data: existingSubmission } = await supabase
+      .from('guest_submissions')
+      .select('id')
+      .eq('booking_id', bookingId)
+      .filter('guest_data->>fullName', 'ilike', fullName)
+      .maybeSingle();
+
     const submissionData = {
-      id: crypto.randomUUID(),
       token_id: tokenData?.id || crypto.randomUUID(), // Fallback si pas de token trouvé
       booking_id: bookingId,
       booking_data: {
@@ -1541,24 +1664,48 @@ async function saveGuestDataInternal(
       },
       guest_data: {
         ...sanitizedGuest,
-        fullName: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`
+        fullName: fullName,
+        documentNumber: documentNumber
       },
       document_urls: idDocuments.map(doc => doc.url),
       status: 'pending',
       submitted_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
-    const { error: submissionError } = await supabase
-      .from('guest_submissions')
-      .insert(submissionData);
+    let submissionError;
+    if (existingSubmission) {
+      // ✅ Mise à jour de la soumission existante
+      log('info', '🔄 Mise à jour de la soumission existante', { 
+        existingId: existingSubmission.id, 
+        guestName: fullName 
+      });
+      const { error } = await supabase
+        .from('guest_submissions')
+        .update({
+          ...submissionData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingSubmission.id);
+      submissionError = error;
+    } else {
+      // ✅ Nouvelle soumission
+      log('info', '➕ Création nouvelle soumission', { guestName: fullName });
+      const { error } = await supabase
+        .from('guest_submissions')
+        .insert({
+          id: crypto.randomUUID(),
+          ...submissionData,
+          created_at: new Date().toISOString()
+        });
+      submissionError = error;
+    }
 
     if (submissionError) {
       log('warn', 'Avertissement sauvegarde submission', { error: submissionError });
       // Continuer, c'est pour le suivi seulement
     } else {
-      log('info', 'Entrée de suivi créée');
+      log('info', existingSubmission ? 'Entrée de suivi mise à jour' : 'Entrée de suivi créée');
     }
 
     log('info', 'Sauvegarde des données terminée avec succès', { bookingId });
@@ -1567,11 +1714,13 @@ async function saveGuestDataInternal(
   }, 'Sauvegarde des données invité');
 }
 
-// ÉTAPE 3: Génération du contrat avec gestion d'erreur robuste
-async function generateContractInternal(bookingId: string, signature?: SignatureData): Promise<string> {
+// ÉTAPE 3: Génération du contrat avec gestion d'erreur robuste (locale: fr | en | es pour traduction)
+async function generateContractInternal(bookingId: string, signature?: SignatureData, options?: { locale?: string }): Promise<string> {
+  const locale = options?.locale && ['fr', 'en', 'es'].includes(options.locale) ? options.locale : 'fr';
   log('info', 'ÉTAPE 3: Démarrage génération contrat', {
     bookingId,
-    hasSignature: !!signature
+    hasSignature: !!signature,
+    locale
   });
 
   return await withRetry(async () => {
@@ -1582,10 +1731,8 @@ async function generateContractInternal(bookingId: string, signature?: Signature
       throw new Error('Configuration Supabase manquante');
     }
 
-    // Create supabase client for this operation
     const supabaseClient = await getServerClient();
 
-    // 1. Récupérer les données du booking depuis la base
     log('info', 'Construction du contexte contrat');
     const ctx = await buildContractContext(supabaseClient, bookingId);
     log('info', 'Contexte contrat construit', {
@@ -1594,11 +1741,11 @@ async function generateContractInternal(bookingId: string, signature?: Signature
       duration: ctx.booking.duration_human
     });
 
-    // 2. Générer le PDF avec pdf-lib intégré
     log('info', 'Génération PDF avec pdf-lib');
     const pdfUrl = await generateContractPDF(supabaseClient, ctx, {
       guestSignatureData: signature?.data,
-      guestSignedAt: signature?.timestamp
+      guestSignedAt: signature?.timestamp,
+      locale
     });
 
     // 3. Sauvegarder le document en base (signé ou non)
@@ -1794,6 +1941,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
               document_type: g.documentType || g.document_type || g.idType || 'passport',
               document_number: g.documentNumber || g.document_number || g.idNumber || g.document_number || '',
               date_of_birth: g.dateOfBirth || g.date_of_birth || g.dateOfBirth || null,
+              document_issue_date: g.documentIssueDate || g.document_issue_date || null, // ✅ Date de délivrance
               place_of_birth: g.placeOfBirth || g.place_of_birth || '',
               profession: g.profession || '',
               motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
@@ -2610,7 +2758,8 @@ serve(async (req) => {
           guest_phone: bookingData.guest_phone
         });
         
-        // ✅ CORRECTION : Ne pas inclure email si la colonne n'existe pas dans la table
+        // ✅ CORRECTION CRITIQUE : La table guests n'a PAS de colonne 'email'
+        // L'email est stocké dans bookings.guest_email, pas dans guests
         const guestData: any = {
           booking_id: requestBody.bookingId,
           full_name: bookingData.guest_name,
@@ -2622,11 +2771,8 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         };
         
-        // ✅ CRITIQUE : Essayer d'ajouter email seulement si la colonne existe
-        // (géré par Supabase - si la colonne n'existe pas, elle sera ignorée)
-        if (bookingData.guest_email) {
-          guestData.email = bookingData.guest_email;
-        }
+        // ❌ SUPPRIMÉ : Ne PAS ajouter email car la colonne n'existe pas dans la table guests
+        // L'email est géré via bookings.guest_email
         
         const { error: insertError } = await supabaseClient
           .from('guests')
@@ -2639,17 +2785,59 @@ serve(async (req) => {
         }
       }
       
-      // ✅ CORRECTION : Signature optionnelle pour generate_contract_only
-      if (!requestBody.signature) {
-        log('warn', 'Aucune signature fournie, génération contrat non signé');
+      // ✅ CORRECTION : Récupérer la signature depuis contract_signatures si non fournie en paramètre
+      let signatureToUse: SignatureData | undefined = requestBody.signature;
+      
+      if (!signatureToUse) {
+        log('info', '[generate_contract_only] Pas de signature en paramètre, recherche dans contract_signatures...');
+        
+        const { data: signatures, error: signatureError } = await supabaseClient
+          .from('contract_signatures')
+          .select('signature_data, signed_at, signer_name')
+          .eq('booking_id', requestBody.bookingId)
+          .order('created_at', { ascending: false });
+        
+        if (signatureError) {
+          log('warn', '[generate_contract_only] Erreur récupération signatures', { error: signatureError });
+        } else if (signatures && signatures.length > 0) {
+          const latestSignature = signatures[0];
+          signatureToUse = {
+            data: latestSignature.signature_data,
+            timestamp: latestSignature.signed_at,
+            signerName: latestSignature.signer_name
+          };
+          log('info', '[generate_contract_only] ✅ Signature trouvée dans contract_signatures', {
+            signerName: latestSignature.signer_name,
+            signedAt: latestSignature.signed_at,
+            hasSignatureData: !!latestSignature.signature_data
+          });
+        } else {
+          log('warn', '[generate_contract_only] Aucune signature trouvée dans contract_signatures, génération contrat non signé');
+        }
       }
       
-      // ✅ CORRECTION : Sauvegarder le contrat même non signé
-      const contractUrl = await generateContractInternal(requestBody.bookingId, requestBody.signature);
+      const contractLocale = requestBody.locale && ['fr', 'en', 'es'].includes(requestBody.locale) ? requestBody.locale : 'fr';
+      const contractUrl = await generateContractInternal(requestBody.bookingId, signatureToUse, { locale: contractLocale });
       
       if (contractUrl) {
-        // Sauvegarder le document en base même non signé
-        await saveDocumentToDatabase(supabaseClient, requestBody.bookingId, 'contract', contractUrl, !!requestBody.signature);
+        // Sauvegarder le document en base (signé si signature disponible)
+        await saveDocumentToDatabase(supabaseClient, requestBody.bookingId, 'contract', contractUrl, !!signatureToUse);
+        
+        // ✅ CORRECTION CRITIQUE : Si on a une signature, régénérer aussi la fiche de police avec signature
+        let policeUrl: string | null = null;
+        if (signatureToUse) {
+          try {
+            log('info', '[generate_contract_only] 📋 Régénération fiche de police avec signature...');
+            policeUrl = await generatePoliceFormsInternal(requestBody.bookingId, signatureToUse);
+            log('info', '[generate_contract_only] ✅ Fiche de police régénérée avec signature', { 
+              policeUrl: policeUrl?.substring(0, 60) 
+            });
+          } catch (policeError) {
+            log('warn', '[generate_contract_only] ⚠️ Échec régénération fiche de police (non bloquant)', { 
+              error: policeError instanceof Error ? policeError.message : String(policeError)
+            });
+          }
+        }
         
         // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings
         try {
@@ -2665,7 +2853,14 @@ serve(async (req) => {
             contract: true,
             contractUrl: contractUrl,
             contractCreatedAt: new Date().toISOString(),
-            contractIsSigned: !!requestBody.signature
+            contractIsSigned: !!signatureToUse,
+            // ✅ Mettre à jour aussi la fiche de police si régénérée
+            ...(policeUrl ? {
+              policeForm: true,
+              policeUrl: policeUrl,
+              policeIsSigned: true,
+              policeSignedAt: new Date().toISOString()
+            } : {})
           };
           
           await supabaseClient
@@ -2676,9 +2871,10 @@ serve(async (req) => {
             })
             .eq('id', requestBody.bookingId);
           
-          log('info', '[generate_contract_only] documents_generated.contract mis à jour', {
+          log('info', '[generate_contract_only] documents_generated mis à jour', {
             contract: true,
-            contractUrl: contractUrl.substring(0, 50) + '...'
+            contractUrl: contractUrl.substring(0, 50) + '...',
+            hasPolice: !!policeUrl
           });
         } catch (updateError) {
           log('warn', '[generate_contract_only] Erreur mise à jour documents_generated', { error: updateError });
@@ -2718,7 +2914,8 @@ serve(async (req) => {
                 guestName: guestName,
                 numberOfGuests: bookingData.number_of_guests || 1
               },
-              contractUrl
+              contractUrl,
+              policeUrl || undefined // ✅ Passer aussi l'URL de la fiche de police si disponible
             );
             emailSent = emailResult;
             log('info', '[generate_contract_only] Email envoyé', { success: emailSent });
@@ -2730,9 +2927,10 @@ serve(async (req) => {
         return new Response(JSON.stringify({
           success: true,
           contractUrl: contractUrl,
-          isSigned: !!requestBody.signature,
+          policeUrl: policeUrl,  // ✅ Inclure l'URL de la fiche de police
+          isSigned: !!signatureToUse,
           emailSent: emailSent,
-          message: 'Contrat généré avec succès'
+          message: signatureToUse ? 'Contrat et fiche de police signés générés avec succès' : 'Contrat généré avec succès (non signé)'
         }), {
           status: 200,
           headers: corsHeaders
@@ -2749,8 +2947,9 @@ serve(async (req) => {
     }
     
     // ✅ NOUVELLE ACTION : generate_contract_with_signature (depuis save-contract-signature)
+    // ✅ OPTIMISÉ : Génère AUSSI la fiche de police avec la signature
     if (requestBody.action === 'generate_contract_with_signature') {
-      log('info', '🔄 Mode: Génération contrat avec signature invité');
+      log('info', '🔄 Mode: Génération contrat + police avec signature invité');
       
       if (!requestBody.bookingId || !requestBody.signatureData || !requestBody.signerName) {
         return new Response(JSON.stringify({
@@ -2769,12 +2968,72 @@ serve(async (req) => {
           signerName: requestBody.signerName
         };
         
+        // 1. Générer le contrat avec signature
+        log('info', '📄 [generate_contract_with_signature] Génération contrat...');
         const contractUrl = await generateContractInternal(requestBody.bookingId, signatureData);
+        log('info', '✅ [generate_contract_with_signature] Contrat généré', { contractUrl: contractUrl?.substring(0, 60) });
+        
+        // 2. Générer la fiche de police avec la MÊME signature (évite le problème de timing)
+        let policeUrl: string | null = null;
+        try {
+          log('info', '📋 [generate_contract_with_signature] Génération fiche de police avec signature...');
+          policeUrl = await generatePoliceFormsInternal(requestBody.bookingId, signatureData);
+          log('info', '✅ [generate_contract_with_signature] Fiche de police générée', { policeUrl: policeUrl?.substring(0, 60) });
+        } catch (policeError) {
+          // Ne pas faire échouer si la police échoue, le contrat est l'essentiel
+          log('warn', '⚠️ [generate_contract_with_signature] Échec génération police (non bloquant)', { 
+            error: policeError instanceof Error ? policeError.message : String(policeError)
+          });
+        }
+        
+        // ✅ CORRECTION CRITIQUE : Mettre à jour documents_generated avec les nouvelles URLs (avec signature)
+        try {
+          const { data: currentBooking } = await supabaseClient
+            .from('bookings')
+            .select('documents_generated')
+            .eq('id', requestBody.bookingId)
+            .single();
+          
+          const currentDocs = currentBooking?.documents_generated || {};
+          const updatedDocs = {
+            ...currentDocs,
+            contract: true,
+            contractUrl: contractUrl,
+            contractIsSigned: true,
+            contractSignedAt: new Date().toISOString(),
+            ...(policeUrl ? {
+              policeForm: true,
+              policeUrl: policeUrl,
+              policeIsSigned: true,
+              policeSignedAt: new Date().toISOString()
+            } : {})
+          };
+          
+          await supabaseClient
+            .from('bookings')
+            .update({
+              documents_generated: updatedDocs,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', requestBody.bookingId);
+          
+          log('info', '✅ [generate_contract_with_signature] documents_generated mis à jour avec URLs signées', {
+            contractUrl: contractUrl?.substring(0, 60),
+            policeUrl: policeUrl?.substring(0, 60),
+            hasSignature: true
+          });
+        } catch (updateError) {
+          log('warn', '⚠️ [generate_contract_with_signature] Erreur mise à jour documents_generated', { 
+            error: updateError instanceof Error ? updateError.message : String(updateError)
+          });
+        }
         
         return new Response(JSON.stringify({
           success: true,
           contractUrl,
-          message: 'Contrat avec signature généré avec succès'
+          policeUrl,
+          hasGuestSignature: true,
+          message: 'Contrat et fiche de police avec signature générés avec succès'
         }), {
           status: 200,
           headers: corsHeaders
@@ -2996,25 +3255,34 @@ serve(async (req) => {
       // Générer uniquement les fiches de police
       const policeUrl = await generatePoliceFormsInternal(requestBody.bookingId);
       
-      // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings
+      // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings (FUSION ATOMIQUE)
       if (policeUrl) {
         try {
           const supabaseClient = await getServerClient();
-          const { data: currentBooking } = await supabaseClient
+          
+          // ✅ CORRECTION CRITIQUE : Récupérer l'état ACTUEL (pas l'état initial)
+          // pour éviter d'écraser les mises à jour concurrentes
+          const { data: currentBooking, error: fetchError } = await supabaseClient
             .from('bookings')
             .select('documents_generated')
             .eq('id', requestBody.bookingId)
             .single();
           
+          if (fetchError) {
+            log('error', '[generate_police_only] Erreur récupération état actuel', { error: fetchError });
+            throw fetchError;
+          }
+          
+          // ✅ FUSION ATOMIQUE : Fusionner avec l'état actuel
           const currentDocs = currentBooking?.documents_generated || {};
           const updatedDocs = {
-            ...currentDocs,
+            ...currentDocs,  // ✅ Utiliser l'état ACTUEL
             policeForm: true,
-            policeUrl: policeUrl,
+            policeUrl: policeUrl,  // ✅ Sauvegarder l'URL
             policeCreatedAt: new Date().toISOString()
           };
           
-          await supabaseClient
+          const { error: updateError } = await supabaseClient
             .from('bookings')
             .update({
               documents_generated: updatedDocs,
@@ -3022,9 +3290,16 @@ serve(async (req) => {
             })
             .eq('id', requestBody.bookingId);
           
-          log('info', '[generate_police_only] documents_generated.policeForm mis à jour', {
+          if (updateError) {
+            log('error', '[generate_police_only] Erreur mise à jour documents_generated', { error: updateError });
+            throw updateError;
+          }
+          
+          log('info', '[generate_police_only] documents_generated.policeForm mis à jour avec fusion atomique', {
             policeForm: true,
-            policeUrl: policeUrl.substring(0, 50) + '...'
+            policeUrl: policeUrl.substring(0, 50) + '...',
+            hadContract: !!currentDocs.contract,
+            hadPoliceForm: !!currentDocs.policeForm
           });
         } catch (updateError) {
           log('warn', '[generate_police_only] Erreur mise à jour documents_generated', { error: updateError });
@@ -3041,6 +3316,103 @@ serve(async (req) => {
         status: 200,
         headers: corsHeaders
       });
+    }
+    
+    // ✅ NOUVELLE ACTION : generate_missing_documents (depuis useBookings.ts - fallback Airbnb)
+    if (requestBody.action === 'generate_missing_documents') {
+      log('info', '🔄 Mode: Génération documents manquants (fallback Airbnb)');
+      
+      if (!requestBody.bookingId) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'bookingId requis pour generate_missing_documents'
+        }), {
+          status: 400,
+          headers: corsHeaders
+        });
+      }
+      
+      const supabaseClient = await getServerClient();
+      const results: any = { success: true };
+      
+      try {
+        // Récupérer la réservation pour vérifier les documents existants
+        const { data: booking, error: bookingError } = await supabaseClient
+          .from('bookings')
+          .select('*, documents_generated, property:properties(*)')
+          .eq('id', requestBody.bookingId)
+          .single();
+        
+        if (bookingError || !booking) {
+          throw new Error(`Réservation non trouvée: ${bookingError?.message || 'Introuvable'}`);
+        }
+        
+        const existingDocs = booking.documents_generated || {};
+        const documentTypes = requestBody.documentTypes || ['contract', 'police'];
+        
+        // Générer le contrat si demandé et manquant
+        if (documentTypes.includes('contract') && !existingDocs.contractUrl) {
+          try {
+            const contractUrl = await generateContractInternal(requestBody.bookingId, null);
+            if (contractUrl) {
+              results.contractUrl = contractUrl;
+              log('info', '✅ Contrat généré (missing_documents)');
+            }
+          } catch (contractError: any) {
+            log('warn', 'Échec génération contrat (missing_documents)', { error: contractError.message });
+          }
+        }
+        
+        // Générer la fiche de police si demandée et manquante
+        if (documentTypes.includes('police') && !existingDocs.policeUrl) {
+          try {
+            const policeUrl = await generatePoliceFormsInternal(requestBody.bookingId);
+            if (policeUrl) {
+              results.policeUrl = policeUrl;
+              log('info', '✅ Fiche de police générée (missing_documents)');
+            }
+          } catch (policeError: any) {
+            log('warn', 'Échec génération police (missing_documents)', { error: policeError.message });
+          }
+        }
+        
+        return new Response(JSON.stringify(results), {
+          status: 200,
+          headers: corsHeaders
+        });
+      } catch (error: any) {
+        log('error', 'Erreur generate_missing_documents', { error: error.message });
+        return new Response(JSON.stringify({
+          success: false,
+          error: error.message
+        }), {
+          status: 500,
+          headers: corsHeaders
+        });
+      }
+    }
+    
+    // ✅ NOUVELLE ACTION : resolve (alias pour resolve_booking_only - compatibilité frontend)
+    if (requestBody.action === 'resolve') {
+      log('info', '🔄 Mode: Résolution réservation (alias resolve)');
+      // Rediriger vers resolve_booking_only
+      requestBody.action = 'resolve_booking_only';
+    }
+    
+    // ✅ NOUVELLE ACTION : issue (pour useGuestVerification.ts)
+    if (requestBody.action === 'issue') {
+      log('info', '🔄 Mode: Émission/Issue de réservation');
+      // Traiter comme le workflow par défaut mais avec logging spécifique
+      // Continue vers le traitement principal
+    }
+    
+    // ✅ NOUVELLE ACTION : generate (pour DebugDocVars.tsx)
+    if (requestBody.action === 'generate') {
+      log('info', '🔄 Mode: Génération générique');
+      // Traiter comme generate_all_documents
+      if (requestBody.bookingId) {
+        requestBody.action = 'generate_all_documents';
+      }
     }
     
     // ✅ NOUVELLE ACTION : generate_all_documents (depuis dashboard hôte)
@@ -4333,6 +4705,7 @@ async function uploadPdfToStorage(client: any, bookingId: string, pdfBytes: Uint
 }
 
 // Save document to database with unified approach
+// ✅ CORRECTION MAJEURE : Gestion des versions pour éviter l'écrasement
 async function saveDocumentToDatabase(client: any, bookingId: string, documentType: string, documentUrl: string, isSigned: boolean = false) {
   const fileName = `${documentType}-${bookingId}-${Date.now()}.pdf`;
   
@@ -4340,77 +4713,161 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
   try {
     // Pour les contrats, gérer les versions signées vs non signées
     if (documentType === 'contract') {
-      const { data: existingContract } = await client
+      // Récupérer TOUS les contrats existants pour ce booking
+      const { data: existingContracts } = await client
         .from('generated_documents')
-        .select('id, is_signed')
+        .select('id, is_signed, document_url, created_at')
         .eq('booking_id', bookingId)
         .eq('document_type', 'contract')
-        .maybeSingle();
+        .order('created_at', { ascending: false });
 
-      if (existingContract) {
-        if (isSigned && !existingContract.is_signed) {
-          // Remplacer le contrat non signé par le contrat signé
-          log('info', 'Replacing unsigned contract with signed version');
-          await client
-            .from('generated_documents')
-            .update({
-              document_url: documentUrl,
-              is_signed: true,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', existingContract.id);
-          
-          // Mettre à jour aussi uploaded_documents
-          await client
-            .from('uploaded_documents')
-            .update({
-              document_url: documentUrl,
-              is_signed: true,
-              updated_at: new Date().toISOString()
-            })
-            .eq('booking_id', bookingId)
-            .eq('document_type', 'contract');
-          
-          return existingContract;
-        } else if (!isSigned && existingContract.is_signed) {
-          // Ne pas remplacer un contrat signé par un non signé
-          log('warn', 'Cannot replace signed contract with unsigned version');
-          return existingContract;
+      if (existingContracts && existingContracts.length > 0) {
+        // Trouver le contrat signé le plus récent s'il existe
+        const signedContract = existingContracts.find(c => c.is_signed);
+        const latestContract = existingContracts[0];
+        
+        if (isSigned) {
+          if (signedContract) {
+            // ✅ Un contrat signé existe déjà - créer une nouvelle VERSION (ne pas écraser)
+            log('info', 'Signed contract exists, creating new version', {
+              existingId: signedContract.id,
+              newUrl: documentUrl.substring(0, 50)
+            });
+            // Continuer pour créer une nouvelle entrée (version)
+          } else {
+            // Pas de contrat signé - mettre à jour le non-signé vers signé
+            log('info', 'Upgrading unsigned contract to signed version');
+            await client
+              .from('generated_documents')
+              .update({
+                document_url: documentUrl,
+                is_signed: true,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', latestContract.id);
+            
+            // Mettre à jour aussi uploaded_documents
+            await client
+              .from('uploaded_documents')
+              .update({
+                document_url: documentUrl,
+                is_signed: true,
+                updated_at: new Date().toISOString()
+              })
+              .eq('booking_id', bookingId)
+              .eq('document_type', 'contract');
+            
+            return latestContract;
+          }
         } else {
-          // Même statut de signature, ne pas dupliquer
-          log('warn', `Contract with same signature status already exists for booking ${bookingId}`);
-          return existingContract;
+          // Nouveau contrat non signé
+          if (signedContract) {
+            // ❌ Ne pas remplacer un contrat signé par un non signé
+            log('warn', 'Cannot replace signed contract with unsigned version, returning existing');
+            return signedContract;
+          } else if (latestContract.document_url === documentUrl) {
+            // Même URL - pas de duplication
+            log('info', 'Contract with same URL already exists, skipping');
+            return latestContract;
+          } else {
+            // ✅ Mettre à jour le contrat non signé existant
+            log('info', 'Updating existing unsigned contract');
+            await client
+              .from('generated_documents')
+              .update({
+                document_url: documentUrl,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', latestContract.id);
+            return latestContract;
+          }
         }
       }
-    } else {
-      // ✅ CORRECTION : Pour les documents d'identité, permettre plusieurs documents (un par invité)
-      // Pour les autres types (police), vérifier l'existence et éviter les duplications
-      if (documentType !== 'identity') {
-        const { data: existingGenerated } = await client
-          .from('generated_documents')
-          .select('id')
-          .eq('booking_id', bookingId)
-          .eq('document_type', documentType)
-          .maybeSingle();
+    } else if (documentType === 'police') {
+      // ✅ CORRECTION : Pour les fiches de police, REMPLACER l'existante (pas créer de doublon)
+      const { data: allExistingPolice } = await client
+        .from('generated_documents')
+        .select('id, document_url, created_at')
+        .eq('booking_id', bookingId)
+        .eq('document_type', 'police')
+        .order('created_at', { ascending: false });
 
-        if (existingGenerated) {
-          log('warn', `Document ${documentType} already exists for booking ${bookingId}, skipping duplicate`);
-          return existingGenerated;
+      if (allExistingPolice && allExistingPolice.length > 0) {
+        const existingPolice = allExistingPolice[0]; // La plus récente
+        
+        if (existingPolice.document_url === documentUrl) {
+          log('info', 'Police form with same URL already exists, skipping');
+          return existingPolice;
         }
-      } else {
-        // Pour identity, vérifier si cette URL exacte existe déjà
-        const { data: existingIdentity } = await client
+        
+        // ✅ CORRECTION : Supprimer TOUTES les anciennes fiches de police pour éviter les doublons
+        if (allExistingPolice.length > 1) {
+          const oldPoliceIds = allExistingPolice.slice(1).map(p => p.id);
+          log('info', '🗑️ Suppression des anciennes fiches de police', { count: oldPoliceIds.length });
+          await client
+            .from('generated_documents')
+            .delete()
+            .in('id', oldPoliceIds);
+        }
+        
+        // ✅ Mettre à jour la fiche existante avec la nouvelle URL
+        log('info', 'Updating existing police form with new URL (signed version)');
+        await client
           .from('generated_documents')
-          .select('id')
+          .update({
+            document_url: documentUrl,
+            is_signed: isSigned,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingPolice.id);
+        
+        // ✅ Mettre à jour aussi uploaded_documents
+        await client
+          .from('uploaded_documents')
+          .update({
+            document_url: documentUrl,
+            is_signed: isSigned,
+            updated_at: new Date().toISOString()
+          })
           .eq('booking_id', bookingId)
-          .eq('document_type', 'identity')
-          .eq('document_url', documentUrl)
-          .maybeSingle();
-          
-        if (existingIdentity) {
-          log('info', `Identity document with same URL already exists, skipping duplicate`);
-          return existingIdentity;
-        }
+          .eq('document_type', 'police');
+        
+        return existingPolice;
+      }
+    } else if (documentType === 'identity') {
+      // ✅ Pour identity, permettre plusieurs documents (un par invité)
+      // Mais vérifier si cette URL exacte existe déjà
+      const { data: existingIdentity } = await client
+        .from('generated_documents')
+        .select('id')
+        .eq('booking_id', bookingId)
+        .eq('document_type', 'identity')
+        .eq('document_url', documentUrl)
+        .maybeSingle();
+        
+      if (existingIdentity) {
+        log('info', 'Identity document with same URL already exists, skipping duplicate');
+        return existingIdentity;
+      }
+    } else {
+      // Autres types de documents
+      const { data: existingGenerated } = await client
+        .from('generated_documents')
+        .select('id')
+        .eq('booking_id', bookingId)
+        .eq('document_type', documentType)
+        .maybeSingle();
+
+      if (existingGenerated) {
+        log('warn', `Document ${documentType} already exists for booking ${bookingId}, updating`);
+        await client
+          .from('generated_documents')
+          .update({
+            document_url: documentUrl,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingGenerated.id);
+        return existingGenerated;
       }
     }
 
@@ -4504,11 +4961,179 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
   }
 }
 
+// Traductions du contrat (FR / EN / ES) pour génération PDF selon la langue guest/hôte
+type ContractStrings = Record<string, string> & { defaultRules: string[] };
+function getContractStrings(locale: string): ContractStrings {
+  const L: Record<string, Record<string, string | string[]>> = {
+    fr: {
+      title: 'CONTRAT DE LOCATION SAISONNIÈRE',
+      article1: 'ARTICLE 1 - OBJET DE LA LOCATION',
+      article2: 'ARTICLE 2 - DURÉE ET PÉRIODE',
+      article3: 'ARTICLE 3 - OCCUPANTS AUTORISÉS',
+      article4: 'ARTICLE 4 - RÈGLEMENT INTÉRIEUR ET OBLIGATIONS',
+      article5: 'ARTICLE 5 - RESPONSABILITÉS ET ASSURANCES',
+      article6: 'ARTICLE 6 - RÉSILIATION',
+      article7: 'ARTICLE 7 - DROIT APPLICABLE',
+      tenantLabel: 'Le Locataire',
+      landlordLabel: 'Le Bailleur',
+      durationIntro: 'La location est consentie pour une durée déterminée du',
+      durationTo: 'à 16h00 au',
+      durationEnd: 'à 11h00. Cette période ne pourra être prolongée qu\'avec l\'accord écrit préalable du Bailleur.',
+      occupantsIntro: 'Le logement sera occupé par',
+      occupantsPersons: 'personne(s) maximum. Liste des occupants autorisés :',
+      occupantsForbidden: 'Toute personne non mentionnée ci-dessus est strictement interdite dans le logement.',
+      rulesIntro: 'Le locataire s\'engage à respecter les règles suivantes :',
+      article5Text: 'Le Locataire est entièrement responsable de tout dommage causé au logement, aux équipements et au mobilier. Il s\'engage à restituer le bien dans l\'état où il l\'a trouvé. Le Bailleur décline toute responsabilité en cas de vol, perte ou dommage aux effets personnels du Locataire.',
+      article6Text: 'En cas de non-respect des présentes conditions, le Bailleur se réserve le droit de procéder à la résiliation immédiate du contrat et d\'exiger la libération des lieux sans délai ni indemnité.',
+      article7Text: 'Le présent contrat est régi par le droit marocain. Tout litige sera de la compétence exclusive des tribunaux de Casablanca.',
+      doneAt: 'Fait à',
+      onDate: 'le',
+      electronicSignature: '(signature electronique)',
+      bornOn: 'né(e) le',
+      nationality: 'de nationalité',
+      documentHolder: 'titulaire du document d\'identité n°',
+      titleLine1: 'CONTRAT DE LOCATION MEUBLEE DE COURTE',
+      titleLine2: 'DUREE',
+      betweenParties: 'ENTRE LES SOUSSIGNÉS',
+      landlordSection: 'LE BAILLEUR :',
+      tenantSection: 'LE LOCATAIRE :',
+      landlordDescription: 'Gestionnaire et/ou propriétaire du bien, ci-après dénommé "Le Bailleur"',
+      representing: 'représentant de',
+      emergencyContact: 'En cas d\'urgence, contacter le propriétaire au :',
+      companyLabel: 'Entreprise :',
+      rcLabel: 'RC :',
+      iceLabel: 'ICE :',
+      taxIdLabel: 'ID Fiscal :',
+      signatureLandlordLabel: 'LE BAILLEUR',
+      signatureTenantLabel: 'LE LOCATAIRE',
+      dateLabel: 'Date :',
+      signatureValidated: 'Signature électronique locataire validée le',
+      pageLabel: 'Page',
+      defaultRules: [
+        'Aucun invité non autorisé ou fête',
+        'Interdiction de fumer à l\'intérieur du bien',
+        'Respecter les voisins et les règles de l\'immeuble',
+        'Signaler immédiatement tout dommage',
+        'Libérer les lieux à l\'heure convenue',
+      ],
+    },
+    en: {
+      title: 'SEASONAL RENTAL AGREEMENT',
+      article1: 'ARTICLE 1 - OBJECT OF THE RENTAL',
+      article2: 'ARTICLE 2 - DURATION AND PERIOD',
+      article3: 'ARTICLE 3 - AUTHORIZED OCCUPANTS',
+      article4: 'ARTICLE 4 - HOUSE RULES AND OBLIGATIONS',
+      article5: 'ARTICLE 5 - LIABILITY AND INSURANCE',
+      article6: 'ARTICLE 6 - TERMINATION',
+      article7: 'ARTICLE 7 - APPLICABLE LAW',
+      tenantLabel: 'The Tenant',
+      landlordLabel: 'The Landlord',
+      durationIntro: 'The rental is granted for a fixed period from',
+      durationTo: 'at 4:00 PM to',
+      durationEnd: 'at 11:00 AM. This period may only be extended with the prior written consent of the Landlord.',
+      occupantsIntro: 'The property will be occupied by a maximum of',
+      occupantsPersons: 'person(s). List of authorized occupants:',
+      occupantsForbidden: 'Any person not listed above is strictly prohibited from the property.',
+      rulesIntro: 'The tenant agrees to comply with the following rules:',
+      article5Text: 'The Tenant is fully responsible for any damage to the property, equipment and furnishings. The Tenant agrees to return the property in the same condition as found. The Landlord disclaims any liability for theft, loss or damage to the Tenant\'s personal belongings.',
+      article6Text: 'In case of breach of these conditions, the Landlord reserves the right to terminate the agreement immediately and require the premises to be vacated without delay or compensation.',
+      article7Text: 'This agreement is governed by Moroccan law. Any dispute shall fall under the exclusive jurisdiction of the courts of Casablanca.',
+      doneAt: 'Done at',
+      onDate: 'on',
+      electronicSignature: '(electronic signature)',
+      bornOn: 'born on',
+      nationality: 'nationality',
+      documentHolder: 'holder of identity document no.',
+      titleLine1: 'FURNISHED SHORT-TERM',
+      titleLine2: 'RENTAL AGREEMENT',
+      betweenParties: 'BETWEEN THE UNDERSIGNED',
+      landlordSection: 'THE LANDLORD:',
+      tenantSection: 'THE TENANT:',
+      landlordDescription: 'Manager and/or owner of the property, hereinafter referred to as "The Landlord"',
+      representing: 'representative of',
+      emergencyContact: 'In case of emergency, contact the owner at:',
+      companyLabel: 'Company:',
+      rcLabel: 'RC:',
+      iceLabel: 'ICE:',
+      taxIdLabel: 'Tax ID:',
+      signatureLandlordLabel: 'THE LANDLORD',
+      signatureTenantLabel: 'THE TENANT',
+      dateLabel: 'Date:',
+      signatureValidated: 'Tenant electronic signature validated on',
+      pageLabel: 'Page',
+      defaultRules: [
+        'No unauthorized guests or parties',
+        'No smoking inside the property',
+        'Respect neighbors and building rules',
+        'Report any damage immediately',
+        'Check-out by agreed time',
+      ],
+    },
+    es: {
+      title: 'CONTRATO DE ALQUILER TEMPORAL',
+      article1: 'ARTÍCULO 1 - OBJETO DEL ALQUILER',
+      article2: 'ARTÍCULO 2 - DURACIÓN Y PERÍODO',
+      article3: 'ARTÍCULO 3 - OCUPANTES AUTORIZADOS',
+      article4: 'ARTÍCULO 4 - NORMAS Y OBLIGACIONES',
+      article5: 'ARTÍCULO 5 - RESPONSABILIDAD Y SEGUROS',
+      article6: 'ARTÍCULO 6 - RESCISIÓN',
+      article7: 'ARTÍCULO 7 - LEY APLICABLE',
+      tenantLabel: 'El Inquilino',
+      landlordLabel: 'El Arrendador',
+      durationIntro: 'El alquiler se concede por un período determinado del',
+      durationTo: 'a las 16:00 al',
+      durationEnd: 'a las 11:00. Este período solo podrá prorrogarse con el consentimiento previo por escrito del Arrendador.',
+      occupantsIntro: 'La propiedad será ocupada por un máximo de',
+      occupantsPersons: 'persona(s). Lista de ocupantes autorizados:',
+      occupantsForbidden: 'Cualquier persona no mencionada arriba tiene prohibida la entrada a la propiedad.',
+      rulesIntro: 'El inquilino se compromete a respetar las siguientes normas:',
+      article5Text: 'El Inquilino es plenamente responsable de cualquier daño a la propiedad, equipamiento y mobiliario. Se compromete a devolver el bien en el mismo estado. El Arrendador declina toda responsabilidad por robo, pérdida o daño a los efectos personales del Inquilino.',
+      article6Text: 'En caso de incumplimiento de estas condiciones, el Arrendador se reserva el derecho de rescindir el contrato de inmediato y exigir la desocupación sin demora ni indemnización.',
+      article7Text: 'Este contrato se rige por la ley marroquí. Cualquier litigio será de la competencia exclusiva de los tribunales de Casablanca.',
+      doneAt: 'Hecho en',
+      onDate: 'el',
+      electronicSignature: '(firma electrónica)',
+      bornOn: 'nacido/a el',
+      nationality: 'nacionalidad',
+      documentHolder: 'titular del documento de identidad n°',
+      titleLine1: 'CONTRATO DE ALQUILER AMUEBLADO',
+      titleLine2: 'DE CORTA DURACIÓN',
+      betweenParties: 'ENTRE LOS ABAJO FIRMANTES',
+      landlordSection: 'EL ARRENDADOR:',
+      tenantSection: 'EL INQUILINO:',
+      landlordDescription: 'Gestor y/o propietario del bien, en adelante denominado "El Arrendador"',
+      representing: 'representante de',
+      emergencyContact: 'En caso de emergencia, contactar al propietario al:',
+      companyLabel: 'Empresa:',
+      rcLabel: 'RC:',
+      iceLabel: 'ICE:',
+      taxIdLabel: 'NIF:',
+      signatureLandlordLabel: 'EL ARRENDADOR',
+      signatureTenantLabel: 'EL INQUILINO',
+      dateLabel: 'Fecha:',
+      signatureValidated: 'Firma electrónica del inquilino validada el',
+      pageLabel: 'Página',
+      defaultRules: [
+        'No se permiten invitados no autorizados ni fiestas',
+        'Prohibido fumar en el interior del inmueble',
+        'Respetar a los vecinos y las normas del edificio',
+        'Comunicar cualquier daño de inmediato',
+        'Salida a la hora acordada',
+      ],
+    },
+  };
+  const lang = (locale && (locale === 'en' || locale === 'es' ? locale : 'fr')) as 'fr' | 'en' | 'es';
+  return (L[lang] || L.fr) as ContractStrings;
+}
+
 // Generate contract PDF with pdf-lib (version simplifiée et robuste)
 async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): Promise<string> {
   log('info', 'Creating contract PDF with pdf-lib...');
   
-  const { guestSignatureData, guestSignedAt } = signOpts;
+  const { guestSignatureData, guestSignedAt, locale: localeParam } = signOpts;
+  const locale = localeParam && ['fr', 'en', 'es'].includes(localeParam) ? localeParam : 'fr';
+  const L = getContractStrings(locale);
+  log('info', 'Contract PDF locale', { locale });
   const guests = ctx.guests || [];
   const property = ctx.property;
   const booking = ctx.booking;
@@ -4620,7 +5245,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   }
 
   function drawHeader() {
-    currentPage.drawText(property.name || 'Contrat de Location', {
+    currentPage.drawText(property.name || L.title, {
       x: margin,
       y: pageHeight - 30,
       size: 10,
@@ -4692,16 +5317,16 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   // Première page
   addPage();
 
-  // ✅ Titre principal - format exact frontend
+  // Titre principal (traduit)
   ensureSpace(titleSize + 10);
-  currentPage.drawText("CONTRAT DE LOCATION MEUBLEE DE COURTE", {
+  currentPage.drawText(L.titleLine1, {
     x: margin,
     y,
     size: titleSize,
     font: fontBold
   });
   y -= titleSize + 2;
-  currentPage.drawText("DUREE", {
+  currentPage.drawText(L.titleLine2, {
     x: margin,
     y,
     size: titleSize,
@@ -4709,7 +5334,6 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   });
   y -= titleSize + 15;
 
-  // Line separator
   currentPage.drawLine({
     start: { x: margin, y },
     end: { x: pageWidth - margin, y },
@@ -4718,125 +5342,91 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   });
   y -= 20;
 
-  // Section "ENTRE LES SOUSSIGNÉS" avec variabilisation complète
-  drawSectionTitle("ENTRE LES SOUSSIGNÉS");
+  drawSectionTitle(L.betweenParties);
+  drawParagraph(L.landlordSection);
   
-  // ✅ BAILLEUR selon format exact du frontend
-  drawParagraph("LE BAILLEUR :");
-  
-  // ✅ Format exact frontend: utiliser hostName déjà défini plus haut
   let bailleurInfo = `${hostName}, `;
-  
-  // Ajouter le statut entreprise si applicable
   if (host?.status === 'entreprise' && host?.company_name) {
-    bailleurInfo += `représentant de ${host.company_name}, `;
+    bailleurInfo += `${L.representing} ${host.company_name}, `;
   }
-  
-  bailleurInfo += `Gestionnaire et/ou propriétaire du bien, ci-après dénommé "Le Bailleur"`;
+  bailleurInfo += L.landlordDescription;
   drawParagraph(bailleurInfo);
   y -= 10;
   
-  // ✅ LOCATAIRE selon format exact du frontend
-  drawParagraph("LE LOCATAIRE :");
+  drawParagraph(L.tenantSection);
   
   // Format: "Nom, né(e) le __/__/____, de nationalité ______, titulaire du document d'identité n° ______, ci-après dénommé(e) "Le Locataire""
   let locataireInfo = mainGuest.full_name || '_________________';
-  locataireInfo += `, né(e) le ${mainGuest.date_of_birth ? fmtFR(mainGuest.date_of_birth) : '__/__/____'}`;
-  locataireInfo += `, de nationalité ${mainGuest.nationality || '_________________'}`;
-  locataireInfo += `, titulaire du document d'identité n° ${mainGuest.document_number || '_________________'}`;
-  locataireInfo += `, ci-après dénommé(e) "Le Locataire"`;
-  
+  locataireInfo += `, ${L.bornOn} ${mainGuest.date_of_birth ? fmtFR(mainGuest.date_of_birth) : '__/__/____'}`;
+  locataireInfo += `, ${L.nationality} ${mainGuest.nationality || '_________________'}`;
+  locataireInfo += `, ${L.documentHolder} ${mainGuest.document_number || '_________________'}`;
+  const tenantDenomination = locale === 'fr' ? 'ci-après dénommé(e) "' + L.tenantLabel + '"' : locale === 'en' ? 'hereinafter referred to as "' + L.tenantLabel + '"' : 'en adelante denominado(a) "' + L.tenantLabel + '"';
+  locataireInfo += `, ${tenantDenomination}`;
   drawParagraph(locataireInfo);
   y -= 20;
 
-  // Articles du contrat avec variabilisation complète
-  drawSectionTitle("ARTICLE 1 - OBJET DE LA LOCATION");
-  let propertyDescription = `Le présent contrat a pour objet la location meublée de courte durée du bien immobilier suivant : `;
-  
-  // ✅ Description enrichie de la propriété
+  // Articles du contrat avec variabilisation et traduction (L)
+  const typeLabels: Record<string, Record<string, string>> = {
+    fr: { apartment: 'appartement', house: 'maison', villa: 'villa', studio: 'studio', room: 'chambre' },
+    en: { apartment: 'apartment', house: 'house', villa: 'villa', studio: 'studio', room: 'room' },
+    es: { apartment: 'apartamento', house: 'casa', villa: 'villa', studio: 'estudio', room: 'habitación' },
+  };
+  const typeL = typeLabels[locale] || typeLabels.fr;
+
+  drawSectionTitle(L.article1);
+  const objIntro = locale === 'fr' ? 'Le présent contrat a pour objet la location meublée de courte durée du bien immobilier suivant : ' : locale === 'en' ? 'This agreement is for the furnished short-term rental of the following property: ' : 'El presente contrato tiene por objeto el alquiler amueblado de corta duración del siguiente inmueble: ';
+  let propertyDescription = objIntro;
   if (property.property_type) {
-    const typeLabels = {
-      'apartment': 'appartement',
-      'house': 'maison',
-      'villa': 'villa',
-      'studio': 'studio',
-      'room': 'chambre'
-    };
-    propertyDescription += `${typeLabels[property.property_type] || property.property_type} `;
+    propertyDescription += `${typeL[property.property_type] || property.property_type} `;
   }
-  
-  propertyDescription += `"${property.name || 'Non spécifié'}"`;
-  
+  propertyDescription += `"${property.name || (locale === 'fr' ? 'Non spécifié' : locale === 'en' ? 'Unspecified' : 'No especificado')}"`;
   if (property.address) {
-    propertyDescription += `, situé ${property.address}`;
+    propertyDescription += locale === 'fr' ? `, situé ${property.address}` : locale === 'en' ? `, located at ${property.address}` : `, situado en ${property.address}`;
   }
-  
-  if (property.city && property.city !== property.address) {
-    propertyDescription += `, ${property.city}`;
-  }
-  
-  if (property.country && property.country !== 'Maroc') {
-    propertyDescription += `, ${property.country}`;
-  }
-  
-  propertyDescription += `. Le logement est loué entièrement meublé et équipé pour un usage d'habitation temporaire`;
-  
+  if (property.city && property.city !== property.address) propertyDescription += `, ${property.city}`;
+  if (property.country && property.country !== 'Maroc') propertyDescription += `, ${property.country}`;
+  const furnished = locale === 'fr' ? ' Le logement est loué entièrement meublé et équipé pour un usage d\'habitation temporaire' : locale === 'en' ? ' The property is rented fully furnished for temporary residential use' : ' El alojamiento se alquila totalmente amueblado para uso residencial temporal';
+  propertyDescription += '.' + furnished;
   if (property.max_occupancy) {
-    propertyDescription += ` pouvant accueillir jusqu'à ${property.max_occupancy} personnes`;
+    propertyDescription += locale === 'fr' ? ` pouvant accueillir jusqu'à ${property.max_occupancy} personnes` : locale === 'en' ? `, accommodating up to ${property.max_occupancy} people` : `, con capacidad para ${property.max_occupancy} personas`;
   }
-  
-  propertyDescription += `.`;
-  
-  if (property.description) {
-    propertyDescription += ` Description : ${property.description}`;
-  }
-  
+  propertyDescription += '.';
+  if (property.description) propertyDescription += (locale === 'fr' ? ' Description : ' : locale === 'en' ? ' Description: ' : ' Descripción: ') + property.description;
   drawParagraph(propertyDescription);
 
-  // ✅ ARTICLE 2 selon format exact du frontend
-  drawSectionTitle("ARTICLE 2 - DURÉE ET PÉRIODE");
-  
-  // Format exact: "La location est consentie pour une durée déterminée du .... à 16h00 au .... à 11h00."
-  let durationText = `La location est consentie pour une durée déterminée du ${fmtFR(booking.check_in)} à 16h00 au ${fmtFR(booking.check_out)} à 11h00. Cette période ne pourra être prolongée qu'avec l'accord écrit préalable du Bailleur.`;
-  
+  drawSectionTitle(L.article2);
+  let durationText = `${L.durationIntro} ${fmtFR(booking.check_in)} ${L.durationTo} ${fmtFR(booking.check_out)} ${L.durationEnd}`;
   drawParagraph(durationText);
 
-  // ✅ ARTICLE 3 selon format exact du frontend
-  drawSectionTitle("ARTICLE 3 - OCCUPANTS AUTORISÉS");
-  
-  let occupantsText = `Le logement sera occupé par ${booking.guests_count} personne(s) maximum. Liste des occupants autorisés :\n\n`;
-  
-  // Liste des invités avec format exact du frontend
+  drawSectionTitle(L.article3);
+  const bornLabel = locale === 'fr' ? 'Né(e) le' : locale === 'en' ? 'Born on' : 'Nacido/a el';
+  const docLabel = locale === 'fr' ? 'Document n°' : locale === 'en' ? 'Document no.' : 'Documento n°';
+  let occupantsText = `${L.occupantsIntro} ${booking.guests_count} ${L.occupantsPersons}\n\n`;
   for (const guest of guests) {
     const guestName = guest.full_name || `${guest.first_name || ''} ${guest.last_name || ''}`.trim() || '_______________';
     const birthDate = guest.date_of_birth ? fmtFR(guest.date_of_birth) : '__/__/____';
     const docNumber = guest.document_number || '_______________';
-    occupantsText += `${guestName} - Né(e) le ${birthDate} - Document n° ${docNumber}\n`;
+    occupantsText += `${guestName} - ${bornLabel} ${birthDate} - ${docLabel} ${docNumber}\n`;
   }
-  
-  // Ajouter une ligne vide si moins d'occupants que prévu
   if (guests.length < booking.guests_count) {
-    occupantsText += `_______________ - Né(e) le __/__/____ - Document n° _______________\n`;
+    occupantsText += `_______________ - ${bornLabel} __/__/____ - ${docLabel} _______________\n`;
   }
-  
-  occupantsText += `Toute personne non mentionnée ci-dessus est strictement interdite dans le logement.`;
-  
+  occupantsText += L.occupantsForbidden;
   drawParagraph(occupantsText);
 
-  // ✅ RÈGLEMENT INTÉRIEUR avec rules personnalisées
-  drawSectionTitle("ARTICLE 4 - RÈGLEMENT INTÉRIEUR ET OBLIGATIONS");
-  drawParagraph("Le locataire s'engage à respecter les règles suivantes :");
+  drawSectionTitle(L.article4);
+  drawParagraph(L.rulesIntro);
   
-  // Utiliser les règles personnalisées ou les règles par défaut
+  const defaultRules = Array.isArray(L.defaultRules) ? L.defaultRules : [];
   const rulesToDisplay = property.house_rules && property.house_rules.length > 0 
     ? property.house_rules 
-    : [
+    : (defaultRules.length ? defaultRules : [
       'Aucun invité non autorisé ou fête',
       'Interdiction de fumer à l\'intérieur du bien',
       'Respecter les voisins et les règles de l\'immeuble',
       'Signaler immédiatement tout dommage',
       'Libérer les lieux à l\'heure convenue'
-    ];
+    ]);
   
   rulesToDisplay.forEach((rule: string) => {
     if (rule && rule.trim()) {
@@ -4844,41 +5434,38 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     }
   });
   
-  // ✅ Ajouter contact d'urgence si disponible
   if (property.contact?.phone || host.phone) {
     const contactPhone = property.contact?.phone || host.phone;
-    drawParagraph(`• En cas d'urgence, contacter le propriétaire au : ${contactPhone}`);
+    drawParagraph(`• ${L.emergencyContact} ${contactPhone}`);
   }
 
-  drawSectionTitle("ARTICLE 5 - RESPONSABILITÉS ET ASSURANCES");
-  drawParagraph("Le Locataire est entièrement responsable de tout dommage causé au logement, aux équipements et au mobilier. Il s'engage à restituer le bien dans l'état où il l'a trouvé. Le Bailleur décline toute responsabilité en cas de vol, perte ou dommage aux effets personnels du Locataire.");
+  drawSectionTitle(L.article5);
+  drawParagraph(L.article5Text);
 
-  drawSectionTitle("ARTICLE 6 - RÉSILIATION");
-  drawParagraph("En cas de non-respect des présentes conditions, le Bailleur se réserve le droit de procéder à la résiliation immédiate du contrat et d'exiger la libération des lieux sans délai ni indemnité.");
+  drawSectionTitle(L.article6);
+  drawParagraph(L.article6Text);
 
-  drawSectionTitle("ARTICLE 7 - DROIT APPLICABLE");
-  drawParagraph("Le présent contrat est régi par le droit marocain. Tout litige sera de la compétence exclusive des tribunaux de Casablanca.");
+  drawSectionTitle(L.article7);
+  drawParagraph(L.article7Text);
 
-  // ✅ Lieu et date avec informations variables
   const city = property.city || property.address?.split(',')[0] || 'Casablanca';
   y -= 20;
-  drawParagraph(`Fait à ${city}, le ${fmtFR(new Date().toISOString())}`);
+  drawParagraph(`${L.doneAt} ${city}, ${L.onDate} ${fmtFR(new Date().toISOString())}`);
   
-  // ✅ Informations légales supplémentaires si disponibles
   if (host.company_name || host.ice || host.registration) {
     y -= 15;
     let legalInfo = '';
     if (host.company_name) {
-      legalInfo += `Entreprise : ${host.company_name}`;
+      legalInfo += `${L.companyLabel} ${host.company_name}`;
     }
     if (host.registration) {
-      legalInfo += legalInfo ? ` - RC : ${host.registration}` : `RC : ${host.registration}`;
+      legalInfo += legalInfo ? ` - ${L.rcLabel} ${host.registration}` : `${L.rcLabel} ${host.registration}`;
     }
     if (host.ice) {
-      legalInfo += legalInfo ? ` - ICE : ${host.ice}` : `ICE : ${host.ice}`;
+      legalInfo += legalInfo ? ` - ${L.iceLabel} ${host.ice}` : `${L.iceLabel} ${host.ice}`;
     }
     if (host.tax_id && host.tax_id !== host.ice) {
-      legalInfo += ` - ID Fiscal : ${host.tax_id}`;
+      legalInfo += ` - ${L.taxIdLabel} ${host.tax_id}`;
     }
     drawParagraph(legalInfo);
   }
@@ -4912,7 +5499,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
           size: bodySize,
           font: fontRegular
         });
-        currentPage.drawText("(signature electronique)", {
+        currentPage.drawText(L.electronicSignature, {
           x: col1 + 10,
           y: y - signatureBoxHeight + 15,
           size: bodySize - 2,
@@ -4976,35 +5563,117 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   // ✅ SIGNATURE DU LOCATAIRE - Dans le rectangle de droite
   if (guestSignatureData) {
     try {
+      log('info', '[CONTRACT] 🔍 Début intégration signature guest...', {
+        dataLength: guestSignatureData.length,
+        startsWithData: guestSignatureData.startsWith('data:'),
+        startsWithHttp: guestSignatureData.startsWith('http'),
+        preview: guestSignatureData.substring(0, 80)
+      });
+      
       let guestImageBytes;
       
       if (guestSignatureData.startsWith('data:')) {
         const base64Data = guestSignatureData.split(',')[1];
+        if (!base64Data) {
+          throw new Error('Base64 data manquante dans la signature guest');
+        }
         guestImageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        log('info', '[CONTRACT] ✅ Signature guest décodée depuis base64', { bytesLength: guestImageBytes.length });
       } else {
         const response = await fetch(guestSignatureData);
+        if (!response.ok) {
+          throw new Error(`Erreur HTTP ${response.status} lors du téléchargement signature guest`);
+        }
         guestImageBytes = new Uint8Array(await response.arrayBuffer());
+        log('info', '[CONTRACT] ✅ Signature guest téléchargée depuis URL', { bytesLength: guestImageBytes.length });
+      }
+      
+      if (!guestImageBytes || guestImageBytes.length === 0) {
+        throw new Error('Signature guest vide après décodage');
       }
       
       let guestImage;
-      if (guestSignatureData.includes('png') || guestSignatureData.includes('PNG')) {
-        guestImage = await pdfDoc.embedPng(guestImageBytes);
-      } else {
-        guestImage = await pdfDoc.embedJpg(guestImageBytes);
+      // ✅ CORRECTION : Meilleure détection du format PNG
+      const isPng = guestSignatureData.includes('image/png') || 
+                    guestSignatureData.includes('png') || 
+                    guestSignatureData.includes('PNG');
+      
+      try {
+        if (isPng) {
+          guestImage = await pdfDoc.embedPng(guestImageBytes);
+          log('info', '[CONTRACT] Image signature guest embedée en PNG');
+        } else {
+          guestImage = await pdfDoc.embedJpg(guestImageBytes);
+          log('info', '[CONTRACT] Image signature guest embedée en JPG');
+        }
+      } catch (embedError) {
+        // ✅ FALLBACK : Essayer l'autre format si le premier échoue
+        log('warn', '[CONTRACT] Premier format échoué, tentative avec l\'autre format...', { 
+          triedFormat: isPng ? 'PNG' : 'JPG',
+          error: String(embedError)
+        });
+        try {
+          if (isPng) {
+            guestImage = await pdfDoc.embedJpg(guestImageBytes);
+            log('info', '[CONTRACT] Fallback JPG réussi');
+          } else {
+            guestImage = await pdfDoc.embedPng(guestImageBytes);
+            log('info', '[CONTRACT] Fallback PNG réussi');
+          }
+        } catch (fallbackError) {
+          throw new Error(`Impossible d'intégrer la signature guest: ${String(embedError)}`);
+        }
       }
       
-      const guestSigDims = guestImage.scale(0.3);
+      // ✅ CORRECTION : Calcul des dimensions adaptatif pour garantir visibilité
+      const originalWidth = guestImage.width;
+      const originalHeight = guestImage.height;
+      const maxWidth = signatureBoxWidth - 20;
+      const maxHeight = signatureBoxHeight - 20;
       
-      currentPage.drawImage(guestImage, {
-        x: col2 + 10,
-        y: y - signatureBoxHeight + 10,
-        width: Math.min(guestSigDims.width, signatureBoxWidth - 20),
-        height: Math.min(guestSigDims.height, signatureBoxHeight - 20)
+      // Calculer le ratio de redimensionnement optimal
+      const widthRatio = maxWidth / originalWidth;
+      const heightRatio = maxHeight / originalHeight;
+      const scaleRatio = Math.min(widthRatio, heightRatio, 1.0); // Ne pas agrandir, juste réduire si nécessaire
+      
+      // ✅ AMÉLIORATION : S'assurer que la signature a une taille minimum visible
+      const minVisibleWidth = 60;
+      const minVisibleHeight = 30;
+      let finalWidth = Math.max(originalWidth * scaleRatio, minVisibleWidth);
+      let finalHeight = Math.max(originalHeight * scaleRatio, minVisibleHeight);
+      
+      // S'assurer qu'on ne dépasse pas les limites
+      finalWidth = Math.min(finalWidth, maxWidth);
+      finalHeight = Math.min(finalHeight, maxHeight);
+      
+      log('info', '[CONTRACT] 📐 Dimensions signature guest calculées', {
+        original: { width: originalWidth, height: originalHeight },
+        max: { width: maxWidth, height: maxHeight },
+        scaleRatio,
+        final: { width: finalWidth, height: finalHeight },
+        boxPosition: { x: col2 + 10, y: y - signatureBoxHeight + 10 }
       });
       
-      log('info', 'Signature du locataire intégrée au PDF');
+      // ✅ Centrer horizontalement dans la box
+      const signatureX = col2 + 10 + (maxWidth - finalWidth) / 2;
+      const signatureY = y - signatureBoxHeight + 10 + (maxHeight - finalHeight) / 2;
+      
+      currentPage.drawImage(guestImage, {
+        x: signatureX,
+        y: signatureY,
+        width: finalWidth,
+        height: finalHeight
+      });
+      
+      log('info', '[CONTRACT] ✅ Signature du locataire intégrée au PDF', {
+        position: { x: signatureX, y: signatureY },
+        dimensions: { width: finalWidth, height: finalHeight }
+      });
     } catch (e) {
-      log('warn', 'Échec intégration signature locataire:', e);
+      log('error', '[CONTRACT] ❌ Échec intégration signature locataire', { 
+        error: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined
+      });
       currentPage.drawText("_________________", {
         x: col2 + 10,
         y: y - signatureBoxHeight + 30,
@@ -5013,6 +5682,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
       });
     }
   } else {
+    log('warn', '[CONTRACT] ⚠️ Pas de signature guest fournie, affichage ligne vide');
     currentPage.drawText("_________________", {
       x: col2 + 10,
       y: y - signatureBoxHeight + 30,
@@ -5021,16 +5691,15 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     });
   }
   
-  // ✅ Labels selon format exact frontend
   y -= signatureBoxHeight + 5;
-  currentPage.drawText("LE BAILLEUR", {
+  currentPage.drawText(L.signatureLandlordLabel, {
     x: col1,
     y,
     size: bodySize,
     font: fontBold
   });
   
-  currentPage.drawText("LE LOCATAIRE", {
+  currentPage.drawText(L.signatureTenantLabel, {
     x: col2,
     y,
     size: bodySize,
@@ -5052,8 +5721,9 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     font: fontRegular
   });
 
+  const dateLocale = locale === 'en' ? 'en-GB' : locale === 'es' ? 'es-ES' : 'fr-FR';
   y -= 15;
-  currentPage.drawText(`Date : ${new Date().toLocaleDateString('fr-FR')}`, {
+  currentPage.drawText(`${L.dateLabel} ${new Date().toLocaleDateString(dateLocale)}`, {
     x: col1,
     y,
     size: bodySize - 1,
@@ -5061,14 +5731,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   });
   
   if (guestSignedAt) {
-    currentPage.drawText(`Date : ${fmtFR(guestSignedAt)}`, {
+    currentPage.drawText(`${L.dateLabel} ${fmtFR(guestSignedAt)}`, {
       x: col2,
       y,
       size: bodySize - 1,
       font: fontRegular
     });
   } else {
-    currentPage.drawText("Date : ____/____/______", {
+    currentPage.drawText(`${L.dateLabel} ____/____/______`, {
       x: col2,
       y,
       size: bodySize - 1,
@@ -5076,29 +5746,19 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     });
   }
 
-  // Mentions de signature électronique si présentes
   if (guestSignatureData) {
     y -= 20;
-    currentPage.drawText("* Signature electronique locataire validee", {
+    const validatedText = guestSignedAt ? `${L.signatureValidated} ${fmtFR(guestSignedAt)}` : L.signatureValidated;
+    currentPage.drawText(`* ${validatedText}`, {
       x: col2,
       y,
       size: bodySize - 2,
       font: fontRegular
     });
-    if (guestSignedAt) {
-      y -= 12;
-      currentPage.drawText(`le ${fmtFR(guestSignedAt)}`, {
-        x: col2,
-        y,
-        size: bodySize - 2,
-        font: fontRegular
-      });
-    }
   }
 
-  // Footer with page numbers
   pages.forEach((p, i) => {
-    p.drawText(`Page ${i + 1}/${pages.length}`, {
+    p.drawText(`${L.pageLabel} ${i + 1}/${pages.length}`, {
       x: pageWidth - margin - 60,
       y: margin - 20,
       size: 9,
@@ -5481,7 +6141,10 @@ async function generatePoliceFormsPDF(
     const docType = guest.document_type === 'passport' ? 'PASSEPORT / PASSPORT' : 'CNI / ID CARD';
     yPosition = drawBilingualField(page, 'Type de document / ID type', 'نوع الوثيقة', docType, margin, yPosition);
     yPosition = drawBilingualField(page, 'Numéro du document / ID number', 'رقم الوثيقة', guest.document_number || '', margin, yPosition);
-    yPosition = drawBilingualField(page, 'Date de délivrance / Date of issue', 'تاريخ الإصدار', '', margin, yPosition);
+    
+    // ✅ Date d'expiration du document - formatée si disponible (document_expiry_date ou document_issue_date en fallback)
+    const expiryDate = formatDate((guest as any).document_expiry_date ?? guest.document_issue_date);
+    yPosition = drawBilingualField(page, 'Date d\'expiration / Date of expiry', 'تاريخ الانتهاء', expiryDate, margin, yPosition);
     yPosition = drawBilingualField(page, 'Date d\'entrée au Maroc / Date of entry in Morocco', 'تاريخ الدخول إلى المغرب', '', margin, yPosition);
     yPosition = drawBilingualField(page, 'Profession', 'المهنة', guest.profession || '', margin, yPosition);
     yPosition = drawBilingualField(page, 'Adresse / Home address', 'العنوان الشخصي', guest.adresse_personnelle || '', margin, yPosition);
@@ -5658,45 +6321,89 @@ async function generatePoliceFormsPDF(
       startsWithHttp: guestSignatureData?.startsWith('http') || false
     });
     
-    // ✅ DIAGNOSTIC APPROFONDI : Vérifier si la condition passe
-    const conditionPassed = guestSignatureData && (guestSignatureData.startsWith('data:image/') || guestSignatureData.startsWith('http'));
+    // ✅ CORRECTION : Condition plus souple - accepte data: ou http
+    const conditionPassed = guestSignatureData && (
+      guestSignatureData.startsWith('data:image/') || 
+      guestSignatureData.startsWith('data:') ||  // Accepte aussi data: sans image/
+      guestSignatureData.startsWith('http')
+    );
     log('info', '[Police] 🔍 Condition d\'affichage signature:', {
       conditionPassed,
       hasData: !!guestSignatureData,
       startsWithDataImage: guestSignatureData?.startsWith('data:image/'),
-      startsWithHttp: guestSignatureData?.startsWith('http')
+      startsWithData: guestSignatureData?.startsWith('data:'),
+      startsWithHttp: guestSignatureData?.startsWith('http'),
+      dataLength: guestSignatureData?.length || 0
     });
     
     if (conditionPassed) {
       try {
-        log('info', '[Police] 🎨 Intégration signature guest...');
+        log('info', '[Police] 🎨 Intégration signature guest...', {
+          dataPreview: guestSignatureData.substring(0, 100)
+        });
         
         let guestSignatureBytes;
         if (guestSignatureData.startsWith('data:')) {
           const base64Data = guestSignatureData.split(',')[1];
-          if (!base64Data) throw new Error('Base64 data manquante');
+          if (!base64Data) throw new Error('Base64 data manquante après la virgule');
           guestSignatureBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+          log('info', '[Police] ✅ Signature décodée depuis base64', { bytesLength: guestSignatureBytes.length });
         } else {
           const response = await fetch(guestSignatureData);
           if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
           guestSignatureBytes = new Uint8Array(await response.arrayBuffer());
+          log('info', '[Police] ✅ Signature téléchargée depuis URL', { bytesLength: guestSignatureBytes.length });
         }
         
         if (guestSignatureBytes && guestSignatureBytes.length > 0) {
           let guestSigImage;
+          const isPng = guestSignatureData.includes('image/png') || 
+                        guestSignatureData.includes('png') || 
+                        guestSignatureData.includes('PNG');
+          
           try {
-            guestSigImage = await pdfDoc.embedPng(guestSignatureBytes);
-          } catch {
-            guestSigImage = await pdfDoc.embedJpg(guestSignatureBytes);
+            if (isPng) {
+              guestSigImage = await pdfDoc.embedPng(guestSignatureBytes);
+              log('info', '[Police] Image embedée en PNG');
+            } else {
+              guestSigImage = await pdfDoc.embedJpg(guestSignatureBytes);
+              log('info', '[Police] Image embedée en JPG');
+            }
+          } catch (embedError) {
+            // Fallback: essayer l'autre format
+            log('warn', '[Police] Premier format échoué, tentative fallback...', { 
+              triedFormat: isPng ? 'PNG' : 'JPG' 
+            });
+            if (isPng) {
+              guestSigImage = await pdfDoc.embedJpg(guestSignatureBytes);
+            } else {
+              guestSigImage = await pdfDoc.embedPng(guestSignatureBytes);
+            }
           }
           
           // ✅ OPTIMISÉ : Dimensions adaptées pour signature centrée et bien visible
           const guestAvailableWidth = pageWidth - (margin * 2);
-          const maxW = Math.min(200, guestAvailableWidth * 0.6); // ✅ Augmenté pour meilleure visibilité
+          const maxW = Math.min(200, guestAvailableWidth * 0.6);
           const maxH = maxSignatureHeight;
+          
+          // ✅ CORRECTION : S'assurer d'une taille minimum visible
+          const minVisibleWidth = 80;
+          const minVisibleHeight = 40;
+          
           const scale = Math.min(maxW / guestSigImage.width, maxH / guestSigImage.height, 1.0);
-          const w = guestSigImage.width * scale;
-          const h = guestSigImage.height * scale;
+          let w = Math.max(guestSigImage.width * scale, minVisibleWidth);
+          let h = Math.max(guestSigImage.height * scale, minVisibleHeight);
+          
+          // S'assurer de ne pas dépasser les limites
+          w = Math.min(w, maxW);
+          h = Math.min(h, maxH);
+          
+          log('info', '[Police] 📐 Dimensions signature calculées', {
+            original: { width: guestSigImage.width, height: guestSigImage.height },
+            max: { width: maxW, height: maxH },
+            scale,
+            final: { width: w, height: h }
+          });
           
           // ✅ CORRECTION : Position centrée
           const guestSignatureY = signaturesBaselineY - 10 - h;
@@ -5710,7 +6417,10 @@ async function generatePoliceFormsPDF(
             height: h
           });
           
-          log('info', '[Police] ✅ Signature guest intégrée', { x: guestSignatureX, y: guestSignatureY, w, h });
+          log('info', '[Police] ✅ Signature guest intégrée avec succès', { 
+            position: { x: guestSignatureX, y: guestSignatureY }, 
+            dimensions: { width: w, height: h }
+          });
           
           // Date de signature (sous l'image, centrée)
           if (guestSignedAt) {
@@ -5916,7 +6626,7 @@ serve(async (req) => {
 
     switch (action) {
       case 'generate_contract_only': {
-        log('info', '📄 Action: Génération contrat uniquement');
+        log('info', '📄 Action: Génération contrat uniquement (switch)');
         
         if (!body.bookingId) {
           throw new Error('bookingId requis');
@@ -5930,14 +6640,38 @@ serve(async (req) => {
 
         if (!booking) throw new Error('Booking non trouvé');
 
-        const contractUrl = await generateContractPDF(
-          client,
-          booking,
-          booking.property,
-          booking.guests || [],
-          body.signature?.data,
-          body.signature?.timestamp
-        );
+        // ✅ CORRECTION : Récupérer la signature depuis contract_signatures si non fournie
+        let signatureData = body.signature?.data;
+        let signatureTimestamp = body.signature?.timestamp;
+        
+        if (!signatureData) {
+          log('info', '[generate_contract_only switch] Recherche signature dans contract_signatures...');
+          
+          const { data: signatures } = await client
+            .from('contract_signatures')
+            .select('signature_data, signed_at, signer_name')
+            .eq('booking_id', body.bookingId)
+            .order('created_at', { ascending: false });
+          
+          if (signatures && signatures.length > 0) {
+            signatureData = signatures[0].signature_data;
+            signatureTimestamp = signatures[0].signed_at;
+            log('info', '[generate_contract_only switch] ✅ Signature trouvée', {
+              signerName: signatures[0].signer_name,
+              hasData: !!signatureData
+            });
+          } else {
+            log('warn', '[generate_contract_only switch] Aucune signature trouvée');
+          }
+        }
+
+        const contractLocale = body.locale && ['fr', 'en', 'es'].includes(body.locale) ? body.locale : 'fr';
+        const ctx = await buildContractContext(client, body.bookingId);
+        const contractUrl = await generateContractPDF(client, ctx, {
+          guestSignatureData: signatureData,
+          guestSignedAt: signatureTimestamp,
+          locale: contractLocale
+        });
 
         await client
           .from('bookings')
@@ -5948,7 +6682,7 @@ serve(async (req) => {
           .eq('id', booking.id);
 
         return new Response(
-          JSON.stringify({ success: true, contractUrl, bookingId: booking.id }),
+          JSON.stringify({ success: true, contractUrl, bookingId: booking.id, isSigned: !!signatureData }),
           { headers: corsHeaders }
         );
       }
@@ -5960,32 +6694,56 @@ serve(async (req) => {
           throw new Error('bookingId requis');
         }
 
-        const { data: booking } = await client
+        const { data: bookingPolice } = await client
           .from('bookings')
           .select('*, property:properties(*), guests(*)')
           .eq('id', body.bookingId)
           .single();
 
-        if (!booking) throw new Error('Booking non trouvé');
+        if (!bookingPolice) throw new Error('Booking non trouvé');
 
+        // ✅ CORRECTION : Récupérer la signature depuis contract_signatures si non fournie
+        let policeSignatureData = body.signature?.data;
+        let policeSignatureTimestamp = body.signature?.timestamp;
+        
+        if (!policeSignatureData) {
+          log('info', '[generate_police_only switch] Recherche signature dans contract_signatures...');
+          
+          const { data: policeSignatures } = await client
+            .from('contract_signatures')
+            .select('signature_data, signed_at, signer_name')
+            .eq('booking_id', body.bookingId)
+            .order('created_at', { ascending: false });
+          
+          if (policeSignatures && policeSignatures.length > 0) {
+            policeSignatureData = policeSignatures[0].signature_data;
+            policeSignatureTimestamp = policeSignatures[0].signed_at;
+            log('info', '[generate_police_only switch] ✅ Signature trouvée', {
+              signerName: policeSignatures[0].signer_name,
+              hasData: !!policeSignatureData
+            });
+          } else {
+            log('warn', '[generate_police_only switch] Aucune signature trouvée');
+          }
+        }
 
         const policeUrl = await generatePoliceFormsPDF(
           client,
-          booking,
+          bookingPolice,
           false, // isPreview
-          body.signature?.data, // guestSignatureData
-          body.signature?.timestamp // guestSignedAt
+          policeSignatureData, // guestSignatureData
+          policeSignatureTimestamp // guestSignedAt
         );
 
         await client
           .from('bookings')
           .update({
-            documents_generated: { ...booking.documents_generated, policeForm: true }
+            documents_generated: { ...bookingPolice.documents_generated, policeForm: true }
           })
-          .eq('id', booking.id);
+          .eq('id', bookingPolice.id);
 
         return new Response(
-          JSON.stringify({ success: true, policeUrl, bookingId: booking.id }),
+          JSON.stringify({ success: true, policeUrl, bookingId: bookingPolice.id, isSigned: !!policeSignatureData }),
           { headers: corsHeaders }
         );
       }

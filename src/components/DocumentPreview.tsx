@@ -11,6 +11,7 @@ import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 // @ts-ignore - Vite ?url provides a string URL for the worker
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 (GlobalWorkerOptions as any).workerSrc = workerSrc as any;
+
 interface DocumentPreviewProps {
   property: Property;
   formData: any;
@@ -367,15 +368,14 @@ export const DocumentPreview = ({ property, formData }: DocumentPreviewProps) =>
         console.log('🔍 Police booking data being sent:', booking);
         console.log('🔍 Police contract template:', booking.property.contract_template);
 
-        // ✅ NOUVEAU: Utiliser la nouvelle Edge Function dédiée
+        // ✅ Aperçu (création/édition bien) : même format bilingue (FR/EN + arabe) via generate-police-form avec booking (modèle non rempli).
+        // ✅ Réservation existante : fiche avec vraies données (bookingId).
+        const hasRealBookingId = Boolean(booking.id && String(booking.id).trim());
         const { data, error } = await supabase.functions.invoke('generate-police-form', {
-          body: { 
-            bookingId: booking.id
-          }
+          body: hasRealBookingId ? { bookingId: booking.id } : { booking }
         });
         if (error) throw error as any;
 
-        // La fonction retourne policeUrl, documentUrl (singular) ou documentUrls (plural)
         const urls = (data as any)?.documentUrls || 
                      ((data as any)?.documentUrl ? [(data as any).documentUrl] : []) ||
                      ((data as any)?.policeUrl ? [(data as any).policeUrl] : []);

@@ -13,6 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useAdminContext } from '@/contexts/AdminContext';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface UserMenuProps {
   onSignOut: () => void;
@@ -22,6 +23,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onSignOut }) => {
   const { user } = useAuth();
   const { isAdmin } = useAdminContext();
   const navigate = useNavigate();
+  const t = useT();
   
   // ✅ DEBUG TEMPORAIRE
   console.log('👤 UserMenu - user:', user?.email, 'isAdmin:', isAdmin);
@@ -68,26 +70,26 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onSignOut }) => {
         <DropdownMenuSeparator />
         <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--brand-2))] hover:text-white focus:bg-[hsl(var(--brand-2))] focus:text-white" onClick={() => navigate('/profile')}>
           <User className="mr-2 h-4 w-4" />
-          <span>Profil</span>
+          <span>{t('profile.menu.profile')}</span>
         </DropdownMenuItem>
         {isAdmin && (
           <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--brand-2))] hover:text-white focus:bg-[hsl(var(--brand-2))] focus:text-white" onClick={() => navigate('/admin')}>
             <Shield className="mr-2 h-4 w-4" />
-            <span>Administrateur</span>
+            <span>{t('profile.menu.admin')}</span>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--brand-2))] hover:text-white focus:bg-[hsl(var(--brand-2))] focus:text-white" onClick={() => navigate('/account-settings')}>
           <Settings className="mr-2 h-4 w-4" />
-          <span>Paramètres du compte</span>
+          <span>{t('profile.menu.accountSettings')}</span>
         </DropdownMenuItem>
         <DropdownMenuItem className="cursor-pointer hover:bg-[hsl(var(--brand-2))] hover:text-white focus:bg-[hsl(var(--brand-2))] focus:text-white" onClick={() => navigate('/change-password')}>
           <Key className="mr-2 h-4 w-4" />
-          <span>Changer le mot de passe</span>
+          <span>{t('profile.menu.changePassword')}</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600" onClick={onSignOut}>
           <LogOut className="mr-2 h-4 w-4" />
-          <span>Se déconnecter</span>
+          <span>{t('profile.menu.logout')}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

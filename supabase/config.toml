@@ -3,9 +3,6 @@ project_id = "csopyblkfyofwkeqqegd"
 [auth]
 enabled = true
 
-[functions.sync-airbnb-reservations]
-verify_jwt = true
-
 [functions.get-airbnb-reservation]
 verify_jwt = false
 
@@ -30,9 +27,6 @@ verify_jwt = true
 [functions.resolve-guest-link]
 verify_jwt = false
 
-[functions.list-guest-docs]
-verify_jwt = false
-
 [functions.save-contract-signature]
 verify_jwt = false
 
@@ -40,4 +34,13 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.submit-guest-info-unified]
+verify_jwt = false
+
+[functions.generate-police-form]
+verify_jwt = false
+
+[functions.regenerate-police-with-signature]
+verify_jwt = false
+
+[functions.send-guest-contract]
 verify_jwt = false

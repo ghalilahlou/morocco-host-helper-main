@@ -1,18 +1,10 @@
 import React from 'react';
-import { GuestLocaleProvider } from '@/i18n/GuestLocaleProvider';
 import { GuestVerification } from '@/pages/GuestVerification';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 /**
  * ✅ Wrapper stable pour GuestVerification avec nouveau design Figma
- * Évite les remontages multiples en encapsulant les providers dans un composant réutilisable
- * 
- * PROBLÈME RÉSOLU:
- * - Avant : React Router créait de nouvelles instances de GuestLocaleProvider à chaque route
- * - Après : Un seul wrapper réutilisable stable
- * 
- * ✅ AJOUT : ErrorBoundary pour éviter les pages blanches
- * ✅ NOUVEAU : Utilise GuestVerificationFigma avec le design Figma
+ * Utilise le GuestLocaleProvider global (App.tsx) pour la langue.
  */
 export const GuestVerificationPage: React.FC = () => {
   return (
@@ -34,9 +26,7 @@ export const GuestVerificationPage: React.FC = () => {
         </div>
       }
     >
-      <GuestLocaleProvider>
-        <GuestVerification />
-      </GuestLocaleProvider>
+      <GuestVerification />
     </ErrorBoundary>
   );
 };

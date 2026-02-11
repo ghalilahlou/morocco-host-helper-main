@@ -90,7 +90,8 @@ export class DocumentStorageService {
         console.warn('⚠️ Unable to generate public URL, consumers must sign the path later.');
       }
 
-      // Register the document in uploaded_documents for host visibility
+      // Register the document in uploaded_documents for host visibility (persistance pièce d'identité / contrat / police)
+      let insertError: string | undefined;
       try {
         const documentRecord = {
           booking_id: metadata.bookingId,
@@ -105,10 +106,20 @@ export class DocumentStorageService {
           updated_at: new Date().toISOString()
         };
 
-        await supabase.from('uploaded_documents').insert(documentRecord);
-        console.log('✅ Document metadata stored in uploaded_documents');
+        const { error } = await supabase.from('uploaded_documents').insert(documentRecord);
+        if (error) {
+          insertError = error.message;
+          console.warn('⚠️ Unable to insert uploaded_documents record:', error);
+        } else {
+          console.log('✅ Document metadata stored in uploaded_documents');
+        }
       } catch (dbError) {
+        insertError = dbError instanceof Error ? dbError.message : String(dbError);
         console.warn('⚠️ Unable to insert uploaded_documents record:', dbError);
+      }
+
+      if (insertError) {
+        return { success: false, error: insertError };
       }
 
       return {

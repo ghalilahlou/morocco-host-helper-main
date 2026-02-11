@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 // ✅ NOUVEAU : Fonction pour nettoyer le nom du guest récupéré depuis l'URL
@@ -125,6 +125,7 @@ export const GuestVerification = () => {
     token: string; 
     airbnbBookingId?: string; 
   }>();
+  const location = useLocation();
   
 
   // ✅ FONCTION UTILITAIRE: Validation des dates
@@ -166,6 +167,7 @@ export const GuestVerification = () => {
     nationality: '',
     documentNumber: '',
     documentType: 'passport',
+    documentIssueDate: undefined, // ✅ Date de délivrance
     profession: '',
     motifSejour: 'TOURISME',
     adressePersonnelle: '',
@@ -211,6 +213,7 @@ export const GuestVerification = () => {
         nationality: '',
         documentNumber: '',
         documentType: 'passport' as const,
+        documentIssueDate: undefined,
         profession: '',
         motifSejour: 'TOURISME' as const,
         adressePersonnelle: '',
@@ -296,6 +299,24 @@ export const GuestVerification = () => {
   const markInitializedInSession = (key: string) => {
     if (typeof window === 'undefined') return;
     sessionStorage.setItem(getSessionKey(key), 'true');
+  };
+  
+  // ✅ NOUVEAU : Stocker et récupérer le résultat de validation du token
+  const getTokenValidationResult = () => {
+    if (typeof window === 'undefined') return null;
+    const result = sessionStorage.getItem(getSessionKey('token_valid'));
+    return result === 'true' ? true : result === 'false' ? false : null;
+  };
+  const setTokenValidationResult = (isValid: boolean, propName?: string) => {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(getSessionKey('token_valid'), isValid ? 'true' : 'false');
+    if (propName) {
+      sessionStorage.setItem(getSessionKey('property_name'), propName);
+    }
+  };
+  const getStoredPropertyName = () => {
+    if (typeof window === 'undefined') return null;
+    return sessionStorage.getItem(getSessionKey('property_name'));
   };
 
   // ✅ SUPPRIMÉ : Intercepteur d'erreurs redondant - l'intercepteur global dans main.tsx gère déjà les erreurs Portal
@@ -475,6 +496,7 @@ export const GuestVerification = () => {
                 nationality: '',
                 documentNumber: '',
                 documentType: 'passport',
+                documentIssueDate: undefined,
                 profession: '',
                 motifSejour: 'TOURISME',
                 adressePersonnelle: '',
@@ -536,13 +558,30 @@ export const GuestVerification = () => {
             hasToken: !!token
           });
           
-          const { data, error } = await supabase.functions.invoke('issue-guest-link', {
-            body: {
-              action: 'resolve',
-              propertyId,
-              token
+          // ✅ NOUVEAU : Timeout de sécurité pour éviter le blocage (5 secondes)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          
+          let data, error;
+          try {
+            const response = await supabase.functions.invoke('issue-guest-link', {
+              body: {
+                action: 'resolve',
+                propertyId,
+                token
+              }
+            });
+            data = response.data;
+            error = response.error;
+            clearTimeout(timeoutId);
+          } catch (fetchError: any) {
+            clearTimeout(timeoutId);
+            if (fetchError.name === 'AbortError') {
+              console.warn('⚠️ [ICS] Timeout issue-guest-link, continuer sans données ICS');
+              return; // Continuer sans les données ICS
             }
-          });
+            throw fetchError;
+          }
 
           if (error) {
             console.error('❌ [ICS] Erreur issue-guest-link:', {
@@ -552,12 +591,8 @@ export const GuestVerification = () => {
               details: error
             });
             
-            // Afficher un toast pour informer l'utilisateur
-            toast({
-              title: "Erreur de vérification",
-              description: "Impossible de vérifier le lien. Veuillez réessayer.",
-              variant: "destructive"
-            });
+            // ✅ MODIFIÉ : Ne pas afficher de toast en cas d'erreur, continuer silencieusement
+            console.warn('⚠️ [ICS] Continuer sans données ICS');
             return;
           }
 
@@ -598,6 +633,7 @@ export const GuestVerification = () => {
                 nationality: '',
                 documentNumber: '',
                 documentType: 'passport',
+                documentIssueDate: undefined,
                 profession: '',
                 motifSejour: 'TOURISME',
                 adressePersonnelle: '',
@@ -658,6 +694,182 @@ export const GuestVerification = () => {
   }, [showCalendarPanel, showGuestsPanel]);
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
   const [currentStep, setCurrentStep] = useState<'booking' | 'documents' | 'signature'>('booking');
+  
+  // ✅ NOUVEAU : Suivi des étapes visitées pour permettre la navigation bidirectionnelle
+  const [visitedSteps, setVisitedSteps] = useState<Set<'booking' | 'documents' | 'signature'>>(new Set(['booking']));
+  
+  // ✅ NOUVEAU : Fonction pour changer d'étape et marquer comme visitée
+  const goToStep = (step: 'booking' | 'documents' | 'signature') => {
+    setCurrentStep(step);
+    setVisitedSteps(prev => new Set([...prev, step]));
+  };
+  
+  // ✅ NOUVEAU : Vérifier si une étape peut être naviguée (a été visitée)
+  const canNavigateToStep = (step: 'booking' | 'documents' | 'signature') => {
+    // On peut toujours naviguer vers l'étape actuelle
+    if (step === currentStep) return false; // Pas besoin de cliquer sur l'étape actuelle
+    // On peut naviguer vers une étape si elle a été visitée
+    return visitedSteps.has(step);
+  };
+  
+  // ✅ NOUVEAU : Persistance des données du formulaire (guests, booking, documents) pour navigation depuis Signature
+  const saveFormDataToSession = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      // Sauvegarder les guests avec conversion des dates
+      const guestsToSave = guests.map(g => ({
+        ...g,
+        dateOfBirth: g.dateOfBirth instanceof Date ? g.dateOfBirth.toISOString() : g.dateOfBirth,
+        documentIssueDate: g.documentIssueDate instanceof Date ? g.documentIssueDate.toISOString() : g.documentIssueDate
+      }));
+      sessionStorage.setItem(getSessionKey('form_guests'), JSON.stringify(guestsToSave));
+      
+      // Sauvegarder les données de réservation
+      const bookingToSave = {
+        checkInDate: checkInDate instanceof Date ? checkInDate.toISOString() : checkInDate,
+        checkOutDate: checkOutDate instanceof Date ? checkOutDate.toISOString() : checkOutDate,
+        numberOfGuests: numberOfGuests
+      };
+      sessionStorage.setItem(getSessionKey('form_booking'), JSON.stringify(bookingToSave));
+      
+      // Sauvegarder le nombre de guests
+      sessionStorage.setItem(getSessionKey('form_numberOfGuests'), String(numberOfGuests));
+      
+      // ✅ NOUVEAU : Sauvegarder les documents uploadés (convertir en base64)
+      if (uploadedDocuments.length > 0) {
+        const docsToSave = await Promise.all(uploadedDocuments.map(async (doc) => {
+          // Convertir le fichier en base64
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(doc.file);
+          });
+          
+          return {
+            fileName: doc.file.name,
+            fileType: doc.file.type,
+            fileSize: doc.file.size,
+            base64Data: base64,
+            processing: false, // Marquer comme déjà traité
+            extractedData: doc.extractedData,
+            isInvalid: doc.isInvalid
+          };
+        }));
+        sessionStorage.setItem(getSessionKey('form_documents'), JSON.stringify(docsToSave));
+        console.log('✅ [Persistance] Documents sauvegardés:', docsToSave.length);
+      }
+      
+      // Marquer que les données sont sauvegardées
+      sessionStorage.setItem(getSessionKey('form_data_saved'), 'true');
+      
+      console.log('✅ [Persistance] Données du formulaire sauvegardées:', {
+        guestsCount: guestsToSave.length,
+        booking: bookingToSave,
+        documentsCount: uploadedDocuments.length
+      });
+    } catch (error) {
+      console.error('❌ [Persistance] Erreur lors de la sauvegarde:', error);
+    }
+  }, [guests, checkInDate, checkOutDate, numberOfGuests, uploadedDocuments, getSessionKey]);
+  
+  const restoreFormDataFromSession = useCallback((): boolean => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const hasSavedData = sessionStorage.getItem(getSessionKey('form_data_saved')) === 'true';
+      if (!hasSavedData) return false;
+      
+      // Restaurer les guests
+      const savedGuests = sessionStorage.getItem(getSessionKey('form_guests'));
+      if (savedGuests) {
+        const parsedGuests = JSON.parse(savedGuests).map((g: any) => ({
+          ...g,
+          dateOfBirth: g.dateOfBirth ? new Date(g.dateOfBirth) : undefined,
+          documentIssueDate: g.documentIssueDate ? new Date(g.documentIssueDate) : undefined
+        }));
+        setGuests(parsedGuests);
+        console.log('✅ [Persistance] Guests restaurés:', parsedGuests.length);
+      }
+      
+      // Restaurer les données de réservation
+      const savedBooking = sessionStorage.getItem(getSessionKey('form_booking'));
+      if (savedBooking) {
+        const parsedBooking = JSON.parse(savedBooking);
+        if (parsedBooking.checkInDate) {
+          setCheckInDate(new Date(parsedBooking.checkInDate));
+        }
+        if (parsedBooking.checkOutDate) {
+          setCheckOutDate(new Date(parsedBooking.checkOutDate));
+        }
+        if (parsedBooking.numberOfGuests) {
+          setNumberOfGuests(parsedBooking.numberOfGuests);
+        }
+        console.log('✅ [Persistance] Booking restauré:', parsedBooking);
+      }
+      
+      // Restaurer le nombre de guests
+      const savedNumberOfGuests = sessionStorage.getItem(getSessionKey('form_numberOfGuests'));
+      if (savedNumberOfGuests) {
+        setNumberOfGuests(parseInt(savedNumberOfGuests, 10));
+      }
+      
+      // ✅ NOUVEAU : Restaurer les documents uploadés
+      const savedDocuments = sessionStorage.getItem(getSessionKey('form_documents'));
+      if (savedDocuments) {
+        const parsedDocs = JSON.parse(savedDocuments);
+        const restoredDocs: UploadedDocument[] = parsedDocs.map((doc: any) => {
+          // Convertir le base64 en Blob puis en File
+          const byteString = atob(doc.base64Data.split(',')[1]);
+          const mimeType = doc.fileType;
+          const ab = new ArrayBuffer(byteString.length);
+          const ia = new Uint8Array(ab);
+          for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+          }
+          const blob = new Blob([ab], { type: mimeType });
+          const file = new File([blob], doc.fileName, { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          
+          return {
+            file,
+            url,
+            processing: false,
+            extractedData: doc.extractedData,
+            isInvalid: doc.isInvalid
+          };
+        });
+        setUploadedDocuments(restoredDocs);
+        console.log('✅ [Persistance] Documents restaurés:', restoredDocs.length);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ [Persistance] Erreur lors de la restauration:', error);
+      return false;
+    }
+  }, [getSessionKey]);
+  
+  // ✅ NOUVEAU : Gérer la navigation depuis la page de signature
+  useEffect(() => {
+    const navState = (location as any)?.state;
+    if (navState?.fromSignaturePage && navState?.targetStep) {
+      const targetStep = navState.targetStep as 'booking' | 'documents' | 'signature';
+      console.log('✅ [Navigation] Retour depuis la page de signature vers:', targetStep);
+      
+      // Marquer toutes les étapes comme visitées (car on vient de la page signature)
+      setVisitedSteps(new Set(['booking', 'documents', 'signature']));
+      
+      // ✅ NOUVEAU : Restaurer les données du formulaire depuis sessionStorage
+      const restored = restoreFormDataFromSession();
+      console.log('✅ [Navigation] Données restaurées depuis sessionStorage:', restored);
+      
+      // Naviguer vers l'étape cible
+      setCurrentStep(targetStep);
+      
+      // ✅ IMPORTANT : Nettoyer le state pour éviter les navigations répétées
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   // Étapes pour le stepper
   const steps = [
@@ -696,6 +908,8 @@ export const GuestVerification = () => {
       // ✅ CRITIQUE : Garde global pour éviter les doubles exécutions (Strict Mode / Hydratation SSR)
       if (hasInitializedTokenRef.current) {
         console.log('✅ [Token] Déjà initialisé (useRef), ignoré');
+        // ✅ CORRIGÉ : S'assurer que checkingToken est false pour afficher la page
+        setCheckingToken(false);
         return;
       }
       
@@ -703,10 +917,23 @@ export const GuestVerification = () => {
       if (hasInitializedInSession('token')) {
         console.log('✅ [Token] Déjà initialisé (sessionStorage), ignoré');
         hasInitializedTokenRef.current = true; // Synchroniser le ref
-        // ✅ CRITIQUE : Si déjà validé, ne pas re-vérifier mais mettre à jour l'état
-        if (isValidToken) {
-          setCheckingToken(false);
+        
+        // ✅ CORRIGÉ : Récupérer le résultat de validation depuis sessionStorage
+        const cachedValidation = getTokenValidationResult();
+        const cachedPropertyName = getStoredPropertyName();
+        
+        console.log('✅ [Token] Résultat caché:', { cachedValidation, cachedPropertyName });
+        
+        if (cachedValidation !== null) {
+          setIsValidToken(cachedValidation);
+          if (cachedPropertyName) {
+            setPropertyName(cachedPropertyName);
+          }
+        } else {
+          // Si pas de résultat caché, supposer valide car déjà vérifié
+          setIsValidToken(true);
         }
+        setCheckingToken(false);
         return;
       }
       
@@ -724,6 +951,11 @@ export const GuestVerification = () => {
 
       console.log('🔍 GuestVerification params:', { propertyId, token, airbnbBookingId });
 
+      // ✅ NOUVEAU : Timeout de sécurité pour éviter le blocage infini
+      const timeoutPromise = new Promise<{ timeout: true }>((resolve) => {
+        setTimeout(() => resolve({ timeout: true }), 8000); // 8 secondes max
+      });
+
       try {
         // ✅ NOUVEAU : Vérifier d'abord si c'est un token de test
         if (TEST_TOKENS_CONFIG.enabled && isTestToken(token)) {
@@ -733,29 +965,58 @@ export const GuestVerification = () => {
           const testValidation = await validateToken(token, propertyId);
           if (testValidation.isValid && testValidation.isTestToken) {
             console.log('✅ Token de test valide, utilisation des données de test');
+            const propName = 'Propriété de Test - ' + propertyId;
             setIsValidToken(true);
-            setPropertyName('Propriété de Test - ' + propertyId);
+            setPropertyName(propName);
+            setTokenValidationResult(true, propName); // ✅ Sauvegarder le résultat
             setCheckingToken(false);
             return;
           }
         }
 
-        // ✅ CORRECTION : Utilisation de la validation directe
+        // ✅ CORRECTION : Utilisation de la validation directe avec timeout
         console.log('🔍 Validation directe du token...');
         
-        const validationResult = await validateTokenDirect(propertyId, token);
+        const validationPromise = validateTokenDirect(propertyId, token);
+        const result = await Promise.race([validationPromise, timeoutPromise]);
+        
+        // ✅ Vérifier si c'est un timeout
+        if ('timeout' in result && result.timeout) {
+          console.warn('⚠️ [Token] Timeout de validation, tentative de continuer...');
+          // En cas de timeout, on essaie quand même de valider en arrière-plan
+          // mais on affiche la page pour ne pas bloquer l'utilisateur
+          const defaultName = 'Votre hébergement';
+          setIsValidToken(true); // Permettre l'accès en cas de timeout
+          setPropertyName(defaultName);
+          setTokenValidationResult(true, defaultName); // ✅ Sauvegarder le résultat
+          setCheckingToken(false);
+          
+          // Continuer la validation en arrière-plan
+          validationPromise.then((validationResult) => {
+            if (validationResult.isValid && validationResult.propertyData) {
+              setPropertyName(validationResult.propertyData.name || 'Property');
+            }
+          }).catch(console.error);
+          return;
+        }
+        
+        const validationResult = result as Awaited<ReturnType<typeof validateTokenDirect>>;
         
         if (validationResult.isValid && validationResult.propertyData) {
           console.log('✅ Token validé avec succès');
+          const propName = validationResult.propertyData.name || 'Property';
           setIsValidToken(true);
-          setPropertyName(validationResult.propertyData.name || 'Property');
+          setPropertyName(propName);
+          setTokenValidationResult(true, propName); // ✅ Sauvegarder le résultat
         } else {
           console.error('❌ Token invalide:', validationResult.error);
+          setTokenValidationResult(false); // ✅ Sauvegarder l'échec aussi
           setIsValidToken(false);
         }
         
       } catch (error) {
         console.error('Error verifying token:', error);
+        setTokenValidationResult(false); // ✅ Sauvegarder l'échec
         setIsValidToken(false);
       } finally {
         setCheckingToken(false);
@@ -859,6 +1120,7 @@ export const GuestVerification = () => {
       nationality: '',
       documentNumber: '',
       documentType: 'passport',
+      documentIssueDate: undefined,
       profession: '',
       motifSejour: 'TOURISME',
       adressePersonnelle: '',
@@ -1075,6 +1337,7 @@ export const GuestVerification = () => {
                 nationality: extractedData.nationality || '',
                 documentNumber: extractedData.documentNumber || '',
                 documentType: (extractedData.documentType as 'passport' | 'national_id') || 'passport',
+                documentIssueDate: extractedData.documentIssueDate ? new Date(extractedData.documentIssueDate) : undefined,
                 profession: '',
                 motifSejour: 'TOURISME',
                 adressePersonnelle: '',
@@ -1132,6 +1395,41 @@ export const GuestVerification = () => {
                 }
               } else {
                 console.warn('⚠️ Impossible de parser la date de naissance:', extractedData.dateOfBirth);
+              }
+            }
+            
+            // ✅ NOUVEAU : Parsing de la date de délivrance du document
+            if (extractedData.documentIssueDate) {
+              let parsedIssueDate: Date | null = null;
+              
+              // Tentative 1: Direct parsing
+              parsedIssueDate = new Date(extractedData.documentIssueDate);
+              if (isNaN(parsedIssueDate.getTime())) {
+                // Tentative 2: Format ISO (YYYY-MM-DD)
+                const isoMatch = extractedData.documentIssueDate.match(/(\d{4})-(\d{2})-(\d{2})/);
+                if (isoMatch) {
+                  parsedIssueDate = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+                } else {
+                  // Tentative 3: Format DD/MM/YYYY ou DD-MM-YYYY
+                  const ddmmyyyyMatch = extractedData.documentIssueDate.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
+                  if (ddmmyyyyMatch) {
+                    parsedIssueDate = new Date(parseInt(ddmmyyyyMatch[3]), parseInt(ddmmyyyyMatch[2]) - 1, parseInt(ddmmyyyyMatch[1]));
+                  }
+                }
+              }
+              
+              if (parsedIssueDate && !isNaN(parsedIssueDate.getTime())) {
+                // Vérifier que la date est raisonnable (pas dans le futur, pas trop ancienne)
+                const now = new Date();
+                const minDate = new Date(1990, 0, 1); // Les documents sont rarement délivrés avant 1990
+                if (parsedIssueDate <= now && parsedIssueDate >= minDate) {
+                  targetGuest.documentIssueDate = parsedIssueDate;
+                  console.log('✅ Date de délivrance extraite et mise à jour:', format(parsedIssueDate, 'dd/MM/yyyy'));
+                } else {
+                  console.warn('⚠️ Date de délivrance invalide (hors limites):', parsedIssueDate);
+                }
+              } else {
+                console.warn('⚠️ Impossible de parser la date de délivrance:', extractedData.documentIssueDate);
               }
             }
             
@@ -1205,6 +1503,7 @@ export const GuestVerification = () => {
           nationality: '',
           documentNumber: '',
           documentType: 'passport',
+          documentIssueDate: undefined,
           profession: '',
           motifSejour: 'TOURISME',
           adressePersonnelle: '',
@@ -1485,6 +1784,7 @@ export const GuestVerification = () => {
         idType: firstGuest?.documentType || 'passport',
         idNumber: firstGuest?.documentNumber || '',
         dateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined,
+        documentIssueDate: firstGuest?.documentIssueDate ? format(firstGuest.documentIssueDate, 'yyyy-MM-dd') : undefined, // ✅ Date de délivrance
         profession: professionInput?.value || firstGuest?.profession || '',
         motifSejour: firstGuestMotif, // ✅ VALIDATION STRICTE : Utiliser la valeur validée
         adressePersonnelle: adresseInput?.value || firstGuest?.adressePersonnelle || ''
@@ -1788,6 +2088,11 @@ export const GuestVerification = () => {
         // ✅ Navigation immédiate - Plus de Select Radix UI = plus besoin de fermeture de Portals
         setIsLoading(false);
         
+        // ✅ NOUVEAU : Sauvegarder les données du formulaire AVANT la navigation
+        // Cela permet de restaurer les données si l'utilisateur revient depuis la page de signature
+        await saveFormDataToSession();
+        console.log('✅ [Navigation] Données du formulaire sauvegardées avant navigation vers signature');
+        
         // ✅ CORRIGÉ : Petit délai pour s'assurer que localStorage est bien écrit (important pour Vercel)
         await new Promise(resolve => setTimeout(resolve, 50));
         
@@ -1870,6 +2175,14 @@ export const GuestVerification = () => {
           >
             Vérification du lien...
           </motion.p>
+          <motion.p 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.7 }}
+            transition={{ delay: 2 }}
+            className="text-sm text-muted-foreground mt-2"
+          >
+            Chargement en cours...
+          </motion.p>
         </motion.div>
       </div>
     );
@@ -1929,11 +2242,15 @@ export const GuestVerification = () => {
       return;
     }
 
-    setCurrentStep('documents');
+    goToStep('documents'); // ✅ CORRIGÉ : Utiliser goToStep pour marquer comme visitée
   };
 
   const handlePrevStep = () => {
-    setCurrentStep('booking');
+    if (currentStep === 'signature') {
+      goToStep('documents'); // ✅ CORRIGÉ : Utiliser goToStep
+    } else if (currentStep === 'documents') {
+      goToStep('booking'); // ✅ CORRIGÉ : Utiliser goToStep
+    }
   };
 
   // ✅ NOUVEAU : Afficher l'erreur de soumission au lieu de rediriger
@@ -1976,7 +2293,7 @@ export const GuestVerification = () => {
                 <Button 
                   onClick={() => {
                     setSubmissionError(null);
-                    setCurrentStep('booking');
+                    goToStep('booking'); // ✅ CORRIGÉ : Utiliser goToStep
                   }}
                   className="w-full bg-red-600 hover:bg-red-700"
                   size="lg"
@@ -2041,7 +2358,10 @@ export const GuestVerification = () => {
                     const url = airbnbBookingId ? `${baseUrl}/${airbnbBookingId}` : baseUrl;
                     navigate(url);
                   }}
-                  className="w-full bg-green-600 hover:bg-green-700"
+                  className="w-full text-white font-semibold transition-all"
+                  style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
                   size="lg"
                 >
                   <FileText className="w-5 h-5 mr-2" />
@@ -2058,7 +2378,7 @@ export const GuestVerification = () => {
   const currentStepIndex = ['booking', 'documents', 'signature'].indexOf(currentStep);
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row" style={{ backgroundColor: '#FDFDF9' }}>
+    <div className="min-h-screen flex flex-col md:flex-row items-start" style={{ backgroundColor: '#FDFDF9' }}>
       
       {/* ========================================
           MOBILE HEADER - Visible uniquement sur mobile
@@ -2144,7 +2464,7 @@ export const GuestVerification = () => {
         }}
       >
         {/* Logo Section - CENTRÉ */}
-        <div className="flex flex-col items-center" style={{ marginBottom: '80px' }}>
+        <div className="flex flex-col items-center" style={{ marginBottom: '72px' }}>
           <div className="flex items-center gap-3 mb-4">
             <img 
               src="/lovable-uploads/Checky simple - fond transparent.png" 
@@ -2171,13 +2491,13 @@ export const GuestVerification = () => {
             letterSpacing: '-0.5px',
             color: '#0BD9D0',
             textAlign: 'center'
-          }}>Le check-in digitalisé</p>
+          }}>{t('guestVerification.slogan')}</p>
         </div>
         
         {currentStep === 'booking' && (
           <>
-            {/* Premier paragraphe - Réservation */}
-            <div>
+            {/* Premier paragraphe - Réservation (commence par "Votre réservation") */}
+            <div style={{ textAlign: 'left' }}>
               <p style={{ 
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 400,
@@ -2186,10 +2506,10 @@ export const GuestVerification = () => {
                 letterSpacing: '-0.5px',
                 color: '#FFFFFF',
                 width: '309px',
-                marginBottom: '0'
+                marginBottom: '0',
+                textAlign: 'left'
               }}>
-                Votre réservation{propertyName ? ` à ${propertyName}` : ''} approche à grand pas. 
-                Réalisez votre check-in en quelques minutes.
+                {t('guestVerification.reservationIntro', { property: propertyName ? t('guestVerification.reservationIntroProperty', { propertyName }) : '' })}
               </p>
             </div>
             
@@ -2207,8 +2527,7 @@ export const GuestVerification = () => {
                 color: '#FFFFFF',
                 width: '309px'
               }}>
-                Notre engagement : vos documents sont conservés conforméments aux exigences légales, 
-                transmis de manière sécurisée et accessibles uniquement par les parties concernées.
+                {t('guestVerification.commitment')}
               </p>
             </div>
           </>
@@ -2217,7 +2536,10 @@ export const GuestVerification = () => {
         {currentStep === 'documents' && (
           <>
             {/* Upload icon header */}
-            <div className="flex items-center gap-3 mt-8 mb-4">
+            <div 
+              className="flex items-center gap-3 mb-4"
+              style={{ marginTop: '-40px' }}
+            >
               <Upload className="w-7 h-7" style={{ color: '#F3F3F3' }} />
               <h2 style={{
                 fontFamily: 'Fira Sans Condensed, sans-serif',
@@ -2225,7 +2547,7 @@ export const GuestVerification = () => {
                 fontSize: '30px',
                 lineHeight: '36px',
                 color: '#FFFFFF'
-              }}>Documents d'identité</h2>
+              }}>{t('guestVerification.identityDocuments')}</h2>
             </div>
 
             {/* Upload Zone - Dark Theme matching Figma */}
@@ -2308,8 +2630,8 @@ export const GuestVerification = () => {
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '48px' }}>
                 <button
                   style={{
-                    background: '#7DCAB5',
-                    borderRadius: '4px',
+                    background: 'rgba(85, 186, 159, 0.8)',
+                    borderRadius: '8px',
                     padding: '8px 16px',
                     fontFamily: 'Inter, sans-serif',
                     fontWeight: 500,
@@ -2317,8 +2639,11 @@ export const GuestVerification = () => {
                     lineHeight: '19px',
                     color: '#FFFFFF',
                     border: 'none',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    transition: 'background 0.2s'
                   }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#55BA9F'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(85, 186, 159, 0.8)'; }}
                   onClick={(e) => {
                     e.stopPropagation();
                     const input = document.createElement('input');
@@ -2341,7 +2666,7 @@ export const GuestVerification = () => {
               
               {uploadedDocuments.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-sm font-medium mb-3 text-white">Documents téléchargés ({uploadedDocuments.length})</h3>
+                  <h3 className="text-sm font-medium mb-3 text-white">{t('guestVerification.docsUploadedCount', { count: uploadedDocuments.length })}</h3>
                   <div className="space-y-2">
                     {uploadedDocuments.map((doc, index) => (
                       <div key={index} className="flex items-center gap-3 p-3 rounded-lg relative group" style={{ backgroundColor: '#1E1E1E' }}>
@@ -2395,8 +2720,7 @@ export const GuestVerification = () => {
             
             <div className="mt-auto">
               <p className="text-gray-300 text-sm">
-                Notre engagement : vos documents sont conservés conformément aux exigences légales, 
-                transmis de manière sécurisée et accessibles uniquement par les parties concernées.
+                {t('guestVerification.commitment')}
               </p>
             </div>
           </>
@@ -2408,8 +2732,7 @@ export const GuestVerification = () => {
             
             <div className="mt-auto">
               <p className="text-gray-300 text-sm">
-                Notre engagement : vos documents sont conservés conformément aux exigences légales, 
-                transmis de manière sécurisée et accessibles uniquement par les parties concernées.
+                {t('guestVerification.commitment')}
               </p>
             </div>
           </>
@@ -2438,8 +2761,28 @@ export const GuestVerification = () => {
         
         {/* Progress Steps - Matching Figma design */}
         <div className="px-6 pb-8 flex items-start justify-center gap-16">
-          {/* Step 1: Réservation */}
-          <div className="flex flex-col items-center">
+          {/* Step 1: Réservation - Cliquable si déjà visitée et pas l'étape actuelle */}
+          <div 
+            className="flex flex-col items-center"
+            onClick={() => {
+              if (canNavigateToStep('booking')) {
+                goToStep('booking');
+              }
+            }}
+            style={{
+              cursor: canNavigateToStep('booking') ? 'pointer' : 'default',
+              opacity: 1,
+              transition: 'opacity 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              if (canNavigateToStep('booking')) {
+                e.currentTarget.style.opacity = '0.8';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1';
+            }}
+          >
             <div 
               style={{
                 width: '54px',
@@ -2469,7 +2812,7 @@ export const GuestVerification = () => {
               textAlign: 'center',
               flexDirection: 'column'
             }}>
-              <span>Réservation</span>
+              <span>{t('guestVerification.stepBooking')}</span>
               {currentStep === 'booking' && (
                 <div style={{
                   width: '100%',
@@ -2481,18 +2824,36 @@ export const GuestVerification = () => {
             </span>
           </div>
           
-          {/* Step 2: Documents d'identité */}
-          <div className="flex flex-col items-center">
+          {/* Step 2: Documents d'identité - Cliquable si déjà visitée et pas l'étape actuelle */}
+          <div 
+            className="flex flex-col items-center"
+            onClick={() => {
+              if (canNavigateToStep('documents')) {
+                goToStep('documents');
+              }
+            }}
+            style={{
+              cursor: canNavigateToStep('documents') ? 'pointer' : 'default',
+              opacity: 1,
+              transition: 'opacity 0.2s ease'
+            }}
+            onMouseEnter={(e) => {
+              if (canNavigateToStep('documents')) {
+                e.currentTarget.style.opacity = '0.8';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1';
+            }}
+          >
             <div 
               style={{
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
                 background: currentStep === 'documents'
-                  ? '#8EE7E4'  // Turquoise quand actif
-                  : currentStep === 'signature'
-                  ? '#D7EFED'  // Turquoise clair quand complété
-                  : 'rgba(71, 155, 162, 0.4)', // Gris turquoise pour inactif
+                  ? '#55BA9F'  // Même couleur sélection foncée que Réservation
+                  : 'rgba(85, 186, 159, 0.42)', // Même couleur claire que Réservation (complété/inactif)
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -2514,7 +2875,7 @@ export const GuestVerification = () => {
               textAlign: 'center',
               flexDirection: 'column'
             }}>
-              <span>Documents</span>
+              <span>{t('guestVerification.stepDocuments')}</span>
               {currentStep === 'documents' && (
                 <div style={{
                   width: '100%',
@@ -2526,16 +2887,22 @@ export const GuestVerification = () => {
             </span>
           </div>
           
-          {/* Step 3: Signature */}
-          <div className="flex flex-col items-center">
+          {/* Step 3: Signature - Jamais cliquable (dernière étape) */}
+          <div 
+            className="flex flex-col items-center"
+            style={{
+              cursor: 'default',
+              opacity: 1
+            }}
+          >
             <div 
               style={{
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
                 background: currentStep === 'signature'
-                  ? 'rgba(80, 172, 180, 0.8)'  // #50ACB4 à 80% quand actif
-                  : 'rgba(71, 155, 162, 0.4)', // #479BA2 à 40% quand pas encore atteint
+                  ? '#55BA9F'  // Même couleur sélection foncée que Réservation
+                  : 'rgba(85, 186, 159, 0.42)', // Même couleur claire que Réservation (inactif)
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -2557,7 +2924,7 @@ export const GuestVerification = () => {
               textAlign: 'center',
               flexDirection: 'column'
             }}>
-              <span>Signature</span>
+              <span>{t('guestVerification.stepSignature')}</span>
               {currentStep === 'signature' && (
                 <div style={{
                   width: '100%',
@@ -2586,7 +2953,7 @@ export const GuestVerification = () => {
                         isMobile ? 'text-xl mb-4 mt-2' : 'text-3xl mb-8'
                       }`}
                     >
-                      {isMobile ? 'Votre check-in' : 'Votre check-in commence ici'}
+                      {isMobile ? t('guestVerification.checkinShort') : t('guestVerification.checkinStartsHere')}
                     </motion.h2>
                     
                     {/* Central Search Bar - Responsive */}
@@ -2598,71 +2965,61 @@ export const GuestVerification = () => {
                         className={`bg-white rounded-2xl border border-gray-200 shadow-lg transition-all duration-300 ${
                           isMobile 
                             ? 'p-4 flex flex-col gap-3' 
-                            : 'p-5 flex items-end gap-4 hover:shadow-xl'
+                            : 'p-5 grid grid-cols-[1fr_1fr_1fr_auto] items-start gap-x-8 gap-y-0 hover:shadow-xl'
                         }`}
                       >
-                        {/* Zone 1: Hébergement */}
-                        <div className={`cursor-default ${
+                        {/* Zone 1: Hébergement - colonne égale */}
+                        <div className={`cursor-default text-left ${
                           isMobile 
                             ? 'p-3 bg-gray-50 rounded-xl border border-gray-100' 
-                            : 'flex-1'
+                            : 'min-w-0'
                         }`}>
-                          <Label className={`text-gray-500 block font-normal uppercase tracking-wide ${
-                            isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'
-                          }`}>Hébergement</Label>
-                          <div className={`font-semibold text-gray-900 ${
-                            isMobile ? 'text-base' : 'text-lg'
-                          }`}>{propertyName || 'Propriété'}</div>
+                          <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelAccommodation')}</Label>
+                          <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>{propertyName || t('guestVerification.propertyFallback')}</div>
                         </div>
                         
-                        {/* Zone 2: Quand ? - Cliquable */}
+                        {/* Zone 2: Quand ? - Cliquable, même alignement */}
                         <div 
-                          className={`cursor-pointer transition-colors ${
+                          className={`cursor-pointer transition-colors text-left ${
                             isMobile 
                               ? 'p-3 bg-gray-50 rounded-xl border border-gray-100 active:bg-gray-100' 
-                              : 'flex-1 hover:bg-gray-50 rounded-lg p-2 -m-2'
+                              : 'min-w-0 hover:bg-gray-50 rounded-lg p-2 -m-2'
                           }`}
                           onClick={() => {
                             setShowCalendarPanel(!showCalendarPanel);
                             setShowGuestsPanel(false);
                           }}
                         >
-                          <Label className={`text-gray-500 block font-normal uppercase tracking-wide ${
-                            isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'
-                          }`}>Quand ?</Label>
-                          <div className={`font-semibold text-gray-900 ${
-                            isMobile ? 'text-base' : 'text-lg'
-                          }`}>
+                          <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWhen')}</Label>
+                          <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>
                             {checkInDate && checkOutDate 
                               ? isMobile 
                                 ? `${format(checkInDate, 'dd/MM')} → ${format(checkOutDate, 'dd/MM/yy')}`
                                 : `${format(checkInDate, 'dd/MM/yyyy')} - ${format(checkOutDate, 'dd/MM/yyyy')}`
-                              : 'Sélectionner les dates'
+                              : t('guestVerification.selectDates')
                             }
                           </div>
                         </div>
                         
-                        {/* Zone 3: Qui ? - Cliquable */}
+                        {/* Zone 3: Qui ? - Cliquable, poussé vers la droite */}
                         <div 
-                          className={`cursor-pointer transition-colors relative ${
+                          className={`cursor-pointer transition-colors relative text-left ${
                             isMobile 
                               ? 'p-3 bg-gray-50 rounded-xl border border-gray-100 active:bg-gray-100' 
-                              : 'flex-1 hover:bg-gray-50 rounded-lg p-2 -m-2'
+                              : 'min-w-0 hover:bg-gray-50 rounded-lg p-2 -m-2 ml-12'
                           }`}
                           onClick={() => {
                             setShowGuestsPanel(!showGuestsPanel);
                             setShowCalendarPanel(false);
                           }}
                         >
-                          <Label className={`text-gray-500 block font-normal uppercase tracking-wide ${
-                            isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'
-                          }`}>Qui ?</Label>
-                          <div className={`font-semibold text-gray-900 ${
-                            isMobile ? 'text-base' : 'text-lg'
-                          }`}>
+                          <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWho')}</Label>
+                          <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>
                             {numberOfAdults + numberOfChildren > 0 
-                              ? `${numberOfAdults + numberOfChildren} voyageur${numberOfAdults + numberOfChildren > 1 ? 's' : ''}`
-                              : 'Nombre de voyageurs'
+                              ? (numberOfAdults + numberOfChildren > 1 
+                                  ? t('guestVerification.travelersCountPlural', { count: numberOfAdults + numberOfChildren }) 
+                                  : t('guestVerification.travelersCount', { count: numberOfAdults + numberOfChildren }))
+                              : t('guestVerification.numberOfTravelers')
                             }
                           </div>
                           
@@ -2839,10 +3196,10 @@ export const GuestVerification = () => {
                         {/* Zone 4: Bouton continuer - Desktop seulement */}
                         {!isMobile && (
                           <Button
-                            className="w-14 h-14 rounded-full text-white flex-shrink-0 shadow-lg hover:shadow-xl transition-all"
-                            style={{ backgroundColor: '#7DCAB5' }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#6BB9A5'}
-                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7DCAB5'}
+                            className="w-14 h-14 rounded-lg text-white flex-shrink-0 shadow-lg hover:shadow-xl transition-all"
+                            style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
                             onClick={handleNextStep}
                           >
                             <ArrowRight className="w-6 h-6" />
@@ -2926,7 +3283,10 @@ export const GuestVerification = () => {
                               
                               {/* Bouton Confirmer */}
                               <Button
-                                className="w-full mt-6 mobile-btn-primary"
+                                className="w-full mt-6 text-white font-semibold transition-all"
+                                style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
                                 onClick={() => setShowGuestsPanel(false)}
                               >
                                 Confirmer
@@ -2947,8 +3307,12 @@ export const GuestVerification = () => {
                         >
                           <div className="bg-white rounded-xl shadow-2xl p-6">
                             <div className="mb-4 text-center">
-                              <h3 className="text-xl font-bold text-gray-900 mb-2">Sélectionnez vos dates</h3>
-                              <p className="text-sm text-gray-600">Choisissez vos dates d'arrivée et de départ</p>
+                              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                {t('guest.calendar.selectTitle')}
+                              </h3>
+                              <p className="text-sm text-gray-600">
+                                {t('guest.calendar.selectSubtitle')}
+                              </p>
                             </div>
                             
                             <EnhancedCalendar
@@ -2971,21 +3335,40 @@ export const GuestVerification = () => {
                       
                     </div>
                     
-                    {/* Bouton Suivant - Bas à droite */}
+                    {/* Boutons Navigation - Bas */}
                     <motion.div 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.3 }}
-                      className="flex justify-end pt-24"
+                      className="flex justify-between items-center pt-24 gap-4"
                     >
+                      {/* Bouton Précédent - Masqué sur la première étape */}
+                      {currentStep !== 'booking' && (
+                        <Button
+                          className="px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all"
+                          style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px', border: 'none', color: '#040404' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
+                          onClick={handlePrevStep}
+                        >
+                          <ArrowLeft className="w-4 h-4 mr-2" />
+                          {t('guest.navigation.previous')}
+                        </Button>
+                      )}
+                      
+                      {/* Spacer pour pousser le bouton Suivant à droite si pas de Précédent */}
+                      {currentStep === 'booking' && <div />}
+                      
+                      {/* Bouton Suivant */}
                       <Button
-                        className="text-white px-8 py-3 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
-                        style={{ backgroundColor: '#7DCAB5' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#6BB9A5'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#7DCAB5'}
+                        className="text-white px-8 py-3 font-semibold shadow-md hover:shadow-lg transition-all ml-auto"
+                        style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
                         onClick={handleNextStep}
                       >
-                        Suivant
+                        {t('guest.navigation.next')}
+                        <ArrowRight className="w-4 h-4 ml-2" />
                       </Button>
                     </motion.div>
                   </div>
@@ -3008,7 +3391,7 @@ export const GuestVerification = () => {
                         fontSize: '30px',
                         lineHeight: '36px',
                         color: '#040404'
-                      }}>Informations des voyageurs</h2>
+                      }}>{t('guestVerification.travelerInfo')}</h2>
                     </div>
                     <p style={{
                       fontFamily: 'Inter, sans-serif',
@@ -3168,6 +3551,40 @@ export const GuestVerification = () => {
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
+                                      Date de délivrance
+                                    </Label>
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <Button 
+                                          variant="outline" 
+                                          className={`w-full justify-start text-left h-12 border-2 transition-all duration-200 ${
+                                            guest.documentIssueDate 
+                                              ? 'border-brand-teal/50 bg-brand-teal/5 hover:bg-brand-teal/10 hover:border-brand-teal shadow-sm' 
+                                              : 'border-gray-300 hover:border-primary/50 hover:bg-gray-50'
+                                          } focus-visible:ring-2 focus-visible:ring-brand-teal/20 focus-visible:ring-offset-2`}
+                                        >
+                                          <CalendarIcon className={`mr-3 h-5 w-5 ${guest.documentIssueDate ? 'text-brand-teal' : 'text-gray-400'}`} />
+                                          <span className={guest.documentIssueDate ? 'text-gray-900 font-medium' : 'text-gray-500'}>
+                                            {guest.documentIssueDate 
+                                              ? format(guest.documentIssueDate, 'dd/MM/yyyy') 
+                                              : 'Sélectionner une date'}
+                                          </span>
+                                        </Button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-auto p-0 border-2 border-brand-teal/20 shadow-xl bg-[#FDFDF9]">
+                                        <Calendar
+                                          mode="single"
+                                          selected={guest.documentIssueDate ? new Date(guest.documentIssueDate) : undefined}
+                                          onSelect={(date) => updateGuest(index, 'documentIssueDate', date)}
+                                          initialFocus
+                                          className="rounded-md"
+                                        />
+                                      </PopoverContent>
+                                    </Popover>
+                                  </div>
+                                  
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
                                       Profession
                                     </Label>
                                     <input
@@ -3259,10 +3676,42 @@ export const GuestVerification = () => {
                     {/* Footer navigation - matching Figma */}
                     <div style={{ 
                       display: 'flex', 
-                      justifyContent: 'flex-end', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
                       paddingTop: '32px', 
-                      marginTop: '32px' 
+                      marginTop: '32px',
+                      gap: '16px'
                     }}>
+                      {/* Bouton Précédent */}
+                      <button
+                        onClick={handlePrevStep}
+                        style={{
+                          minWidth: '120px',
+                          height: '44px',
+                          background: 'rgba(85, 186, 159, 0.8)',
+                          boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                          borderRadius: '8px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: 500,
+                          fontSize: '16px',
+                          lineHeight: '28px',
+                          color: '#040404',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#55BA9F'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(85, 186, 159, 0.8)'; }}
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        {t('guest.navigation.previous')}
+                      </button>
+                      
+                      {/* Bouton Suivant */}
                       <button
                         onClick={(e) => {
                           if (isSubmittingRef.current || isProcessingRef.current || isLoading || navigationInProgressRef.current) {
@@ -3277,13 +3726,13 @@ export const GuestVerification = () => {
                         }}
                         disabled={isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current}
                         style={{
-                          width: '104px',
+                          minWidth: '120px',
                           height: '44px',
-                          background: 'rgba(85, 186, 159, 0.76)',
+                          background: 'rgba(85, 186, 159, 0.8)',
                           boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)',
-                          borderRadius: '6px',
+                          borderRadius: '8px',
                           border: 'none',
-                          cursor: 'pointer',
+                          cursor: isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current ? 'not-allowed' : 'pointer',
                           fontFamily: 'Inter, sans-serif',
                           fontWeight: 500,
                           fontSize: '16px',
@@ -3292,10 +3741,21 @@ export const GuestVerification = () => {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          gap: '10px'
+                          gap: '8px',
+                          opacity: isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current ? 0.6 : 1,
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isLoading && !isSubmittingRef.current && !isProcessingRef.current && !navigationInProgressRef.current) {
+                            e.currentTarget.style.background = '#55BA9F';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'rgba(85, 186, 159, 0.8)';
                         }}
                       >
-                        Suivant
+                        {t('guest.navigation.next')}
+                        <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
                   </motion.div>
@@ -3309,8 +3769,8 @@ export const GuestVerification = () => {
                     exit={{ opacity: 0, x: -20 }}
                     className="max-w-4xl mx-auto"
                   >
-                    <h2 className="text-3xl font-bold mb-6">Signature du contrat</h2>
-                    <p className="text-gray-600 mb-6">Veuillez lire et signer le contrat ci-dessous.</p>
+                    <h2 className="text-3xl font-bold mb-6">{t('guestVerification.signatureTitle')}</h2>
+                    <p className="text-gray-600 mb-6">{t('guestVerification.signatureIntro')}</p>
                     
                     {/* Contract content placeholder - keep existing signature logic */}
                     <div className="bg-gray-50 rounded-lg p-6 mb-6 border border-gray-200">
@@ -3328,9 +3788,50 @@ export const GuestVerification = () => {
                             className="w-4 h-4"
                             required
                           />
-                          <span>J'accepte les termes et conditions du contrat</span>
+                          <span>{t('guestVerification.acceptTerms')}</span>
                         </Label>
                       </div>
+                    </div>
+                    
+                    {/* Footer navigation */}
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      paddingTop: '32px', 
+                      marginTop: '32px',
+                      gap: '16px'
+                    }}>
+                      {/* Bouton Précédent */}
+                      <button
+                        onClick={handlePrevStep}
+                        style={{
+                          minWidth: '120px',
+                          height: '44px',
+                          background: 'rgba(85, 186, 159, 0.8)',
+                          boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                          borderRadius: '8px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontFamily: 'Inter, sans-serif',
+                          fontWeight: 500,
+                          fontSize: '16px',
+                          lineHeight: '28px',
+                          color: '#040404',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#55BA9F'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(85, 186, 159, 0.8)'; }}
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        {t('guest.navigation.previous')}
+                      </button>
+                      
+                      {/* Note: Le bouton de soumission finale sera géré par le composant ContractSigning */}
                     </div>
                   </motion.div>
                 )}
@@ -3350,7 +3851,7 @@ export const GuestVerification = () => {
             color: '#000000',
             textAlign: 'center'
           }}>
-            © 2025 Checky — Tous droits réservés, Mentions légales • Politique de confidentialité • CGV
+            © 2025 Checky — {t('guestVerification.footerRights')}, {t('guestVerification.footerLegal')} • {t('guestVerification.footerPrivacy')} • {t('guestVerification.footerTerms')}
           </p>
         </footer>
       </div>

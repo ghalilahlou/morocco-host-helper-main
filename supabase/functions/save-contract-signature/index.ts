@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/v135/@supabase/supabase-js@2.39.3';
 
 type Payload = {
   bookingId: string;
@@ -256,72 +256,62 @@ serve(async (req) => {
       }
     }
 
-    // ✅ NOUVEAU : Régénérer le contrat avec la signature intégrée
-    console.log('🔄 Régénération du contrat avec signature intégrée...');
+    // ✅ OPTIMISÉ : Un seul appel à submit-guest-info-unified qui génère :
+    // 1. Le contrat avec signature intégrée
+    // 2. La fiche de police avec la MÊME signature (évite les problèmes de timing)
+    console.log('🔄 [save-contract-signature] Génération contrat + police via submit-guest-info-unified...');
     
+    const docsRegenDebug: { 
+      called: boolean; 
+      ok?: boolean; 
+      contractUrl?: string; 
+      policeUrl?: string; 
+      hasGuestSignature?: boolean;
+      error?: string 
+    } = { called: true };
+
     try {
-      // Appeler la fonction de génération de contrat avec signature
-      const contractGenerationUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/submit-guest-info-unified`;
-      const contractResponse = await fetch(contractGenerationUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
-        },
-        body: JSON.stringify({
-          action: 'generate_contract_with_signature',
-          bookingId: body.bookingId,
-          signatureData: body.signatureDataUrl,
-          signerName: body.signerName
-        })
-      });
+      const { data: docsResult, error: docsInvokeError } = await supabase.functions.invoke(
+        'submit-guest-info-unified',
+        {
+          body: {
+            action: 'generate_contract_with_signature',
+            bookingId: body.bookingId,
+            signatureData: body.signatureDataUrl,
+            signerName: body.signerName
+          }
+        }
+      );
 
-      if (!contractResponse.ok) {
-        console.warn('⚠️ Échec de la régénération du contrat, mais signature sauvegardée');
+      const ok = !docsInvokeError;
+      docsRegenDebug.ok = ok;
+      docsRegenDebug.contractUrl = docsResult?.contractUrl ?? null;
+      docsRegenDebug.policeUrl = docsResult?.policeUrl ?? null;
+      docsRegenDebug.hasGuestSignature = docsResult?.hasGuestSignature ?? false;
+      
+      if (docsInvokeError) {
+        docsRegenDebug.error = docsInvokeError.message ?? String(docsInvokeError);
+        console.warn('⚠️ [save-contract-signature] Échec génération documents', {
+          error: docsInvokeError.message
+        });
       } else {
-        console.log('✅ Contrat régénéré avec signature intégrée');
-      }
-    } catch (regenerationError) {
-      console.warn('⚠️ Erreur lors de la régénération du contrat:', regenerationError);
-      // Ne pas faire échouer la fonction pour cette erreur
-    }
-
-    // ✅ NOUVEAU : Régénérer la fiche de police avec la signature du guest
-    console.log('🔄 Génération/Régénération de la fiche de police avec signature guest...');
-    
-    try {
-      const policeGenerationUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/regenerate-police-with-signature`;
-      const policeResponse = await fetch(policeGenerationUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
-        },
-        body: JSON.stringify({
-          action: 'regenerate_police_with_signature',
-          bookingId: body.bookingId
-        })
-      });
-
-      if (!policeResponse.ok) {
-        const errorText = await policeResponse.text();
-        console.warn('⚠️ Échec de la génération de la fiche de police:', errorText);
-      } else {
-        const policeResult = await policeResponse.json();
-        console.log('✅ Fiche de police régénérée avec signature guest:', {
-          success: policeResult.success,
-          hasSignature: policeResult.hasGuestSignature || false,
-          message: policeResult.message
+        console.log('✅ [save-contract-signature] Documents générés avec signature', {
+          success: docsResult?.success,
+          hasGuestSignature: docsResult?.hasGuestSignature,
+          contractUrl: docsResult?.contractUrl ? 'présent' : 'absent',
+          policeUrl: docsResult?.policeUrl ? 'présent' : 'absent'
         });
       }
-    } catch (policeRegenError) {
-      console.warn('⚠️ Erreur lors de la régénération de la fiche de police:', policeRegenError);
-      // Ne pas faire échouer la fonction pour cette erreur  
+    } catch (docsRegenError: unknown) {
+      const errMsg = docsRegenError instanceof Error ? docsRegenError.message : String(docsRegenError);
+      docsRegenDebug.error = errMsg;
+      docsRegenDebug.ok = false;
+      console.warn('⚠️ [save-contract-signature] Erreur génération documents:', errMsg);
     }
 
-    console.log('✅ Fonction save-contract-signature terminée avec succès');
+    console.log('✅ [save-contract-signature] Terminée avec succès');
 
-    // Successful response
+    // Successful response (avec _debug pour voir le résultat de la régénération docs sans passer par les logs)
     return ok({
       success: true,
       signatureId: signatureId,
@@ -329,7 +319,11 @@ serve(async (req) => {
       message: isNewSignature ? 'Nouvelle signature créée' : 'Signature existante mise à jour',
       bookingId: body.bookingId,
       signerName: body.signerName,
-      signedAt: new Date().toISOString()
+      signedAt: new Date().toISOString(),
+      contractUrl: docsRegenDebug.contractUrl,
+      policeUrl: docsRegenDebug.policeUrl,
+      hasGuestSignature: docsRegenDebug.hasGuestSignature,
+      _debug: { docsRegen: docsRegenDebug }
     });
   } catch (error) {
     console.error('❌ Erreur dans save-contract-signature:', error);

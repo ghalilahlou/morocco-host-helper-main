@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,7 +31,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getContractPdfUrl } from '@/services/contractService';
 import { ApiService } from '@/services/apiService';
-import { useT } from '@/i18n/GuestLocaleProvider';
+import { useT, useGuestLocale } from '@/i18n/GuestLocaleProvider';
 import { urls } from '@/config/runtime';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -87,6 +87,23 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
 }) => {
   const isMountedRef = useRef(true);
   const [currentStep, setCurrentStep] = useState<'review' | 'celebration'>('review');
+  const navigate = useNavigate();
+  const { propertyId: routePropertyId, token: routeToken } = useParams<{ propertyId: string; token: string }>();
+  
+  // ✅ NOUVEAU : Navigation vers les étapes précédentes (Réservation ou Documents)
+  const navigateToStep = (targetStep: 'booking' | 'documents') => {
+    // Naviguer vers GuestVerification avec l'étape cible dans le state
+    navigate(`/guest-verification/${routePropertyId}/${routeToken}`, {
+      state: {
+        targetStep,
+        // Préserver les données pour éviter de les perdre
+        bookingData,
+        guestData,
+        propertyData,
+        fromSignaturePage: true
+      }
+    });
+  };
   
   // ✅ SUPPRIMÉ : Intercepteur d'erreurs redondant - l'intercepteur global dans main.tsx gère déjà les erreurs Portal
   
@@ -108,6 +125,7 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const signaturePadRef = useRef<SignatureCanvas>(null);
   const { toast } = useToast();
   const location = useLocation();
+  const { locale } = useGuestLocale();
   const t = useT();
   const isMobile = useIsMobile();
 
@@ -252,10 +270,16 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
     fetchRealGuestData();
   }, [bookingData?.id]);
 
-  // Données d'accueil personnalisées
+  // Données d'accueil personnalisées - même source que le récapitulatif (sidebar + page finale)
+  const navState = (location as any)?.state || {};
   const guestName = realGuestData?.fullName || 
                     guestData?.guests?.[0]?.fullName || 
+                    guestData?.fullName || 
                     bookingData?.guests?.[0]?.fullName || 
+                    bookingData?.guestName || 
+                    bookingData?.guest_name || 
+                    navState?.guestData?.guests?.[0]?.fullName || 
+                    navState?.bookingData?.guests?.[0]?.fullName || 
                     'Cher invité';
   
   // ✅ CORRIGÉ: Utiliser realPropertyName (récupéré depuis DB) en priorité
@@ -276,70 +300,84 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
     finalPropertyName: propertyName
   });
   
-  const checkInDate = bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+  const dateLocale = locale === 'en' ? 'en-GB' : locale === 'es' ? 'es-ES' : 'fr-FR';
+
+  const formatContractDate = (d: string | Date | null) =>
+    d ? new Date(d).toLocaleDateString(dateLocale) : t('contract.body.dateUnspecified');
+
+  const checkInDate = bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString(dateLocale, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
   }) : '';
-  const checkOutDate = bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR', { 
-    weekday: 'long', 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+  const checkOutDate = bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString(dateLocale, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
   }) : '';
-  const numberOfNights = bookingData?.checkInDate && bookingData?.checkOutDate 
+  const numberOfNights = bookingData?.checkInDate && bookingData?.checkOutDate
     ? Math.ceil((new Date(bookingData.checkOutDate).getTime() - new Date(bookingData.checkInDate).getTime()) / (1000 * 60 * 60 * 24))
     : 1;
 
   const getContractContent = (includeGuestSignature = false) => {
     const allGuests = (bookingData?.guests && Array.isArray(bookingData.guests) ? bookingData.guests : (guestData?.guests || [])) as any[];
+    const count = allGuests?.length || bookingData?.numberOfGuests || 1;
     const occupantsText = (allGuests && allGuests.length > 0)
-      ? allGuests.map((g, i) => `${i + 1}. ${g.fullName || '____________'} - Né(e) le ${g.dateOfBirth ? new Date(g.dateOfBirth).toLocaleDateString('fr-FR') : '__/__/____'} - Document n° ${g.documentNumber || '____________'}`).join('\n')
-      : 'Aucun occupant';
+      ? allGuests.map((g, i) => t('contract.body.occupantLine', {
+        index: String(i + 1),
+        name: g.fullName || '____________',
+        dob: g.dateOfBirth ? new Date(g.dateOfBirth).toLocaleDateString(dateLocale) : '__/__/____',
+        doc: g.documentNumber || '____________',
+      })).join('\n')
+      : t('contract.body.noOccupants');
+
+    const fromStr = formatContractDate(bookingData?.checkInDate ?? null);
+    const toStr = formatContractDate(bookingData?.checkOutDate ?? null);
+    const todayStr = new Date().toLocaleDateString(dateLocale);
 
     return `
-CONTRAT DE LOCATION SAISONNIÈRE
+${t('contract.body.title')}
 
-BAILLEUR: ${propertyData?.name || 'Nom de la propriété'}
-Adresse: ${propertyData?.address || 'Adresse de la propriété'}
+${t('contract.body.landlord')}: ${propertyData?.name || t('contract.body.propertyNameFallback')}
+${t('contract.body.address')}: ${propertyData?.address || ''}
 
-LOCATAIRE: ${allGuests?.[0]?.fullName || 'Nom du locataire principal'}
+${t('contract.body.tenant')}: ${allGuests?.[0]?.fullName || t('contract.body.tenantNameFallback')}
 
-PÉRIODE DE LOCATION:
-Du ${bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'Date non spécifiée'} 
-Au ${bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'Date non spécifiée'}
+${t('contract.body.rentalPeriod')}:
+${t('contract.body.fromTo', { from: fromStr, to: toStr })}
 
-NOMBRE D'OCCUPANTS: ${allGuests?.length || bookingData?.numberOfGuests || 1}
+${t('contract.body.numberOfOccupants')}: ${count}
 
-ARTICLE 3 - OCCUPANTS AUTORISÉS
-Le logement sera occupé par ${allGuests?.length || bookingData?.numberOfGuests || 1} personne(s) maximum. Liste des occupants autorisés :
+${t('contract.body.article3')}
+${t('contract.body.occupantsIntro', { count: String(count) })}
 ${occupantsText}
 
-RÈGLEMENT INTÉRIEUR:
-${propertyData?.house_rules?.map((rule: string, index: number) => `${index + 1}. ${rule}`).join('\n') || 'Aucune règle spécifiée'}
+${t('contract.body.houseRules')}:
+${propertyData?.house_rules?.map((rule: string, index: number) => `${index + 1}. ${rule}`).join('\n') || t('contract.body.noRules')}
 
-CONDITIONS GÉNÉRALES:
-1. Le locataire s'engage à respecter les règles de la propriété
-2. Le locataire est responsable de tous dommages causés pendant son séjour
-3. Le locataire accepte de laisser la propriété dans l'état où il l'a trouvée
-4. Aucune fête ou événement bruyant n'est autorisé
-5. Le nombre maximum d'occupants ne peut être dépassé
+${t('contract.body.generalConditions')}:
+1. ${t('contract.body.condition1')}
+2. ${t('contract.body.condition2')}
+3. ${t('contract.body.condition3')}
+4. ${t('contract.body.condition4')}
+5. ${t('contract.body.condition5')}
 
-En signant ce contrat, je confirme avoir lu et accepté toutes les conditions ci-dessus.
+${t('contract.body.bySigning')}
 
-Date: ${new Date().toLocaleDateString('fr-FR')}
+${t('contract.body.date')}: ${todayStr}
 
 
-SIGNATURES:
+${t('contract.body.signatures')}:
 
-PROPRIÉTAIRE (Bailleur):                    LOCATAIRE:
+${t('contract.body.ownerLabel')}:                    ${t('contract.body.tenantLabel')}:
 
 Nom: ${propertyData?.contact_info?.name || propertyData?.name || '________________________'}              Nom: ${allGuests?.[0]?.fullName || '________________________'}
 
-Signature: [Signature électronique - Propriétaire]        Signature: ${includeGuestSignature && signature ? '[Signature électronique - Locataire collectée]' : '[En attente de signature électronique]'}
+${t('contract.body.signatureOwner')}        Signature: ${includeGuestSignature && signature ? t('contract.body.signatureTenantDone') : t('contract.body.signatureTenantPending')}
 
-Date: ${new Date().toLocaleDateString('fr-FR')}                            Date: ${new Date().toLocaleDateString('fr-FR')}
+${t('contract.body.date')}: ${todayStr}                            ${t('contract.body.date')}: ${todayStr}
     `.trim();
   };
 
@@ -392,10 +430,10 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           numberOfGuests: bookingNumberOfGuests ?? guestsPayload.length ?? 1,
           guests: guestsPayload,
         };
-        url = await getContractPdfUrl({ supabase, bookingLike, isPreview: true });
+        url = await getContractPdfUrl({ supabase, bookingLike, isPreview: true, locale });
       } else if (bookingIdFromState || bookingIdForContract) {
         const bookingId: string = bookingIdFromState ?? bookingIdForContract;
-        url = await getContractPdfUrl({ supabase, bookingId, isPreview: false });
+        url = await getContractPdfUrl({ supabase, bookingId, isPreview: false, locale });
       } else {
         throw new Error('Données de réservation insuffisantes');
       }
@@ -431,7 +469,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
     // ✅ CORRIGÉ : Utiliser seulement les valeurs primitives comme dépendances
     // Note: propertyData?.contract_template, contact_info, house_rules sont des objets complexes
     // mais ils sont utilisés directement dans la fonction, donc on les garde pour la cohérence
-  }, [bookingIdForContract, bookingCheckInForContract, bookingCheckOutForContract, bookingNumberOfGuests, locationBookingId, propertyIdForContract, propertyNameForContract, propertyAddressForContract, propertyData, guestGuestsForContract, bookingGuestsForContract]);
+  }, [bookingIdForContract, bookingCheckInForContract, bookingCheckOutForContract, bookingNumberOfGuests, locationBookingId, propertyIdForContract, propertyNameForContract, propertyAddressForContract, propertyData, guestGuestsForContract, bookingGuestsForContract, locale]);
 
   // ✅ CORRIGÉ : Mettre à jour contractUrl quand initialContractUrl change (problème Vercel)
   useEffect(() => {
@@ -479,13 +517,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
       
-      // Dimensions logiques - Figma design (565x172)
-      const logicalWidth = 565;
-      const logicalHeight = 172;
+      // ✅ Dimensions testées et fonctionnelles
+      const isMobileDevice = window.innerWidth < 768;
+      const logicalWidth = isMobileDevice ? 800 : 1100;
+      const logicalHeight = isMobileDevice ? 300 : 300;
       
-      // Dimensions réelles avec DPR
-      canvas.width = logicalWidth * dpr;
-      canvas.height = logicalHeight * dpr;
+      // Dimensions réelles (pas de scaling DPR pour éviter les problèmes)
+      canvas.width = logicalWidth;
+      canvas.height = logicalHeight;
       
       // Style CSS pour l'affichage
       canvas.style.width = '100%';
@@ -498,8 +537,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         return;
       }
 
-      // Mettre à l'échelle pour le DPR
-      ctx.scale(dpr, dpr);
+      // ✅ PAS de scaling DPR - utiliser les dimensions réelles
       
       // ✅ Utiliser la fonction centralisée pour configurer le contexte
       configureCanvasContext(ctx);
@@ -509,7 +547,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       ctx.fillRect(0, 0, logicalWidth, logicalHeight);
       
       setCanvasInitialized(true);
-      console.log('✅ Canvas initialisé avec succès');
+      console.log('✅ Canvas initialisé avec succès', { width: logicalWidth, height: logicalHeight });
     }
   }, [canvasInitialized]);
 
@@ -565,11 +603,15 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       if (ctx) {
         const img = new Image();
         img.onload = () => {
+          // ✅ CORRIGÉ: Utiliser les dimensions réelles du canvas
+          const canvasWidth = canvas.width;
+          const canvasHeight = canvas.height;
+          
           // Remplir en blanc d'abord
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, 600, 250);
-          // Dessiner la signature
-          ctx.drawImage(img, 0, 0, 600, 250);
+          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+          // Dessiner la signature avec les bonnes dimensions
+          ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
           configureCanvasContext(ctx); // Reconfigurer pour continuer à dessiner
         };
         img.src = signature;
@@ -579,12 +621,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
   // ✅ AMÉLIORÉ : Fonction pour configurer le contexte du canvas avec les bons styles (style Airbnb)
   const configureCanvasContext = (ctx: CanvasRenderingContext2D) => {
-    ctx.strokeStyle = '#111827'; // Noir style Airbnb
-    ctx.lineWidth = 2; // Plus fin pour plus de fluidité
+    ctx.strokeStyle = '#111827'; // Noir profond
+    ctx.lineWidth = 3.5; // Trait plus épais pour meilleure visibilité
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    // Anti-aliasing supplémentaire pour fluidité maximale
+    ctx.globalCompositeOperation = 'source-over';
   };
 
   const getMousePos = (canvas: HTMLCanvasElement, e: MouseEvent | TouchEvent) => {
@@ -665,8 +709,11 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
       // Vérifier que la signature n'est pas vide
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
-        // Utiliser les dimensions logiques pour la vérification
-        const imageData = ctx.getImageData(0, 0, 600, 250);
+        // ✅ Vérifier avec les dimensions testées
+        const isMobileDevice = window.innerWidth < 768;
+        const checkWidth = isMobileDevice ? 800 : 1100;
+        const checkHeight = isMobileDevice ? 300 : 300;
+        const imageData = ctx.getImageData(0, 0, checkWidth, checkHeight);
         let nonWhitePixels = 0;
         
         // Compter les pixels non-blancs
@@ -837,11 +884,11 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         timeoutPromise
       ]) as any;
 
-      // ✅ CORRIGÉ : Générer le contrat signé via Edge Function (non-blocking)
+      // ✅ CORRIGÉ : Générer le contrat signé PUIS la police (SÉQUENTIELLEMENT pour éviter les race conditions)
       Promise.resolve().then(async () => {
         try {
-          
-          // Utiliser l'Edge Function directement pour générer le contrat signé
+          // 1. D'abord générer le contrat signé
+          console.log('📄 [SEQUENTIAL] Génération du contrat signé...');
           const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
             body: {
               bookingId: bookingId,
@@ -855,40 +902,19 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
           if (error) {
             console.warn('⚠️ Erreur lors de la génération du contrat signé:', error);
-            return;
-          }
-
-          if (data?.success && data?.contractUrl && isMountedRef.current) {
+          } else if (data?.success && data?.contractUrl && isMountedRef.current) {
             setSignedContractUrl(data.contractUrl);
+            console.log('✅ [SEQUENTIAL] Contrat signé généré');
           }
-          } catch (generateError) {
-            console.error('⚠️ Failed to generate signed contract for Storage:', generateError);
-          }
-        });
-      
-        // ✅ NOUVEAU : Générer automatiquement la fiche de police après la signature (non-blocking)
-        Promise.resolve().then(async () => {
-          try {
-            console.log('📄 [AUTO] Génération automatique de la fiche de police après signature...');
-            
-            const { data: policeData, error: policeError } = await supabase.functions.invoke('generate-police-form', {
-              body: {
-                bookingId: bookingId
-              }
-            });
-            
-            if (policeError) {
-              console.warn('⚠️ Erreur lors de la génération automatique de la fiche de police:', policeError);
-              return;
-            }
-            
-            if (policeData?.success && policeData?.policeUrl) {
-              console.log('✅ [AUTO] Fiche de police générée automatiquement:', policeData.policeUrl);
-            }
-          } catch (policeGenerateError) {
-            console.error('⚠️ Failed to auto-generate police form:', policeGenerateError);
-          }
-        });
+          
+          // ✅ NOTE : La fiche de police est déjà générée par save-contract-signature
+          // via regenerate-police-with-signature. Pas besoin de la regénérer ici.
+          // Cela évite les race conditions et l'écrasement de la signature.
+          console.log('✅ [SEQUENTIAL] Fiche de police déjà générée par save-contract-signature');
+        } catch (generateError) {
+          console.error('⚠️ Failed to generate documents:', generateError);
+        }
+      });
   
       // Notify property owner (non-blocking)
       Promise.resolve().then(async () => {
@@ -923,7 +949,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                 guestName: signerName,
                 checkIn: bookingData?.checkInDate ? new Date(bookingData.checkInDate).toLocaleDateString('fr-FR') : 'N/A',
                 checkOut: bookingData?.checkOutDate ? new Date(bookingData.checkOutDate).toLocaleDateString('fr-FR') : 'N/A',
-                propertyName: propertyData?.name || 'Votre hébergement',
+                propertyName: propertyData?.name || t('contractSigning.propertyFallback'),
                 propertyAddress: propertyData?.address || '',
                 numberOfGuests: bookingData?.numberOfGuests || 1,
                 contractUrl: null // TODO: Ajouter le lien du contrat signé si disponible
@@ -948,6 +974,13 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         title: 'Contrat signé avec succès',
         description: 'Votre séjour est maintenant confirmé. Vous recevrez un email de confirmation sous peu.',
       });
+
+      // ✅ Sauvegarder le nom du voyageur pour la page de confirmation (ContractSigning)
+      try {
+        if (guestName && guestName !== 'Cher invité') {
+          localStorage.setItem('currentGuestName', guestName);
+        }
+      } catch (e) { /* ignore */ }
 
       // ✅ CORRIGÉ : Appeler onSignatureComplete immédiatement sans setTimeout
       // et vérifier que le composant est toujours monté
@@ -984,44 +1017,53 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
           padding: '64px 49px'
         }}
       >
-        {/* Logo Section */}
-        <div className="flex items-center gap-3 mb-4">
-          <img 
-            src="/lovable-uploads/Checky simple - fond transparent.png" 
-            alt="CHECKY Logo" 
-            className="h-10 w-10 object-contain"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
-          <span style={{ 
-            fontFamily: 'Archivo, sans-serif',
-            fontWeight: 700,
-            fontSize: '38px',
-            lineHeight: '36px',
-            color: '#FFFFFF'
-          }}>CHECKY</span>
+        {/* Logo Section - centered with tagline */}
+        <div className="flex flex-col items-center gap-2 mb-6">
+          <div className="flex items-center gap-3">
+            <img 
+              src="/lovable-uploads/Checky simple - fond transparent.png" 
+              alt="CHECKY Logo" 
+              className="h-10 w-10 object-contain"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+            <span style={{ 
+              fontFamily: 'Archivo, sans-serif',
+              fontWeight: 700,
+              fontSize: '38px',
+              lineHeight: '36px',
+              color: '#FFFFFF'
+            }}>CHECKY</span>
+          </div>
+          <p style={{ 
+            fontFamily: 'Inter, sans-serif',
+            fontWeight: 300,
+            fontSize: '14px',
+            lineHeight: '20px',
+            letterSpacing: '-0.5px',
+            color: '#0BD9D0',
+            textAlign: 'center'
+          }}>
+            Le check-in digitalisé
+          </p>
         </div>
-        <p style={{ 
-          fontFamily: 'Inter, sans-serif',
-          fontWeight: 300,
-          fontSize: '14px',
-          lineHeight: '36px',
-          letterSpacing: '-0.5px',
-          color: '#0BD9D0',
-          textAlign: 'center'
-        }}>Le check-in digitalisé</p>
         
         {/* Récapitulatif Section */}
         <div className="mt-8">
-          <h2 style={{
-            fontFamily: 'Fira Sans Condensed, sans-serif',
-            fontWeight: 400,
-            fontSize: '30px',
-            lineHeight: '36px',
-            color: '#FFFFFF',
-            marginBottom: '24px'
-          }}>Récapitulatif</h2>
+          <h2
+            style={{
+              fontFamily: 'Fira Sans Condensed, sans-serif',
+              fontWeight: 400,
+              fontSize: '30px',
+              lineHeight: '36px',
+              color: '#FFFFFF',
+              marginBottom: '24px',
+              textAlign: 'center',
+            }}
+          >
+            {t('contractSigning.sidebarSummaryTitle')}
+          </h2>
           
           {/* Navigation Pills */}
           <div className="space-y-4">
@@ -1042,14 +1084,14 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                   fontSize: '12px',
                   lineHeight: '14px',
                   color: '#FFFFFF'
-                }}>Propriété</p>
+                }}>{t('contractSigning.chipPropertyLabel')}</p>
                 <p style={{ 
                   fontFamily: 'SF Pro, sans-serif',
                   fontWeight: 400,
                   fontSize: '14px',
                   lineHeight: '17px',
                   color: '#717171'
-                }}>{propertyName || 'Votre hébergement'}</p>
+                }}>{propertyName || t('contractSigning.propertyFallback')}</p>
               </div>
             </div>
             
@@ -1070,7 +1112,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                   fontSize: '12px',
                   lineHeight: '14px',
                   color: '#FFFFFF'
-                }}>Dates</p>
+                }}>{t('contractSigning.chipDatesLabel')}</p>
                 <p style={{ 
                   fontFamily: 'SF Pro, sans-serif',
                   fontWeight: 400,
@@ -1098,7 +1140,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                   fontSize: '12px',
                   lineHeight: '14px',
                   color: '#FFFFFF'
-                }}>Voyageurs</p>
+                }}>{t('contractSigning.chipTravelersLabel')}</p>
                 <p style={{ 
                   fontFamily: 'SF Pro, sans-serif',
                   fontSize: '14px',
@@ -1125,8 +1167,18 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
         
         {/* Progress Steps - Matching GuestVerification */}
         <div className="px-6 pb-8 flex items-start justify-center gap-16">
-          {/* Step 1: Réservation - completed */}
-          <div className="flex flex-col items-center">
+          {/* Step 1: Réservation - completed - CLIQUABLE */}
+          <div 
+            className="flex flex-col items-center"
+            onClick={() => navigateToStep('booking')}
+            style={{
+              cursor: 'pointer',
+              opacity: 1,
+              transition: 'opacity 0.2s ease'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.8'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
             <div 
               style={{
                 width: '54px',
@@ -1154,25 +1206,28 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               textAlign: 'center',
               flexDirection: 'column'
             }}>
-              <span>Réservation</span>
-              {/* Ligne noire sous Réservation complétée */}
-              <div style={{
-                width: '100%',
-                height: '2px',
-                backgroundColor: '#000000',
-                marginTop: '4px'
-              }} />
+              <span>{t('guestVerification.stepBooking')}</span>
             </span>
           </div>
           
-          {/* Step 2: Documents - completed */}
-          <div className="flex flex-col items-center">
+          {/* Step 2: Documents - completed - CLIQUABLE */}
+          <div 
+            className="flex flex-col items-center"
+            onClick={() => navigateToStep('documents')}
+            style={{
+              cursor: 'pointer',
+              opacity: 1,
+              transition: 'opacity 0.2s ease'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.8'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+          >
             <div 
               style={{
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
-                background: '#D7EFED', // Complété = turquoise clair
+                background: 'rgba(85, 186, 159, 0.42)', // Même couleur claire que Réservation (complété)
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -1194,25 +1249,24 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               textAlign: 'center',
               flexDirection: 'column'
             }}>
-              <span>Documents</span>
-              {/* Ligne noire sous Documents complétés */}
-              <div style={{
-                width: '100%',
-                height: '2px',
-                backgroundColor: '#000000',
-                marginTop: '4px'
-              }} />
+              <span>{t('guestVerification.stepDocuments')}</span>
             </span>
           </div>
           
-          {/* Step 3: Signature - active */}
-          <div className="flex flex-col items-center">
+          {/* Step 3: Signature - active - NON CLIQUABLE (étape actuelle) */}
+          <div 
+            className="flex flex-col items-center"
+            style={{
+              cursor: 'default',
+              opacity: 1
+            }}
+          >
             <div 
               style={{
                 width: '54px',
                 height: '51px',
                 borderRadius: '16px',
-                background: 'rgba(80, 172, 180, 0.8)', // Actif = #50ACB4 à 80%
+                background: '#55BA9F', // Même couleur sélection foncée que Réservation
                 boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
@@ -1234,7 +1288,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
               textAlign: 'center',
               flexDirection: 'column'
             }}>
-              <span>Signature</span>
+              <span>{t('guestVerification.stepSignature')}</span>
               {/* Ligne noire sous Signature active */}
               <div style={{
                 width: '100%',
@@ -1260,7 +1314,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                     fontSize: '30px',
                     lineHeight: '36px',
                     color: '#040404'
-                  }}>Votre contrat de location</h2>
+                  }}>{t('contractSignature.title')}</h2>
                 </div>
                 <p style={{
                   fontFamily: 'Inter, sans-serif',
@@ -1270,7 +1324,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                   color: '#4B5563',
                   marginBottom: '24px'
                 }}>
-                  Lisez votre contrat ci-dessous et acceptez les conditions en cochant la case sous votre contrat.
+                  {t('guestVerification.signatureIntro')}
                 </p>
 
               {/* Contract Card - with border matching Figma */}
@@ -1297,7 +1351,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       <p className={cn(
                         "text-gray-600",
                         isMobile ? "text-sm" : "text-lg"
-                      )}>Génération de votre contrat...</p>
+                      )}>{t('contractSignature.generating')}</p>
                     </div>
                   ) : contractUrl ? (
                     isMobile ? (
@@ -1333,7 +1387,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         size={isMobile ? "sm" : "default"}
                         className="mt-4"
                       >
-                        Réessayer
+                        {t('contractSignature.retry')}
                       </Button>
                     </div>
                   ) : (
@@ -1341,7 +1395,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       "w-full flex items-center justify-center text-gray-500",
                       isMobile ? "h-[300px] text-sm" : "h-96"
                     )}>
-                      Préparation du contrat...
+                      {t('contractSignature.preparing')}
                     </div>
                   )}
                 </CardContent>
@@ -1381,7 +1435,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       cursor: 'pointer'
                     }}
                   >
-                    J'ai lu et je m'engage à respecter le règlement intérieur et les modalités de location. Je confirme que les informations fournis sont correctes.
+                    {t('contractSignature.agreeLabel')}
                   </label>
                 </div>
               </div>
@@ -1398,7 +1452,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       fontSize: '30px',
                       lineHeight: '36px',
                       color: '#040404'
-                    }}>Votre signature</h2>
+                    }}>{t('contractSignature.yourSignature')}</h2>
                   </div>
                   <p style={{
                     fontFamily: 'Inter, sans-serif',
@@ -1408,48 +1462,42 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                     color: '#4B5563',
                     marginBottom: '24px'
                   }}>
-                    Procédez à la signature pour finaliser votre check-in en ligne en dessinant votre signature ci-dessous.
+                    {t('contractSignature.signatureInstruction')}
                   </p>
 
-                  {/* Signature Container - Style CreatePropertyDialog */}
+                  {/* Signature Container - Dimensions Testées Fonctionnelles */}
                   <div className="relative w-full" style={{
-                    maxWidth: '597px',
+                    maxWidth: isMobile ? '100%' : '1100px',
                     margin: '0 auto'
                   }}>
-                    <div className={cn(
-                      "relative border rounded-lg bg-white transition-all duration-200 overflow-hidden",
-                      signature ? 'border-gray-900' : 'border-gray-300 hover:border-gray-400'
-                    )}>
-                      {/* Badge \"Signature complétée\" */}
-                      {signature && !isDrawing && (
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          className="absolute -top-2 right-2 z-10 bg-gray-900 text-white rounded-full px-3 py-1 text-xs font-medium shadow-sm flex items-center gap-1"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          Signée
-                        </motion.div>
+                    <motion.div 
+                      className={cn(
+                        "relative rounded-2xl bg-white transition-all duration-300 overflow-hidden",
+                        signature ? 'border-2 border-black shadow-xl' : 'border-2 border-gray-300 shadow-md hover:border-gray-400 hover:shadow-lg'
                       )}
-                      
-                      {/* Texte d'aide */}
-                      {!signature && (
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4 }}
+                    >
+                      {/* Texte d'aide simplifié - Disparaît pendant le dessin */}
+                      {!signature && !isDrawing && (
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                          <p className="text-gray-400 text-sm">Cliquez et dessinez votre signature</p>
+                          <p className={cn(
+                            "font-medium text-gray-400",
+                            isMobile ? "text-base" : "text-lg"
+                          )}>
+                            {t('contractSignature.signaturePlaceholder')}
+                          </p>
                         </div>
-                      )}
-                      
-                      {/* Ligne de guide */}
-                      {!signature && (
-                        <div className="absolute bottom-1/3 left-4 right-4 h-[1px] bg-gray-200 pointer-events-none z-10"></div>
                       )}
                       
                       <canvas
                         ref={canvasCallbackRef}
-                        width={565}
-                        height={172}
+                        width={isMobile ? 800 : 1100}
+                        height={isMobile ? 300 : 300}
                         className={cn(
-                          "w-full h-[172px] rounded-lg touch-none select-none transition-all duration-200 relative z-0",
+                          "w-full rounded-2xl touch-none select-none transition-all duration-200 relative z-0",
+                          isMobile ? "h-[300px]" : "h-[300px]",
                           isDrawing ? 'cursor-grabbing' : 'cursor-crosshair'
                         )}
                         style={{ 
@@ -1469,24 +1517,17 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         onTouchMove={draw}
                         onTouchEnd={stopDrawing}
                       />
-                    </div>
+                    </motion.div>
                   </div>
 
                   {/* Feedback simple */}
-                  {signature ? (
-                    <div className="mt-3 text-center">
-                      <div className="inline-flex items-center gap-2 text-sm text-gray-700">
-                        <CheckCircle className="w-4 h-4 text-gray-900" />
-                        Signature prête
-                      </div>
-                    </div>
-                  ) : (
+                  {!signature && (
                     <div className="mt-3 text-center text-xs text-gray-500">
-                      Signez avec votre souris, doigt ou stylet
+                      {t('contractSignature.signatureHint')}
                     </div>
                   )}
 
-                  {/* Boutons */}
+                  {/* Boutons Signature */}
                   <div className={cn(
                     "flex items-center mt-6",
                     isMobile ? "flex-col gap-2" : "gap-3"
@@ -1497,7 +1538,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         variant="outline"
                         size={isMobile ? "default" : "lg"}
                         className={cn(
-                          "border-2 border-gray-300 hover:border-red-400 text-gray-700 hover:text-red-700 transition-all",
+                          "border-2 border-black text-black hover:bg-black hover:text-white transition-all",
                           isMobile ? "w-full px-3 py-2 text-sm" : "px-4 py-3"
                         )}
                       >
@@ -1505,7 +1546,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                           "mr-1",
                           isMobile ? "w-3 h-3" : "w-4 h-4"
                         )} />
-                        Effacer
+                        {t('common.clear')}
                       </Button>
                     )}
                     
@@ -1514,23 +1555,15 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                       disabled={!signature || !isAgreed || isSubmitting}
                       size={isMobile ? "default" : "lg"}
                       className={cn(
-                        "flex-1 rounded-xl font-semibold transition-all duration-200",
-                        isMobile ? "w-full py-3 text-sm" : "py-4 text-base",
+                        "flex-1 font-bold transition-all duration-300",
+                        isMobile ? "w-full py-4 text-base" : "py-5 text-lg",
                         signature && isAgreed && !isSubmitting
-                          ? 'text-white shadow-lg hover:shadow-xl'
-                          : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                          ? 'text-white shadow-xl hover:shadow-2xl'
+                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                       )}
-                      style={signature && isAgreed && !isSubmitting ? { backgroundColor: '#55BA9F' } : undefined}
-                      onMouseEnter={(e) => {
-                        if (signature && isAgreed && !isSubmitting) {
-                          e.currentTarget.style.backgroundColor = '#4AA890';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (signature && isAgreed && !isSubmitting) {
-                          e.currentTarget.style.backgroundColor = '#55BA9F';
-                        }
-                      }}
+                      style={signature && isAgreed && !isSubmitting ? { backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' } : undefined}
+                      onMouseEnter={signature && isAgreed && !isSubmitting ? (e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; } : undefined}
+                      onMouseLeave={signature && isAgreed && !isSubmitting ? (e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; } : undefined}
                     >
                       {isSubmitting ? (
                         <>
@@ -1538,7 +1571,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                             "mr-2 animate-spin",
                             isMobile ? "w-4 h-4" : "w-5 h-5"
                           )} />
-                          <span className={isMobile ? "text-xs" : ""}>Signature en cours...</span>
+                          <span className={isMobile ? "text-xs" : ""}>{t('contractSignature.signingInProgress')}</span>
                         </>
                       ) : (
                         <>
@@ -1546,7 +1579,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                             "mr-2",
                             isMobile ? "w-4 h-4" : "w-5 h-5"
                           )} />
-                          Suivant
+                          {t('guest.navigation.next')}
                         </>
                       )}
                     </Button>
@@ -1556,11 +1589,36 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
 
               {!isAgreed && (
                 <Alert className="bg-amber-50 border-2 border-amber-200 rounded-lg mt-6">
-                  <Shield className="w-5 h-5 text-amber-600" />
-                  <AlertDescription className="text-amber-800 font-medium">
-                    Veuillez lire et accepter les conditions du contrat pour pouvoir le signer.
-                  </AlertDescription>
+                  <div className="flex items-baseline gap-2">
+                    <Shield className="w-5 h-5 text-amber-600 flex-shrink-0 translate-y-[1px]" />
+                    <AlertDescription className="text-amber-800 font-medium leading-relaxed">
+                      {t('contractSignature.mustAgree')}
+                    </AlertDescription>
+                  </div>
                 </Alert>
+              )}
+
+              {/* Bouton Précédent juste sous l'alerte / le titre */}
+              {onBack && (
+                <div className={cn("mt-4", isMobile ? "w-full" : "")}>
+                  <Button 
+                    onClick={onBack}
+                    size={isMobile ? "default" : "lg"}
+                    className={cn(
+                      "font-semibold transition-all",
+                      isMobile ? "w-full px-3 py-2 text-sm" : "px-4 py-3"
+                    )}
+                    style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px', border: 'none', color: '#040404' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
+                  >
+                    <ArrowLeft className={cn(
+                      "mr-1",
+                      isMobile ? "w-3 h-3" : "w-4 h-4"
+                    )} />
+                    {t('guest.navigation.previous')}
+                  </Button>
+                </div>
               )}
             </div>
           )}
@@ -1652,7 +1710,7 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         fontSize: '14px',
                         lineHeight: '17px',
                         color: '#717171'
-                      }}>{propertyName || 'Votre hébergement'}</p>
+                      }}>{propertyName || t('contractSigning.propertyFallback')}</p>
                     </div>
                   </div>
 
@@ -1710,7 +1768,9 @@ Date: ${new Date().toLocaleDateString('fr-FR')}                            Date:
                         fontSize: '14px',
                         lineHeight: '17px',
                         color: '#717171'
-                      }}>{guestName}</p>
+                      }}>
+                        {guestName}
+                      </p>
                     </div>
                   </div>
                 </div>

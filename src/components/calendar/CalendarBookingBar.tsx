@@ -140,11 +140,8 @@ export const CalendarBookingBar = memo(({
         backgroundColor: barColor,
         // ✅ PAS DE DÉGRADÉ : Utiliser la couleur unie (noir pour ICS, gris pour validées, etc.)
         background: barColor,
-        // Si ce segment contient la date de check-out, réduire légèrement la largeur
-        // pour suggérer que la journée de départ n'est que partiellement occupée.
-        width: bookingData.isEnd && bookingData.span > 0
-          ? `calc(100% - ${(0.75 * (100 / bookingData.span)).toFixed(2)}%)`
-          : '100%',
+        // Jour de départ : réduire la largeur pour laisser un léger espace avant la réservation suivante (ex. 06-08 et 08-10).
+        width: bookingData.isEnd ? '88%' : '100%',
         zIndex: 1000 + (bookingData.layer || 0),
         boxShadow: isConflict 
           ? '0 4px 12px rgba(220,38,38,0.25)' 

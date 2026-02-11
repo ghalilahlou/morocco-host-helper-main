@@ -110,7 +110,8 @@ export interface BookingFormData {
 }
 
 export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWizardProps) => {
-  const { addBooking, updateBooking, refreshBookings } = useBookings();
+  // ✅ FIX CRITIQUE : Utiliser le MÊME propertyId que Dashboard pour synchroniser les états
+  const { addBooking, updateBooking, refreshBookings } = useBookings({ propertyId });
   const { toast } = useToast();
   
   // ✅ PROTECTION : Capturer l'userId au mount pour éviter les crashs si déconnexion temporaire
@@ -283,6 +284,9 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       const primaryGuestName = currentGuests.length > 0
         ? (currentGuests[0].fullName || '').trim()
         : null;
+      const primaryGuestEmail = currentGuests.length > 0 && currentGuests[0].email
+        ? (currentGuests[0].email || '').trim()
+        : null;
       
       console.log('📊 [DIAGNOSTIC] État guests au début de handleSubmit:', {
         guestsCount: currentGuests.length,
@@ -421,6 +425,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             number_of_guests: formData.numberOfGuests,
             booking_reference: formData.bookingReference || null,
             guest_name: primaryGuestName || null,
+            guest_email: primaryGuestEmail || null, // ✅ Réservation host : email invité principal pour documents/signature
             status: 'pending' as any, // ✅ TEMPORAIRE : Utiliser 'pending' si 'draft' n'existe pas encore dans l'ENUM
             // TODO: Changer en 'draft' une fois la migration add_draft_status_to_bookings.sql appliquée
             documents_generated: {
@@ -486,11 +491,12 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               const hasStorageUrl = doc.preview && (doc.preview.startsWith('http://') || doc.preview.startsWith('https://'));
               
               if (!hasStorageUrl) {
-                // Stocker le document dans Storage
+                // Stocker le document dans Storage + uploaded_documents (persistance pièce d'identité)
                 const storageResult = await DocumentStorageService.storeDocument(doc.file, {
                   bookingId: bookingData.id,
                   fileName: doc.file.name,
-                  extractedData: doc.extractedData
+                  extractedData: doc.extractedData,
+                  documentType: 'identity' // ✅ Pièce d'identité pour réservation host (reconnu par la modale)
                   // Note: guestId sera mis à jour après l'insertion des guests
                 });
                 
@@ -518,13 +524,22 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
                   console.log('✅ [STORAGE] Document mis à jour avec URL Storage dans formData');
                 } else {
                   console.warn('⚠️ [STORAGE] Échec stockage document:', doc.file.name, storageResult.error);
+                  toast({
+                    title: "Document non enregistré",
+                    description: `La pièce d'identité "${doc.file.name}" n'a pas pu être enregistrée. ${storageResult.error || ''} Vous pourrez la ré-uploader depuis la fiche de la réservation.`,
+                    variant: "destructive",
+                  });
                 }
               } else {
                 console.log('ℹ️ [STORAGE] Document déjà stocké:', doc.file.name);
               }
             } catch (storageError) {
               console.error('❌ [STORAGE] Erreur stockage document:', doc.file.name, storageError);
-              // Ne pas bloquer le processus si le stockage échoue
+              toast({
+                title: "Erreur d'enregistrement",
+                description: `Impossible d'enregistrer la pièce d'identité "${doc.file.name}". Vous pourrez la ré-uploader depuis la fiche de la réservation.`,
+                variant: "destructive",
+              });
             }
           }
         }
@@ -558,7 +573,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               document_number: guest.documentNumber || '',
               nationality: guest.nationality || 'Non spécifiée',
               place_of_birth: guest.placeOfBirth || null,
-              document_type: (guest.documentType || 'passport') as 'passport' | 'national_id'
+              document_type: (guest.documentType || 'passport') as 'passport' | 'national_id',
+              email: (guest as any).email || null
             };
           });
 
@@ -669,9 +685,10 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               formData.uploadedDocuments.map(async (doc) => {
                 const { DocumentStorageService } = await import('@/services/documentStorageService');
                 const uploadResult = await DocumentStorageService.storeDocument(doc.file, {
-                    bookingId: bookingId,
+                  bookingId: bookingId,
                   fileName: doc.file.name,
-                    extractedData: doc.extractedData
+                  extractedData: doc.extractedData,
+                  documentType: 'identity'
                 });
 
                   if (!uploadResult.success || !uploadResult.filePath) {
@@ -868,7 +885,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             });
           }
         } else if (formData.uploadedDocuments && formData.uploadedDocuments.length > 0) {
-          // Fallback : Documents uploadés mais pas de guests → Juste stocker les documents
+          // Fallback : Documents uploadés mais pas de guests → Juste stocker les documents (pièces d'identité)
           console.log('📄 Stockage des documents sans génération de contrat (pas de guests)');
           for (const doc of formData.uploadedDocuments) {
             try {
@@ -876,14 +893,25 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               const result = await DocumentStorageService.storeDocument(doc.file, {
                 bookingId: bookingData.id,
                 fileName: doc.file.name,
-                extractedData: doc.extractedData
+                extractedData: doc.extractedData,
+                documentType: 'identity'
               });
 
               if (!result.success) {
                 console.error('Failed to store document:', result.error);
+                toast({
+                  title: "Document non enregistré",
+                  description: result.error || `La pièce d'identité "${doc.file.name}" n'a pas pu être enregistrée.`,
+                  variant: "destructive",
+                });
               }
             } catch (error) {
               console.error('❌ Error storing document:', error);
+              toast({
+                title: "Erreur d'enregistrement",
+                description: `Impossible d'enregistrer "${doc.file.name}".`,
+                variant: "destructive",
+              });
             }
           }
           // ✅ CORRIGÉ : Rafraîchir même dans ce cas

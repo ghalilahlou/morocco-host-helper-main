@@ -9,6 +9,7 @@ import { useBookings } from '@/hooks/useBookings';
 import { useAuth } from '@/hooks/useAuth';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
 import { useToast } from '@/hooks/use-toast';
+import { useT } from '@/i18n/GuestLocaleProvider';
 import { Dashboard } from './Dashboard';
 import { BookingWizardWithBoundary as BookingWizard } from './BookingWizard';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
@@ -20,6 +21,7 @@ import { supabase } from '@/integrations/supabase/client';
 export const PropertyDetail = () => {
   const { propertyId } = useParams<{ propertyId: string }>();
   const navigate = useNavigate();
+  const t = useT();
   const { getPropertyById, isLoading: propertiesLoading, properties } = useProperties();
   // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
   const { bookings, deleteBooking, refreshBookings } = useBookings({ propertyId: propertyId || undefined });
@@ -281,10 +283,21 @@ export const PropertyDetail = () => {
   // Filter bookings by this property
   const propertyBookings = bookings.filter(booking => booking.propertyId === property.id);
 
+  // ✅ CORRIGÉ: Une réservation est "Terminée" si elle a tous ses documents générés OU si son statut est 'completed'
+  const isBookingCompleted = (booking: any) => {
+    // Vérifier si les documents sont générés
+    const hasPoliceForm = booking.documentsGenerated?.policeForm === true || 
+                          booking.documentsGenerated?.police === true;
+    const hasContract = booking.documentsGenerated?.contract === true;
+    
+    // Réservation complétée = statut 'completed' OU (a police form ET contrat)
+    return booking.status === 'completed' || (hasPoliceForm && hasContract);
+  };
+
   const stats = {
     total: propertyBookings.length + airbnbReservationsCount,
-    pending: propertyBookings.filter(b => b.status === 'pending').length + airbnbReservationsCount,
-    completed: propertyBookings.filter(b => b.status === 'completed').length,
+    pending: propertyBookings.filter(b => !isBookingCompleted(b)).length + airbnbReservationsCount,
+    completed: propertyBookings.filter(b => isBookingCompleted(b)).length,
   };
 
   return (
@@ -298,7 +311,7 @@ export const PropertyDetail = () => {
           className="gap-2 text-gray-700 hover:bg-gray-100"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Tableau de bord</span>
+          <span>{t('dashboard.title')}</span>
         </Button>
       </div>
 
@@ -338,7 +351,7 @@ export const PropertyDetail = () => {
                 <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
                   <div className="flex items-center gap-1.5">
                     <Users className="w-4 h-4" />
-                    <span>{property.max_occupancy} guests</span>
+                    <span>{property.max_occupancy} {t('dashboard.guests')}</span>
                   </div>
                   {property.address && (
                     <div className="flex items-center gap-1.5">
@@ -355,13 +368,13 @@ export const PropertyDetail = () => {
               {/* Stats selon modèle Figma (37 / 23 / 14) */}
               <div className="flex items-center gap-4">
                 <div className="text-xl md:text-2xl font-bold text-black">
-                  {stats.total} Total
+                  {stats.total} {t('dashboard.total')}
                 </div>
                 <div className="text-xl md:text-2xl font-bold" style={{ color: '#059669' }}>
-                  {stats.completed} Terminé
+                  {stats.completed} {t('dashboard.completed')}
                 </div>
                 <div className="text-xl md:text-2xl font-bold text-gray-500">
-                  {stats.pending} En attente
+                  {stats.pending} {t('dashboard.pending')}
                 </div>
               </div>
               
@@ -376,7 +389,7 @@ export const PropertyDetail = () => {
                   data-tutorial="generate-link"
                 >
                   <LinkIcon className="h-4 w-4" />
-                  <span className="text-sm font-medium">Copier le lien</span>
+                  <span className="text-sm font-medium">{t('dashboard.copyLink')}</span>
                 </Button>
                 <Button 
                   variant="outline" 
@@ -386,7 +399,7 @@ export const PropertyDetail = () => {
                   data-tutorial="tutorial-button"
                 >
                   <HelpCircle className="h-4 w-4" />
-                  <span className="text-sm font-medium">Tutoriel</span>
+                  <span className="text-sm font-medium">{t('dashboard.tutorial')}</span>
                 </Button>
               </div>
             </div>

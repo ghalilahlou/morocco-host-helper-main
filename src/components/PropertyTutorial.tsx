@@ -2,122 +2,39 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { X, ArrowRight, ChevronRight, ChevronLeft, Lightbulb } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft, Lightbulb } from 'lucide-react';
 import { CSSProperties } from 'react';
 import { useDeviceType } from '@/hooks/use-mobile';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface TutorialStep {
   id: string;
-  title: string;
-  description: string;
+  titleKey: string;
+  descriptionKey: string;
   target: string;
   position: 'top' | 'bottom' | 'left' | 'right';
 }
 
-// Étapes de tutoriel pour version Desktop
+// Desktop tutorial steps (text via i18n keys)
 const desktopTutorialSteps: TutorialStep[] = [
-  {
-    id: 'welcome',
-    title: 'Bienvenue dans votre tableau de bord propriété !',
-    description: 'Découvrez les fonctionnalités principales pour gérer efficacement votre bien depuis votre ordinateur. Naviguez facilement entre les différentes sections.',
-    target: '',
-    position: 'bottom'
-  },
-  {
-    id: 'generate-link',
-    title: 'Générer le lien client',
-    description: 'Cliquez sur "Copier le lien" pour créer un lien unique à partager avec vos clients. Ce lien leur permettra de soumettre leurs documents d\'identité et de signer le contrat en ligne.',
-    target: '[data-tutorial="generate-link"]',
-    position: 'bottom'
-  },
-  {
-    id: 'calendar',
-    title: 'Vue Calendrier',
-    description: 'Le bouton "Calendrier" vous permet de visualiser toutes vos réservations dans une vue calendrier. Vous pouvez voir les dates d\'arrivée et de départ de chaque réservation.',
-    target: '[data-tutorial="calendar"]',
-    position: 'bottom'
-  },
-  {
-    id: 'add-reservation',
-    title: 'Ajouter une nouvelle réservation',
-    description: 'Cliquez sur "Créer une réservation" pour ajouter manuellement une réservation. Remplissez les informations de vos clients (nom, dates, nombre de personnes).',
-    target: '[data-tutorial="add-booking"]',
-    position: 'bottom'
-  },
-  {
-    id: 'calendar-view',
-    title: 'Consulter le calendrier',
-    description: 'Dans cette vue calendrier, vous pouvez voir toutes vos réservations organisées par mois. Cliquez sur une réservation pour la modifier ou générer les documents.',
-    target: '[data-tutorial="calendar-view"]',
-    position: 'top'
-  },
-  {
-    id: 'sync-airbnb',
-    title: 'Synchroniser avec Airbnb',
-    description: 'Cliquez sur "Synchronisation" pour connecter votre calendrier Airbnb. Vos réservations Airbnb seront automatiquement importées et affichées dans ce tableau de bord.',
-    target: '[data-tutorial="sync-airbnb"]',
-    position: 'bottom'
-  },
-  {
-    id: 'tutorial-button',
-    title: 'Accéder au tutoriel',
-    description: 'Vous pouvez revoir ce tutoriel à tout moment en cliquant sur le bouton "Tutoriel" dans la barre d\'outils en haut de la page.',
-    target: '[data-tutorial="tutorial-button"]',
-    position: 'bottom'
-  }
+  { id: 'welcome', titleKey: 'tutorial.desktop.welcome.title', descriptionKey: 'tutorial.desktop.welcome.desc', target: '', position: 'bottom' },
+  { id: 'generate-link', titleKey: 'tutorial.desktop.generateLink.title', descriptionKey: 'tutorial.desktop.generateLink.desc', target: '[data-tutorial="generate-link"]', position: 'bottom' },
+  { id: 'calendar', titleKey: 'tutorial.desktop.calendar.title', descriptionKey: 'tutorial.desktop.calendar.desc', target: '[data-tutorial="calendar"]', position: 'bottom' },
+  { id: 'add-reservation', titleKey: 'tutorial.desktop.addReservation.title', descriptionKey: 'tutorial.desktop.addReservation.desc', target: '[data-tutorial="add-booking"]', position: 'bottom' },
+  { id: 'calendar-view', titleKey: 'tutorial.desktop.calendarView.title', descriptionKey: 'tutorial.desktop.calendarView.desc', target: '[data-tutorial="calendar-view"]', position: 'top' },
+  { id: 'sync-airbnb', titleKey: 'tutorial.desktop.syncAirbnb.title', descriptionKey: 'tutorial.desktop.syncAirbnb.desc', target: '[data-tutorial="sync-airbnb"]', position: 'bottom' },
+  { id: 'tutorial-button', titleKey: 'tutorial.desktop.tutorialButton.title', descriptionKey: 'tutorial.desktop.tutorialButton.desc', target: '[data-tutorial="tutorial-button"]', position: 'bottom' }
 ];
 
-// Étapes de tutoriel pour version Mobile
+// Mobile tutorial steps (text via i18n keys)
 const mobileTutorialSteps: TutorialStep[] = [
-  {
-    id: 'welcome',
-    title: 'Bienvenue dans votre tableau de bord !',
-    description: 'Découvrez comment gérer votre propriété depuis votre mobile. Faites défiler pour voir toutes les fonctionnalités disponibles.',
-    target: '',
-    position: 'bottom'
-  },
-  {
-    id: 'generate-link',
-    title: 'Copier le lien client',
-    description: 'Appuyez sur "Copier le lien" pour générer un lien unique. Partagez ce lien avec vos clients par SMS, email ou WhatsApp. Ils pourront ainsi soumettre leurs documents directement depuis leur téléphone.',
-    target: '[data-tutorial="generate-link"]',
-    position: 'bottom'
-  },
-  {
-    id: 'calendar',
-    title: 'Vue Calendrier',
-    description: 'Le bouton "Calendrier" affiche toutes vos réservations dans une vue mensuelle optimisée pour mobile. Balayez pour naviguer entre les mois.',
-    target: '[data-tutorial="calendar"]',
-    position: 'bottom'
-  },
-  {
-    id: 'add-reservation',
-    title: 'Créer une réservation',
-    description: 'Appuyez sur "Créer une réservation" pour ajouter une nouvelle réservation. Le formulaire s\'ouvrira en plein écran pour une saisie facile sur mobile.',
-    target: '[data-tutorial="add-booking"]',
-    position: 'bottom'
-  },
-  {
-    id: 'calendar-view',
-    title: 'Vue calendrier mobile',
-    description: 'Dans cette vue, vous pouvez voir toutes vos réservations. Appuyez sur une réservation pour la modifier ou générer les documents. Balayez vers le haut ou le bas pour voir plus de dates.',
-    target: '[data-tutorial="calendar-view"]',
-    position: 'top'
-  },
-  {
-    id: 'sync-airbnb',
-    title: 'Synchroniser avec Airbnb',
-    description: 'Appuyez sur "Synchronisation" pour connecter votre calendrier Airbnb. Vos réservations seront automatiquement importées. Vous recevrez une notification une fois la synchronisation terminée.',
-    target: '[data-tutorial="sync-airbnb"]',
-    position: 'bottom'
-  },
-  {
-    id: 'tutorial-button',
-    title: 'Revoir le tutoriel',
-    description: 'Vous pouvez revoir ce tutoriel à tout moment en appuyant sur le bouton "Tutoriel" dans la barre d\'outils en haut de l\'écran.',
-    target: '[data-tutorial="tutorial-button"]',
-    position: 'bottom'
-  }
+  { id: 'welcome', titleKey: 'tutorial.mobile.welcome.title', descriptionKey: 'tutorial.mobile.welcome.desc', target: '', position: 'bottom' },
+  { id: 'generate-link', titleKey: 'tutorial.mobile.generateLink.title', descriptionKey: 'tutorial.mobile.generateLink.desc', target: '[data-tutorial="generate-link"]', position: 'bottom' },
+  { id: 'calendar', titleKey: 'tutorial.mobile.calendar.title', descriptionKey: 'tutorial.mobile.calendar.desc', target: '[data-tutorial="calendar"]', position: 'bottom' },
+  { id: 'add-reservation', titleKey: 'tutorial.mobile.addReservation.title', descriptionKey: 'tutorial.mobile.addReservation.desc', target: '[data-tutorial="add-booking"]', position: 'bottom' },
+  { id: 'calendar-view', titleKey: 'tutorial.mobile.calendarView.title', descriptionKey: 'tutorial.mobile.calendarView.desc', target: '[data-tutorial="calendar-view"]', position: 'top' },
+  { id: 'sync-airbnb', titleKey: 'tutorial.mobile.syncAirbnb.title', descriptionKey: 'tutorial.mobile.syncAirbnb.desc', target: '[data-tutorial="sync-airbnb"]', position: 'bottom' },
+  { id: 'tutorial-button', titleKey: 'tutorial.mobile.tutorialButton.title', descriptionKey: 'tutorial.mobile.tutorialButton.desc', target: '[data-tutorial="tutorial-button"]', position: 'bottom' }
 ];
 
 interface PropertyTutorialProps {
@@ -125,11 +42,11 @@ interface PropertyTutorialProps {
 }
 
 export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
+  const t = useT();
   const [currentStep, setCurrentStep] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
   const deviceType = useDeviceType();
-  
-  // Sélectionner les étapes selon le type d'appareil
+
   const isMobile = deviceType === 'mobile';
   const tutorialSteps = isMobile ? mobileTutorialSteps : desktopTutorialSteps;
 
@@ -407,11 +324,11 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
               <X className={`${isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'}`} />
             </Button>
           </div>
-          <CardTitle className={isMobile ? 'text-base mt-2' : 'text-lg'}>{currentStepData.title}</CardTitle>
+          <CardTitle className={isMobile ? 'text-base mt-2' : 'text-lg'}>{t(currentStepData.titleKey)}</CardTitle>
         </CardHeader>
         <CardContent className={`pt-0 ${isMobile ? 'px-4 pb-4' : ''}`}>
           <CardDescription className={`${isMobile ? 'text-xs' : 'text-sm'} mb-4 leading-relaxed`}>
-            {currentStepData.description}
+            {t(currentStepData.descriptionKey)}
           </CardDescription>
           
           <div className={`flex items-center ${isMobile ? 'gap-2' : 'justify-between'}`}>
@@ -423,7 +340,7 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
               className={`gap-2 bg-muted/50 hover:bg-muted text-muted-foreground ${isMobile ? 'text-xs px-3 py-1.5 h-8 flex-1' : ''}`}
             >
               <ChevronLeft className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-              <span className={isMobile ? 'text-xs' : ''}>Précédent</span>
+              <span className={isMobile ? 'text-xs' : ''}>{t('tutorial.previous')}</span>
             </Button>
             <Button 
               onClick={handleNext}
@@ -431,7 +348,7 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
               className={`gap-2 ${isMobile ? 'text-xs px-3 py-1.5 h-8 flex-1' : ''}`}
             >
               <span className={isMobile ? 'text-xs' : ''}>
-                {currentStep === tutorialSteps.length - 1 ? 'Terminer' : 'Suivant'}
+                {currentStep === tutorialSteps.length - 1 ? t('tutorial.finish') : t('tutorial.next')}
               </span>
               {currentStep === tutorialSteps.length - 1 ? null : (
                 <ChevronRight className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />

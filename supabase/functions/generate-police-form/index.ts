@@ -1,9 +1,9 @@
 /// <reference types="https://deno.land/x/types/deploy/stable/index.d.ts" />
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
-import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
+import { createClient } from 'https://esm.sh/v135/@supabase/supabase-js@2.39.3';
+import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/v135/pdf-lib@1.17.1";
+import fontkit from "https://esm.sh/v135/@pdf-lib/fontkit@1.1.1";
 
 // =====================================================
 // CONFIGURATION
@@ -53,6 +53,49 @@ function hasArabic(text: string): boolean {
 }
 
 // =====================================================
+// VERROU POUR ÉVITER LES GÉNÉRATIONS MULTIPLES SIMULTANÉES
+// =====================================================
+
+// ✅ NOUVEAU : Map pour tracker les générations en cours par bookingId
+const generatingLocks = new Map<string, { timestamp: number, loadId: string }>();
+
+function acquireLock(bookingId: string): { acquired: boolean, existingLoadId?: string } {
+  const existing = generatingLocks.get(bookingId);
+  const now = Date.now();
+  
+  // Si une génération est en cours depuis moins de 5 minutes, refuser
+  if (existing && (now - existing.timestamp < 300000)) {
+    log('warn', '⚠️ Génération déjà en cours pour ce booking', {
+      bookingId,
+      existingLoadId: existing.loadId,
+      elapsed: now - existing.timestamp
+    });
+    return { acquired: false, existingLoadId: existing.loadId };
+  }
+  
+  // Acquérir le verrou
+  const loadId = `${now}-${Math.random().toString(36).substring(2, 9)}`;
+  generatingLocks.set(bookingId, { timestamp: now, loadId });
+  
+  log('info', '🔒 Verrou acquis pour génération police', { bookingId, loadId });
+  return { acquired: true };
+}
+
+function releaseLock(bookingId: string, loadId: string) {
+  const existing = generatingLocks.get(bookingId);
+  if (existing && existing.loadId === loadId) {
+    generatingLocks.delete(bookingId);
+    log('info', '🔓 Verrou libéré pour génération police', { bookingId, loadId });
+  } else {
+    log('warn', '⚠️ Tentative de libération de verrou incorrect', {
+      bookingId,
+      expectedLoadId: existing?.loadId,
+      providedLoadId: loadId
+    });
+  }
+}
+
+// =====================================================
 // MAIN HANDLER
 // =====================================================
 
@@ -63,193 +106,268 @@ serve(async (req: Request) => {
   }
 
   const startTime = Date.now();
+  let bookingId: string | null = null;
+  let loadId: string | null = null;
   
   try {
     log('info', '🚀 Nouvelle requête génération fiche de police');
 
     // Parse request
     const body = await req.json();
-    const { bookingId } = body;
+    bookingId = body.bookingId ?? null;
+    const previewBooking = body.booking ?? null;
+    const isPreview = !!(previewBooking && !bookingId);
 
-    if (!bookingId) {
-      throw new Error('bookingId est requis');
+    if (!isPreview && !bookingId) {
+      throw new Error('bookingId ou booking (aperçu) requis');
     }
 
-    log('info', '📦 Requête reçue', { bookingId });
+    log('info', isPreview ? '👁️ Mode aperçu (modèle vide)' : '📦 Requête reçue', { bookingId, isPreview });
 
-    // Create Supabase client
+    // Create Supabase client (nécessaire même en preview pour polices PDF)
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Configuration Supabase manquante');
     }
-
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // =====================================================
-    // ÉTAPE 1: Récupérer le booking avec toutes les données
-    // =====================================================
-    
-    log('info', '📋 Récupération du booking...');
-    
-    const { data: booking, error: bookingError } = await supabase
-      .from('bookings')
-      .select(`
-        *,
-        property:properties(
-          *,
-          contract_template
-        )
-      `)
-      .eq('id', bookingId)
-      .single();
+    let booking: any;
+    let guests: Record<string, string>[];
+    let guestSignatureData: string | null = null;
+    let guestSignedAt: string | null = null;
 
-    if (bookingError || !booking) {
-      throw new Error(`Booking non trouvé: ${bookingError?.message}`);
-    }
-
-    // ✅ ÉTAPE 1b: Récupérer le profil du propriétaire séparément
-    let ownerProfile = null;
-    if (booking.property?.user_id) {
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', booking.property.user_id)
-        .single();
-      
-      if (profile && !profileError) {
-        ownerProfile = profile;
+    if (isPreview) {
+      // ========== MODE APERÇU : même format bilingue (FR/EN + arabe), champs vides / placeholders ==========
+      function mapGuestData(guestData: Record<string, any>): Record<string, string> {
+        return {
+          full_name: guestData.full_name || guestData.fullName || guestData.name || '',
+          first_name: guestData.first_name || guestData.firstName || guestData.prenom || '',
+          last_name: guestData.last_name || guestData.lastName || guestData.nom || '',
+          email: guestData.email || guestData.courriel || '',
+          phone: guestData.phone || guestData.telephone || guestData.phone_number || guestData.phoneNumber || '',
+          nationality: guestData.nationality || guestData.nationalite || '',
+          document_type: guestData.document_type || guestData.documentType || 'passport',
+          document_number: guestData.document_number || guestData.documentNumber || '',
+          date_of_birth: guestData.date_of_birth || guestData.dateOfBirth || '',
+          place_of_birth: guestData.place_of_birth || guestData.placeOfBirth || '',
+          profession: guestData.profession || '',
+          motif_sejour: guestData.motif_sejour || guestData.motifSejour || 'TOURISME',
+          adresse_personnelle: guestData.adresse_personnelle || guestData.adressePersonnelle || ''
+        };
       }
-    }
-
-    log('info', '✅ Booking récupéré', {
-      bookingId: booking.id,
-      propertyId: booking.property?.id,
-      propertyUserId: booking.property?.user_id,
-      ownerEmail: ownerProfile?.email,
-      ownerPhone: ownerProfile?.phone,
-      checkIn: booking.check_in_date,
-      checkOut: booking.check_out_date
-    });
-
-    // ÉTAPE 2: Récupérer les guests depuis guest_submissions
-    // =====================================================
-    
-    log('info', '👥 Récupération des guests...');
-    
-    const { data: submissions, error: submissionsError } = await supabase
-      .from('guest_submissions')
-      .select('guest_data')  // ✅ CORRIGÉ: Retirer extracted_data qui n'existe pas
-      .eq('booking_id', bookingId);
-
-    if (submissionsError) {
-      log('warn', 'Erreur récupération submissions', { error: submissionsError.message });
-    }
-
-    // ✅ AMÉLIORATION: Mapper les données avec support de différentes structures
-    const guests = submissions?.map(s => {
-      const guestData = s.guest_data || {};
-      
-      // Fusionner les données de différentes sources
-      return {
-        // Nom complet - essayer différentes clés
-        full_name: guestData.full_name || guestData.fullName || guestData.name || '',
-        
-        // Nom et prénom séparés (si disponibles)
-        first_name: guestData.first_name || guestData.firstName || guestData.prenom || '',
-        last_name: guestData.last_name || guestData.lastName || guestData.nom || '',
-        
-        // Email
-        email: guestData.email || guestData.courriel || '',
-        
-        // Téléphone - PLUS DE VARIANTES
-        phone: guestData.phone || guestData.telephone || guestData.phone_number || 
-               guestData.phoneNumber || guestData.tel || guestData.mobile || 
-               guestData.numero_telephone || guestData.numeroTelephone || '',
-        
-        // Nationalité
-        nationality: guestData.nationality || guestData.nationalite || guestData.nationalité || '',
-        
-        // Document - PLUS DE VARIANTES
-        document_type: guestData.document_type || guestData.documentType || guestData.id_type ||
-                       guestData.type_document || guestData.typeDocument || 'passport',
-        document_number: guestData.document_number || guestData.documentNumber || guestData.id_number ||
-                        guestData.idNumber || guestData.numero_document || guestData.numeroDocument ||
-                        guestData.passport_number || guestData.passportNumber || 
-                        guestData.numero_passeport || guestData.numeroPasseport || '',
-        
-        // Date de naissance - PLUS DE VARIANTES
-        date_of_birth: guestData.date_of_birth || guestData.dateOfBirth || guestData.birth_date ||
-                       guestData.birthDate || guestData.date_naissance || guestData.dateNaissance || '',
-        
-        // Lieu de naissance - PLUS DE VARIANTES
-        place_of_birth: guestData.place_of_birth || guestData.placeOfBirth || guestData.birth_place ||
-                        guestData.birthPlace || guestData.lieu_naissance || guestData.lieuNaissance ||
-                        guestData.lieu_de_naissance || guestData.lieuDeNaissance || '',
-        
-        // Profession
-        profession: guestData.profession || guestData.occupation || guestData.metier || '',
-        
-        // Motif du séjour
-        motif_sejour: guestData.motif_sejour || guestData.motifSejour || guestData.purpose ||
-                      guestData.motif || guestData.raison_sejour || 'TOURISME',
-        
-        // Adresse personnelle - PLUS DE VARIANTES
-        adresse_personnelle: guestData.adresse_personnelle || guestData.adressePersonnelle || 
-                            guestData.home_address || guestData.homeAddress ||
-                            guestData.address || guestData.adresse ||
-                            guestData.adresse_domicile || guestData.adresseDomicile || ''
+      const rawGuests = previewBooking.guests || [];
+      guests = rawGuests.length > 0
+        ? rawGuests.map((g: any) => mapGuestData(g))
+        : [mapGuestData({ full_name: '', document_number: '', email: '', motif_sejour: 'TOURISME' })];
+      const prop = previewBooking.property || {};
+      const ct = prop.contract_template || {};
+      const addressParts = (prop.address || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+      booking = {
+        id: null,
+        check_in_date: previewBooking.check_in_date || previewBooking.checkInDate || new Date().toISOString().slice(0, 10),
+        check_out_date: previewBooking.check_out_date || previewBooking.checkOutDate || new Date().toISOString().slice(0, 10),
+        property: {
+          ...prop,
+          address: prop.address || '',
+          name: prop.name || '',
+          city: prop.city || (addressParts.length > 0 ? addressParts[addressParts.length - 1] : ''),
+          user: prop.user || {
+            full_name: ct.landlord_name || prop.name || '',
+            name: ct.landlord_name || prop.name || '',
+            email: ct.landlord_email || '',
+            phone: ct.landlord_phone || ''
+          }
+        }
       };
-    }) || [];
-    
-    if (guests.length === 0) {
-      throw new Error('Aucun guest trouvé pour ce booking');
+      log('info', '✅ Aperçu : booking normalisé (modèle vide)', { guestsCount: guests.length });
+    } else {
+      // ✅ PROTECTION : Verrou pour éviter générations simultanées
+      const lockResult = acquireLock(bookingId);
+      if (!lockResult.acquired) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Une génération de fiche de police est déjà en cours pour cette réservation',
+            code: 'GENERATION_IN_PROGRESS',
+            existingLoadId: lockResult.existingLoadId
+          }),
+          { status: 409, headers: corsHeaders }
+        );
+      }
+      loadId = generatingLocks.get(bookingId)?.loadId || null;
+
+      // =====================================================
+      // ÉTAPE 1: Récupérer le booking avec toutes les données
+      // =====================================================
+      log('info', '📋 Récupération du booking...');
+      const { data: bookingRow, error: bookingError } = await supabase
+        .from('bookings')
+        .select(`
+          *,
+          property:properties(
+            *,
+            contract_template
+          )
+        `)
+        .eq('id', bookingId)
+        .single();
+
+      if (bookingError || !bookingRow) {
+        throw new Error(`Booking non trouvé: ${bookingError?.message}`);
+      }
+      booking = bookingRow;
+
+      let ownerProfile = null;
+      if (booking.property?.user_id) {
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', booking.property.user_id).single();
+        if (profile) ownerProfile = profile;
+      }
+      log('info', '✅ Booking récupéré', { bookingId: booking.id, propertyId: booking.property?.id });
+
+      // ÉTAPE 2: Récupérer les guests (guest_submissions → table guests → booking.guest_name)
+      log('info', '👥 Récupération des guests...');
+      const { data: submissions, error: submissionsError } = await supabase
+        .from('guest_submissions')
+        .select('guest_data')
+        .eq('booking_id', bookingId);
+      if (submissionsError) log('warn', 'Erreur récupération submissions', { error: submissionsError.message });
+
+      function mapGuestData(guestData: Record<string, any>): Record<string, string> {
+        return {
+          full_name: guestData.full_name || guestData.fullName || guestData.name || '',
+          first_name: guestData.first_name || guestData.firstName || guestData.prenom || '',
+          last_name: guestData.last_name || guestData.lastName || guestData.nom || '',
+          email: guestData.email || guestData.courriel || '',
+          phone: guestData.phone || guestData.telephone || guestData.phone_number || guestData.phoneNumber || '',
+          nationality: guestData.nationality || guestData.nationalite || guestData.nationalité || '',
+          document_type: guestData.document_type || guestData.documentType || guestData.id_type || 'passport',
+          document_number: guestData.document_number || guestData.documentNumber || guestData.id_number || '',
+          date_of_birth: guestData.date_of_birth || guestData.dateOfBirth || guestData.birth_date || '',
+          place_of_birth: guestData.place_of_birth || guestData.placeOfBirth || guestData.birth_place || '',
+          profession: guestData.profession || guestData.occupation || '',
+          motif_sejour: guestData.motif_sejour || guestData.motifSejour || 'TOURISME',
+          adresse_personnelle: guestData.adresse_personnelle || guestData.adressePersonnelle || guestData.address || ''
+        };
+      }
+
+      guests = (submissions || []).map((s: any) => mapGuestData(s.guest_data || {}));
+
+      if (guests.length === 0) {
+        const { data: guestsRows, error: guestsError } = await supabase
+          .from('guests')
+          .select('full_name, date_of_birth, document_number, nationality, place_of_birth, document_type, profession, motif_sejour, adresse_personnelle, email')
+          .eq('booking_id', bookingId);
+        if (!guestsError && guestsRows?.length > 0) {
+          guests = guestsRows.map((g: any) => mapGuestData({
+            full_name: g.full_name,
+            date_of_birth: g.date_of_birth != null ? (typeof g.date_of_birth === 'string' ? g.date_of_birth : new Date(g.date_of_birth).toISOString().slice(0, 10)) : '',
+            document_number: g.document_number || '', nationality: g.nationality || '', place_of_birth: g.place_of_birth || '',
+            document_type: g.document_type || 'passport', profession: g.profession || '', motif_sejour: g.motif_sejour || 'TOURISME',
+            adresse_personnelle: g.adresse_personnelle || '', email: g.email || ''
+          }));
+        }
+      }
+      if (guests.length === 0) {
+        const guestName = (booking as any).guest_name?.trim() || '';
+        const guestEmail = (booking as any).guest_email?.trim() || '';
+        if (guestName || guestEmail) {
+          guests = [mapGuestData({ full_name: guestName || 'Invité (à compléter)', email: guestEmail, document_number: '', date_of_birth: '', nationality: '', place_of_birth: '', document_type: 'passport', profession: '', motif_sejour: 'TOURISME', adresse_personnelle: '' })];
+        }
+      }
+      if (guests.length === 0) {
+        throw new Error('Aucun invité pour ce booking. Ajoutez au moins un invité (nom ou table guests) pour générer la fiche de police.');
+      }
+
+      // ÉTAPE 3: Signature guest
+      const { data: signatureData, error: sigError } = await supabase
+        .from('contract_signatures')
+        .select('id, signature_data, signed_at, created_at, signer_name')
+        .eq('booking_id', bookingId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (sigError) log('error', 'Erreur récupération signature', { error: sigError.message });
+      guestSignatureData = signatureData?.signature_data ?? null;
+      guestSignedAt = signatureData?.signed_at ?? null;
     }
 
-    log('info', '✅ Guests récupérés', {
-      count: guests.length,
-      firstGuestFullName: guests[0]?.full_name,
-      firstGuestEmail: guests[0]?.email,
-      firstGuestPhone: guests[0]?.phone,
-      firstGuestNationality: guests[0]?.nationality,
-      firstGuestPlaceOfBirth: guests[0]?.place_of_birth,
-      firstGuestDocumentNumber: guests[0]?.document_number,
-      firstGuestAddress: guests[0]?.adresse_personnelle,
-      allGuestsData: guests
+    // =====================================================
+    // ✅ DÉDUPLICATION: Éviter plusieurs fiches pour le même guest
+    // =====================================================
+    
+    /**
+     * Déduplique les guests par identité (fullName + documentNumber)
+     * Un guest est considéré comme unique si la combinaison nom + document est unique
+     */
+    function deduplicateGuestsByIdentity(guestsList: any[]): any[] {
+      const seen = new Map<string, any>();
+      const duplicates: any[] = [];
+      
+      for (const guest of guestsList) {
+        // Clé d'unicité : nom complet (normalisé) + numéro de document (normalisé)
+        const fullName = (guest.full_name || '').trim().toLowerCase();
+        const docNumber = (guest.document_number || '').trim().toLowerCase();
+        
+        // Ignorer les guests sans nom ET sans document (données invalides)
+        if (!fullName && !docNumber) {
+          log('warn', '⚠️ Guest ignoré (pas de nom ni de document):', guest);
+          continue;
+        }
+        
+        // Créer une clé unique
+        const key = `${fullName}|${docNumber}`;
+        
+        if (!seen.has(key)) {
+          seen.set(key, guest);
+        } else {
+          duplicates.push({ key, guest });
+          log('info', '🔄 Duplicate détecté et ignoré:', {
+            fullName: guest.full_name,
+            documentNumber: guest.document_number,
+            key,
+            existingGuest: seen.get(key)?.full_name
+          });
+        }
+      }
+      
+      const uniqueGuests = Array.from(seen.values());
+      
+      log('info', '📊 Déduplication terminée:', {
+        totalGuests: guestsList.length,
+        uniqueGuests: uniqueGuests.length,
+        duplicatesRemoved: duplicates.length,
+        duplicatesList: duplicates.map(d => ({
+          name: d.guest.full_name,
+          doc: d.guest.document_number
+        }))
+      });
+      
+      return uniqueGuests;
+    }
+    
+    // ✅ APPLIQUER LA DÉDUPLICATION (en aperçu, garder au moins un invité pour avoir une page modèle)
+    let uniqueGuests = deduplicateGuestsByIdentity(guests);
+    if (isPreview && uniqueGuests.length === 0 && guests.length > 0) {
+      uniqueGuests = [guests[0]];
+    }
+
+    log('info', '✅ Guests récupérés et dédupliqués', {
+      totalGuests: guests.length,
+      uniqueGuests: uniqueGuests.length,
+      duplicatesRemoved: guests.length - uniqueGuests.length,
+      firstGuestFullName: uniqueGuests[0]?.full_name,
+      firstGuestEmail: uniqueGuests[0]?.email,
+      firstGuestPhone: uniqueGuests[0]?.phone,
+      firstGuestNationality: uniqueGuests[0]?.nationality,
+      firstGuestPlaceOfBirth: uniqueGuests[0]?.place_of_birth,
+      firstGuestDocumentNumber: uniqueGuests[0]?.document_number,
+      firstGuestAddress: uniqueGuests[0]?.adresse_personnelle,
+      allUniqueGuestsData: uniqueGuests
     });
 
     // =====================================================
-    // ÉTAPE 3: Récupérer la signature du guest
-    // =====================================================
-    
-    log('info', '✍️ Récupération signature guest...');
-    
-    const { data: signatureData, error: sigError } = await supabase
-      .from('contract_signatures')
-      .select('signature_data, signed_at')
-      .eq('booking_id', bookingId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (sigError) {
-      log('warn', 'Erreur récupération signature', { error: sigError.message });
-    }
-
-    const guestSignatureData = signatureData?.signature_data;
-    const guestSignedAt = signatureData?.signed_at;
-
-    log('info', '🔍 Signature guest récupérée', {
-      found: !!guestSignatureData,
-      signatureLength: guestSignatureData?.length,
-      signaturePreview: guestSignatureData?.substring(0, 50),
-      signedAt: guestSignedAt,
-      startsWithDataImage: guestSignatureData?.startsWith('data:image/')
-    });
-
-    // =====================================================
-    // ÉTAPE 4: Générer le PDF (Format Officiel Marocain)
+    // ÉTAPE 4: Générer le PDF (Format Officiel Marocain – bilingue FR/EN + arabe)
     // =====================================================
     
     log('info', '📄 Génération du PDF format officiel marocain...');
@@ -393,8 +511,11 @@ serve(async (req: Request) => {
       return y - baseFieldHeight;
     }
 
-    // Générer une page par invité
-    for (const guest of guests) {
+    // En aperçu : seules les infos Loueur/Host sont remplies ; Locataire et Séjour restent vides
+    const emptyIfPreview = (v: string) => (isPreview ? '' : (v || ''));
+
+    // Générer une page par invité UNIQUE
+    for (const guest of uniqueGuests) {
       const page = pdfDoc.addPage([pageWidth, pageHeight]);
       let yPosition = pageHeight - 50;
       
@@ -487,25 +608,24 @@ serve(async (req: Request) => {
         lastName
       });
       
-      yPosition = drawBilingualField(page, 'Nom / Last name', 'الاسم العائلي', lastName, margin, yPosition);
-      yPosition = drawBilingualField(page, 'Prénom / First name', 'الاسم الشخصي', firstName, margin, yPosition);
+      yPosition = drawBilingualField(page, 'Nom / Last name', 'الاسم العائلي', emptyIfPreview(lastName), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Prénom / First name', 'الاسم الشخصي', emptyIfPreview(firstName), margin, yPosition);
       
       const birthDate = formatDate(guest.date_of_birth);
-      yPosition = drawBilingualField(page, 'Date de naissance / Date of birth', 'تاريخ الولادة', birthDate, margin, yPosition);
-      yPosition = drawBilingualField(page, 'Lieu de naissance / Place of birth', 'مكان الولادة', guest.place_of_birth || '', margin, yPosition);
-      yPosition = drawBilingualField(page, 'Nationalité / Nationality', 'الجنسية', guest.nationality || '', margin, yPosition);
+      yPosition = drawBilingualField(page, 'Date de naissance / Date of birth', 'تاريخ الولادة', emptyIfPreview(birthDate), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Lieu de naissance / Place of birth', 'مكان الولادة', emptyIfPreview(guest.place_of_birth || ''), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Nationalité / Nationality', 'الجنسية', emptyIfPreview(guest.nationality || ''), margin, yPosition);
       
       const docType = guest.document_type === 'passport' ? 'PASSEPORT / PASSPORT' : 'CNI / ID CARD';
-      yPosition = drawBilingualField(page, 'Type de document / ID type', 'نوع الوثيقة', docType, margin, yPosition);
-      yPosition = drawBilingualField(page, 'Numéro du document / ID number', 'رقم الوثيقة', guest.document_number || '', margin, yPosition);
-      yPosition = drawBilingualField(page, 'Date de délivrance / Date of issue', 'تاريخ الإصدار', '', margin, yPosition);
-      // ✅ AMÉLIORATION: Utiliser la date d'arrivée comme date d'entrée
+      yPosition = drawBilingualField(page, 'Type de document / ID type', 'نوع الوثيقة', emptyIfPreview(docType), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Numéro du document / ID number', 'رقم الوثيقة', emptyIfPreview(guest.document_number || ''), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Date d\'expiration / Date of expiry', 'تاريخ الانتهاء', '', margin, yPosition);
       const entryDate = formatDate(booking.check_in_date);
-      yPosition = drawBilingualField(page, 'Date d\'entrée au Maroc / Date of entry in Morocco', 'تاريخ الدخول إلى المغرب', entryDate, margin, yPosition);
-      yPosition = drawBilingualField(page, 'Profession', 'المهنة', guest.profession || '', margin, yPosition);
-      yPosition = drawBilingualField(page, 'Adresse / Home address', 'العنوان الشخصي', guest.adresse_personnelle || '', margin, yPosition);
-      yPosition = drawBilingualField(page, 'Courriel / Email', 'البريد الإلكتروني', guest.email || '', margin, yPosition);
-      yPosition = drawBilingualField(page, 'Numéro de téléphone / Phone number', 'رقم الهاتف', guest.phone || '', margin, yPosition);
+      yPosition = drawBilingualField(page, 'Date d\'entrée au Maroc / Date of entry in Morocco', 'تاريخ الدخول إلى المغرب', emptyIfPreview(entryDate), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Profession', 'المهنة', emptyIfPreview(guest.profession || ''), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Adresse / Home address', 'العنوان الشخصي', emptyIfPreview(guest.adresse_personnelle || ''), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Courriel / Email', 'البريد الإلكتروني', emptyIfPreview(guest.email || ''), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Numéro de téléphone / Phone number', 'رقم الهاتف', emptyIfPreview(guest.phone || ''), margin, yPosition);
       
       yPosition -= 20;
       
@@ -534,14 +654,13 @@ serve(async (req: Request) => {
       const checkInDate = formatDate(booking.check_in_date);
       const checkOutDate = formatDate(booking.check_out_date);
       
-      yPosition = drawBilingualField(page, 'Date d\'arrivée / Date of arrival', 'تاريخ الوصول', checkInDate, margin, yPosition);
-      yPosition = drawBilingualField(page, 'Date de départ / Date of departure', 'تاريخ المغادرة', checkOutDate, margin, yPosition);
-      yPosition = drawBilingualField(page, 'Motif du séjour / Purpose of stay', 'سبب الإقامة', guest.motif_sejour || 'TOURISME', margin, yPosition);
-      yPosition = drawBilingualField(page, 'Nombre de mineurs / Number of minors', 'عدد القاصرين', '0', margin, yPosition);
-      // ✅ AMÉLIORATION: Utiliser la nationalité comme lieu de provenance
+      yPosition = drawBilingualField(page, 'Date d\'arrivée / Date of arrival', 'تاريخ الوصول', emptyIfPreview(checkInDate), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Date de départ / Date of departure', 'تاريخ المغادرة', emptyIfPreview(checkOutDate), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Motif du séjour / Purpose of stay', 'سبب الإقامة', emptyIfPreview(guest.motif_sejour || 'TOURISME'), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Nombre de mineurs / Number of minors', 'عدد القاصرين', emptyIfPreview('0'), margin, yPosition);
       const placeOfProvenance = guest.nationality === 'MAROCAIN' || guest.nationality === 'MOROCCAN' ? 'Maroc' : guest.nationality || '';
-      yPosition = drawBilingualField(page, 'Lieu de provenance / Place of provenance', 'مكان القدوم', placeOfProvenance, margin, yPosition);
-      yPosition = drawBilingualField(page, 'Destination', 'الوجهة', property.city || property.address || '', margin, yPosition);
+      yPosition = drawBilingualField(page, 'Lieu de provenance / Place of provenance', 'مكان القدوم', emptyIfPreview(placeOfProvenance), margin, yPosition);
+      yPosition = drawBilingualField(page, 'Destination', 'الوجهة', emptyIfPreview(property.city || property.address || ''), margin, yPosition);
       
       yPosition -= 20;
       
@@ -742,16 +861,34 @@ serve(async (req: Request) => {
     }
 
     log('info', 'PDF fiches de police généré format officiel', {
-      pages: guests.length,
-      guests: guests.length
+      pages: uniqueGuests.length,
+      uniqueGuests: uniqueGuests.length,
+      totalGuests: guests.length,
+      duplicatesRemoved: guests.length - uniqueGuests.length
     });
 
     const pdfBytes = await pdfDoc.save();
     
     log('info', '✅ PDF généré', {
-      pages: guests.length,
+      pages: uniqueGuests.length,
       sizeKB: Math.round(pdfBytes.length / 1024)
     });
+
+    // =====================================================
+    // MODE APERÇU : retourner le PDF en data URL (même format, non rempli)
+    // =====================================================
+    if (isPreview) {
+      let binary = '';
+      const bytes = new Uint8Array(pdfBytes);
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const dataUrl = `data:application/pdf;base64,${btoa(binary)}`;
+      return new Response(JSON.stringify({
+        success: true,
+        documentUrl: dataUrl,
+        documentUrls: [dataUrl],
+        message: 'Aperçu fiche de police (modèle bilingue FR/EN + arabe)'
+      }), { headers: corsHeaders });
+    }
 
     // =====================================================
     // ÉTAPE 5: Upload to Supabase Storage
@@ -807,21 +944,50 @@ serve(async (req: Request) => {
     log('info', '✅ Document sauvegardé dans uploaded_documents');
 
     // =====================================================
-    // ÉTAPE 7: Mettre à jour le booking
+    // ÉTAPE 7: Mettre à jour le booking (FUSION ATOMIQUE)
     // =====================================================
     
-    await supabase
+    // ✅ CORRECTION CRITIQUE : Récupérer l'état ACTUEL de documents_generated
+    // pour éviter d'écraser les mises à jour concurrentes
+    const { data: currentBooking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('documents_generated')
+      .eq('id', bookingId)
+      .single();
+    
+    if (fetchError) {
+      log('error', '❌ Erreur récupération état actuel booking', { error: fetchError });
+      throw new Error(`Erreur récupération booking: ${fetchError.message}`);
+    }
+    
+    // ✅ FUSION ATOMIQUE : Fusionner avec l'état actuel (pas l'état initial)
+    const currentDocs = currentBooking?.documents_generated || {};
+    const updatedDocs = {
+      ...currentDocs,  // ✅ Utiliser l'état ACTUEL, pas booking.documents_generated
+      policeForm: true,
+      policeUrl: publicUrl,  // ✅ AJOUT : Sauvegarder l'URL du PDF généré
+      policeGeneratedAt: new Date().toISOString()
+    };
+    
+    const { error: updateError } = await supabase
       .from('bookings')
       .update({
-        documents_generated: {
-          ...booking.documents_generated,
-          policeForm: true
-        },
+        documents_generated: updatedDocs,
         updated_at: new Date().toISOString()
       })
       .eq('id', bookingId);
+    
+    if (updateError) {
+      log('error', '❌ Erreur mise à jour booking', { error: updateError });
+      throw new Error(`Erreur mise à jour booking: ${updateError.message}`);
+    }
 
-    log('info', '✅ Booking mis à jour');
+    log('info', '✅ Booking mis à jour avec fusion atomique', {
+      hadContract: !!currentDocs.contract,
+      hadPoliceForm: !!currentDocs.policeForm,
+      newPoliceUrl: publicUrl.substring(0, 50) + '...',
+      loadId
+    });
 
     // =====================================================
     // RESPONSE
@@ -829,14 +995,28 @@ serve(async (req: Request) => {
     
     const processingTime = Date.now() - startTime;
     
+    // ✅ NOTE : Le verrou sera libéré dans le bloc finally
+    // ✅ _debug : visible dans l'onglet Network (réponse API) si vous n'avez pas accès aux logs Dashboard
+    const debugInfo = {
+      signatureFound: !!guestSignatureData,
+      signatureLength: guestSignatureData?.length ?? 0,
+      signatureFormatOk: !!(guestSignatureData && guestSignatureData.startsWith('data:image/')),
+      message: guestSignatureData
+        ? 'Signature trouvée et intégrée au PDF'
+        : 'Aucune signature en base (contract_signatures) pour ce booking — régénération après signature du contrat pour voir la signature'
+    };
+
     return new Response(
       JSON.stringify({
         success: true,
         policeUrl: publicUrl,
         bookingId,
-        guestsCount: guests.length,
+        guestsCount: uniqueGuests.length,
+        totalGuestsBeforeDedupe: guests.length,
+        duplicatesRemoved: guests.length - uniqueGuests.length,
         hasGuestSignature: !!guestSignatureData,
-        processingTime
+        processingTime,
+        _debug: debugInfo
       }),
       { headers: corsHeaders }
     );
@@ -846,8 +1026,15 @@ serve(async (req: Request) => {
     log('error', '❌ Erreur génération fiche de police', {
       error: error.message,
       stack: error.stack,
-      processingTime
+      processingTime,
+      bookingId,
+      loadId
     });
+    
+    // ✅ IMPORTANT : Libérer le verrou en cas d'erreur
+    if (bookingId && loadId) {
+      releaseLock(bookingId, loadId);
+    }
 
     return new Response(
       JSON.stringify({
@@ -857,5 +1044,10 @@ serve(async (req: Request) => {
       }),
       { status: 500, headers: corsHeaders }
     );
+  } finally {
+    // ✅ IMPORTANT : Libérer le verrou à la fin (succès ou erreur)
+    if (bookingId && loadId) {
+      releaseLock(bookingId, loadId);
+    }
   }
 });

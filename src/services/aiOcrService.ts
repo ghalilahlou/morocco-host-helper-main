@@ -104,7 +104,8 @@ export class AILocrService {
         { field: 'dateOfBirth', question: 'What is the date of birth on this document?' },
         { field: 'nationality', question: 'What is the nationality mentioned on this document?' },
         { field: 'documentNumber', question: 'What is the document number or ID number?' },
-        { field: 'placeOfBirth', question: 'What is the place of birth mentioned on this document?' }
+        { field: 'placeOfBirth', question: 'What is the place of birth mentioned on this document?' },
+        { field: 'documentIssueDate', question: 'What is the issue date or date of delivery of this document? Look for "Date of issue", "Date de délivrance", "Délivré le", "Issued".' }
       ];
 
       const result: Partial<Guest> = {};
@@ -140,6 +141,11 @@ export class AILocrService {
               case 'placeOfBirth':
                 result.placeOfBirth = answer.answer.trim();
                 break;
+              case 'documentIssueDate':
+                console.log('🔍 DEBUG AILocrService - Raw documentIssueDate answer:', answer.answer);
+                result.documentIssueDate = this.standardizeDate(answer.answer);
+                console.log('🔍 DEBUG AILocrService - Standardized documentIssueDate:', result.documentIssueDate);
+                break;
             }
           }
         } catch (error) {
@@ -166,6 +172,9 @@ export class AILocrService {
         }
         if (!result.placeOfBirth && fallback.placeOfBirth) {
           result.placeOfBirth = fallback.placeOfBirth;
+        }
+        if (!result.documentIssueDate && fallback.documentIssueDate) {
+          result.documentIssueDate = fallback.documentIssueDate;
         }
       }
 
@@ -379,6 +388,51 @@ export class AILocrService {
         }
       }
       if (result.placeOfBirth) break;
+    }
+
+    // 📅 DOCUMENT ISSUE DATE EXTRACTION (Date de délivrance)
+    // Look for labels indicating issue date
+    const issueDateLabels = [
+      'DATE OF ISSUE', 'DATE D\'ÉMISSION', 'DATE DE DÉLIVRANCE', 'DÉLIVRÉ LE', 
+      'ISSUED', 'ISSUE DATE', 'DELIVRE LE', 'DELIVRANCE'
+    ];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Check if this line contains an issue date label
+      const hasIssueLabel = issueDateLabels.some(label => line.includes(label));
+      
+      if (hasIssueLabel) {
+        // Try to find date in current line or next line
+        const datePatterns = [
+          /(\d{1,2})[\s\.\/-](\d{1,2})[\s\.\/-](19|20)(\d{2})/g,
+          /(\d{1,2})\s*(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*(19|20)?(\d{2})/gi
+        ];
+        
+        const linesToCheck = [line];
+        if (i + 1 < lines.length) linesToCheck.push(lines[i + 1]);
+        
+        for (const lineToCheck of linesToCheck) {
+          for (const pattern of datePatterns) {
+            const matches = Array.from(lineToCheck.matchAll(pattern));
+            if (matches.length > 0) {
+              const match = matches[0];
+              if (match[4]) {
+                // DD/MM/YYYY format
+                const day = match[1].padStart(2, '0');
+                const month = match[2].padStart(2, '0');
+                const year = `${match[3]}${match[4]}`;
+                result.documentIssueDate = `${year}-${month}-${day}`;
+                console.log('✅ Found document issue date:', result.documentIssueDate);
+                break;
+              }
+            }
+          }
+          if (result.documentIssueDate) break;
+        }
+        if (result.documentIssueDate) break;
+      }
     }
 
     console.log('🎯 Enhanced fallback result:', result);

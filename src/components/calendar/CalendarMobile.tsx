@@ -19,6 +19,7 @@ import {
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import type { BookingLayout } from './CalendarUtils';
 
 interface CalendarMobileProps {
   calendarDays: Array<{
@@ -26,12 +27,7 @@ interface CalendarMobileProps {
     dayNumber: number;
     isCurrentMonth: boolean;
   }>;
-  bookingLayout: { [key: string]: Array<{
-    booking: Booking | AirbnbReservation;
-    startDayIndex: number;
-    span: number;
-    layer: number;
-  }> };
+  bookingLayout: { [key: string]: BookingLayout[] };
   conflicts: string[];
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
   currentDate: Date;

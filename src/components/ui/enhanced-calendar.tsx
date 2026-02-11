@@ -2,7 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isToday, isWeekend } from 'date-fns';
+import {
+  addMonths,
+  subMonths,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isSameMonth,
+  isSameDay,
+  isWeekend,
+} from 'date-fns';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface EnhancedCalendarProps {
   selected?: Date;
@@ -18,12 +28,32 @@ interface EnhancedCalendarProps {
   showWeekends?: boolean;
 }
 
-const monthNames = [
-  'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin',
-  'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'
-];
+// Clés i18n pour les mois
+const MONTH_KEYS = [
+  'calendar.monthJan',
+  'calendar.monthFeb',
+  'calendar.monthMar',
+  'calendar.monthApr',
+  'calendar.monthMay',
+  'calendar.monthJun',
+  'calendar.monthJul',
+  'calendar.monthAug',
+  'calendar.monthSep',
+  'calendar.monthOct',
+  'calendar.monthNov',
+  'calendar.monthDec',
+] as const;
 
-const weekDays = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+// Ordre lundi → dimanche pour un calendrier commençant le lundi
+const WEEKDAY_KEYS_MON_FIRST = [
+  'calendar.weekdayMon',
+  'calendar.weekdayTue',
+  'calendar.weekdayWed',
+  'calendar.weekdayThu',
+  'calendar.weekdayFri',
+  'calendar.weekdaySat',
+  'calendar.weekdaySun',
+] as const;
 
 export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   selected,
@@ -38,7 +68,10 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   className,
   showWeekends = true
 }) => {
+  const t = useT();
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const monthNames = MONTH_KEYS.map((key) => t(key));
+  const weekDays = WEEKDAY_KEYS_MON_FIRST.map((key) => t(key));
   
   // 🎯 NOUVELLE LOGIQUE SIMPLIFIÉE : Un seul état pour la sélection en cours
   const [selectionInProgress, setSelectionInProgress] = useState<Date | null>(null);
@@ -62,11 +95,19 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
+  // Calculer les bornes en considérant lundi comme premier jour de la semaine
+  const getMondayIndex = (date: Date) => {
+    const day = date.getDay(); // 0 = dimanche, 1 = lundi, ...
+    return (day + 6) % 7; // 0 = lundi, 6 = dimanche
+  };
+
   const startDate = new Date(monthStart);
-  startDate.setDate(startDate.getDate() - monthStart.getDay());
+  const startOffset = getMondayIndex(monthStart);
+  startDate.setDate(startDate.getDate() - startOffset);
   
   const endDate = new Date(monthEnd);
-  endDate.setDate(endDate.getDate() + (6 - monthEnd.getDay()));
+  const endIndex = getMondayIndex(monthEnd);
+  endDate.setDate(endDate.getDate() + (6 - endIndex));
   
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 

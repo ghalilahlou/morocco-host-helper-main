@@ -206,52 +206,41 @@ const App = () => (
               v7_relativeSplatPath: true
             }}
           >
+          <GuestLocaleProvider>
           <Routes>
           {/* Guest verification routes - no layout needed for external users */}
           <Route path="/welcome/:propertyId/:token" element={
-            <GuestLocaleProvider>
-              <GuestLayout>
-                <GuestWelcome />
-              </GuestLayout>
-            </GuestLocaleProvider>
+            <GuestLayout>
+              <GuestWelcome />
+            </GuestLayout>
           } />
           <Route path="/welcome/:propertyId/:token/:airbnbBookingId" element={
-            <GuestLocaleProvider>
-              <GuestLayout>
-                <GuestWelcome />
-              </GuestLayout>
-            </GuestLocaleProvider>
+            <GuestLayout>
+              <GuestWelcome />
+            </GuestLayout>
           } />
           <Route path="/guest-verification/:propertyId/:token" element={<GuestVerificationPage />} />
           <Route path="/verify/:token" element={
-            <GuestLocaleProvider>
-              <GuestLayout>
-                <VerifyToken />
-              </GuestLayout>
-            </GuestLocaleProvider>
+            <GuestLayout>
+              <VerifyToken />
+            </GuestLayout>
           } />
           {/* ✅ URL COURTE : Route courte pour les liens de réservation */}
           <Route path="/v/:token" element={
-            <GuestLocaleProvider>
-              <GuestLayout>
-                <VerifyToken />
-              </GuestLayout>
-            </GuestLocaleProvider>
+            <GuestLayout>
+              <VerifyToken />
+            </GuestLayout>
           } />
           <Route path="/guest-verification/:propertyId/:token/:airbnbBookingId" element={<GuestVerificationPage />} />
           <Route path="/contract-signing/:propertyId/:token" element={
-            <GuestLocaleProvider>
-              <GuestLayout>
-                <ContractSigning />
-              </GuestLayout>
-            </GuestLocaleProvider>
+            <GuestLayout>
+              <ContractSigning />
+            </GuestLayout>
           } />
           <Route path="/contract-signing/:propertyId/:token/:airbnbBookingId" element={
-            <GuestLocaleProvider>
-              <GuestLayout>
-                <ContractSigning />
-              </GuestLayout>
-            </GuestLocaleProvider>
+            <GuestLayout>
+              <ContractSigning />
+            </GuestLayout>
           } />
           
           {/* Authenticated routes with layout */}
@@ -289,6 +278,7 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           </Routes>
+          </GuestLocaleProvider>
           
           {/* ✅ Panel de monitoring des erreurs (dev seulement) */}
           {process.env.NODE_ENV === 'development' && <ErrorMonitorPanel />}

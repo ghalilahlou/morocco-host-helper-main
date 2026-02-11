@@ -1,8 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
-import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
+import { createClient } from 'https://esm.sh/v135/@supabase/supabase-js@2.39.3';
+import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/v135/pdf-lib@1.17.1";
+import fontkit from "https://esm.sh/v135/@pdf-lib/fontkit@1.1.1";
 
 // Fonction pour créer le client Supabase
 async function getServerClient() {
@@ -159,9 +159,19 @@ serve(async (req) => {
     console.log(`📋 Generating police forms for ${guests.length} validated guests`);
 
     // Generate police forms avec la logique complète ET la signature du guest
-    const documentUrl = await generatePoliceFormsPDF(client, booking, guestSignature);
+    let documentUrl = await generatePoliceFormsPDF(client, booking, guestSignature);
     
-    // ✅ CORRECTION : Ne sauvegarder en base que si bookingId existe (mode normal, pas preview)
+    // ✅ Mode aperçu : upload vers guest-documents (même schéma que les vrais docs) et retourner l’URL publique
+    if (!booking.id && booking.property?.id) {
+      try {
+        documentUrl = await uploadPolicePreviewToStorage(client, documentUrl, booking.property.id);
+        console.log('👁️ Mode preview : PDF uploadé vers storage, URL publique retournée');
+      } catch (uploadErr) {
+        console.warn('⚠️ Upload preview failed, returning data URL:', uploadErr);
+      }
+    }
+    
+    // ✅ Ne sauvegarder en base que si bookingId existe (mode normal, pas preview)
     let documentRecord = null;
     if (booking.id) {
       try {
@@ -173,16 +183,13 @@ serve(async (req) => {
         );
       } catch (saveError) {
         console.warn('⚠️ Failed to save document to database (preview mode?):', saveError);
-        // En mode preview, on continue quand même sans sauvegarder
       }
-    } else {
-      console.log('👁️ Mode preview : document généré sans sauvegarde en base');
     }
 
     return new Response(JSON.stringify({
       success: true,
       message: `Generated ${guests.length} police form(s) successfully`,
-      documentUrl: documentUrl,          // ✅ Format principal (singular)
+      documentUrl: documentUrl,          // ✅ URL publique (preview) ou data URL (legacy)
       documentUrls: [documentUrl],       // ✅ Rétrocompatibilité (plural)
       documentId: documentRecord?.id || null,
       guestsCount: guests.length
@@ -276,6 +283,32 @@ async function fetchBookingFromDatabase(client: any, bookingId: string): Promise
   }
 
   return dbBooking;
+}
+
+// Upload PDF (data URL or bytes) to guest-documents and return public URL (same pattern as real police docs)
+const BUCKET_GUEST_DOCUMENTS = 'guest-documents';
+async function uploadPolicePreviewToStorage(
+  client: any,
+  dataUrlOrBytes: string | Uint8Array,
+  propertyId: string
+): Promise<string> {
+  const timestamp = Date.now();
+  const path = `police/preview/${propertyId}/police-${timestamp}.pdf`;
+  let bytes: Uint8Array;
+  if (typeof dataUrlOrBytes === 'string') {
+    const base64 = dataUrlOrBytes.replace(/^data:application\/pdf;base64,/, '');
+    const binary = atob(base64);
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } else {
+    bytes = dataUrlOrBytes;
+  }
+  const { error: uploadError } = await client.storage
+    .from(BUCKET_GUEST_DOCUMENTS)
+    .upload(path, bytes, { contentType: 'application/pdf', upsert: true });
+  if (uploadError) throw new Error(`Upload preview failed: ${uploadError.message}`);
+  const { data: { publicUrl } } = client.storage.from(BUCKET_GUEST_DOCUMENTS).getPublicUrl(path);
+  return publicUrl;
 }
 
 // Save document to database

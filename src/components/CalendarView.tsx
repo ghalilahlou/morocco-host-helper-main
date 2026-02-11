@@ -12,7 +12,7 @@ import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { UnifiedBookingModal } from './UnifiedBookingModal';
 import { ConflictModal } from './ConflictModal';
 import { CalendarHeader } from './calendar/CalendarHeader';
-import { CalendarGrid } from './calendar/CalendarGrid';
+import { CalendarGrid, type ConflictGroupForCalendar } from './calendar/CalendarGrid';
 import { CalendarMobile } from './calendar/CalendarMobile';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { 
@@ -140,6 +140,8 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
   const [hasIcs, setHasIcs] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [showConflictModal, setShowConflictModal] = useState(false);
+  const [openConflictFromAlert, setOpenConflictFromAlert] = useState<{ groupKey: string; weekIndex: number } | null>(null);
+  const calendarSectionRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
   // ✅ NOUVEAU : États pour le rafraîchissement automatique
@@ -1047,6 +1049,116 @@ const handleOpenConfig = useCallback(() => {
     return conflictsList;
   }, [allReservations]);
 
+  // ✅ FIGMA : Groupes de conflits pour le cadran (composantes connexes + position dans le calendrier)
+  const conflictGroupsWithPosition = useMemo((): ConflictGroupForCalendar[] => {
+    if (conflictDetails.length === 0) return [];
+
+    // Union-Find pour regrouper les ids en composantes connexes
+    const parent = new Map<string, string>();
+    const find = (id: string): string => {
+      if (!parent.has(id)) parent.set(id, id);
+      const p = parent.get(id)!;
+      return p === id ? id : find(p);
+    };
+    const union = (a: string, b: string) => {
+      parent.set(find(a), find(b));
+    };
+    conflictDetails.forEach(({ id1, id2 }) => union(id1, id2));
+    const groupsById = new Map<string, string[]>();
+    Array.from(new Set(conflictDetails.flatMap((c) => [c.id1, c.id2]))).forEach((id) => {
+      const root = find(id);
+      if (!groupsById.has(root)) groupsById.set(root, []);
+      if (!groupsById.get(root)!.includes(id)) groupsById.get(root)!.push(id);
+    });
+    const idGroups = Array.from(groupsById.values());
+
+    const weeks: { date: Date; isCurrentMonth: boolean; dayNumber: number }[][] = [];
+    for (let i = 0; i < calendarDays.length; i += 7) {
+      weeks.push(calendarDays.slice(i, i + 7).map((d) => ({ date: d.date, isCurrentMonth: d.isCurrentMonth, dayNumber: d.dayNumber })));
+    }
+
+    const toLocalMidnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const formatDDMM = (date: Date) => {
+      const d = date.getDate();
+      const m = date.getMonth() + 1;
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
+    };
+
+    return idGroups.map((ids) => {
+      const reservationsInGroup = ids
+        .map((id) => allReservations.find((r) => r.id === id))
+        .filter(Boolean) as (Booking | AirbnbReservation)[];
+      if (reservationsInGroup.length === 0) {
+        return {
+          groupKey: ids.slice().sort().join(','),
+          ids,
+          weekSegments: [],
+          primaryReservation: { displayName: '', startFormatted: '', endFormatted: '' },
+          reservations: [],
+        };
+      }
+      const starts = reservationsInGroup.map((r) =>
+        'source' in r && r.source === 'airbnb'
+          ? toLocalMidnight((r as AirbnbReservation).startDate)
+          : toLocalMidnight(new Date((r as Booking).checkInDate))
+      );
+      const ends = reservationsInGroup.map((r) =>
+        'source' in r && r.source === 'airbnb'
+          ? toLocalMidnight((r as AirbnbReservation).endDate)
+          : toLocalMidnight(new Date((r as Booking).checkOutDate))
+      );
+      const groupStart = new Date(Math.min(...starts.map((d) => d.getTime())));
+      const groupEnd = new Date(Math.max(...ends.map((d) => d.getTime())));
+
+      const reservations = reservationsInGroup.map((r) => {
+        const start = 'source' in r && r.source === 'airbnb' ? (r as AirbnbReservation).startDate : new Date((r as Booking).checkInDate);
+        const end = 'source' in r && r.source === 'airbnb' ? (r as AirbnbReservation).endDate : new Date((r as Booking).checkOutDate);
+        return {
+          id: r.id,
+          displayName: getUnifiedBookingDisplayText(r, true) || 'Réservation',
+          startFormatted: formatDDMM(toLocalMidnight(start)),
+          endFormatted: formatDDMM(toLocalMidnight(end)),
+        };
+      });
+
+      const sortedByStart = [...reservationsInGroup].sort((a, b) => {
+        const startA = 'source' in a && a.source === 'airbnb' ? (a as AirbnbReservation).startDate.getTime() : new Date((a as Booking).checkInDate).getTime();
+        const startB = 'source' in b && b.source === 'airbnb' ? (b as AirbnbReservation).startDate.getTime() : new Date((b as Booking).checkInDate).getTime();
+        return startA - startB;
+      });
+      const primaryRes = reservations.find((r) => r.id === sortedByStart[0].id)!;
+      const primaryReservation = primaryRes
+        ? { displayName: primaryRes.displayName, startFormatted: primaryRes.startFormatted, endFormatted: primaryRes.endFormatted }
+        : { displayName: reservations[0].displayName, startFormatted: reservations[0].startFormatted, endFormatted: reservations[0].endFormatted };
+
+      const weekSegments: Array<{ weekIndex: number; startDayIndex: number; span: number }> = [];
+      for (let w = 0; w < weeks.length; w++) {
+        const week = weeks[w];
+        let segStart = -1;
+        let segEnd = -1;
+        for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+          const dayDate = toLocalMidnight(week[dayIndex].date);
+          const inRange = dayDate.getTime() >= groupStart.getTime() && dayDate.getTime() <= groupEnd.getTime();
+          if (inRange && week[dayIndex].isCurrentMonth) {
+            if (segStart === -1) segStart = dayIndex;
+            segEnd = dayIndex;
+          }
+        }
+        if (segStart !== -1 && segEnd !== -1) {
+          weekSegments.push({ weekIndex: w, startDayIndex: segStart, span: segEnd - segStart + 1 });
+        }
+      }
+
+      return {
+        groupKey: ids.slice().sort().join(','),
+        ids,
+        weekSegments,
+        primaryReservation,
+        reservations,
+      };
+    }).filter((g) => g.reservations.length > 0);
+  }, [conflictDetails, allReservations, calendarDays]);
+
   // ✅ CORRIGÉ : Stats avec conflits détectés dynamiquement
   const getStats = useMemo(() => {
     const completed = bookings.filter(b => 
@@ -1090,15 +1202,36 @@ const handleOpenConfig = useCallback(() => {
       "space-y-3 sm:space-y-4",
       isMobile && "px-2"
     )}>
-      {/* Conflicts Alert - Desktop */}
+      {/* Conflicts Alert - Desktop : clic = scroll vers le calendrier + ouverture du premier conflit */}
       {!isMobile && conflicts.length > 0 && (
-        <Alert className={cn(
-          "border-destructive",
-          "p-3 text-sm"
-        )}>
+        <Alert
+          role="button"
+          tabIndex={0}
+          className={cn(
+            "border-destructive p-3 text-sm cursor-pointer hover:bg-destructive/5 transition-colors",
+            "focus:outline-none focus:ring-2 focus:ring-destructive/20 focus:ring-offset-2"
+          )}
+          onClick={() => {
+            const first = conflictGroupsWithPosition[0];
+            if (first?.weekSegments.length) {
+              setOpenConflictFromAlert({ groupKey: first.groupKey, weekIndex: first.weekSegments[0].weekIndex });
+            }
+            calendarSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              const first = conflictGroupsWithPosition[0];
+              if (first?.weekSegments.length) {
+                setOpenConflictFromAlert({ groupKey: first.groupKey, weekIndex: first.weekSegments[0].weekIndex });
+              }
+              calendarSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }}
+        >
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            <strong>{conflicts.length} conflit(s) détecté(s)</strong> - Des réservations se chevauchent
+            <strong>{conflicts.length} conflit(s) détecté(s)</strong> — Vérifiez et cliquez sur les barres en rouge dans le calendrier pour consulter les réservations en conflit.
           </AlertDescription>
         </Alert>
       )}
@@ -1111,7 +1244,7 @@ const handleOpenConfig = useCallback(() => {
         >
           <AlertTriangle className="h-3 w-3" />
           <AlertDescription className="text-xs">
-            <strong>{conflicts.length} conflit(s) détecté(s)</strong> - Cliquez pour voir les détails
+            <strong>{conflicts.length} conflit(s) détecté(s)</strong> — Vérifiez et cliquez sur les barres en rouge (ou ici) pour consulter les réservations en conflit.
           </AlertDescription>
         </Alert>
       )}
@@ -1141,7 +1274,8 @@ const handleOpenConfig = useCallback(() => {
       </ErrorBoundary>
 
       {/* ✅ NOUVEAU : Calendrier optimisé avec effets visuels avancés */}
-      <motion.div 
+      <motion.div
+        ref={calendarSectionRef}
         className="w-full relative"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1187,12 +1321,24 @@ const handleOpenConfig = useCallback(() => {
               transition={{ duration: 0.4, ease: "easeInOut" }}
               className="relative"
             >
-              <CalendarGrid 
+              <CalendarGrid
                 calendarDays={calendarDays}
                 bookingLayout={bookingLayout}
                 conflicts={conflicts}
                 onBookingClick={handleBookingClick}
                 allReservations={allReservations}
+                conflictGroupsWithPosition={conflictGroupsWithPosition}
+                openConflict={openConflictFromAlert}
+                onOpenConflictChange={setOpenConflictFromAlert}
+                onDeleteBooking={async (id: string) => {
+                  const booking = bookings.find((b) => b.id === id);
+                  if (booking) {
+                    const { error } = await supabase.from('bookings').delete().eq('id', id);
+                    if (error) throw error;
+                    if (onRefreshBookings) await onRefreshBookings();
+                    toast({ title: 'Réservation supprimée', description: 'La réservation a été supprimée.' });
+                  }
+                }}
               />
             </motion.div>
           </AnimatePresence>

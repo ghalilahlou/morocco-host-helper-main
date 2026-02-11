@@ -28,12 +28,14 @@ export class ContractService {
    * Generate and download contract (signed or unsigned)
    * This is the SINGLE source of truth for all contract operations
    */
-  static async generateAndDownloadContract(booking: Booking): Promise<{ success: boolean; message: string; variant?: 'default' | 'destructive' }> {
+  /** options.locale: langue du contrat (fr, en, es). Par défaut: fr. */
+  static async generateAndDownloadContract(booking: Booking, options?: { locale?: 'fr' | 'en' | 'es' }): Promise<{ success: boolean; message: string; variant?: 'default' | 'destructive' }> {
     const bookingId = booking.id;
     const bookingShortId = bookingId.slice(-6);
+    const locale = options?.locale && ['fr', 'en', 'es'].includes(options.locale) ? options.locale : undefined;
     
     try {
-      console.log(`🔍 ContractService - Starting contract generation for booking: ${bookingId} (#${bookingShortId})`);
+      console.log(`🔍 ContractService - Starting contract generation for booking: ${bookingId} (#${bookingShortId})`, { locale });
       console.log(`🔍 ContractService - Booking data:`, {
         id: booking.id,
         guests: booking.guests?.length || 0,
@@ -59,6 +61,7 @@ export class ContractService {
           body: {
             bookingId: booking.id,
             action: 'generate_contract_only',
+            ...(locale ? { locale } : {}),
             signature: {
               data: signedContract.signature_data,
               timestamp: signedContract.signed_at
@@ -74,8 +77,8 @@ export class ContractService {
         }
 
         // DOWNLOAD THE SIGNED CONTRACT PDF
-        if (data?.documentUrl || (data?.documentUrls && data.documentUrls.length > 0)) {
-          const contractDataUrl = data.documentUrl || data.documentUrls[0];
+        const contractDataUrl = data?.contractUrl || data?.documentUrl || (data?.documentUrls && data.documentUrls.length > 0 ? data.documentUrls[0] : null);
+        if (contractDataUrl) {
           console.log(`🔍 ContractService - SIGNED PDF generated for #${bookingShortId}, downloading...`);
           console.log(`🔍 ContractService - SIGNED PDF URL length for #${bookingShortId}:`, contractDataUrl.length);
           
@@ -113,7 +116,8 @@ export class ContractService {
         const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
           body: {
             bookingId: booking.id,
-            action: 'generate_contract_only'
+            action: 'generate_contract_only',
+            ...(locale ? { locale } : {})
           }
         });
 
@@ -124,10 +128,7 @@ export class ContractService {
           throw new Error('Failed to generate contract');
         }
 
-        
-        // ✅ CORRECTION : Gestion robuste des réponses - l'Edge Function retourne contractUrl
         const contractUrl = data?.contractUrl || data?.documentUrl || (data?.documentUrls && data.documentUrls.length > 0 ? data.documentUrls[0] : null);
-        
         if (!contractUrl) {
           console.warn(`⚠️ ContractService - No contract URL returned for #${bookingShortId}`);
           console.warn(`⚠️ ContractService - Full response data for #${bookingShortId}:`, JSON.stringify(data, null, 2));
@@ -226,15 +227,19 @@ export class ContractService {
 }
 
 // Shared helper to get contract PDF URL for previews and signing flows
+// locale: 'fr' | 'en' | 'es' — utilisé par l'edge function pour générer le PDF dans la langue choisie (si supporté)
 export async function getContractPdfUrl(params: {
   supabase: typeof import('@/integrations/supabase/client').supabase;
   bookingId?: string | null;
   bookingLike?: any;
   isPreview?: boolean;
+  /** Langue du contrat (fr, en, es). Si fourni, l'edge function peut générer le PDF dans cette langue. */
+  locale?: 'fr' | 'en' | 'es';
 }): Promise<string> {
-  const { supabase, bookingId, bookingLike, isPreview = false } = params;
+  const { supabase, bookingId, bookingLike, isPreview = false, locale } = params;
 
   let body: any = { documentType: 'contract', isPreview: !!isPreview };
+  if (locale) body.locale = locale;
 
   if (bookingId) {
     body.bookingId = bookingId;
@@ -259,10 +264,11 @@ export async function getContractPdfUrl(params: {
     throw new Error('Missing bookingId or bookingLike');
   }
 
-  const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', { 
+  const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
     body: {
+      ...body,
+      action: 'generate_contract_only',
       bookingId: bookingId || bookingLike?.id,
-      action: 'generate_contract_only'
     }
   });
   if (error) throw error;

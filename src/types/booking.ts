@@ -6,6 +6,7 @@ export interface Guest {
   nationality: string;
   placeOfBirth?: string;
   documentType: 'passport' | 'national_id';
+  documentIssueDate?: Date | string; // ✅ Date de délivrance de la pièce d'identité
   profession?: string;
   motifSejour?: string;
   adressePersonnelle?: string;
@@ -30,6 +31,8 @@ export interface Property {
 export interface Booking {
   id: string;
   property_id?: string;
+  propertyId?: string; // ✅ Runtime property from useBookings transformation
+  userId?: string; // ✅ Runtime property from useBookings transformation
   checkInDate: string;
   checkOutDate: string;
   numberOfGuests: number;
@@ -42,6 +45,7 @@ export interface Booking {
   };
   guests: Guest[];
   property?: Property;
+  createdAt?: string;
   created_at?: string;
   updated_at?: string;
   user_id?: string;

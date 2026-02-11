@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Home, Heart, Sparkles, Calendar, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useT } from '@/i18n/GuestLocaleProvider';
+import { useT, useGuestLocale } from '@/i18n/GuestLocaleProvider';
 
 export const ContractSigning: React.FC = () => {
   const { propertyId, token, airbnbBookingId } = useParams<{ propertyId: string; token: string; airbnbBookingId?: string }>();
@@ -15,6 +15,7 @@ export const ContractSigning: React.FC = () => {
   const location = useLocation();
   const { toast } = useToast();
   const t = useT();
+  const { locale } = useGuestLocale();
   
   const [isLoading, setIsLoading] = useState(true);
   const [tokenData, setTokenData] = useState<any>(null);
@@ -433,6 +434,19 @@ export const ContractSigning: React.FC = () => {
     return undefined;
   }, [locationContractUrl, submissionContractUrl]);
 
+  // ✅ DEV UNIQUEMENT : Une fois le check-in confirmé, retour arrière impossible pour éviter double signature / conflits
+  useEffect(() => {
+    if (!isContractSigned || !import.meta.env.DEV) return;
+    const currentUrl = window.location.pathname + window.location.search;
+    const preventBackState = { preventBack: true, confirmed: true };
+    const handlePopState = () => {
+      window.history.pushState(preventBackState, '', currentUrl);
+    };
+    window.history.pushState(preventBackState, '', currentUrl);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isContractSigned]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 flex items-center justify-center">
@@ -452,8 +466,12 @@ export const ContractSigning: React.FC = () => {
             transition={{ delay: 0.2 }}
             className="space-y-2"
           >
-            <h3 className="text-2xl font-semibold text-gray-900">Préparation de votre contrat</h3>
-            <p className="text-lg text-gray-600">Nous personnalisons votre expérience...</p>
+            <h3 className="text-2xl font-semibold text-gray-900">
+              {t('contractSigning.loadingPreparingTitle')}
+            </h3>
+            <p className="text-lg text-gray-600">
+              {t('contractSigning.loadingPreparingSubtitle')}
+            </p>
           </motion.div>
         </motion.div>
       </div>
@@ -479,13 +497,15 @@ export const ContractSigning: React.FC = () => {
                 <Home className="w-8 h-8 text-red-600" />
               </motion.div>
               <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-red-800">Oups ! Un problème est survenu</h2>
+                <h2 className="text-2xl font-bold text-red-800">
+                  {t('contractSigning.errorTitle')}
+                </h2>
                 <p className="text-red-600">{error}</p>
               </div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button onClick={() => navigate('/')} className="w-full bg-red-600 hover:bg-red-700">
                   <Home className="w-4 h-4 mr-2" />
-                  Retour à l'accueil
+                  {t('contractSigning.errorBackHome')}
                 </Button>
               </motion.div>
             </CardContent>
@@ -502,10 +522,18 @@ export const ContractSigning: React.FC = () => {
     let storedGuestName = '';
     try {
       storedPropertyName = localStorage.getItem('currentPropertyName') || '';
+      // Priorité: nom sauvegardé par la page signature (sidebar) juste avant la confirmation
+      storedGuestName = localStorage.getItem('currentGuestName') || '';
       const storedGuestData = localStorage.getItem('currentGuestData');
-      if (storedGuestData) {
+      const storedBookingData = localStorage.getItem('currentBookingData');
+      if (!storedGuestName && storedGuestData) {
         const parsed = JSON.parse(storedGuestData);
-        storedGuestName = parsed?.guests?.[0]?.fullName || parsed?.fullName || '';
+        storedGuestName = parsed?.guests?.[0]?.fullName || parsed?.guests?.[0]?.full_name || parsed?.fullName || parsed?.full_name || parsed?.name || '';
+      }
+      if (!storedGuestName && storedBookingData) {
+        const booking = JSON.parse(storedBookingData);
+        const firstGuest = booking?.guests?.[0];
+        if (firstGuest) storedGuestName = firstGuest.fullName || firstGuest.full_name || firstGuest.name || '';
       }
     } catch (e) {
       console.log('Erreur lecture localStorage:', e);
@@ -517,14 +545,15 @@ export const ContractSigning: React.FC = () => {
                          submissionData?.booking_data?.propertyName || 
                          submissionData?.propertyName ||
                          tokenData?.property?.name ||
-                         'Votre hébergement';
+                         t('contractSigning.propertyFallback');
     
-    // ✅ AMÉLIORATION: Formater les dates en français
-    const formatDateFr = (dateStr: string) => {
+    // ✅ AMÉLIORATION: Formater les dates selon la langue sélectionnée
+    const formatDateLocalized = (dateStr: string) => {
       if (!dateStr) return '';
       try {
         const date = new Date(dateStr);
-        return date.toLocaleDateString('fr-FR', { 
+        const localeCode = locale === 'en' ? 'en-US' : locale === 'es' ? 'es-ES' : 'fr-FR';
+        return date.toLocaleDateString(localeCode, { 
           weekday: 'long', 
           day: 'numeric', 
           month: 'long', 
@@ -535,8 +564,8 @@ export const ContractSigning: React.FC = () => {
       }
     };
     
-    const checkInDate = formatDateFr(submissionData?.booking_data?.checkInDate || submissionData?.booking_data?.checkIn || '');
-    const checkOutDate = formatDateFr(submissionData?.booking_data?.checkOutDate || submissionData?.booking_data?.checkOut || '');
+    const checkInDate = formatDateLocalized(submissionData?.booking_data?.checkInDate || submissionData?.booking_data?.checkIn || '');
+    const checkOutDate = formatDateLocalized(submissionData?.booking_data?.checkOutDate || submissionData?.booking_data?.checkOut || '');
     
     // ✅ AMÉLIORATION: Calculer le nombre total d'invités avec fallbacks multiples
     const allGuests = submissionData?.guest_data?.guests || 
@@ -544,10 +573,16 @@ export const ContractSigning: React.FC = () => {
                       submissionData?.booking_data?.guests || 
                       [];
     const totalGuests = Array.isArray(allGuests) ? allGuests.length : 0;
+    const firstGuest = allGuests[0];
     const firstGuestName = storedGuestName || 
-                           allGuests[0]?.fullName || 
-                           allGuests[0]?.full_name ||
-                           allGuests[0]?.name ||
+                           firstGuest?.fullName || 
+                           firstGuest?.full_name ||
+                           firstGuest?.name ||
+                           submissionData?.guest_data?.fullName ||
+                           submissionData?.guest_data?.full_name ||
+                           submissionData?.guestData?.fullName ||
+                           submissionData?.booking_data?.guestName ||
+                           submissionData?.booking_data?.guest_name ||
                            'Invité';
     
     let guestDisplay = firstGuestName;
@@ -612,7 +647,7 @@ export const ContractSigning: React.FC = () => {
             color: '#FFFFFF',
             marginBottom: '24px'
           }}>
-            Votre check-in est confirmé
+            {t('contractSigning.confirmedTitle')}
           </h1>
 
           {/* Message de description */}
@@ -624,8 +659,7 @@ export const ContractSigning: React.FC = () => {
             color: '#FFFFFF',
             marginBottom: '48px'
           }}>
-            C'est fini ! Le propriétaire de l'hébergement a bien reçu les documents nécessaires à votre check-in. 
-            Nous vous souhaitons un agréable séjour.
+            {t('contractSigning.confirmedDescription')}
           </p>
 
           {/* Récapitulatif - Navigation Pills */}
@@ -648,7 +682,9 @@ export const ContractSigning: React.FC = () => {
                   fontSize: '12px',
                   lineHeight: '14px',
                   color: '#FFFFFF'
-                }}>Propriété</p>
+                }}>
+                  {t('contractSigning.chipPropertyLabel')}
+                </p>
                 <p style={{ 
                   fontFamily: 'SF Pro, Inter, sans-serif',
                   fontWeight: 400,
@@ -677,7 +713,9 @@ export const ContractSigning: React.FC = () => {
                   fontSize: '12px',
                   lineHeight: '14px',
                   color: '#FFFFFF'
-                }}>Dates</p>
+                }}>
+                  {t('contractSigning.chipDatesLabel')}
+                </p>
                 <p style={{ 
                   fontFamily: 'SF Pro, Inter, sans-serif',
                   fontWeight: 400,
@@ -706,7 +744,9 @@ export const ContractSigning: React.FC = () => {
                   fontSize: '12px',
                   lineHeight: '14px',
                   color: '#FFFFFF'
-                }}>Voyageurs</p>
+                }}>
+                  {t('contractSigning.chipTravelersLabel')}
+                </p>
                 <p style={{ 
                   fontFamily: 'SF Pro, Inter, sans-serif',
                   fontWeight: 400,
@@ -732,7 +772,7 @@ export const ContractSigning: React.FC = () => {
           color: '#FFFFFF',
           textAlign: 'center'
         }}>
-          © 2025 Checky — Tous droits réservés, Mentions légales • Politique de confidentialité • CGV
+          {t('contractSigning.footer', { year: new Date().getFullYear() })}
         </footer>
       </div>
     );
@@ -759,8 +799,12 @@ export const ContractSigning: React.FC = () => {
               transition={{ delay: 0.2 }}
               className="space-y-2"
             >
-              <h3 className="text-2xl font-semibold text-gray-900">Chargement du contrat...</h3>
-              <p className="text-lg text-gray-600">Récupération de vos informations...</p>
+              <h3 className="text-2xl font-semibold text-gray-900">
+                {t('contractSigning.loadingContractTitle')}
+              </h3>
+              <p className="text-lg text-gray-600">
+                {t('contractSigning.loadingContractSubtitle')}
+              </p>
             </motion.div>
           </motion.div>
         </div>
@@ -785,12 +829,16 @@ export const ContractSigning: React.FC = () => {
                 <Sparkles className="w-8 h-8 text-yellow-600" />
               </motion.div>
               <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-yellow-800">Quelques informations manquent</h2>
+                <h2 className="text-2xl font-bold text-yellow-800">
+                  {t('contractSigning.missingInfoTitle')}
+                </h2>
                 <p className="text-yellow-700">
-                  Nous avons besoin de vos informations de réservation pour générer le contrat.
+                  {t('contractSigning.missingInfoDescription')}
                 </p>
                 <p className="text-sm text-yellow-600 mt-2">
-                  {!submissionData ? 'Aucune donnée de soumission' : 'Données de réservation manquantes'}
+                  {!submissionData
+                    ? t('contractSigning.missingInfoDetailEmpty')
+                    : t('contractSigning.missingInfoDetailMissing')}
                 </p>
               </div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -799,7 +847,7 @@ export const ContractSigning: React.FC = () => {
                   className="w-full bg-yellow-600 hover:bg-yellow-700"
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Compléter mes informations
+                  {t('contractSigning.missingInfoCta')}
                 </Button>
               </motion.div>
             </CardContent>

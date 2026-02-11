@@ -81,6 +81,7 @@ Your task is to extract the following information from the document image:
 - Nationality (in French, e.g., BRITANNIQUE, FRANÇAIS, NÉERLANDAIS, etc.)
 - Place of birth (if visible)
 - Document type (passport or national_id)
+- Document issue date (in YYYY-MM-DD format) - Date when the document was issued/delivered
 
 IMPORTANT RULES:
 1. Be extremely precise - only extract information that is clearly visible and readable
@@ -104,6 +105,13 @@ SPECIAL ATTENTION FOR DATE OF BIRTH:
 - Look for French months: JANV, FÉVR, MARS, AVRL, MAI, JUIN, JUIL, AOÛT, SEPT, OCTO, NOVE, DÉCE
 - Check areas near "Born", "Birth", "Naissance", "DOB", age calculations
 
+SPECIAL ATTENTION FOR DOCUMENT ISSUE DATE (Date de délivrance):
+- Look for labels like: "Date of issue", "Date d'émission", "Date de délivrance", "Issued", "Délivré le", "Date d'expiration" (expiry is different!)
+- This is the date when the document was ISSUED, not the expiry date
+- On passports, usually found near "Date of issue" or in the MRZ
+- On ID cards, look for "Délivré le", "Date de délivrance", "Issued on"
+- Do NOT confuse with expiry date (Date d'expiration / Expiry date)
+
 Return ONLY a JSON object with this exact structure:
 {
   "fullName": "string or null",
@@ -111,7 +119,8 @@ Return ONLY a JSON object with this exact structure:
   "documentNumber": "string or null",
   "nationality": "string or null",
   "placeOfBirth": "string or null",
-  "documentType": "passport or national_id"
+  "documentType": "passport or national_id",
+  "documentIssueDate": "YYYY-MM-DD or null"
 }`
           },
           {

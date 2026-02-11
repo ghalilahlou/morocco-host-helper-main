@@ -54,7 +54,8 @@ export const useBookings = (options?: UseBookingsOptions) => {
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false); // ✅ NOUVEAU : État pour l'enrichissement en cours
-  const loadingRef = useRef(false);
+  // ✅ CORRECTION RACE CONDITION : Verrou avec ID unique pour éviter les écrasements
+  const loadingRef = useRef<{ loading: boolean; id: string; timestamp: number } | null>(null);
   const enrichmentInProgressRef = useRef<Set<string>>(new Set()); // ✅ NOUVEAU : Suivre les bookings en cours d'enrichissement
   // ✅ NOUVEAU : Cache des IDs de bookings pour éviter les rafraîchissements inutiles
   const lastBookingIdsRef = useRef<Set<string>>(new Set());
@@ -64,6 +65,10 @@ export const useBookings = (options?: UseBookingsOptions) => {
   const cacheCleanedRef = useRef(false);
   // ✅ STABILISATION : Flag pour empêcher les appels multiples à get-guest-documents-unified
   const documentsGenerationCalledRef = useRef<Set<string>>(new Set());
+  // ✅ PROTECTION : Debounce global pour éviter les appels multiples simultanés
+  const loadBookingsDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  // ✅ CORRECTION RACE CONDITION : Version de l'état pour la fusion atomique
+  const stateVersionRef = useRef(0);
   const { user } = useAuth();
 
   // ✅ STABILISATION : Filtrer les bookings par propertyId avec useMemo pour éviter les re-rendus infinis
@@ -115,16 +120,61 @@ export const useBookings = (options?: UseBookingsOptions) => {
   }, [propertyId]); // ✅ NETTOYAGE STRICT : Se déclencher uniquement quand propertyId change
 
   // ✅ PHASE 1 : Recharger quand propertyId change (après le nettoyage)
+  // Note: loadBookings est dans un useCallback avec les bonnes dépendances, donc pas besoin de l'ajouter ici
   useEffect(() => {
-    loadBookings();
-  }, [propertyId]); // ✅ PHASE 1 : Recharger quand propertyId change
+    // ✅ PROTECTION : Ne charger que si propertyId est défini ou si c'est intentionnel
+    if (propertyId !== undefined || options?.propertyId === undefined) {
+      // ✅ CORRECTION RACE CONDITION : Vérifier le verrou AVANT de créer le setTimeout
+      if (loadingRef.current?.loading) {
+        console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, setTimeout ignoré (propertyId change)');
+        return;
+      }
+      
+      // ✅ PROTECTION : Debounce pour éviter les appels multiples rapides lors des changements de propertyId
+      if (loadBookingsDebounceRef.current) {
+        clearTimeout(loadBookingsDebounceRef.current);
+      }
+      loadBookingsDebounceRef.current = setTimeout(() => {
+        loadBookingsDebounceRef.current = null;
+        // ✅ CORRECTION RACE CONDITION : Vérifier à nouveau juste avant l'appel
+        if (!loadingRef.current?.loading) {
+          loadBookings();
+        } else {
+          console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, appel ignoré (propertyId change)');
+        }
+      }, 50); // 50ms de debounce pour grouper les appels rapides
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyId]); // ✅ loadBookings est stable grâce au useCallback
 
   // Reload bookings when user changes
   useEffect(() => {
     if (user) {
-      loadBookings();
+      // ✅ PROTECTION : Ne charger que si propertyId est défini ou si c'est intentionnel
+      if (propertyId !== undefined || options?.propertyId === undefined) {
+        // ✅ CORRECTION RACE CONDITION : Vérifier le verrou AVANT de créer le setTimeout
+        if (loadingRef.current?.loading) {
+          console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, setTimeout ignoré (user change)');
+          return;
+        }
+        
+        // ✅ PROTECTION : Debounce pour éviter les appels multiples rapides lors des changements d'utilisateur
+        if (loadBookingsDebounceRef.current) {
+          clearTimeout(loadBookingsDebounceRef.current);
+        }
+        loadBookingsDebounceRef.current = setTimeout(() => {
+          loadBookingsDebounceRef.current = null;
+          // ✅ CORRECTION RACE CONDITION : Vérifier à nouveau juste avant l'appel
+          if (!loadingRef.current?.loading) {
+            loadBookings();
+          } else {
+            console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, appel ignoré (user change)');
+          }
+        }, 50); // 50ms de debounce pour grouper les appels rapides
+      }
     }
-  }, [user?.id, propertyId]); // ✅ PHASE 1 : Inclure propertyId dans les dépendances
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, propertyId]); // ✅ loadBookings est stable grâce au useCallback
 
   // ✅ AMÉLIORATION : Set up real-time subscriptions for automatic updates avec debounce optimisé
   useEffect(() => {
@@ -366,12 +416,43 @@ export const useBookings = (options?: UseBookingsOptions) => {
   
   // ✅ STABILISATION : Envelopper loadBookings dans useCallback pour éviter les re-rendus infinis
   const loadBookings = useCallback(async () => {
+    // ✅ PROTECTION : Éviter les appels quand propertyId est undefined
+    // Si propertyId est undefined, ne charger que si c'est vraiment intentionnel (charger toutes les réservations)
+    // Pour l'instant, on bloque tous les appels avec propertyId undefined pour éviter les problèmes
+    if (propertyId === undefined) {
+      console.warn('⚠️ [USE BOOKINGS] loadBookings ignoré - propertyId est undefined (chargement non autorisé)');
+      return;
+    }
+    
+    // ✅ CORRECTION RACE CONDITION : Vérifier ET acquérir le verrou atomiquement avec ID unique
+    if (loadingRef.current?.loading) {
+      console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, ignoré', {
+        existingId: loadingRef.current.id,
+        existingTimestamp: loadingRef.current.timestamp
+      });
+      return;
+    }
+    
+    // ✅ CORRECTION RACE CONDITION : Marquer IMMÉDIATEMENT avec ID unique pour éviter les écrasements
+    const loadId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    loadingRef.current = { loading: true, id: loadId, timestamp: Date.now() };
+    
+    // 🔴 DIAGNOSTIC URGENT : Tracer le flux des réservations (après avoir marqué comme en cours)
+    console.error('🔴🔴🔴 [DIAGNOSTIC] loadBookings APPELÉ', {
+      timestamp: new Date().toISOString(),
+      propertyId,
+      loadId,
+      loadingRefValue: loadingRef.current
+    });
+    
+    // ✅ PROTECTION : Debounce pour éviter les appels multiples rapides (nettoyer les anciens timeouts)
+    // Note: Le debounce est géré au niveau des useEffect, pas ici pour éviter la récursion
+    if (loadBookingsDebounceRef.current) {
+      clearTimeout(loadBookingsDebounceRef.current);
+      loadBookingsDebounceRef.current = null;
+    }
+    
     try {
-      // ✅ PROTECTION : Éviter les appels multiples simultanés avec une ref indépendante de l'état React
-      if (loadingRef.current) {
-        // ✅ NETTOYAGE LOGS : Supprimé pour éviter les re-rendus
-        return;
-      }
       
       // ✅ NETTOYAGE CACHE : Vider le cache une seule fois au chargement initial pour éliminer les données polluées
       if (propertyId && !cacheCleanedRef.current) {
@@ -520,36 +601,173 @@ export const useBookings = (options?: UseBookingsOptions) => {
         } 
         // ✅ CACHE VALIDE : Utiliser le cache seulement s'il est strictement isolé
         else {
-          debug('✅ [USE BOOKINGS] Cache valide et isolé, utilisation', { 
-            cacheKey, 
-            count: cached.length, 
-            propertyId, 
-            cachedPropertyIds,
-            allMatch: propertyId ? cached.every(b => b.propertyId === propertyId) : true
-          });
-          setBookings(cached);
-          setIsLoading(false);
-          return;
+          // ✅ PROTECTION : Si propertyId est undefined, ne PAS utiliser le cache (peut être pollué)
+          if (propertyId === undefined) {
+            console.warn('⚠️ [USE BOOKINGS] Cache ignoré - propertyId est undefined, chargement depuis la base de données');
+            // Ne pas utiliser le cache, continuer avec le chargement depuis la base de données
+          } 
+          // ✅ CORRECTION RACE CONDITION : Ne pas utiliser le cache si un autre chargement est en cours
+          else if (loadingRef.current?.id !== loadId) {
+            console.warn('⚠️ [USE BOOKINGS] Cache ignoré - autre chargement en cours', {
+              currentLoadId: loadId,
+              existingLoadId: loadingRef.current?.id
+            });
+            // Ne pas utiliser le cache, continuer avec le chargement depuis la base de données
+          } else {
+            // ✅ CORRECTION CRITIQUE : Filtrer le cache par propertyId si nécessaire
+            const cachedFiltered = cached.filter(b => b.propertyId === propertyId);
+            
+            // 🔴 DIAGNOSTIC URGENT : Log avant utilisation du cache
+            console.error('🔴🔴🔴 [DIAGNOSTIC] CACHE UTILISÉ - setBookings depuis cache', {
+              cacheCount: cached.length,
+              cachedFilteredCount: cachedFiltered.length,
+              propertyId,
+              loadId,
+              cachedBookingIds: cachedFiltered.slice(0, 5).map(b => ({ id: b.id.substring(0, 8), name: b.guest_name, propertyId: b.propertyId }))
+            });
+            
+            debug('✅ [USE BOOKINGS] Cache valide et isolé, utilisation', { 
+              cacheKey, 
+              count: cached.length,
+              filteredCount: cachedFiltered.length,
+              propertyId, 
+              cachedPropertyIds,
+              allMatch: propertyId ? cached.every(b => b.propertyId === propertyId) : true
+            });
+            
+            // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
+            // ✅ CORRECTION RACE CONDITION : Fusion atomique avec vérification de version
+            setBookings(prev => {
+              // ✅ Vérifier que c'est toujours notre chargement
+              if (loadingRef.current?.id !== loadId) {
+                console.warn('⚠️ [USE BOOKINGS] Fusion cache annulée - autre chargement en cours');
+                return prev; // Ne pas modifier si un autre chargement est en cours
+              }
+              
+              const prevForCurrentProperty = propertyId 
+                ? prev.filter(b => b.propertyId === propertyId)
+                : prev;
+              
+              const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
+              const newIds = new Set(cachedFiltered.map(b => b.id));
+              
+              // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
+              const merged = cachedFiltered.map(newBooking => {
+                const existing = existingMap.get(newBooking.id);
+                if (existing && existing.updated_at && newBooking.updated_at) {
+                  const existingTime = new Date(existing.updated_at).getTime();
+                  const newTime = new Date(newBooking.updated_at).getTime();
+                  if (existingTime > newTime - 1000) {
+                    return existing; // Garder la version existante si plus récente
+                  }
+                }
+                return newBooking;
+              });
+              
+              // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
+              const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
+              const combinedMerged = [...merged, ...existingNotInNew];
+              
+              // Filtrer par propertyId si nécessaire
+              const finalMerged = propertyId
+                ? combinedMerged.filter(b => b.propertyId === propertyId)
+                : combinedMerged;
+              
+              // ✅ Vérifier à nouveau avant de retourner
+              if (loadingRef.current?.id !== loadId) {
+                console.warn('⚠️ [USE BOOKINGS] Fusion cache annulée - autre chargement en cours (vérification finale)');
+                return prev;
+              }
+              
+              return finalMerged;
+            });
+            setIsLoading(false);
+            // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
+            if (loadingRef.current?.id === loadId) {
+              loadingRef.current = null;
+            }
+            return;
+          }
         }
       }
       
       // ✅ Fallback: Vérifier aussi le cache mémoire (compatibilité)
-      const memoryCached = bookingsCache.get(cacheKey);
-      const now = Date.now();
-      if (memoryCached && (now - memoryCached.timestamp) < BOOKINGS_CACHE_DURATION) {
-        debug('Using memory cached bookings', { cacheKey, count: memoryCached.data.length });
-        setBookings(memoryCached.data);
+      // ✅ PROTECTION : Ne pas utiliser le cache mémoire si propertyId est undefined
+      if (propertyId !== undefined) {
+        const memoryCached = bookingsCache.get(cacheKey);
+        const now = Date.now();
+        if (memoryCached && (now - memoryCached.timestamp) < BOOKINGS_CACHE_DURATION) {
+          // ✅ CORRECTION CRITIQUE : Filtrer le cache mémoire par propertyId si nécessaire
+          const memoryCachedFiltered = memoryCached.data.filter(b => b.propertyId === propertyId);
+        
+        debug('Using memory cached bookings', { 
+          cacheKey, 
+          count: memoryCached.data.length,
+          filteredCount: memoryCachedFiltered.length,
+          propertyId
+        });
+        
+        // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
+        setBookings(prev => {
+          const prevForCurrentProperty = propertyId 
+            ? prev.filter(b => b.propertyId === propertyId)
+            : prev;
+          
+          const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
+          const newIds = new Set(memoryCachedFiltered.map(b => b.id));
+          
+          // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
+          const merged = memoryCachedFiltered.map(newBooking => {
+            const existing = existingMap.get(newBooking.id);
+            if (existing && existing.updated_at && newBooking.updated_at) {
+              const existingTime = new Date(existing.updated_at).getTime();
+              const newTime = new Date(newBooking.updated_at).getTime();
+              if (existingTime > newTime - 1000) {
+                return existing; // Garder la version existante si plus récente
+              }
+            }
+            return newBooking;
+          });
+          
+          // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
+          const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
+          const combinedMerged = [...merged, ...existingNotInNew];
+          
+          // Filtrer par propertyId si nécessaire
+          const finalMerged = propertyId
+            ? combinedMerged.filter(b => b.propertyId === propertyId)
+            : combinedMerged;
+          
+          return finalMerged;
+        });
+        setIsLoading(false);
+        // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
+        if (loadingRef.current?.id === loadId) {
+          loadingRef.current = null;
+        }
+        return;
+        }
+      }
+      
+      // ✅ CORRECTION RACE CONDITION : Le verrou a déjà été mis au début de loadBookings
+      // Pas besoin de le remettre ici, mais on vérifie qu'il est toujours valide
+      if (loadingRef.current?.id !== loadId) {
+        console.warn('⚠️ [USE BOOKINGS] Verrou perdu, arrêt du chargement');
         setIsLoading(false);
         return;
       }
       
-      loadingRef.current = true;
       setIsLoading(true);
       
       // Check if user is authenticated
       if (!user) {
         debug('No authenticated user, skipping booking load');
         setBookings([]);
+        setIsLoading(false);
+        // ✅ CORRECTION RACE CONDITION : Libérer le verrou
+        if (loadingRef.current?.id === loadId) {
+          loadingRef.current = null;
+        }
         return;
       }
       
@@ -645,8 +863,17 @@ export const useBookings = (options?: UseBookingsOptions) => {
           .order('check_in_date', { ascending: false })
           .limit(Math.min(limit, 100)); // ✅ AUGMENTÉ : Limite à 100 pour inclure toutes les réservations
         
-        // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
-        // console.log('🔍 [USE BOOKINGS] Exécution de la requête', ...);
+        // 🔴 DIAGNOSTIC : Log de la requête SQL avant exécution
+        console.error('🔴🔴🔴 [DIAGNOSTIC SQL] Requête avant exécution', {
+          table: 'bookings',
+          filters: {
+            user_id: user.id,
+            property_id: propertyId,
+            dateRange: dateRange ? { start: dateRange.start, end: dateRange.end } : null
+          },
+          limit: Math.min(limit, 100),
+          orderBy: 'check_in_date DESC'
+        });
         
         // ✅ OPTIMISATION : Timeout augmenté à 20s pour laisser plus de temps à la vue matérialisée
         // La vue matérialisée peut prendre du temps si elle n'est pas rafraîchie récemment
@@ -750,6 +977,20 @@ export const useBookings = (options?: UseBookingsOptions) => {
         if (!shouldUseFallback && result) {
         bookingsData = result?.data;
         error = result?.error;
+          
+          // 🔴 DIAGNOSTIC : Log du résultat de la requête SQL
+          console.error('🔴🔴🔴 [DIAGNOSTIC SQL] Résultat de la requête', {
+            count: bookingsData?.length || 0,
+            hasError: !!error,
+            errorMessage: error?.message,
+            bookingIds: bookingsData?.map((b: any) => ({ 
+              id: b.id?.substring(0, 8), 
+              status: b.status, 
+              guest_name: b.guest_name,
+              property_id: b.property_id?.substring(0, 8)
+            })) || [],
+            propertyId: propertyId
+          });
           
           // ✅ URGENT : Capturer et logger l'erreur SQL spécifique de Supabase
           if (error) {
@@ -1172,10 +1413,48 @@ export const useBookings = (options?: UseBookingsOptions) => {
             : uniqueBookings;
           
           // ✅ OPTIMISATION : Cache augmenté à 60s
-          await multiLevelCache.set(cacheKey, uniqueBookingsFiltered, 60000); // 60s memory, 5min IndexedDB
-          bookingsCache.set(cacheKey, { data: uniqueBookingsFiltered, timestamp: now });
+          try {
+            await multiLevelCache.set(cacheKey, uniqueBookingsFiltered, 60000); // 60s memory, 5min IndexedDB
+            const now = Date.now();
+            bookingsCache.set(cacheKey, { data: uniqueBookingsFiltered, timestamp: now });
+          } catch (cacheError) {
+            // ✅ PROTECTION : Si le cache échoue, continuer sans bloquer
+            console.warn('⚠️ [USE BOOKINGS] Erreur lors de la mise en cache (non-bloquant)', cacheError);
+          }
           
-          setBookings(uniqueBookingsFiltered);
+          // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
+          setBookings(prev => {
+            const prevForCurrentProperty = propertyId 
+              ? prev.filter(b => b.propertyId === propertyId)
+              : prev;
+            
+            const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
+            const newIds = new Set(uniqueBookingsFiltered.map(b => b.id));
+            
+            // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
+            const merged = uniqueBookingsFiltered.map(newBooking => {
+              const existing = existingMap.get(newBooking.id);
+              if (existing && existing.updated_at && newBooking.updated_at) {
+                const existingTime = new Date(existing.updated_at).getTime();
+                const newTime = new Date(newBooking.updated_at).getTime();
+                if (existingTime > newTime - 1000) {
+                  return existing; // Garder la version existante si plus récente
+                }
+              }
+              return newBooking;
+            });
+            
+            // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
+            const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
+            const combinedMerged = [...merged, ...existingNotInNew];
+            
+            // Filtrer par propertyId si nécessaire
+            const finalMerged = propertyId
+              ? combinedMerged.filter(b => b.propertyId === propertyId)
+              : combinedMerged;
+            
+            return finalMerged;
+          });
           return;
         }
         
@@ -1209,16 +1488,57 @@ export const useBookings = (options?: UseBookingsOptions) => {
         
         
         // ✅ OPTIMISATION : Cache augmenté à 60s
-        await multiLevelCache.set(cacheKey, enrichedBookingsFiltered, 60000); // 60s memory, 5min IndexedDB
-        bookingsCache.set(cacheKey, { data: enrichedBookingsFiltered, timestamp: now });
+        try {
+          await multiLevelCache.set(cacheKey, enrichedBookingsFiltered, 60000); // 60s memory, 5min IndexedDB
+          const now = Date.now();
+          bookingsCache.set(cacheKey, { data: enrichedBookingsFiltered, timestamp: now });
+        } catch (cacheError) {
+          // ✅ PROTECTION : Si le cache échoue, continuer sans bloquer
+          console.warn('⚠️ [USE BOOKINGS] Erreur lors de la mise en cache (non-bloquant)', cacheError);
+        }
         
-        setBookings(enrichedBookingsFiltered);
+        // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
+        setBookings(prev => {
+          const prevForCurrentProperty = propertyId 
+            ? prev.filter(b => b.propertyId === propertyId)
+            : prev;
+          
+          const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
+          const newIds = new Set(enrichedBookingsFiltered.map(b => b.id));
+          
+          // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
+          const merged = enrichedBookingsFiltered.map(newBooking => {
+            const existing = existingMap.get(newBooking.id);
+            if (existing && existing.updated_at && newBooking.updated_at) {
+              const existingTime = new Date(existing.updated_at).getTime();
+              const newTime = new Date(newBooking.updated_at).getTime();
+              if (existingTime > newTime - 1000) {
+                return existing; // Garder la version existante si plus récente
+              }
+            }
+            return newBooking;
+          });
+          
+          // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
+          const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
+          const combinedMerged = [...merged, ...existingNotInNew];
+          
+          // Filtrer par propertyId si nécessaire
+          const finalMerged = propertyId
+            ? combinedMerged.filter(b => b.propertyId === propertyId)
+            : combinedMerged;
+          
+          return finalMerged;
+        });
         
         // ✅ STABILISATION : Appeler get-guest-documents-unified UNE SEULE FOIS via la fonction helper
         callDocumentsGenerationOnce(propertyId);
         
         setIsLoading(false);
-        loadingRef.current = false;
+        // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
+        if (loadingRef.current?.id === loadId) {
+          loadingRef.current = null;
+        }
         return;
         } else {
           // ✅ OPTIMISATION : Si c'est un timeout, forcer le fallback même si shouldFallback n'était pas vrai
@@ -1307,7 +1627,10 @@ export const useBookings = (options?: UseBookingsOptions) => {
               logError('Error loading bookings (fallback after timeout)', fallbackError as Error);
               setBookings([]);
               setIsLoading(false);
-              loadingRef.current = false;
+              // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
+              if (loadingRef.current?.id === loadId) {
+                loadingRef.current = null;
+              }
               return;
             }
             
@@ -1388,16 +1711,57 @@ export const useBookings = (options?: UseBookingsOptions) => {
               : enrichedBookings;
             
             // ✅ PHASE 2 : Mettre en cache multi-niveaux
-            await multiLevelCache.set(cacheKey, enrichedBookingsFiltered, 60000); // 60s memory, 5min IndexedDB
-            bookingsCache.set(cacheKey, { data: enrichedBookingsFiltered, timestamp: now });
+            try {
+              await multiLevelCache.set(cacheKey, enrichedBookingsFiltered, 60000); // 60s memory, 5min IndexedDB
+              const now = Date.now();
+              bookingsCache.set(cacheKey, { data: enrichedBookingsFiltered, timestamp: now });
+            } catch (cacheError) {
+              // ✅ PROTECTION : Si le cache échoue, continuer sans bloquer
+              console.warn('⚠️ [USE BOOKINGS] Erreur lors de la mise en cache (non-bloquant)', cacheError);
+            }
             
-            setBookings(enrichedBookingsFiltered);
+            // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
+            setBookings(prev => {
+              const prevForCurrentProperty = propertyId 
+                ? prev.filter(b => b.propertyId === propertyId)
+                : prev;
+              
+              const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
+              const newIds = new Set(enrichedBookingsFiltered.map(b => b.id));
+              
+              // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
+              const merged = enrichedBookingsFiltered.map(newBooking => {
+                const existing = existingMap.get(newBooking.id);
+                if (existing && existing.updated_at && newBooking.updated_at) {
+                  const existingTime = new Date(existing.updated_at).getTime();
+                  const newTime = new Date(newBooking.updated_at).getTime();
+                  if (existingTime > newTime - 1000) {
+                    return existing; // Garder la version existante si plus récente
+                  }
+                }
+                return newBooking;
+              });
+              
+              // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
+              const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
+              const combinedMerged = [...merged, ...existingNotInNew];
+              
+              // Filtrer par propertyId si nécessaire
+              const finalMerged = propertyId
+                ? combinedMerged.filter(b => b.propertyId === propertyId)
+                : combinedMerged;
+              
+              return finalMerged;
+            });
             
             // ✅ STABILISATION : Appeler get-guest-documents-unified UNE SEULE FOIS via la fonction helper
             callDocumentsGenerationOnce(propertyId);
             
             setIsLoading(false);
-            loadingRef.current = false;
+            // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
+            if (loadingRef.current?.id === loadId) {
+              loadingRef.current = null;
+            }
             return;
           }
           
@@ -1405,7 +1769,10 @@ export const useBookings = (options?: UseBookingsOptions) => {
           logError('Error loading bookings from materialized view (no fallback)', error as Error);
           setBookings([]);
           setIsLoading(false);
-          loadingRef.current = false;
+          // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
+          if (loadingRef.current?.id === loadId) {
+            loadingRef.current = null;
+          }
           return;
         }
       }
@@ -1834,6 +2201,7 @@ export const useBookings = (options?: UseBookingsOptions) => {
         // ✅ PROTECTION : Gérer les erreurs de cache
         try {
           await multiLevelCache.set(cacheKey, bookingsToCache, 300000); // 5 minutes pour IndexedDB
+          const now = Date.now();
           bookingsCache.set(cacheKey, { data: bookingsToCache, timestamp: now });
           // ✅ PERFORMANCE : Log réduit (seulement en développement)
           if (process.env.NODE_ENV === 'development') {
@@ -1852,7 +2220,20 @@ export const useBookings = (options?: UseBookingsOptions) => {
       // ✅ OPTIMISATION : Mise à jour intelligente - fusionner avec les bookings existants
       // pour préserver les mises à jour optimistes et éviter les doublons
       // ✅ NETTOYAGE STRICT : Filtrer les doubles uniquement pour la propriété active
+      // ✅ CORRECTION RACE CONDITION : Fusion atomique avec vérification de version
       setBookings(prev => {
+        // ✅ Vérifier que c'est toujours notre chargement
+        if (loadingRef.current?.id !== loadId) {
+          console.warn('⚠️ [USE BOOKINGS] Fusion annulée - autre chargement en cours', {
+            currentLoadId: loadId,
+            existingLoadId: loadingRef.current?.id
+          });
+          return prev; // Ne pas modifier si un autre chargement est en cours
+        }
+        
+        // ✅ CORRECTION RACE CONDITION : Incrémenter la version pour la fusion atomique
+        const currentVersion = ++stateVersionRef.current;
+        
         // ✅ NETTOYAGE STRICT : Filtrer d'abord les réservations existantes pour ne garder que celles de la propriété active
         const prevForCurrentProperty = propertyId 
           ? prev.filter(b => b.propertyId === propertyId)
@@ -1891,16 +2272,46 @@ export const useBookings = (options?: UseBookingsOptions) => {
           return newBooking;
         });
         
+        // ✅ CORRECTION CRITIQUE : Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
+        // Ceci évite de perdre des réservations si la requête est limitée ou filtrée
+        const newIds = new Set(uniqueEnrichedBookings.map(b => b.id));
+        const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
+        
+        // Combiner les réservations mises à jour + les existantes non retournées
+        const combinedMerged = [...merged, ...existingNotInNew];
+        
         // ✅ NETTOYAGE STRICT : S'assurer qu'on ne garde que les réservations de la propriété active
         const finalMerged = propertyId
-          ? merged.filter(b => b.propertyId === propertyId)
-          : merged;
+          ? combinedMerged.filter(b => b.propertyId === propertyId)
+          : combinedMerged;
+        
+        // ✅ Vérifier à nouveau avant de retourner
+        if (loadingRef.current?.id !== loadId || stateVersionRef.current !== currentVersion) {
+          console.warn('⚠️ [USE BOOKINGS] Fusion annulée - autre chargement en cours ou version changée', {
+            currentLoadId: loadId,
+            existingLoadId: loadingRef.current?.id,
+            currentVersion,
+            stateVersion: stateVersionRef.current
+          });
+          return prev;
+        }
         
         // Mettre à jour le cache des IDs
         lastBookingIdsRef.current = new Set(finalMerged.map(b => b.id));
         
-        // ✅ NETTOYAGE LOGS : Supprimé le log final pour éviter les re-rendus infinis
-        // Le log était exécuté à chaque setBookings et causait des boucles infinies
+        // 🔴 DIAGNOSTIC URGENT : Log du résultat de la fusion
+        console.error('🔴🔴🔴 [DIAGNOSTIC] setBookings FINAL (fusion)', {
+          prevCount: prev.length,
+          prevForCurrentPropertyCount: prevForCurrentProperty.length,
+          uniqueEnrichedCount: uniqueEnrichedBookings.length,
+          mergedCount: merged.length,
+          existingNotInNewCount: existingNotInNew.length,
+          combinedMergedCount: combinedMerged.length,
+          finalMergedCount: finalMerged.length,
+          loadId,
+          version: currentVersion,
+          finalBookingIds: finalMerged.slice(0, 5).map(b => ({ id: b.id.substring(0, 8), name: b.guest_name }))
+        });
         
         return finalMerged;
       });
@@ -1911,10 +2322,24 @@ export const useBookings = (options?: UseBookingsOptions) => {
     } catch (error) {
       logError('Error loading bookings', error as Error);
     } finally {
-      loadingRef.current = false;
+      // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
+      if (loadingRef.current?.id === loadId) {
+        loadingRef.current = null;
+      } else {
+        console.warn('⚠️ [USE BOOKINGS] Verrou non libéré - autre chargement en cours', {
+          currentLoadId: loadId,
+          existingLoadId: loadingRef.current?.id
+        });
+      }
+      
+      // ✅ PROTECTION : Nettoyer le debounce
+      if (loadBookingsDebounceRef.current) {
+        clearTimeout(loadBookingsDebounceRef.current);
+        loadBookingsDebounceRef.current = null;
+      }
       setIsLoading(false);
     }
-  }, [propertyId, dateRange, limit, user?.id, callDocumentsGenerationOnce]); // ✅ STABILISATION : Dépendances pour useCallback
+  }, [propertyId, dateRange, limit, user?.id, callDocumentsGenerationOnce, options?.propertyId]); // ✅ STABILISATION : Dépendances pour useCallback (sans 'bookings' pour éviter les re-renders infinis)
 
   const addBooking = async (booking: Booking) => {
     try {

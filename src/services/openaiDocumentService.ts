@@ -9,6 +9,7 @@ interface ExtractedGuestData {
   nationality?: string;
   placeOfBirth?: string;
   documentType?: 'passport' | 'national_id';
+  documentIssueDate?: string; // ✅ Date de délivrance de la pièce d'identité
 }
 
 // ✅ NOUVEAU : Fonction pour nettoyer le nom extrait
@@ -88,7 +89,8 @@ export class OpenAIDocumentService {
         documentNumber: extractedData.documentNumber || '',
         nationality: extractedData.nationality || '',
         placeOfBirth: extractedData.placeOfBirth || '',
-        documentType: extractedData.documentType || 'passport'
+        documentType: extractedData.documentType || 'passport',
+        documentIssueDate: extractedData.documentIssueDate || '' // ✅ Date de délivrance
       };
 
       // Remove empty strings and replace with undefined, but keep null values for debugging
@@ -99,12 +101,16 @@ export class OpenAIDocumentService {
         }
       });
 
-      // ✅ DEBUG: Log specifically for dateOfBirth extraction
+      // ✅ DEBUG: Log specifically for date extraction
       console.log('🔍 DEBUG - Date extraction details:', {
         originalDateOfBirth: extractedData.dateOfBirth,
         cleanedDateOfBirth: cleanedData.dateOfBirth,
         wasDateOfBirthExtracted: !!extractedData.dateOfBirth,
-        isDateOfBirthInCleanedData: !!cleanedData.dateOfBirth
+        isDateOfBirthInCleanedData: !!cleanedData.dateOfBirth,
+        // ✅ Date de délivrance
+        originalDocumentIssueDate: extractedData.documentIssueDate,
+        cleanedDocumentIssueDate: cleanedData.documentIssueDate,
+        wasDocumentIssueDateExtracted: !!extractedData.documentIssueDate
       });
 
       console.log('🎯 Final cleaned extraction result:', cleanedData);

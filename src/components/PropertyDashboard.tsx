@@ -72,6 +72,24 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
     ? bookings.filter(booking => booking.propertyId === selectedProperty.id)
 : [];
 
+  // ✅ DIAGNOSTIC CRITIQUE : Vérifier ce qui arrive dans filteredBookings
+  useEffect(() => {
+    if (selectedProperty) {
+      console.log('🚨 [PROPERTY DASHBOARD DIAGNOSTIC]', {
+        selectedPropertyId: selectedProperty.id,
+        totalBookings: bookings.length,
+        filteredBookings: filteredBookings.length,
+        bookingsList: filteredBookings.map(b => ({
+          id: b.id.substring(0, 8),
+          propertyId: b.propertyId,
+          guestName: b.guest_name,
+          status: b.status,
+          checkIn: b.checkInDate
+        }))
+      });
+    }
+  }, [selectedProperty, bookings, filteredBookings.length]);
+
   // Refresh bookings immediately when a deletion event is emitted
   useEffect(() => {
     const handler = () => {

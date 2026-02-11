@@ -1,32 +1,62 @@
-import { memo } from 'react';
+import { memo, useState, useMemo } from 'react';
 import { CalendarDay, BookingLayout } from './CalendarUtils';
 import { CalendarBookingBar } from './CalendarBookingBar';
+import { ConflictCadran } from './ConflictCadran';
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useT } from '@/i18n/GuestLocaleProvider';
+import { BOOKING_COLORS } from '@/constants/bookingColors';
+
+export interface ConflictGroupForCalendar {
+  groupKey: string;
+  ids: string[];
+  /** Segments par semaine (une barre rouge par segment) */
+  weekSegments: Array<{ weekIndex: number; startDayIndex: number; span: number }>;
+  /** Réservation avec la date d’arrivée la plus tôt (affichée sur la barre rouge) */
+  primaryReservation: { displayName: string; startFormatted: string; endFormatted: string };
+  reservations: Array<{ id: string; displayName: string; startFormatted: string; endFormatted: string }>;
+}
 
 interface CalendarGridProps {
   calendarDays: CalendarDay[];
   bookingLayout: { [key: string]: BookingLayout[] };
   conflicts: string[];
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
-  // ✅ NOUVEAU : Ajouter allReservations pour avoir accès au statut des réservations
   allReservations?: (Booking | AirbnbReservation)[];
+  conflictGroupsWithPosition?: ConflictGroupForCalendar[];
+  onDeleteBooking?: (id: string) => Promise<void>;
+  /** Contrôle externe (ex. alerte cliquable) : ouvrir un conflit précis */
+  openConflict?: { groupKey: string; weekIndex: number } | null;
+  onOpenConflictChange?: (value: { groupKey: string; weekIndex: number } | null) => void;
 }
 
-// Libellés de jours pour desktop, comme sur la maquette ("lun.", "mar.", ...)
-const dayNames = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+const weekdayKeys = ['calendar.weekdayMon', 'calendar.weekdayTue', 'calendar.weekdayWed', 'calendar.weekdayThu', 'calendar.weekdayFri', 'calendar.weekdaySat', 'calendar.weekdaySun'] as const;
 
 // ✅ PHASE 3 : Mémoriser CalendarGrid avec comparaison personnalisée
-export const CalendarGrid = memo(({ 
-  calendarDays, 
-  bookingLayout, 
-  conflicts, 
+export const CalendarGrid = memo(({
+  calendarDays,
+  bookingLayout,
+  conflicts,
   onBookingClick,
-  allReservations = []
+  allReservations = [],
+  conflictGroupsWithPosition = [],
+  onDeleteBooking,
+  openConflict: openConflictProp,
+  onOpenConflictChange,
 }: CalendarGridProps) => {
+  const t = useT();
+  const dayNames = useMemo(() => weekdayKeys.map((k) => t(k)), [t]);
   const isMobile = useIsMobile();
-  // Calculate weeks for layout
+  const [internalOpenConflict, setInternalOpenConflict] = useState<{ groupKey: string; weekIndex: number } | null>(null);
+  const openConflict = onOpenConflictChange != null ? openConflictProp ?? null : internalOpenConflict;
+  const setOpenConflict = onOpenConflictChange ?? setInternalOpenConflict;
+
+  const conflictIds = useMemo(
+    () => new Set(conflictGroupsWithPosition.flatMap((g) => g.ids)),
+    [conflictGroupsWithPosition]
+  );
+
   const weeks = [] as CalendarDay[][];
   for (let i = 0; i < calendarDays.length; i += 7) {
     weeks.push(calendarDays.slice(i, i + 7));
@@ -60,18 +90,26 @@ export const CalendarGrid = memo(({
             return null;
           }
 
-          // ✅ CALCULER les valeurs une seule fois par semaine pour cohérence
-          // Note: layersInWeek n'est plus utilisé car toutes les réservations sont alignées
-          const layersInWeek = bookingLayout[weekIndex] ? 
-            Math.max(...bookingLayout[weekIndex].map(b => b.layer || 0)) + 1 : 1;
+          const weekBookings = bookingLayout[weekIndex] ?? [];
+          const weekBookingsWithoutConflicts = weekBookings.filter((b) => b.booking && !conflictIds.has(b.booking.id));
+          const hasConflictInWeek = conflictGroupsWithPosition.some((g) =>
+            g.weekSegments.some((s) => s.weekIndex === weekIndex)
+          );
+          const nonConflictLayers = weekBookingsWithoutConflicts.length
+            ? Math.max(...weekBookingsWithoutConflicts.map((b) => b.layer || 0)) + 1
+            : 0;
+          const layersInWeek = hasConflictInWeek ? nonConflictLayers + 1 : Math.max(1, nonConflictLayers);
           // ✅ MOBILE-FRIENDLY : Augmenter significativement les tailles pour mobile
           const baseHeight = isMobile ? 40 : 32; // Augmenté de 28 à 40 pour mobile
           const spacing = isMobile ? 24 : 22; // ✅ FIGMA : Augmenté pour correspondre au design (était 16:14)
           const headerSpace = isMobile ? 60 : 45; // Augmenté de 42 à 60 pour mobile
           const padding = isMobile ? 32 : 25; // Augmenté de 24 à 32 pour mobile
-          // ✅ ALIGNEMENT : Hauteur fixe car toutes les réservations sont à la même position
-          const calculatedHeight = headerSpace + baseHeight + padding;
-          const minHeight = isMobile ? 140 : 120; // Réduit car pas de cascade
+          // ✅ FIGMA : Lignes successives — hauteur adaptée au nombre de couches (chevauchements)
+          const idealSpacing = isMobile ? 24 : 24;
+          const calculatedHeight = layersInWeek > 1
+            ? headerSpace + layersInWeek * baseHeight + (layersInWeek - 1) * idealSpacing + padding
+            : headerSpace + baseHeight + padding;
+          const minHeight = isMobile ? 140 : 120;
           const cellHeight = Math.max(minHeight, calculatedHeight);
           
           return (
@@ -117,10 +155,81 @@ export const CalendarGrid = memo(({
                 })}
               </div>
               
-              {/* ✅ CORRIGÉ CRITIQUE : Booking Bars positionnées directement dans chaque cellule pour alignement parfait */}
-              {bookingLayout[weekIndex] && bookingLayout[weekIndex].length > 0 && (
+              {/* ✅ Une seule barre rouge par conflit (réservation la plus tôt) ; cadran au clic */}
+              {!isMobile && conflictGroupsWithPosition.map((group) =>
+                group.weekSegments
+                  .filter((seg) => seg.weekIndex === weekIndex)
+                  .map((seg, segIdx) => {
+                    const cellPadding = isMobile ? 8 : 12;
+                    const dayNumberHeight = isMobile ? 28 : 24;
+                    const spaceAfterNumber = dayNumberHeight + 8;
+                    const topOffset = cellPadding + spaceAfterNumber;
+                    const isOpen = openConflict?.groupKey === group.groupKey && openConflict?.weekIndex === weekIndex;
+                    return (
+                      <div
+                        key={`conflict-${group.groupKey}-${weekIndex}-${segIdx}`}
+                        className={`absolute left-0 right-0 top-0 grid grid-cols-7 gap-4 pointer-events-none ${isOpen ? 'z-[110]' : 'z-30'}`}
+                        style={{ height: `${cellHeight}px` }}
+                      >
+                        <div
+                          className="relative pointer-events-auto"
+                          style={{
+                            gridColumn: `${seg.startDayIndex + 1} / span ${seg.span}`,
+                          }}
+                        >
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            className="absolute flex items-center px-3 rounded-full text-xs font-semibold text-white cursor-pointer transition-all duration-200 hover:opacity-90 ring-2 ring-red-300/70"
+                            style={{
+                              top: `${topOffset}px`,
+                              height: `${isMobile ? 40 : 32}px`,
+                              left: '2px',
+                              right: '2px',
+                              width: 'calc(100% - 4px)',
+                              backgroundColor: BOOKING_COLORS.conflict.hex,
+                              boxShadow: '0 4px 12px rgba(220,38,38,0.25)',
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenConflict(isOpen ? null : { groupKey: group.groupKey, weekIndex });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setOpenConflict(isOpen ? null : { groupKey: group.groupKey, weekIndex });
+                              }
+                            }}
+                          >
+                            <span className="truncate">
+                              {group.primaryReservation.displayName} • {group.primaryReservation.startFormatted} – {group.primaryReservation.endFormatted}
+                            </span>
+                          </div>
+                          {isOpen && (
+                            <ConflictCadran
+                              reservations={group.reservations}
+                              onDelete={onDeleteBooking ? (id) => onDeleteBooking(id).catch(() => {}) : () => {}}
+                              onSelectReservation={(id) => {
+                                const res = allReservations.find((r) => r.id === id);
+                                if (res) {
+                                  onBookingClick(res);
+                                  setOpenConflict(null);
+                                }
+                              }}
+                              onClose={() => setOpenConflict(null)}
+                              className="left-0 top-2"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+
+              {/* ✅ Barres normales (réservations hors conflit) */}
+              {weekBookingsWithoutConflicts.length > 0 && (
                 <>
-                  {bookingLayout[weekIndex].map((bookingData, arrayIndex) => {
+                  {weekBookingsWithoutConflicts.map((bookingData, arrayIndex) => {
                     // ✅ CRITIQUE : Vérifier que bookingData.booking existe
                     if (!bookingData.booking) {
                       console.error('❌ [CALENDAR ERROR] bookingData.booking is undefined:', {
@@ -140,6 +249,7 @@ export const CalendarGrid = memo(({
                     };
                     
                     const layer = bookingData.layer || 0;
+                    const layerOffset = hasConflictInWeek ? 1 : 0;
                     const maxLayers = layersInWeek;
                     
                     // Les logs de rendu détaillés ont été désactivés pour améliorer les performances
@@ -166,8 +276,8 @@ export const CalendarGrid = memo(({
                       actualSpacing = Math.max(minSpacing, calculatedSpacing);
                     }
                     
-                    // ✅ ALIGNEMENT : Toutes les réservations à la même hauteur (pas de cascade)
-                    const topOffset = cellPadding + spaceAfterNumber;
+                    // ✅ FIGMA : Lignes successives ; décaler d’une ligne si une barre rouge (conflit) est dans la semaine
+                    const topOffset = cellPadding + spaceAfterNumber + (layer + layerOffset) * (baseHeight + actualSpacing);
 
                     // ✅ CRITIQUE : Clé stable et unique pour éviter les erreurs removeChild
                     const bookingId = bookingData.booking?.id || `unknown-${arrayIndex}`;
@@ -216,9 +326,13 @@ export const CalendarGrid = memo(({
                                 top: `${topOffset}px`,
                                 height: `${baseHeight}px`,
                                 zIndex: 100 + layer,
-                                left: '2px', // ✅ NOUVEAU : Marge gauche pour délimiter
-                                right: '2px', // ✅ NOUVEAU : Marge droite pour délimiter
-                                width: 'calc(100% - 4px)', // ✅ AMÉLIORÉ : Réduire de 4px total (2px chaque côté)
+                                left: bookingData.startOffsetPercent
+                                  ? `calc(2px + ${(bookingData.startOffsetPercent / bookingData.span)}%)`
+                                  : '2px',
+                                right: '2px',
+                                width: bookingData.startOffsetPercent
+                                  ? `calc(100% - 4px - ${(bookingData.startOffsetPercent / bookingData.span)}%)`
+                                  : 'calc(100% - 4px)',
                                 opacity: 1,
                                 pointerEvents: 'auto',
                               }}
@@ -255,7 +369,9 @@ export const CalendarGrid = memo(({
   if (prevProps.calendarDays.length !== nextProps.calendarDays.length) return false;
   if (prevProps.conflicts.length !== nextProps.conflicts.length) return false;
   if (JSON.stringify(prevProps.conflicts) !== JSON.stringify(nextProps.conflicts)) return false;
-  
+  if (prevProps.conflictGroupsWithPosition?.length !== nextProps.conflictGroupsWithPosition?.length) return false;
+  if (prevProps.openConflict?.groupKey !== nextProps.openConflict?.groupKey || prevProps.openConflict?.weekIndex !== nextProps.openConflict?.weekIndex) return false;
+
   // Comparer les clés de bookingLayout
   const prevKeys = Object.keys(prevProps.bookingLayout);
   const nextKeys = Object.keys(nextProps.bookingLayout);

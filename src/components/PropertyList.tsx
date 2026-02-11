@@ -10,12 +10,14 @@ import { useBookings } from '@/hooks/useBookings';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useT } from '@/i18n/GuestLocaleProvider';
 interface PropertyListProps {
   onPropertySelect: (property: Property) => void;
 }
 export const PropertyList = ({
   onPropertySelect
 }: PropertyListProps) => {
+  const t = useT();
   const {
     properties,
     isLoading,
@@ -98,12 +100,12 @@ export const PropertyList = ({
       <div className="space-y-6">
         {/* Header selon modèle Figma */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl md:text-3xl font-bold text-black">Mes annonces</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-black">{t('properties.title')}</h1>
             {isMobile ? (
               <Button 
                 onClick={() => setShowCreateDialog(true)} 
-              className="h-12 w-12 p-0 rounded-xl bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white shadow-lg"
-                aria-label="Ajouter une propriété"
+                className="h-12 w-12 p-0 rounded-xl bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white shadow-lg"
+                aria-label={t('properties.addPropertyAria')}
               >
               <Plus className="h-6 w-6" />
               </Button>
@@ -111,10 +113,10 @@ export const PropertyList = ({
               <Button 
                 onClick={() => setShowCreateDialog(true)} 
                 size="sm" 
-              className="gap-2 h-10 px-4 bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white rounded-full"
+                className="gap-2 h-10 px-4 bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white rounded-full"
               >
               <Plus className="h-4 w-4" />
-              <span>Ajouter</span>
+              <span>{t('properties.add')}</span>
               </Button>
             )}
         </div>
@@ -149,7 +151,7 @@ export const PropertyList = ({
                       <div className="flex items-center gap-1.5 mt-1">
                         <MapPin className="w-4 h-4 text-gray-600 flex-shrink-0" />
                         <span className="text-sm text-gray-600 truncate">
-                          {property.address?.split(',')[0]?.trim() || 'Non spécifié'}
+                          {property.address?.split(',')[0]?.trim() || t('properties.addressUnspecified')}
                         </span>
                            </div>
                          </div>
@@ -166,7 +168,7 @@ export const PropertyList = ({
                           onPropertySelect(property);
                         }}
                         className="h-9 w-9 p-0"
-                        aria-label="Accéder au calendrier"
+                        aria-label={t('properties.accessCalendarAria')}
                       >
                         <Calendar className="w-5 h-5 text-gray-700" />
                       </Button>
@@ -179,10 +181,10 @@ export const PropertyList = ({
                           onPropertySelect(property);
                         }}
                         className="gap-2 rounded-full border-gray-300 bg-white hover:bg-gray-50 text-gray-900 h-9 px-4"
-                        aria-label="Accéder au calendrier"
+                        aria-label={t('properties.accessCalendarAria')}
                       >
                         <Calendar className="w-4 h-4 text-gray-700" />
-                        <span className="text-sm font-medium">Accéder</span>
+                        <span className="text-sm font-medium">{t('properties.access')}</span>
                       </Button>
                     )}
                     
@@ -208,7 +210,7 @@ export const PropertyList = ({
                           className="gap-2 hover:bg-[#0BD9D0] hover:text-white focus:bg-[#0BD9D0] focus:text-white"
                         >
                           <Edit className="w-4 h-4" />
-                               Modifier
+                               {t('properties.edit')}
                              </DropdownMenuItem>
                         <DropdownMenuItem 
                           onClick={(e) => {
@@ -219,7 +221,7 @@ export const PropertyList = ({
                           className="gap-2 text-red-600 focus:text-red-600"
                         >
                           <Trash2 className="w-4 h-4" />
-                               Supprimer
+                               {t('properties.delete')}
                              </DropdownMenuItem>
                            </DropdownMenuContent>
                          </DropdownMenu>

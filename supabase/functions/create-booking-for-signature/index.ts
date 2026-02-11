@@ -58,9 +58,23 @@ serve(async (req)=>{
       return badRequest("Property not found");
     }
     console.log('✅ Property found:', property.name);
-    // ✅ CORRECTION : Vérifier si une réservation existe déjà
+    // ✅ CORRECTION CRITIQUE : Vérifier si une réservation existe déjà
+    // ✅ AMÉLIORATION : Ajouter guest_name dans la recherche pour éviter les conflits
     console.log('🔍 Checking for existing booking...');
-    const { data: existingBooking, error: checkError } = await server.from("bookings").select("id, status, submission_id").eq("property_id", body.propertyId).eq("check_in_date", body.checkInDate).eq("check_out_date", body.checkOutDate).maybeSingle();
+    const { data: existingBooking, error: checkError } = await server
+      .from("bookings")
+      .select("id, status, submission_id, guest_name")
+      .eq("property_id", body.propertyId)
+      .eq("check_in_date", body.checkInDate)
+      .eq("check_out_date", body.checkOutDate)
+      .eq("guest_name", body.guestName) // ✅ AJOUTÉ : Filtrer aussi par guest_name pour éviter les conflits
+      .maybeSingle();
+    
+    if (checkError) {
+      console.error('❌ Error checking for existing booking:', checkError);
+      return badRequest("Failed to check for existing booking");
+    }
+    
     if (existingBooking) {
       console.log('✅ Existing booking found:', existingBooking.id);
       // Si la réservation a un submission_id, elle est complète
@@ -81,6 +95,7 @@ serve(async (req)=>{
         // Mettre à jour la réservation existante au lieu d'en créer une nouvelle
         const { error: updateError } = await server.from("bookings").update({
           number_of_guests: body.numberOfGuests || 1,
+          guest_name: body.guestName, // ✅ AJOUTÉ : Mettre à jour guest_name si nécessaire
           updated_at: new Date().toISOString()
         }).eq('id', existingBooking.id);
         if (updateError) {
@@ -110,13 +125,14 @@ serve(async (req)=>{
       check_in_date: body.checkInDate,
       check_out_date: body.checkOutDate,
       number_of_guests: body.numberOfGuests || 1,
+      guest_name: body.guestName, // ✅ AJOUTÉ : Insérer guest_name pour permettre la recherche future
       status: 'pending',
       booking_reference: `SIGN-${Date.now()}`,
       documents_generated: {
         policeForm: false,
         contract: false
       }
-    }).select("id, property_id, check_in_date, check_out_date, number_of_guests, status").single();
+    }).select("id, property_id, check_in_date, check_out_date, number_of_guests, status, guest_name").single();
     if (bookingError) {
       console.error('❌ Error creating booking:', bookingError);
       return badRequest("Failed to create booking");
