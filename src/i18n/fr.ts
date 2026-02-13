@@ -125,7 +125,9 @@ export default {
   'guest.clients.nationalId': 'Carte d\'identité',
   'guest.clients.documentNumber': 'Numéro de document',
   'guest.clients.documentNumberPlaceholder': 'Numéro de passeport/CIN',
-  
+  'guest.clients.documentExpiryDate': "Date d'expiration",
+  'guest.clients.documentExpiryPlaceholder': 'Sélectionner une date',
+
   // Navigation
   'guest.navigation.previous': 'Précédent',
   'guest.navigation.next': 'Suivant',

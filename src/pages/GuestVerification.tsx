@@ -3663,7 +3663,7 @@ export const GuestVerification = () => {
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
-                                      Date d'expiration
+                                      {t('guest.clients.documentExpiryDate')}
                                     </Label>
                                     <Popover>
                                       <PopoverTrigger asChild>
@@ -3679,7 +3679,7 @@ export const GuestVerification = () => {
                                           <span className={guest.documentIssueDate ? 'text-gray-900 font-medium' : 'text-gray-500'}>
                                             {guest.documentIssueDate 
                                               ? format(guest.documentIssueDate, 'dd/MM/yyyy') 
-                                              : 'Sélectionner une date'}
+                                              : t('guest.clients.documentExpiryPlaceholder')}
                                           </span>
                                         </Button>
                                       </PopoverTrigger>

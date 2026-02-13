@@ -390,18 +390,23 @@ export class AILocrService {
       if (result.placeOfBirth) break;
     }
 
-    // 📅 DOCUMENT EXPIRY DATE EXTRACTION (Date d'expiration) — aligné fiche de police
+    // 📅 DOCUMENT EXPIRY DATE EXTRACTION (Date d'expiration) — on extrait uniquement la date d'expiration, jamais la date de délivrance
     const expiryDateLabels = [
       'DATE OF EXPIRY', 'DATE D\'EXPIRATION', 'EXPIRES', 'EXPIRY DATE', 'VALID UNTIL',
       'DATE D\'ÉCHÉANCE', 'VALIDITÉ JUSQU\'AU', 'EXPIRATION', 'EXPIRY', 'VALID TO'
     ];
+    const issueDateLabels = [
+      'DATE DE DÉLIVRANCE', 'DÉLIVRÉ', 'ISSUED', 'DATE OF ISSUE', 'DELIVERY', 'DÉLIVRANCE'
+    ];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      const lineUpper = line.toUpperCase();
 
-      const hasExpiryLabel = expiryDateLabels.some(label => line.toUpperCase().includes(label.toUpperCase()));
+      const hasExpiryLabel = expiryDateLabels.some(label => lineUpper.includes(label.toUpperCase()));
+      const hasIssueLabel = issueDateLabels.some(label => lineUpper.includes(label.toUpperCase()));
 
-      if (hasExpiryLabel) {
+      if (hasExpiryLabel && !hasIssueLabel) {
         const datePatterns = [
           /(\d{1,2})[\s\.\/-](\d{1,2})[\s\.\/-](19|20)(\d{2})/g,
           /(\d{1,2})\s*(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s*(19|20)?(\d{2})/gi

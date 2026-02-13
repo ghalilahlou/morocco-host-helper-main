@@ -125,7 +125,9 @@ export default {
   'guest.clients.nationalId': 'Cédula de Identidad',
   'guest.clients.documentNumber': 'Número de Documento',
   'guest.clients.documentNumberPlaceholder': 'Número de pasaporte/cédula',
-  
+  'guest.clients.documentExpiryDate': 'Fecha de caducidad',
+  'guest.clients.documentExpiryPlaceholder': 'Seleccionar una fecha',
+
   // Navigation
   'guest.navigation.previous': 'Anterior',
   'guest.navigation.next': 'Siguiente',

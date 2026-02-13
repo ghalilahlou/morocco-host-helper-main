@@ -125,7 +125,9 @@ export default {
   'guest.clients.nationalId': 'ID Card',
   'guest.clients.documentNumber': 'Document Number',
   'guest.clients.documentNumberPlaceholder': 'Passport/ID number',
-  
+  'guest.clients.documentExpiryDate': 'Date of expiry',
+  'guest.clients.documentExpiryPlaceholder': 'Select a date',
+
   // Navigation
   'guest.navigation.previous': 'Previous',
   'guest.navigation.next': 'Next',
