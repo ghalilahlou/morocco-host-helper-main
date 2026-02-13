@@ -549,6 +549,9 @@ export const detectBookingConflicts = (
       const res1 = allReservations[i];
       const res2 = allReservations[j];
       
+      // ✅ Ne jamais marquer une réservation en conflit avec elle-même (évite doublons dans la liste)
+      if (res1.id === res2.id) continue;
+      
       // ✅ CORRIGÉ : Ignorer les conflits entre réservations avec le même booking_reference
       // C'est la même réservation ICS (une dans airbnb_reservations, une dans bookings)
       const sameReference = res1.bookingReference && 

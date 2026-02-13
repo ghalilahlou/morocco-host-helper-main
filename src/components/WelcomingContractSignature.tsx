@@ -129,7 +129,19 @@ export const WelcomingContractSignature: React.FC<WelcomingContractSignatureProp
   const t = useT();
   const isMobile = useIsMobile();
 
-  
+  // Breakpoint 1024px pour contract-signing : même layout « mobile » (barre noire + étapes en zone claire) dès que la largeur < 1024px, pour que les changements soient visibles en redimensionnant la fenêtre ou sur tablette
+  const [isCompactLayout, setIsCompactLayout] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1024);
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 1023px)');
+    const onChange = () => setIsCompactLayout(window.innerWidth < 1024);
+    mql.addEventListener('change', onChange);
+    setIsCompactLayout(window.innerWidth < 1024);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
+  // Sur cette page on affiche le « chez moi » mobile dès que compact (mobile ou tablette / fenêtre réduite)
+  const showMobileLayout = isMobile || isCompactLayout;
+
   
   // ✅ CORRECTION : Fonction robuste pour récupérer l'ID de réservation
   const getBookingId = (): string | null => {
@@ -1004,10 +1016,30 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
   };
 
   return (
-    <div className="min-h-screen flex" style={{ backgroundColor: 'rgba(137, 215, 210, 0.19)' }}>
-      {/* Left Sidebar - Fixed 436px matching Figma */}
+    <div className={cn("min-h-screen flex flex-col lg:flex-row items-start", showMobileLayout && "bg-[#FDFDF9]")} style={!showMobileLayout ? { backgroundColor: 'rgba(137, 215, 210, 0.19)' } : undefined}>
+      {/* Mobile Header - même « chez moi » que guest-verification : barre noire pleine largeur, logo + langue (visible dès que largeur < 1024px) */}
+      {showMobileLayout && (
+        <div className="mobile-header guest-verification-mobile-header safe-area-top">
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              <img
+                src="/lovable-uploads/Checky simple - fond transparent.png"
+                alt="CHECKY"
+                className="h-8 w-8 object-contain"
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+              <span style={{ fontFamily: 'Fira Sans Condensed, sans-serif', fontWeight: 700, fontSize: '20px', color: '#FFFFFF' }}>CHECKY</span>
+            </div>
+            <div className="language-switcher-in-header">
+              <LanguageSwitcher />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Left Sidebar - masqué quand largeur < 1024px pour garder le même « chez moi » que guest-verification */}
       <div 
-        className="hidden md:flex text-white flex-col fixed left-0 top-0 z-10" 
+        className="hidden lg:flex text-white flex-col fixed left-0 top-0 z-10" 
         style={{ 
           backgroundColor: '#1E1E1E',
           width: '436px',
@@ -1153,20 +1185,59 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
         </div>
       </div>
       
-      {/* Right Main Content */}
+      {/* Right Main Content - full width en layout compact (< 1024px), même structure que guest-verification */}
       <div 
-        className="flex-1 flex flex-col" 
+        className={cn("flex-1 flex flex-col w-full", showMobileLayout && "safe-area-all min-h-screen")}
         style={{ 
           backgroundColor: '#FDFDF9',
-          marginLeft: '436px',
-          borderRadius: '12px',
+          marginLeft: showMobileLayout ? 0 : '436px',
+          borderRadius: showMobileLayout ? 0 : '12px',
           minHeight: '100vh'
         }}
       >
 
-        
-        {/* Progress Steps - Matching GuestVerification */}
-        <div className="px-6 pb-8 flex items-start justify-center gap-16">
+        {/* Même bloc que guest-verification : header (logo masqué) pour garder le même espacement */}
+        {showMobileLayout && (
+          <div className="p-6 flex justify-between items-center">
+            <div className="flex items-center" style={{ visibility: 'hidden' }} aria-hidden="true">
+              <span style={{ fontFamily: 'Fira Sans Condensed, sans-serif', fontWeight: 700, fontSize: '20px' }}>CHECKY</span>
+            </div>
+          </div>
+        )}
+
+        {/* Étapes dans la partie claire (layout compact) - même style que guest-verification */}
+        {showMobileLayout && (
+          <div className="guest-verification-steps-in-light">
+            <div className="guest-verification-steps-row">
+              <div
+                className="guest-verification-step-icon done guest-verification-step-clickable"
+                role="button"
+                tabIndex={0}
+                onClick={() => navigateToStep('booking')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToStep('booking'); } }}
+              >
+                <Home className="guest-verification-step-icon-svg" />
+              </div>
+              <div className="guest-verification-step-connector done" />
+              <div
+                className="guest-verification-step-icon done guest-verification-step-clickable"
+                role="button"
+                tabIndex={0}
+                onClick={() => navigateToStep('documents')}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToStep('documents'); } }}
+              >
+                <FileText className="guest-verification-step-icon-svg" />
+              </div>
+              <div className="guest-verification-step-connector done" />
+              <div className="guest-verification-step-icon active" aria-current="step">
+                <PenTool className="guest-verification-step-icon-svg" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Progress Steps - masqués en layout compact (< 1024px) */}
+        <div className={cn("px-6 pb-8 flex items-start justify-center gap-16", showMobileLayout && "hidden")}>
           {/* Step 1: Réservation - completed - CLIQUABLE */}
           <div 
             className="flex flex-col items-center"
@@ -1300,29 +1371,29 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
           </div>
         </div>
         
-        {/* Main Content */}
-        <div className="flex-1 px-6 pb-6 overflow-y-auto">
+        {/* Main Content - scroll fluide en layout compact */}
+        <div className={cn("flex-1 px-6 pb-6 overflow-y-auto", showMobileLayout && "guest-verification-main smooth-scroll")}>
           <ErrorBoundary>
             {currentStep === 'review' && (
-              <div className="max-w-4xl mx-auto space-y-8">
-                {/* Header Section */}
-                <div className="flex items-center justify-center gap-3 mb-4">
-                  <FileText className="w-9 h-9" style={{ color: '#000000' }} />
+              <div className={cn("mx-auto space-y-8", isMobile ? "max-w-full" : "max-w-4xl")}>
+                {/* Header Section - même typo que guest-verification sur mobile */}
+                <div className={cn("flex items-center justify-center gap-3", isMobile ? "mb-4 mt-2" : "mb-4")}>
+                  <FileText className={cn("flex-shrink-0", isMobile ? "w-7 h-7" : "w-9 h-9")} style={{ color: '#000000' }} />
                   <h2 style={{
                     fontFamily: 'Fira Sans Condensed, sans-serif',
                     fontWeight: 400,
-                    fontSize: '30px',
-                    lineHeight: '36px',
+                    fontSize: isMobile ? '20px' : '30px',
+                    lineHeight: isMobile ? '26px' : '36px',
                     color: '#040404'
                   }}>{t('contractSignature.title')}</h2>
                 </div>
                 <p style={{
                   fontFamily: 'Inter, sans-serif',
                   fontWeight: 400,
-                  fontSize: '12px',
+                  fontSize: isMobile ? '12px' : '14px',
                   lineHeight: '15px',
                   color: '#4B5563',
-                  marginBottom: '24px'
+                  marginBottom: isMobile ? '16px' : '24px'
                 }}>
                   {t('guestVerification.signatureIntro')}
                 </p>
@@ -1626,14 +1697,8 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
           {/* Étape de confirmation - Design Figma */}
           {currentStep === 'celebration' && (
             <div 
+              className={cn("fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#1E1E1E]", isMobile && "safe-area-all pt-[max(24px,env(safe-area-inset-top))] pb-[max(24px,env(safe-area-inset-bottom))]")}
               style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                background: '#1E1E1E',
-                zIndex: 50,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -1641,7 +1706,7 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
               }}
             >
               {/* Logo Checky centré proche du titre */}
-              <div style={{ position: 'absolute', top: '140px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
+              <div style={{ position: 'absolute', top: isMobile ? 'max(80px, calc(env(safe-area-inset-top) + 40px))' : '140px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
                 <img 
                   src="/lovable-uploads/Checky simple - fond transparent.png" 
                   alt="Checky Logo" 
@@ -1776,10 +1841,10 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
                 </div>
               </div>
 
-              {/* Footer */}
+              {/* Footer - safe-area on mobile */}
               <footer style={{
                 position: 'absolute',
-                bottom: '24px',
+                bottom: isMobile ? 'max(24px, env(safe-area-inset-bottom))' : '24px',
                 left: '50%',
                 transform: 'translateX(-50%)',
                 fontFamily: 'Inter, sans-serif',
@@ -1796,9 +1861,9 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
         </ErrorBoundary>
       </div>
       
-      {/* Footer */}
-      <footer className="px-6 py-4 border-t border-gray-200 bg-[#FDFDF9]">
-        <p className="text-sm text-gray-600 text-center">
+      {/* Footer - même style que guest-verification (safe-area sur mobile uniquement) */}
+      <footer className={cn(isMobile && "safe-area-bottom", showMobileLayout && "guest-verification-footer")} style={{ padding: '16px 24px', backgroundColor: '#FDFDF9' }}>
+        <p className="text-sm text-gray-600 text-center" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, fontSize: '12px', lineHeight: '15px', color: '#000000' }}>
           © 2025 Checky — Tous droits réservés · Mentions légales · Politique de confidentialité · CGV
         </p>
       </footer>

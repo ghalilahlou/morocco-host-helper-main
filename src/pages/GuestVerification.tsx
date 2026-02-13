@@ -2384,69 +2384,29 @@ export const GuestVerification = () => {
           MOBILE HEADER - Visible uniquement sur mobile
           ======================================== */}
       {isMobile && (
-        <div className="mobile-header safe-area-top">
-          {/* Logo CHECKY */}
-          <div className="flex items-center gap-2">
-            <img 
-              src="/lovable-uploads/Checky simple - fond transparent.png" 
-              alt="CHECKY" 
-              className="h-8 w-8 object-contain"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <span style={{ 
-              fontFamily: 'Fira Sans Condensed, sans-serif',
-              fontWeight: 700,
-              fontSize: '20px',
-              color: '#FFFFFF'
-            }}>CHECKY</span>
-          </div>
-          
-          {/* Stepper compact mobile */}
-          <div className="flex items-center gap-2">
-            {/* Step 1 */}
-            <div 
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                currentStep === 'booking' 
-                  ? 'bg-teal-400/80' 
-                  : currentStepIndex > 0 ? 'bg-teal-200' : 'bg-gray-500/40'
-              }`}
-            >
-              <CalendarLucide className="w-4 h-4 text-white" />
+        <div className="mobile-header guest-verification-mobile-header safe-area-top">
+          {/* Barre noire pleine largeur : logo à gauche, langue à droite uniquement */}
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              <img 
+                src="/lovable-uploads/Checky simple - fond transparent.png" 
+                alt="CHECKY" 
+                className="h-8 w-8 object-contain"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+              <span style={{ 
+                fontFamily: 'Fira Sans Condensed, sans-serif',
+                fontWeight: 700,
+                fontSize: '20px',
+                color: '#FFFFFF'
+              }}>CHECKY</span>
             </div>
-            
-            {/* Connector */}
-            <div className={`w-4 h-0.5 ${currentStepIndex >= 1 ? 'bg-teal-400' : 'bg-gray-500/40'}`} />
-            
-            {/* Step 2 */}
-            <div 
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                currentStep === 'documents' 
-                  ? 'bg-teal-400/80' 
-                  : currentStepIndex > 1 ? 'bg-teal-200' : 'bg-gray-500/40'
-              }`}
-            >
-              <FileText className="w-4 h-4 text-white" />
-            </div>
-            
-            {/* Connector */}
-            <div className={`w-4 h-0.5 ${currentStepIndex >= 2 ? 'bg-teal-400' : 'bg-gray-500/40'}`} />
-            
-            {/* Step 3 */}
-            <div 
-              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                currentStep === 'signature' 
-                  ? 'bg-teal-400/80' 
-                  : 'bg-gray-500/40'
-              }`}
-            >
-              <PenTool className="w-4 h-4 text-white" />
+            <div className="language-switcher-in-header">
+              <LanguageSwitcher />
             </div>
           </div>
-          
-          {/* Language Switcher */}
-          <LanguageSwitcher />
         </div>
       )}
       
@@ -2739,28 +2699,65 @@ export const GuestVerification = () => {
         )}
       </div>
       
-      {/* Right Main Content */}
+      {/* Right Main Content - full width on mobile (no sidebar) */}
       <div 
-        className="flex-1 flex flex-col" 
+        className={`flex-1 flex flex-col w-full ${isMobile ? 'safe-area-all min-h-screen' : ''}`}
         style={{ 
           backgroundColor: '#FDFDF9',
-          marginLeft: '436px',
+          marginLeft: isMobile ? 0 : '436px',
           minHeight: '100vh'
         }}
       >
-        {/* Header with Logo and Language Switcher */}
+        {/* Header with Logo and Language Switcher (langue uniquement sur desktop ; sur mobile elle est dans le bandeau noir) */}
         <div className="p-6 flex justify-between items-center">
-          {/* Logo Checky - Masqué */}
           <div className="flex items-center" style={{ visibility: 'hidden' }}>
             {/* Logo retiré à la demande de l'utilisateur */}
           </div>
-          
-          {/* Language Switcher */}
-          <LanguageSwitcher />
+          {!isMobile && <LanguageSwitcher />}
         </div>
+
+        {/* Étapes du check-in dans la partie claire (mobile uniquement) - cliquables comme desktop */}
+        {isMobile && (
+          <div className="guest-verification-steps-in-light">
+            <div className="guest-verification-steps-row">
+              <div 
+                className={`guest-verification-step-icon ${currentStep === 'booking' ? 'active' : currentStepIndex > 0 ? 'done' : ''} ${canNavigateToStep('booking') ? 'guest-verification-step-clickable' : ''}`}
+                aria-current={currentStep === 'booking' ? 'step' : undefined}
+                role={canNavigateToStep('booking') ? 'button' : undefined}
+                tabIndex={canNavigateToStep('booking') ? 0 : undefined}
+                onClick={() => canNavigateToStep('booking') && goToStep('booking')}
+                onKeyDown={(e) => { if (canNavigateToStep('booking') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); goToStep('booking'); } }}
+              >
+                <CalendarLucide className="guest-verification-step-icon-svg" />
+              </div>
+              <div className={`guest-verification-step-connector ${currentStepIndex >= 1 ? 'done' : ''}`} />
+              <div 
+                className={`guest-verification-step-icon ${currentStep === 'documents' ? 'active' : currentStepIndex > 1 ? 'done' : ''} ${canNavigateToStep('documents') ? 'guest-verification-step-clickable' : ''}`}
+                aria-current={currentStep === 'documents' ? 'step' : undefined}
+                role={canNavigateToStep('documents') ? 'button' : undefined}
+                tabIndex={canNavigateToStep('documents') ? 0 : undefined}
+                onClick={() => canNavigateToStep('documents') && goToStep('documents')}
+                onKeyDown={(e) => { if (canNavigateToStep('documents') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); goToStep('documents'); } }}
+              >
+                <FileText className="guest-verification-step-icon-svg" />
+              </div>
+              <div className={`guest-verification-step-connector ${currentStepIndex >= 2 ? 'done' : ''}`} />
+              <div 
+                className={`guest-verification-step-icon ${currentStep === 'signature' ? 'active' : ''} ${canNavigateToStep('signature') ? 'guest-verification-step-clickable' : ''}`}
+                aria-current={currentStep === 'signature' ? 'step' : undefined}
+                role={canNavigateToStep('signature') ? 'button' : undefined}
+                tabIndex={canNavigateToStep('signature') ? 0 : undefined}
+                onClick={() => canNavigateToStep('signature') && goToStep('signature')}
+                onKeyDown={(e) => { if (canNavigateToStep('signature') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); goToStep('signature'); } }}
+              >
+                <PenTool className="guest-verification-step-icon-svg" />
+              </div>
+            </div>
+          </div>
+        )}
         
-        {/* Progress Steps - Matching Figma design */}
-        <div className="px-6 pb-8 flex items-start justify-center gap-16">
+        {/* Progress Steps - Matching Figma design (hidden on mobile, stepper dans partie claire) */}
+        <div className={`px-6 pb-8 flex items-start justify-center gap-16 ${isMobile ? 'hidden' : ''}`}>
           {/* Step 1: Réservation - Cliquable si déjà visitée et pas l'étape actuelle */}
           <div 
             className="flex flex-col items-center"
@@ -2937,8 +2934,8 @@ export const GuestVerification = () => {
           </div>
         </div>
         
-        {/* Main Content */}
-        <div className="flex-1 px-6 pb-6 overflow-y-auto">
+        {/* Main Content - scrollable, touch-friendly on mobile */}
+        <div className={`flex-1 px-6 pb-6 overflow-y-auto ${isMobile ? 'guest-verification-main smooth-scroll' : ''}`}>
               {/* ✅ CORRIGÉ : Retirer ErrorBoundary car il causait des doubles rendus visuels */}
               {/* L'intercepteur global d'erreurs window.onerror gère déjà les erreurs Portal */}
                 {/* ✅ CORRIGÉ : Retirer AnimatePresence pour éviter les conflits avec les Portals Radix UI */}
@@ -3296,41 +3293,69 @@ export const GuestVerification = () => {
                         </>
                       )}
                       
-                      {/* Panneau flottant - Calendrier CENTRÉ */}
+                      {/* Panneau Calendrier - fullscreen sur mobile, flottant sur desktop */}
                       {showCalendarPanel && (
-                        <motion.div 
-                          ref={calendarPanelRef}
-                          initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                          className="absolute top-full left-0 right-0 mt-3 flex justify-center z-50"
-                        >
-                          <div className="bg-white rounded-xl shadow-2xl p-6">
-                            <div className="mb-4 text-center">
-                              <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                {t('guest.calendar.selectTitle')}
-                              </h3>
-                              <p className="text-sm text-gray-600">
-                                {t('guest.calendar.selectSubtitle')}
-                              </p>
-                            </div>
-                            
-                            <EnhancedCalendar
-                              mode="range"
-                              rangeStart={checkInDate}
-                              rangeEnd={checkOutDate}
-                              onRangeSelect={(checkIn, checkOut) => {
-                                // ✅ CORRIGÉ : Normaliser les dates à minuit local pour éviter les problèmes de comparaison
-                                const normalizedCheckIn = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
-                                const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
-                                setCheckInDate(normalizedCheckIn);
-                                setCheckOutDate(normalizedCheckOut);
-                                setShowCalendarPanel(false);
-                              }}
-                              className="mx-auto"
+                        <>
+                          {isMobile && (
+                            <div
+                              className="fixed inset-0 bg-black/50 z-[60] safe-area-all"
+                              onClick={() => setShowCalendarPanel(false)}
+                              aria-hidden="true"
                             />
-                          </div>
-                        </motion.div>
+                            )}
+                          <motion.div 
+                            ref={calendarPanelRef}
+                            initial={{ opacity: 0, y: isMobile ? 80 : -10, scale: isMobile ? 0.98 : 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: isMobile ? 80 : -10, scale: isMobile ? 0.98 : 0.95 }}
+                            className={isMobile 
+                              ? 'fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top)] z-[61] bg-white rounded-t-2xl shadow-2xl overflow-y-auto safe-area-bottom' 
+                              : 'absolute top-full left-0 right-0 mt-3 flex justify-center z-50'
+                            }
+                          >
+                            <div className={isMobile ? 'p-4 pb-8' : 'bg-white rounded-xl shadow-2xl p-6'}>
+                              {isMobile && (
+                                <div className="flex justify-between items-center mb-4">
+                                  <h3 className="text-lg font-bold text-gray-900">
+                                    {t('guest.calendar.selectTitle')}
+                                  </h3>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowCalendarPanel(false)}
+                                    className="p-2 rounded-full hover:bg-gray-100 touch-target"
+                                    aria-label="Fermer"
+                                  >
+                                    <X className="w-5 h-5 text-gray-600" />
+                                  </button>
+                                </div>
+                              )}
+                              {!isMobile && (
+                                <div className="mb-4 text-center">
+                                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                    {t('guest.calendar.selectTitle')}
+                                  </h3>
+                                  <p className="text-sm text-gray-600">
+                                    {t('guest.calendar.selectSubtitle')}
+                                  </p>
+                                </div>
+                              )}
+                              
+                              <EnhancedCalendar
+                                mode="range"
+                                rangeStart={checkInDate}
+                                rangeEnd={checkOutDate}
+                                onRangeSelect={(checkIn, checkOut) => {
+                                  const normalizedCheckIn = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
+                                  const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
+                                  setCheckInDate(normalizedCheckIn);
+                                  setCheckOutDate(normalizedCheckOut);
+                                  setShowCalendarPanel(false);
+                                }}
+                                className="mx-auto"
+                              />
+                            </div>
+                          </motion.div>
+                        </>
                       )}
                       
                     </div>
@@ -3340,7 +3365,7 @@ export const GuestVerification = () => {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.3 }}
-                      className="flex justify-between items-center pt-24 gap-4"
+                      className={`flex justify-between items-center gap-4 ${isMobile ? 'pt-6 pb-4' : 'pt-24'}`}
                     >
                       {/* Bouton Précédent - Masqué sur la première étape */}
                       {currentStep !== 'booking' && (
@@ -3382,6 +3407,93 @@ export const GuestVerification = () => {
                     exit={{ opacity: 0, x: -20 }}
                     className="max-w-4xl mx-auto"
                   >
+                    {/* Zone d'upload des pièces d'identité - visible sur mobile (sur desktop elle est dans la sidebar) */}
+                    {isMobile && (
+                      <div className="guest-verification-upload-mobile mb-6">
+                        <div className="flex items-center gap-3 mb-3">
+                          <Upload className="w-6 h-6 flex-shrink-0" style={{ color: '#55BA9F' }} />
+                          <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Fira Sans Condensed, sans-serif' }}>
+                            {t('guestVerification.identityDocuments')}
+                          </h3>
+                        </div>
+                        <div
+                          className="guest-verification-upload-zone-mobile"
+                          onClick={() => {
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.accept = 'image/*,.pdf';
+                            input.multiple = true;
+                            input.onchange = (e) => {
+                              const target = e.target as HTMLInputElement;
+                              if (target.files && target.files.length > 0) {
+                                handleFileUpload(target.files);
+                              }
+                            };
+                            input.click();
+                          }}
+                          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('guest-verification-upload-zone-dragover'); }}
+                          onDragLeave={(e) => { e.currentTarget.classList.remove('guest-verification-upload-zone-dragover'); }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.currentTarget.classList.remove('guest-verification-upload-zone-dragover');
+                            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                              handleFileUpload(e.dataTransfer.files);
+                            }
+                          }}
+                        >
+                          <CloudUpload className="w-8 h-8 text-gray-400 mb-2" />
+                          <p className="text-sm font-medium text-gray-700 mb-1">
+                            Appuyez pour importer vos documents
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Carte d'identité ou passeport • PDF, PNG, JPG (5 Mo max)
+                          </p>
+                        </div>
+                        {uploadedDocuments.length > 0 && (
+                          <div className="mt-4">
+                            <p className="text-sm font-medium text-gray-700 mb-2">
+                              {t('guestVerification.docsUploadedCount', { count: uploadedDocuments.length })}
+                            </p>
+                            <div className="space-y-2">
+                              {uploadedDocuments.map((doc, index) => (
+                                <div key={index} className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-white shadow-sm relative group">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setUploadedDocuments(prev => prev.filter((_, i) => i !== index));
+                                      setGuests(prev => prev.filter((_, i) => i !== index));
+                                      setNumberOfGuests(prev => Math.max(1, prev - 1));
+                                      toast({ title: 'Document supprimé', description: 'Le document a été retiré de la liste' });
+                                    }}
+                                    className="absolute top-2 right-2 p-1.5 rounded-full bg-red-50 text-red-500 hover:bg-red-100 touch-target"
+                                    aria-label="Supprimer"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                  {doc.processing ? (
+                                    <div className="w-10 h-10 flex items-center justify-center">
+                                      <div className="w-6 h-6 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
+                                    </div>
+                                  ) : doc.file.type.startsWith('image/') ? (
+                                    <img src={doc.url} alt={doc.file.name} className="w-10 h-10 object-cover rounded-lg" />
+                                  ) : (
+                                    <FileText className="w-8 h-8 text-gray-400 flex-shrink-0" />
+                                  )}
+                                  <div className="flex-1 min-w-0 pr-8">
+                                    <p className="text-sm font-medium text-gray-900 truncate">{doc.file.name}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {deduplicatedGuests[index]?.fullName || (doc.extractedData?.fullName || '—')}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Header Section */}
                     <div className="flex items-center gap-3 mb-4">
                       <Users className="w-7 h-7" style={{ color: '#000000' }} />
@@ -3442,8 +3554,8 @@ export const GuestVerification = () => {
                                   )}
                                 </div>
                                 
-                                {/* Form Grid - 2 columns matching Figma */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                {/* Form Grid - 2 columns desktop, 1 column mobile */}
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.fullName')} <span className="text-red-500">*</span>
@@ -3837,8 +3949,8 @@ export const GuestVerification = () => {
                 )}
         </div>
         
-        {/* Footer - Matching Figma */}
-        <footer style={{
+        {/* Footer - Matching Figma (safe-area on mobile for iOS/Android) */}
+        <footer className={isMobile ? 'safe-area-bottom guest-verification-footer' : ''} style={{
           padding: '16px 24px',
           backgroundColor: '#FDFDF9',
           marginTop: 'auto'

@@ -271,6 +271,7 @@ export type Database = {
           date_of_birth: string | null
           document_number: string | null
           document_type: Database["public"]["Enums"]["document_type"]
+          email: string | null
           full_name: string | null
           id: string
           nationality: string
@@ -283,6 +284,7 @@ export type Database = {
           date_of_birth?: string | null
           document_number?: string | null
           document_type: Database["public"]["Enums"]["document_type"]
+          email?: string | null
           full_name?: string | null
           id?: string
           nationality: string
@@ -295,6 +297,7 @@ export type Database = {
           date_of_birth?: string | null
           document_number?: string | null
           document_type?: Database["public"]["Enums"]["document_type"]
+          email?: string | null
           full_name?: string | null
           id?: string
           nationality?: string

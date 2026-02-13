@@ -2025,6 +2025,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
     let host: any = null;
     if (booking?.property?.user_id) {
       // 1. Récupérer le host profile
+      // ✅ host_profiles n'a pas de colonne email - récupéré via auth.admin.getUserById plus bas
       const { data: hp } = await supabaseClient
         .from('host_profiles')
         .select(`
@@ -2032,8 +2033,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
           full_name,
           first_name,
           last_name,
-          phone,
-          email
+          phone
         `)
         .eq('id', booking.property.user_id)
         .maybeSingle();
@@ -2597,17 +2597,31 @@ serve(async (req) => {
           guestsCount: requestBody.guests.length
         });
         
+        // ✅ Récupérer le user_id de la propriété (contrainte DB : user_id ne peut pas être NULL)
+        const { data: propertyRow, error: propertyErr } = await supabaseClient
+          .from('properties')
+          .select('user_id')
+          .eq('id', requestBody.bookingData.propertyId)
+          .single();
+
+        if (propertyErr || !propertyRow?.user_id) {
+          log('error', 'Propriété introuvable ou sans user_id pour aperçu', { propertyId: requestBody.bookingData.propertyId, error: propertyErr?.message });
+          throw new Error('Propriété introuvable ou sans propriétaire - impossible de générer l\'aperçu');
+        }
+
+        const propertyUserId = propertyRow.user_id as string;
+
         // ✅ Créer un booking temporaire EN BASE avec le service role key (contourne RLS)
-        // Générer un UUID valide pour le booking temporaire
         const tempBookingId = crypto.randomUUID();
         
-        log('info', '📝 Création booking temporaire', { tempBookingId });
+        log('info', '📝 Création booking temporaire', { tempBookingId, propertyUserId: propertyUserId.substring(0, 8) + '...' });
         
         const { error: bookingError } = await supabaseClient
           .from('bookings')
           .insert({
             id: tempBookingId,
             property_id: requestBody.bookingData.propertyId,
+            user_id: propertyUserId,
             check_in_date: requestBody.bookingData.checkIn,
             check_out_date: requestBody.bookingData.checkOut,
             number_of_guests: requestBody.bookingData.numberOfGuests,
@@ -3519,7 +3533,8 @@ serve(async (req) => {
       }
       log('info', '✅ Validation réussie pour create_ics_booking');
     } else if (requestBody.action === 'host_direct') {
-      // ✅ NOUVEAU : Action pour les réservations créées directement par le host
+      // ✅ Réservation créée par l'hôte (sans signature guest, tout se fait physiquement).
+      // Exceptionnellement : l'email n'est pas pris en compte (non requis, pas d'envoi au guest).
       if (!requestBody.bookingId) {
         log('error', 'Validation échouée pour host_direct', { 
           hasBookingId: !!requestBody.bookingId
@@ -3533,7 +3548,7 @@ serve(async (req) => {
           headers: corsHeaders
         });
       }
-      log('info', '✅ Validation réussie pour host_direct');
+      log('info', '✅ Validation réussie pour host_direct (email non requis)');
     } else {
       // Validation complète pour les autres actions
       const validation = validateRequest(requestBody);
@@ -3975,11 +3990,13 @@ serve(async (req) => {
       }
 
       // ÉTAPE 5: Envoi de l'email (optionnel et conditionnel)
-      if (!requestBody.skipEmail && !requestBody.generateOnly) {
+      // ✅ Cas host_direct : l'email n'est pas pris en compte, pas d'envoi au guest
+      const skipEmailForThisRequest = requestBody.skipEmail || requestBody.action === 'host_direct';
+      if (!skipEmailForThisRequest && !requestBody.generateOnly) {
         log('info', '🎯 ÉTAPE 5/5: Vérification envoi email');
         
         // Vérifier si l'email est fourni
-        if (requestBody.guestInfo.email && requestBody.guestInfo.email.trim()) {
+        if (requestBody.guestInfo?.email && requestBody.guestInfo.email.trim()) {
           log('info', 'Email fourni, envoi du contrat...');
           try {
             emailSent = await sendGuestContractInternal(
@@ -4266,6 +4283,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
   // ✅ VARIABILISATION COMPLÈTE : Récupération host profile avec toutes les données
   let host = null;
   if (b?.property?.user_id) {
+    // ✅ host_profiles n'a pas de colonne email (email récupéré via contract_template/contact_info)
     const { data: hp } = await client
       .from('host_profiles')
       .select(`
@@ -4274,7 +4292,6 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
         first_name,
         last_name,
         phone,
-        email,
         avatar_url,
         signature_svg,
         signature_image_url,

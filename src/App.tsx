@@ -232,16 +232,9 @@ const App = () => (
             </GuestLayout>
           } />
           <Route path="/guest-verification/:propertyId/:token/:airbnbBookingId" element={<GuestVerificationPage />} />
-          <Route path="/contract-signing/:propertyId/:token" element={
-            <GuestLayout>
-              <ContractSigning />
-            </GuestLayout>
-          } />
-          <Route path="/contract-signing/:propertyId/:token/:airbnbBookingId" element={
-            <GuestLayout>
-              <ContractSigning />
-            </GuestLayout>
-          } />
+          {/* Sans GuestLayout pour éviter le double sélecteur de langue : la page a déjà la barre noire avec FR|EN|ES */}
+          <Route path="/contract-signing/:propertyId/:token" element={<ContractSigning />} />
+          <Route path="/contract-signing/:propertyId/:token/:airbnbBookingId" element={<ContractSigning />} />
           
           {/* Authenticated routes with layout */}
           <Route path="/dashboard" element={<Layout />}>

@@ -2222,13 +2222,15 @@ export const useBookings = (options?: UseBookingsOptions) => {
       // ✅ NETTOYAGE STRICT : Filtrer les doubles uniquement pour la propriété active
       // ✅ CORRECTION RACE CONDITION : Fusion atomique avec vérification de version
       setBookings(prev => {
-        // ✅ Vérifier que c'est toujours notre chargement
-        if (loadingRef.current?.id !== loadId) {
+        // ✅ N'annuler que si un *autre* chargement est en cours (ref défini avec un id différent).
+        // Si ref est null (déjà libéré en finally), on applique la mise à jour pour ne pas perdre les réservations.
+        const otherLoadInProgress = loadingRef.current != null && loadingRef.current.id !== loadId;
+        if (otherLoadInProgress) {
           console.warn('⚠️ [USE BOOKINGS] Fusion annulée - autre chargement en cours', {
             currentLoadId: loadId,
             existingLoadId: loadingRef.current?.id
           });
-          return prev; // Ne pas modifier si un autre chargement est en cours
+          return prev;
         }
         
         // ✅ CORRECTION RACE CONDITION : Incrémenter la version pour la fusion atomique
@@ -2285,8 +2287,10 @@ export const useBookings = (options?: UseBookingsOptions) => {
           ? combinedMerged.filter(b => b.propertyId === propertyId)
           : combinedMerged;
         
-        // ✅ Vérifier à nouveau avant de retourner
-        if (loadingRef.current?.id !== loadId || stateVersionRef.current !== currentVersion) {
+        // ✅ N'annuler que si un autre chargement est en cours ou version changée (ref défini avec id différent)
+        const otherLoadNow = loadingRef.current != null && loadingRef.current.id !== loadId;
+        const versionChanged = stateVersionRef.current !== currentVersion;
+        if (otherLoadNow || versionChanged) {
           console.warn('⚠️ [USE BOOKINGS] Fusion annulée - autre chargement en cours ou version changée', {
             currentLoadId: loadId,
             existingLoadId: loadingRef.current?.id,
@@ -2392,18 +2396,15 @@ export const useBookings = (options?: UseBookingsOptions) => {
             }
           }
           
+          // ✅ Table guests : uniquement les colonnes existantes (pas d'email, profession, motif_sejour, adresse_personnelle)
           return {
             booking_id: bookingData.id,
-            full_name: guest.fullName,
+            full_name: guest.fullName ?? '',
             date_of_birth: cleanDateOfBirth,
-            document_number: guest.documentNumber,
-            nationality: guest.nationality,
-            place_of_birth: guest.placeOfBirth,
-            document_type: guest.documentType,
-            profession: guest.profession || '',
-            motif_sejour: guest.motifSejour || 'TOURISME',
-            adresse_personnelle: guest.adressePersonnelle || '',
-            email: guest.email || null
+            document_number: guest.documentNumber ?? '',
+            nationality: guest.nationality ?? 'Non spécifiée',
+            place_of_birth: guest.placeOfBirth ?? null,
+            document_type: (guest.documentType || 'passport') as 'passport' | 'national_id'
           };
         });
 

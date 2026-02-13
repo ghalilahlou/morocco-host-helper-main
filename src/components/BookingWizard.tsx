@@ -279,11 +279,12 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       console.log('🔍 PropertyId validé pour création booking:', propertyId);
       
       const bookingId = editingBooking?.id || uuidv4();
-      // ✅ DÉFENSIF : Vérifier que formData.guests est un tableau valide
+      // ✅ DÉFENSIF : formData.guests = invités extraits des pièces d'identité (nom du vrai guest)
       const currentGuests = Array.isArray(formData.guests) ? formData.guests : [];
-      const primaryGuestName = currentGuests.length > 0
+      // Nom du guest principal : priorité aux invités enregistrés, sinon premier document extrait (flux host sans signature)
+      const primaryGuestName = (currentGuests.length > 0
         ? (currentGuests[0].fullName || '').trim()
-        : null;
+        : (formData.uploadedDocuments?.[0]?.extractedData as { fullName?: string } | undefined)?.fullName?.trim()) || null;
       const primaryGuestEmail = currentGuests.length > 0 && currentGuests[0].email
         ? (currentGuests[0].email || '').trim()
         : null;
@@ -555,39 +556,57 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         });
         
         if (guestsToInsert.length > 0) {
-          const guestsData = guestsToInsert.map(guest => {
-            // ✅ CORRECTION : Convertir date_of_birth en string si c'est une Date
+          // ✅ Table guests n'a pas de colonne email — insertion via REST (pas via supabase.from().insert) pour éviter PGRST204.
+          console.log('✅ [GUESTS] Insert via REST (corps sans email)');
+          const guestsPayload: Array<{
+            booking_id: string;
+            full_name: string;
+            date_of_birth: string | null;
+            document_number: string;
+            nationality: string;
+            place_of_birth: string | null;
+            document_type: 'passport' | 'national_id';
+          }> = guestsToInsert.map(guest => {
             let dateOfBirth: string | null = null;
             if (guest.dateOfBirth) {
               if (guest.dateOfBirth instanceof Date) {
-                dateOfBirth = guest.dateOfBirth.toISOString().split('T')[0]; // Format YYYY-MM-DD
+                dateOfBirth = guest.dateOfBirth.toISOString().split('T')[0];
               } else if (typeof guest.dateOfBirth === 'string') {
                 dateOfBirth = guest.dateOfBirth;
               }
             }
-
             return {
-          booking_id: bookingData.id,
+              booking_id: bookingData.id,
               full_name: guest.fullName || '',
               date_of_birth: dateOfBirth,
               document_number: guest.documentNumber || '',
               nationality: guest.nationality || 'Non spécifiée',
-              place_of_birth: guest.placeOfBirth || null,
-              document_type: (guest.documentType || 'passport') as 'passport' | 'national_id',
-              email: (guest as any).email || null
+              place_of_birth: guest.placeOfBirth ?? null,
+              document_type: (guest.documentType || 'passport') as 'passport' | 'national_id'
             };
           });
 
-          const { error: guestsError, data: insertedGuests } = await supabase
-            .from('guests')
-            .insert(guestsData)
-            .select();
+          const { data: { session } } = await supabase.auth.getSession();
+          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+          const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          const res = await fetch(`${supabaseUrl}/rest/v1/guests`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': anonKey || '',
+              'Authorization': `Bearer ${session?.access_token || anonKey}`,
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(guestsPayload)
+          });
 
-          if (guestsError) {
-            console.error('❌ [DIAGNOSTIC] Erreur insertion guests:', guestsError);
-            throw guestsError;
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            const msg = (errBody as any)?.message || res.statusText;
+            console.error('❌ [DIAGNOSTIC] Erreur insertion guests:', { code: res.status, message: msg });
+            throw new Error(msg);
           }
-          
+          const insertedGuests = (await res.json()) as Array<{ id: string; full_name: string | null }>;
           console.log('✅ [DIAGNOSTIC] Guests insérés avec succès:', {
             count: insertedGuests?.length || 0,
             guests: insertedGuests?.map(g => ({ id: g.id, full_name: g.full_name }))
@@ -977,36 +996,51 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               throw new Error(`Failed to delete existing guests: ${deleteError.message}`);
             }
 
-            // Insert new guests if any
+            // Insert new guests via REST (pas d'email — table guests sans colonne email)
             if (formData.guests.length > 0) {
-              const guestsData = formData.guests.map(guest => {
-                // ✅ CORRECTION : Convertir date_of_birth en string si c'est une Date
+              const guestsPayloadEdit: Array<{
+                booking_id: string;
+                full_name: string;
+                date_of_birth: string | null;
+                document_number: string;
+                nationality: string;
+                place_of_birth: string | null;
+                document_type: 'passport' | 'national_id';
+              }> = formData.guests.map(guest => {
                 let dateOfBirth: string | null = null;
                 if (guest.dateOfBirth) {
                   if (guest.dateOfBirth instanceof Date) {
-                    dateOfBirth = guest.dateOfBirth.toISOString().split('T')[0]; // Format YYYY-MM-DD
+                    dateOfBirth = guest.dateOfBirth.toISOString().split('T')[0];
                   } else if (typeof guest.dateOfBirth === 'string') {
                     dateOfBirth = guest.dateOfBirth;
                   }
                 }
-
                 return {
-                booking_id: editingBooking.id,
+                  booking_id: editingBooking.id,
                   full_name: guest.fullName || '',
                   date_of_birth: dateOfBirth,
                   document_number: guest.documentNumber || '',
                   nationality: guest.nationality || 'Non spécifiée',
-                  place_of_birth: guest.placeOfBirth || null,
+                  place_of_birth: guest.placeOfBirth ?? null,
                   document_type: (guest.documentType || 'passport') as 'passport' | 'national_id'
                 };
               });
-              
-              const { error: insertError } = await supabase
-                .from('guests')
-                .insert(guestsData);
-              
-              if (insertError) {
-                throw new Error(`Failed to insert new guests: ${insertError.message}`);
+              const { data: { session } } = await supabase.auth.getSession();
+              const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+              const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+              const resEdit = await fetch(`${supabaseUrl}/rest/v1/guests`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': anonKey || '',
+                  'Authorization': `Bearer ${session?.access_token || anonKey}`,
+                  'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify(guestsPayloadEdit)
+              });
+              if (!resEdit.ok) {
+                const errBody = await resEdit.json().catch(() => ({}));
+                throw new Error((errBody as any)?.message || resEdit.statusText);
               }
             }
           }

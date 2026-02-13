@@ -96,7 +96,7 @@ export const Dashboard = memo(({
       // ✅ FILTRE 3 : Recherche par terme
       const matchesSearch = !searchTerm || 
                            booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           booking.guests.some(guest => guest.fullName.toLowerCase().includes(searchTerm.toLowerCase()));
+                           (booking.guests || []).some(guest => guest?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()));
       
       // ✅ FILTRE 4 : Filtre par statut
       const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;

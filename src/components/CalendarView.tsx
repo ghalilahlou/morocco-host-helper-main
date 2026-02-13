@@ -625,10 +625,10 @@ const handleOpenConfig = useCallback(() => {
   }, [propertyId]); // ✅ Retiré handleSyncFromCalendar des dépendances
 
   // ✅ CORRIGÉ : Détection des conflits AVANT le calcul des couleurs pour les inclure
+  // Ne passer que airbnbReservations en 2e argument : detectBookingConflicts ajoute déjà les bookings
+  // (passer [...bookings, ...airbnbReservations] dupliquait chaque booking → faux conflit avec soi-même)
   const conflicts = useMemo(() => {
-    // Détecter tous les conflits entre toutes les réservations
-    const allReservationsForConflictDetection = [...bookings, ...airbnbReservations];
-    const detectedConflicts = detectBookingConflicts(bookings, allReservationsForConflictDetection);
+    const detectedConflicts = detectBookingConflicts(bookings, airbnbReservations);
     
     // ✅ PRODUCTION : Ne logger QUE en mode développement
     if (process.env.NODE_ENV === 'development' && detectedConflicts.length > 0) {

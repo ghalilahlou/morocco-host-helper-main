@@ -8,6 +8,7 @@ import { Loader2, Home, Heart, Sparkles, Calendar, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useT, useGuestLocale } from '@/i18n/GuestLocaleProvider';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export const ContractSigning: React.FC = () => {
   const { propertyId, token, airbnbBookingId } = useParams<{ propertyId: string; token: string; airbnbBookingId?: string }>();
@@ -16,6 +17,7 @@ export const ContractSigning: React.FC = () => {
   const { toast } = useToast();
   const t = useT();
   const { locale } = useGuestLocale();
+  const isMobile = useIsMobile();
   
   const [isLoading, setIsLoading] = useState(true);
   const [tokenData, setTokenData] = useState<any>(null);
@@ -449,16 +451,16 @@ export const ContractSigning: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 flex items-center justify-center safe-area-all px-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="text-center space-y-6"
+          className="text-center space-y-6 max-w-md w-full"
         >
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-            className="w-16 h-16 mx-auto border-4 border-blue-500 border-t-transparent rounded-full"
+            className="w-14 h-14 sm:w-16 sm:h-16 mx-auto border-4 border-blue-500 border-t-transparent rounded-full"
           />
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -466,10 +468,10 @@ export const ContractSigning: React.FC = () => {
             transition={{ delay: 0.2 }}
             className="space-y-2"
           >
-            <h3 className="text-2xl font-semibold text-gray-900">
+            <h3 className="text-xl sm:text-2xl font-semibold text-gray-900">
               {t('contractSigning.loadingPreparingTitle')}
             </h3>
-            <p className="text-lg text-gray-600">
+            <p className="text-base sm:text-lg text-gray-600">
               {t('contractSigning.loadingPreparingSubtitle')}
             </p>
           </motion.div>
@@ -480,13 +482,13 @@ export const ContractSigning: React.FC = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center safe-area-all px-4 py-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md mx-auto"
+          className="max-w-md w-full mx-auto"
         >
-          <Card className="p-8 shadow-2xl border-red-200">
+          <Card className="p-6 sm:p-8 shadow-2xl border-red-200">
             <CardContent className="text-center space-y-6">
               <motion.div
                 initial={{ scale: 0 }}
@@ -497,10 +499,10 @@ export const ContractSigning: React.FC = () => {
                 <Home className="w-8 h-8 text-red-600" />
               </motion.div>
               <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-red-800">
+                <h2 className="text-xl sm:text-2xl font-bold text-red-800">
                   {t('contractSigning.errorTitle')}
                 </h2>
-                <p className="text-red-600">{error}</p>
+                <p className="text-sm sm:text-base text-red-600">{error}</p>
               </div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button onClick={() => navigate('/')} className="w-full bg-red-600 hover:bg-red-700">
@@ -606,6 +608,7 @@ export const ContractSigning: React.FC = () => {
 
     return (
       <div 
+        className={isMobile ? 'safe-area-all' : ''}
         style={{
           position: 'fixed',
           top: 0,
@@ -617,11 +620,13 @@ export const ContractSigning: React.FC = () => {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center'
+          justifyContent: 'center',
+          paddingTop: isMobile ? 'env(safe-area-inset-top)' : 0,
+          paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0
         }}
       >
         {/* Logo Checky centré AU-DESSUS du titre - remonté pour ne pas chevaucher */}
-        <div style={{ position: 'absolute', top: '60px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
+        <div style={{ position: 'absolute', top: isMobile ? 'max(24px, calc(env(safe-area-inset-top) + 12px))' : '60px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
           <img 
             src="/lovable-uploads/Checky simple - fond transparent.png" 
             alt="Checky Logo" 
@@ -759,10 +764,10 @@ export const ContractSigning: React.FC = () => {
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer - safe-area on mobile */}
         <footer style={{
           position: 'absolute',
-          bottom: '24px',
+          bottom: isMobile ? 'max(24px, env(safe-area-inset-bottom))' : '24px',
           left: '50%',
           transform: 'translateX(-50%)',
           fontFamily: 'Inter, sans-serif',
@@ -782,16 +787,16 @@ export const ContractSigning: React.FC = () => {
     // ✅ AJOUT : Si on est en train de charger, ne pas afficher l'erreur immédiatement
     if (isLoading) {
       return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 flex items-center justify-center">
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50 flex items-center justify-center safe-area-all px-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="text-center space-y-6"
+            className="text-center space-y-6 max-w-md w-full"
           >
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="w-16 h-16 mx-auto border-4 border-blue-500 border-t-transparent rounded-full"
+              className="w-14 h-14 sm:w-16 sm:h-16 mx-auto border-4 border-blue-500 border-t-transparent rounded-full"
             />
             <motion.div
               initial={{ opacity: 0, y: 10 }}
@@ -799,10 +804,10 @@ export const ContractSigning: React.FC = () => {
               transition={{ delay: 0.2 }}
               className="space-y-2"
             >
-              <h3 className="text-2xl font-semibold text-gray-900">
+              <h3 className="text-xl sm:text-2xl font-semibold text-gray-900">
                 {t('contractSigning.loadingContractTitle')}
               </h3>
-              <p className="text-lg text-gray-600">
+              <p className="text-base sm:text-lg text-gray-600">
                 {t('contractSigning.loadingContractSubtitle')}
               </p>
             </motion.div>
@@ -812,13 +817,13 @@ export const ContractSigning: React.FC = () => {
     }
     
     return (
-      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-orange-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-orange-50 flex items-center justify-center safe-area-all px-4 py-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md mx-auto"
+          className="max-w-md w-full mx-auto"
         >
-          <Card className="p-8 shadow-2xl border-yellow-200">
+          <Card className="p-6 sm:p-8 shadow-2xl border-yellow-200">
             <CardContent className="text-center space-y-6">
               <motion.div
                 initial={{ scale: 0 }}
