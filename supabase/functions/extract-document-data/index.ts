@@ -81,7 +81,7 @@ Your task is to extract the following information from the document image:
 - Nationality (in French, e.g., BRITANNIQUE, FRANÇAIS, NÉERLANDAIS, etc.)
 - Place of birth (if visible)
 - Document type (passport or national_id)
-- Document issue date (in YYYY-MM-DD format) - Date when the document was issued/delivered
+- Document EXPIRY date (in YYYY-MM-DD format) - Date when the document EXPIRES (Date d'expiration). This is the date until which the document is valid.
 
 IMPORTANT RULES:
 1. Be extremely precise - only extract information that is clearly visible and readable
@@ -105,12 +105,12 @@ SPECIAL ATTENTION FOR DATE OF BIRTH:
 - Look for French months: JANV, FÉVR, MARS, AVRL, MAI, JUIN, JUIL, AOÛT, SEPT, OCTO, NOVE, DÉCE
 - Check areas near "Born", "Birth", "Naissance", "DOB", age calculations
 
-SPECIAL ATTENTION FOR DOCUMENT ISSUE DATE (Date de délivrance):
-- Look for labels like: "Date of issue", "Date d'émission", "Date de délivrance", "Issued", "Délivré le", "Date d'expiration" (expiry is different!)
-- This is the date when the document was ISSUED, not the expiry date
-- On passports, usually found near "Date of issue" or in the MRZ
-- On ID cards, look for "Délivré le", "Date de délivrance", "Issued on"
-- Do NOT confuse with expiry date (Date d'expiration / Expiry date)
+SPECIAL ATTENTION FOR DOCUMENT EXPIRY DATE (Date d'expiration) - CRITICAL:
+- Extract the EXPIRY date (when the document is no longer valid), NOT the issue date
+- Look for labels: "Date of expiry", "Date d'expiration", "Expires", "Expiry date", "Valid until", "Valid to", "Date d'échéance", "Validité jusqu'au"
+- On passports: often "Date of expiry" or in the MRZ as expiry field
+- On ID cards: "Date d'expiration", "Validité", "Expire le"
+- Do NOT use the issue/delivery date (Date de délivrance, Issued, Délivré le) - we need the expiration date only
 
 Return ONLY a JSON object with this exact structure:
 {
@@ -120,7 +120,7 @@ Return ONLY a JSON object with this exact structure:
   "nationality": "string or null",
   "placeOfBirth": "string or null",
   "documentType": "passport or national_id",
-  "documentIssueDate": "YYYY-MM-DD or null"
+  "documentIssueDate": "YYYY-MM-DD or null (this field must contain the EXPIRY date / Date d'expiration)"
 }`
           },
           {

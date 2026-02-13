@@ -6,7 +6,7 @@ export interface Guest {
   nationality: string;
   placeOfBirth?: string;
   documentType: 'passport' | 'national_id';
-  documentIssueDate?: Date | string; // ✅ Date de délivrance de la pièce d'identité
+  documentIssueDate?: Date | string; // ✅ Date d'expiration du document (alignée fiche de police)
   profession?: string;
   motifSejour?: string;
   adressePersonnelle?: string;

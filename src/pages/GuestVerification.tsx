@@ -167,7 +167,7 @@ export const GuestVerification = () => {
     nationality: '',
     documentNumber: '',
     documentType: 'passport',
-    documentIssueDate: undefined, // ✅ Date de délivrance
+    documentIssueDate: undefined, // ✅ Date d'expiration du document (alignée fiche de police)
     profession: '',
     motifSejour: 'TOURISME',
     adressePersonnelle: '',
@@ -1398,38 +1398,38 @@ export const GuestVerification = () => {
               }
             }
             
-            // ✅ NOUVEAU : Parsing de la date de délivrance du document
+            // ✅ Parsing de la date d'expiration du document (extraite par l'analyse de la pièce d'identité)
             if (extractedData.documentIssueDate) {
-              let parsedIssueDate: Date | null = null;
+              let parsedExpiryDate: Date | null = null;
               
               // Tentative 1: Direct parsing
-              parsedIssueDate = new Date(extractedData.documentIssueDate);
-              if (isNaN(parsedIssueDate.getTime())) {
+              parsedExpiryDate = new Date(extractedData.documentIssueDate);
+              if (isNaN(parsedExpiryDate.getTime())) {
                 // Tentative 2: Format ISO (YYYY-MM-DD)
                 const isoMatch = extractedData.documentIssueDate.match(/(\d{4})-(\d{2})-(\d{2})/);
                 if (isoMatch) {
-                  parsedIssueDate = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+                  parsedExpiryDate = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
                 } else {
                   // Tentative 3: Format DD/MM/YYYY ou DD-MM-YYYY
                   const ddmmyyyyMatch = extractedData.documentIssueDate.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
                   if (ddmmyyyyMatch) {
-                    parsedIssueDate = new Date(parseInt(ddmmyyyyMatch[3]), parseInt(ddmmyyyyMatch[2]) - 1, parseInt(ddmmyyyyMatch[1]));
+                    parsedExpiryDate = new Date(parseInt(ddmmyyyyMatch[3]), parseInt(ddmmyyyyMatch[2]) - 1, parseInt(ddmmyyyyMatch[1]));
                   }
                 }
               }
               
-              if (parsedIssueDate && !isNaN(parsedIssueDate.getTime())) {
-                // Vérifier que la date est raisonnable (pas dans le futur, pas trop ancienne)
-                const now = new Date();
-                const minDate = new Date(1990, 0, 1); // Les documents sont rarement délivrés avant 1990
-                if (parsedIssueDate <= now && parsedIssueDate >= minDate) {
-                  targetGuest.documentIssueDate = parsedIssueDate;
-                  console.log('✅ Date de délivrance extraite et mise à jour:', format(parsedIssueDate, 'dd/MM/yyyy'));
+              if (parsedExpiryDate && !isNaN(parsedExpiryDate.getTime())) {
+                // Pour la date d'expiration : accepter une plage raisonnable (documents valides ou récemment expirés)
+                const minDate = new Date(1990, 0, 1);
+                const maxDate = new Date(2050, 11, 31);
+                if (parsedExpiryDate >= minDate && parsedExpiryDate <= maxDate) {
+                  targetGuest.documentIssueDate = parsedExpiryDate;
+                  console.log('✅ Date d\'expiration extraite et mise à jour:', format(parsedExpiryDate, 'dd/MM/yyyy'));
                 } else {
-                  console.warn('⚠️ Date de délivrance invalide (hors limites):', parsedIssueDate);
+                  console.warn('⚠️ Date d\'expiration invalide (hors limites):', parsedExpiryDate);
                 }
               } else {
-                console.warn('⚠️ Impossible de parser la date de délivrance:', extractedData.documentIssueDate);
+                console.warn('⚠️ Impossible de parser la date d\'expiration:', extractedData.documentIssueDate);
               }
             }
             
@@ -1784,7 +1784,7 @@ export const GuestVerification = () => {
         idType: firstGuest?.documentType || 'passport',
         idNumber: firstGuest?.documentNumber || '',
         dateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined,
-        documentIssueDate: firstGuest?.documentIssueDate ? format(firstGuest.documentIssueDate, 'yyyy-MM-dd') : undefined, // ✅ Date de délivrance
+        documentIssueDate: firstGuest?.documentIssueDate ? format(firstGuest.documentIssueDate, 'yyyy-MM-dd') : undefined, // ✅ Date d'expiration (fiche de police)
         profession: professionInput?.value || firstGuest?.profession || '',
         motifSejour: firstGuestMotif, // ✅ VALIDATION STRICTE : Utiliser la valeur validée
         adressePersonnelle: adresseInput?.value || firstGuest?.adressePersonnelle || ''
@@ -3663,7 +3663,7 @@ export const GuestVerification = () => {
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
-                                      Date de délivrance
+                                      Date d'expiration
                                     </Label>
                                     <Popover>
                                       <PopoverTrigger asChild>
