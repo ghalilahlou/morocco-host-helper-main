@@ -187,9 +187,9 @@ export default function Auth() {
     }
   };
   return <div className="min-h-screen bg-white">
-      <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-4 sm:gap-6 p-3 sm:p-4 md:p-8">
-        {/* Left: Auth form */}
-        <div className="bg-white border rounded-xl shadow-sm p-4 sm:p-6 md:p-8 lg:p-10 flex flex-col">
+      <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-4 sm:gap-6 p-4 sm:p-4 md:p-8">
+        {/* Left: Auth form - mobile : cadrage centré, marges symétriques */}
+        <div className="bg-white border rounded-xl shadow-sm p-5 sm:p-6 md:p-8 lg:p-10 flex flex-col w-full max-w-full min-w-0">
           <Link to="/" className="mb-4 sm:mb-6 w-fit">
             <img
               src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png"
@@ -200,19 +200,19 @@ export default function Auth() {
 
           <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Accédez à votre compte</h1>
 
-          <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 rounded-lg bg-[hsl(var(--cta-basic)/0.2)] border border-[hsl(var(--cta-basic))] text-[hsl(var(--cta-basic))]">
-              <TabsTrigger value="signin" className="rounded-md data-[state=active]:bg-[hsl(var(--cta-basic))] data-[state=active]:text-gray-900">Se connecter</TabsTrigger>
-              <TabsTrigger value="signup" className="rounded-md data-[state=active]:bg-[hsl(var(--cta-basic))] data-[state=active]:text-gray-900">S’inscrire</TabsTrigger>
+          <Tabs defaultValue="signin" className="w-full max-w-full min-w-0">
+            <TabsList className="grid grid-cols-2 w-full max-w-full rounded-lg bg-[hsl(var(--cta-basic)/0.2)] border border-[hsl(var(--cta-basic))] text-[hsl(var(--cta-basic))] p-0.5 h-11 sm:h-12">
+              <TabsTrigger value="signin" className="flex-1 min-w-0 rounded-md py-2.5 text-sm font-medium data-[state=active]:bg-[hsl(var(--cta-basic))] data-[state=active]:text-gray-900">Se connecter</TabsTrigger>
+              <TabsTrigger value="signup" className="flex-1 min-w-0 rounded-md py-2.5 text-sm font-medium data-[state=active]:bg-[hsl(var(--cta-basic))] data-[state=active]:text-gray-900">S’inscrire</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="signin">
-              {/* ✅ NOUVEAU : Bouton Google OAuth */}
-              <div className="space-y-4 mt-4">
+            <TabsContent value="signin" className="w-full max-w-full mt-4">
+              {/* Bouton Google OAuth - même largeur que les onglets */}
+              <div className="w-full max-w-full space-y-4">
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full flex items-center justify-center gap-2 sm:gap-3 hover:bg-gray-50 border-2 border-gray-300 h-11 sm:h-12 text-sm sm:text-base"
+                  className="w-full max-w-full flex items-center justify-center gap-2 sm:gap-3 hover:bg-gray-50 border-2 border-gray-300 h-11 sm:h-12 text-sm sm:text-base"
                   onClick={handleGoogleSignIn}
                   disabled={isGoogleLoading || isLoading}
                 >
@@ -256,13 +256,13 @@ export default function Auth() {
               </form>
             </TabsContent>
 
-            <TabsContent value="signup">
-              {/* ✅ NOUVEAU : Bouton Google OAuth pour inscription */}
-              <div className="space-y-4 mt-4">
+            <TabsContent value="signup" className="w-full max-w-full mt-4">
+              {/* Bouton Google OAuth pour inscription - même largeur que les onglets */}
+              <div className="w-full max-w-full space-y-4">
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full flex items-center justify-center gap-2 sm:gap-3 hover:bg-gray-50 border-2 border-gray-300 h-11 sm:h-12 text-sm sm:text-base"
+                  className="w-full max-w-full flex items-center justify-center gap-2 sm:gap-3 hover:bg-gray-50 border-2 border-gray-300 h-11 sm:h-12 text-sm sm:text-base"
                   onClick={handleGoogleSignIn}
                   disabled={isGoogleLoading || isLoading}
                 >

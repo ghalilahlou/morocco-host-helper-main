@@ -85,7 +85,7 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
   // Avoid early return before hooks; render conditionally in JSX instead
 
   const getTooltipPosition = (): CSSProperties => {
-    // On mobile, always center the tooltip for better visibility
+    // On mobile: centré, largeur adaptée, hauteur max pour petit écran, défilement + safe-area
     if (isMobile) {
       return {
         position: 'fixed',
@@ -93,8 +93,12 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
         left: '50%',
         transform: 'translate(-50%, -50%)',
         zIndex: 1002,
-        maxWidth: '90vw',
-        width: 'auto'
+        maxWidth: 'min(90vw, 400px)',
+        minWidth: '280px',
+        width: 'calc(100vw - 2rem)',
+        maxHeight: 'min(85vh, calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 2rem))',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch'
       };
     }
 
@@ -298,20 +302,20 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
       {/* Overlay with blur */}
       <div className="fixed inset-0 w-full h-full backdrop-blur-sm bg-black/30 z-[1000]" />
       
-      {/* Tutorial Card - Responsive size */}
+      {/* Tutorial Card - Responsive ; sur mobile : zones de toucher 44px, safe-area, lisibilité */}
       <Card 
         className={`fixed z-[1002] shadow-2xl border-2 border-primary/20 ${
           isMobile 
-            ? 'w-[90vw] max-w-sm mx-4' 
+            ? 'w-[calc(100vw-2rem)] max-w-[400px] min-w-[280px]' 
             : 'w-[90vw] max-w-80 mx-4 sm:w-80'
         }`}
         style={getTooltipPosition()}
       >
-        <CardHeader className={`pb-3 ${isMobile ? 'px-4 pt-4' : ''}`}>
-          <div className="flex items-start justify-between">
+        <CardHeader className={`pb-3 ${isMobile ? 'px-4 pt-4 safe-area-inset-top' : ''}`}>
+          <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Lightbulb className={`${isMobile ? 'h-4 w-4' : 'h-5 w-5'} text-primary`} />
-              <Badge variant="secondary" className={`${isMobile ? 'text-[10px] px-1.5 py-0' : 'text-xs'}`}>
+              <Lightbulb className={`${isMobile ? 'h-5 w-5' : 'h-5 w-5'} text-primary shrink-0`} />
+              <Badge variant="secondary" className={`${isMobile ? 'text-xs px-2 py-0.5' : 'text-xs'}`}>
                 {currentStep + 1}/{tutorialSteps.length}
               </Badge>
             </div>
@@ -319,39 +323,40 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
               variant="ghost" 
               size="sm" 
               onClick={handleSkip}
-              className={`${isMobile ? 'h-7 w-7' : 'h-6 w-6'} p-0`}
+              className={`shrink-0 ${isMobile ? 'min-h-[44px] min-w-[44px] h-11 w-11 p-0 rounded-full' : 'h-6 w-6 p-0'}`}
+              aria-label={t('tutorial.close') || 'Fermer'}
             >
-              <X className={`${isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'}`} />
+              <X className={isMobile ? 'h-5 w-5' : 'h-4 w-4'} />
             </Button>
           </div>
-          <CardTitle className={isMobile ? 'text-base mt-2' : 'text-lg'}>{t(currentStepData.titleKey)}</CardTitle>
+          <CardTitle className={isMobile ? 'text-lg mt-2 font-semibold' : 'text-lg'}>{t(currentStepData.titleKey)}</CardTitle>
         </CardHeader>
-        <CardContent className={`pt-0 ${isMobile ? 'px-4 pb-4' : ''}`}>
-          <CardDescription className={`${isMobile ? 'text-xs' : 'text-sm'} mb-4 leading-relaxed`}>
+        <CardContent className={`pt-0 ${isMobile ? 'px-4 pb-4' : ''}`} style={isMobile ? { paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } : undefined}>
+          <CardDescription className={`${isMobile ? 'text-sm leading-relaxed' : 'text-sm'} mb-4`} style={isMobile ? { lineHeight: 1.5 } : undefined}>
             {t(currentStepData.descriptionKey)}
           </CardDescription>
           
-          <div className={`flex items-center ${isMobile ? 'gap-2' : 'justify-between'}`}>
+          <div className={`flex items-center ${isMobile ? 'gap-3' : 'justify-between'}`}>
             <Button 
               variant="secondary" 
-              size={isMobile ? 'sm' : 'sm'}
+              size={isMobile ? 'default' : 'sm'}
               onClick={handlePrevious}
               disabled={currentStep === 0}
-              className={`gap-2 bg-muted/50 hover:bg-muted text-muted-foreground ${isMobile ? 'text-xs px-3 py-1.5 h-8 flex-1' : ''}`}
+              className={`gap-2 bg-muted/50 hover:bg-muted text-muted-foreground ${isMobile ? 'min-h-[44px] flex-1 text-sm px-4' : ''}`}
             >
-              <ChevronLeft className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
-              <span className={isMobile ? 'text-xs' : ''}>{t('tutorial.previous')}</span>
+              <ChevronLeft className={isMobile ? 'h-4 w-4' : 'h-4 w-4'} />
+              <span>{t('tutorial.previous')}</span>
             </Button>
             <Button 
               onClick={handleNext}
-              size={isMobile ? 'sm' : 'sm'}
-              className={`gap-2 ${isMobile ? 'text-xs px-3 py-1.5 h-8 flex-1' : ''}`}
+              size={isMobile ? 'default' : 'sm'}
+              className={`gap-2 ${isMobile ? 'min-h-[44px] flex-1 text-sm px-4' : ''}`}
             >
-              <span className={isMobile ? 'text-xs' : ''}>
+              <span>
                 {currentStep === tutorialSteps.length - 1 ? t('tutorial.finish') : t('tutorial.next')}
               </span>
               {currentStep === tutorialSteps.length - 1 ? null : (
-                <ChevronRight className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
+                <ChevronRight className={isMobile ? 'h-4 w-4' : 'h-4 w-4'} />
               )}
             </Button>
           </div>

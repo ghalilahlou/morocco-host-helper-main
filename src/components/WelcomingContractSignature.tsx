@@ -1371,8 +1371,11 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
           </div>
         </div>
         
-        {/* Main Content - scroll fluide en layout compact */}
-        <div className={cn("flex-1 px-6 pb-6 overflow-y-auto", showMobileLayout && "guest-verification-main smooth-scroll")}>
+        {/* Main Content - scroll fluide en layout compact ; sur mobile padding bas pour que checkbox + bouton ne soient pas coupés */}
+        <div className={cn(
+          "flex-1 px-6 overflow-y-auto",
+          showMobileLayout ? "guest-verification-main smooth-scroll pb-[max(100px,calc(env(safe-area-inset-bottom)+80px))]" : "pb-6"
+        )}>
           <ErrorBoundary>
             {currentStep === 'review' && (
               <div className={cn("mx-auto space-y-8", isMobile ? "max-w-full" : "max-w-4xl")}>
@@ -1430,6 +1433,7 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
                         url={contractUrl}
                         title="Contrat de location"
                         className="rounded-b-lg"
+                        compactOnMobile
                       />
                     ) : (
                       <iframe 
@@ -1472,44 +1476,46 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
                 </CardContent>
               </div>
 
-              {/* Checkbox d'acceptation - avec bordure pointillée Figma */}
-              <div style={{
-                border: '1px dashed rgba(85, 186, 159, 0.76)',
-                borderRadius: '8px',
-                padding: '16px 24px',
-                marginTop: '24px'
-              }}>
-                <div className="flex items-start gap-4">
-                  <div style={{
-                    width: '24px',
-                    height: '24px',
-                    background: '#FFFFFF',
-                    border: '1px solid #C2C2C2',
-                    borderRadius: '4px',
-                    flexShrink: 0
-                  }}>
-                    <Checkbox 
-                      id="agree" 
-                      checked={isAgreed}
-                      onCheckedChange={(checked) => setIsAgreed(checked as boolean)}
-                      style={{ width: '100%', height: '100%', border: 'none' }}
-                    />
+              {/* Checkbox d'acceptation - sur mobile rendu dans la barre fixe en bas ; sur desktop ici */}
+              {!showMobileLayout && (
+                <div style={{
+                  border: '1px dashed rgba(85, 186, 159, 0.76)',
+                  borderRadius: '8px',
+                  padding: '16px 24px',
+                  marginTop: '24px'
+                }}>
+                  <div className="flex items-start gap-4">
+                    <div style={{
+                      width: '24px',
+                      height: '24px',
+                      background: '#FFFFFF',
+                      border: '1px solid #C2C2C2',
+                      borderRadius: '4px',
+                      flexShrink: 0
+                    }}>
+                      <Checkbox 
+                        id="agree" 
+                        checked={isAgreed}
+                        onCheckedChange={(checked) => setIsAgreed(checked as boolean)}
+                        style={{ width: '100%', height: '100%', border: 'none' }}
+                      />
+                    </div>
+                    <label 
+                      htmlFor="agree" 
+                      style={{
+                        fontFamily: 'SF Pro, sans-serif',
+                        fontWeight: 400,
+                        fontSize: '16px',
+                        lineHeight: '19px',
+                        color: '#222222',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {t('contractSignature.agreeLabel')}
+                    </label>
                   </div>
-                  <label 
-                    htmlFor="agree" 
-                    style={{
-                      fontFamily: 'SF Pro, sans-serif',
-                      fontWeight: 400,
-                      fontSize: '16px',
-                      lineHeight: '19px',
-                      color: '#222222',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {t('contractSignature.agreeLabel')}
-                  </label>
                 </div>
-              </div>
+              )}
 
               {/* Section Signature */}
               {isAgreed && (
@@ -1859,8 +1865,40 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
             </div>
           )}
         </ErrorBoundary>
+
+        {/* Mobile : barre fixe en bas avec "J'accepte" pour rester visible (contract-signing) */}
+        {showMobileLayout && currentStep === 'review' && (
+          <div
+            className="sticky bottom-0 left-0 right-0 z-20 px-4 py-3 bg-[#FDFDF9] border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]"
+            style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+          >
+            <div
+              style={{
+                border: '1px dashed rgba(85, 186, 159, 0.76)',
+                borderRadius: '8px',
+                padding: '12px 16px'
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="agree-mobile"
+                  checked={isAgreed}
+                  onCheckedChange={(checked) => setIsAgreed(checked as boolean)}
+                  className="h-5 w-5 shrink-0 rounded border-2 border-[#C2C2C2] data-[state=checked]:bg-[#55BA9F] data-[state=checked]:border-[#55BA9F]"
+                />
+                <label
+                  htmlFor="agree-mobile"
+                  className="text-sm font-normal text-[#222222] cursor-pointer leading-tight"
+                  style={{ fontFamily: 'SF Pro, sans-serif' }}
+                >
+                  {t('contractSignature.agreeLabel')}
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      
+
       {/* Footer - même style que guest-verification (safe-area sur mobile uniquement) */}
       <footer className={cn(isMobile && "safe-area-bottom", showMobileLayout && "guest-verification-footer")} style={{ padding: '16px 24px', backgroundColor: '#FDFDF9' }}>
         <p className="text-sm text-gray-600 text-center" style={{ fontFamily: 'Inter, sans-serif', fontWeight: 400, fontSize: '12px', lineHeight: '15px', color: '#000000' }}>

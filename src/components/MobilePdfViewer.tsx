@@ -10,6 +10,8 @@ interface MobilePdfViewerProps {
   onClose?: () => void;
   className?: string;
   showControls?: boolean;
+  /** Sur mobile, limite la hauteur du viewer pour laisser de la place au bas de page (checkbox, bouton). Permet aussi de faire défiler tout le PDF. */
+  compactOnMobile?: boolean;
 }
 
 export const MobilePdfViewer: React.FC<MobilePdfViewerProps> = ({
@@ -17,7 +19,8 @@ export const MobilePdfViewer: React.FC<MobilePdfViewerProps> = ({
   title = 'Document PDF',
   onClose,
   className,
-  showControls = true
+  showControls = true,
+  compactOnMobile = false
 }) => {
   const isMobile = useIsMobile();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -99,7 +102,8 @@ export const MobilePdfViewer: React.FC<MobilePdfViewerProps> = ({
       ref={containerRef}
       className={cn(
         "relative w-full bg-gray-100 rounded-lg overflow-hidden",
-        isMobile && "h-[calc(100vh-200px)]",
+        isMobile && !compactOnMobile && "h-[calc(100vh-200px)]",
+        isMobile && compactOnMobile && "max-h-[45vh] min-h-[280px]",
         !isMobile && "h-[600px]",
         className
       )}
@@ -215,7 +219,7 @@ export const MobilePdfViewer: React.FC<MobilePdfViewerProps> = ({
               "bg-white"
             )}
             style={{
-              minHeight: isMobile ? '800px' : '1000px',
+              minHeight: isMobile && compactOnMobile ? '1400px' : isMobile ? '800px' : '1000px',
               height: 'auto'
             }}
             allow="fullscreen"

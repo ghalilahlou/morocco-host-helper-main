@@ -91,6 +91,9 @@ export const UnifiedBookingModal = ({
   // ✅ NOUVEAU : État pour le modal de partage mobile
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareModalUrl, setShareModalUrl] = useState<string>('');
+  // ✅ PRESSE-PAPIERS : Lien préchargé à l'ouverture du modal pour copie synchrone au clic (iOS/Android)
+  const [cachedGuestLinkUrl, setCachedGuestLinkUrl] = useState<string | null>(null);
+  const [cachedGuestLinkLoading, setCachedGuestLinkLoading] = useState(false);
 
   // ✅ DÉTECTION : Identifier le type de réservation (avant le useEffect)
   const isAirbnb = booking ? ('source' in booking && booking.source === 'airbnb') : false;
@@ -199,8 +202,87 @@ export const UnifiedBookingModal = ({
     });
   };
 
-  // ✅ GÉNÉRATION DE LIEN : Logique enrichie et simplifiée
+  // ✅ PRÉCHARGEMENT : À l'ouverture du modal, récupérer le lien pour copie synchrone au clic (presse-papiers fiable sur mobile)
+  useEffect(() => {
+    if (!isOpen || !booking || !propertyId) {
+      setCachedGuestLinkUrl(null);
+      return;
+    }
+    let cancelled = false;
+    setCachedGuestLinkLoading(true);
+    const doPrefetch = async () => {
+      try {
+        if (isAirbnb) {
+          const airbnbRes = booking as AirbnbReservation;
+          const url = await generatePropertyVerificationUrl(propertyId, airbnbRes.airbnbBookingId, {
+            linkType: 'ics_direct',
+            reservationData: {
+              airbnbCode: airbnbRes.airbnbBookingId,
+              startDate: airbnbRes.startDate,
+              endDate: airbnbRes.endDate,
+              guestName: airbnbRes.guestName,
+              numberOfGuests: airbnbRes.numberOfGuests
+            },
+            skipCopy: true
+          });
+          if (!cancelled && url) setCachedGuestLinkUrl(url);
+        } else {
+          const manualBooking = booking as Booking;
+          const startDate = parseLocalDate(manualBooking.checkInDate);
+          const endDate = parseLocalDate(manualBooking.checkOutDate);
+          const url = await generatePropertyVerificationUrl(propertyId, manualBooking.id, {
+            linkType: 'ics_direct',
+            reservationData: {
+              airbnbCode: manualBooking.bookingReference || 'INDEPENDENT_BOOKING',
+              startDate,
+              endDate,
+              numberOfGuests: manualBooking.numberOfGuests
+            },
+            skipCopy: true
+          });
+          if (!cancelled && url) setCachedGuestLinkUrl(url);
+        }
+      } catch {
+        if (!cancelled) setCachedGuestLinkUrl(null);
+      } finally {
+        if (!cancelled) setCachedGuestLinkLoading(false);
+      }
+    };
+    doPrefetch();
+    return () => { cancelled = true; setCachedGuestLinkUrl(null); };
+  }, [isOpen, booking?.id, propertyId, isAirbnb, generatePropertyVerificationUrl]);
+
+  // ✅ GÉNÉRATION DE LIEN : Si lien en cache → copie synchrone (presse-papiers). Sinon → génération puis copie.
   const handleGenerateGuestLink = async (event?: React.MouseEvent) => {
+    // ✅ MÊME LOGIQUE QUE AIRBNB : Copie + panneau partage (Copier, WhatsApp, SMS, Email, Partager…)
+    // Lien déjà préchargé → copie immédiate dans le presse-papiers puis ouverture du panneau partage (desktop + mobile)
+    if (cachedGuestLinkUrl) {
+      setShareModalUrl(cachedGuestLinkUrl);
+      setShareModalOpen(true);
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(cachedGuestLinkUrl)
+          .then(() => {
+            toast({
+              title: "Lien copié !",
+              description: "Le lien est dans le presse-papiers. Collez-le où vous voulez ou partagez via le panneau.",
+            });
+          })
+          .catch(() => {
+            toast({
+              title: "Lien prêt",
+              description: "Utilisez le bouton « Copier » dans le panneau pour copier le lien.",
+              duration: 8000,
+            });
+          });
+      } else {
+        toast({
+          title: "Lien prêt",
+          description: "Copiez le lien depuis le panneau ou partagez via WhatsApp, SMS, Email…",
+        });
+      }
+      return;
+    }
+
     console.log('🔵 [UNIFIED MODAL] Génération de lien pour:', {
       bookingId: booking.id,
       bookingCode,
@@ -209,7 +291,6 @@ export const UnifiedBookingModal = ({
       hasEvent: !!event
     });
     
-    // ✅ PROTECTION : Bloquer si déjà en cours
     if (isGeneratingLocal || isGeneratingLink) {
       console.warn('⚠️ Génération déjà en cours, clic ignoré');
       return;
@@ -231,7 +312,6 @@ export const UnifiedBookingModal = ({
     }
 
     setIsGeneratingLocal(true);
-    // ✅ MOBILE-OPTIMIZED : Préserver l'événement utilisateur complet pour la copie mobile
     const userEvent = event || undefined;
 
     try {
@@ -284,13 +364,12 @@ export const UnifiedBookingModal = ({
       
       console.log('✅ Lien généré avec succès:', generatedUrl);
       
-      // ✅ MOBILE : Toujours ouvrir le modal avec le lien pour que l'utilisateur puisse copier (presse-papiers)
-      // Le tap sur "Copier" dans le modal est un geste direct → copie fiable sur iOS/Android
-      if (isMobileDevice() && generatedUrl) {
+      // ✅ MÊME LOGIQUE QUE AIRBNB : Toujours ouvrir le panneau partage (desktop + mobile) pour copier / WhatsApp / SMS / Email
+      if (generatedUrl) {
         setShareModalUrl(generatedUrl);
         setShareModalOpen(true);
-        // Ensuite proposer le partage natif si disponible
-        if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        // Sur mobile, proposer en plus le partage natif (menu système)
+        if (isMobileDevice() && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
           try {
             // Préparer les données de partage
             // Android: certaines versions ne supportent pas text+url ensemble
@@ -1885,9 +1964,11 @@ export const UnifiedBookingModal = ({
                 </Button>
                 
                 <p className="text-xs text-muted-foreground mt-2">
-                  {isMobileDevice() 
-                    ? 'Génère le lien et ouvre les options de partage (WhatsApp, SMS, Email...)'
-                    : 'Génère et copie automatiquement le lien de vérification client avec les dates de cette réservation pré-remplies'
+                  {cachedGuestLinkUrl
+                    ? 'Le lien est prêt : un appui copie dans le presse-papiers. Collez où vous voulez.'
+                    : isMobileDevice()
+                      ? 'Le lien sera copié dans le presse-papiers et les options de partage s\'ouvriront.'
+                      : 'Génère et copie le lien de vérification client avec les dates de cette réservation.'
                   }
                 </p>
               </CardContent>

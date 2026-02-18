@@ -181,6 +181,7 @@ export const useGuestVerification = () => {
         numberOfGuests?: number;
       };
       userEvent?: Event | React.SyntheticEvent; // ✅ MOBILE-OPTIMIZED : Préserver l'événement utilisateur pour iOS/Android
+      skipCopy?: boolean; // ✅ Si true, retourne l'URL sans copier (pour préchargement + copie synchrone au clic)
     }
   ): Promise<string | null> => {
     if (!user) return null;
@@ -327,34 +328,33 @@ export const useGuestVerification = () => {
         // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation
         console.log('🔗 [LIEN DE RÉSERVATION ICS/AIRBNB]:', fullUrl);
         
-        // ✅ COPIE FLUIDE : Utiliser la fonction unifiée robuste
-        try {
-          const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
-          const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
-          
-          const result = await copyToClipboardSimple(fullUrl, userEvent);
-          
-          if (result.success) {
-            toast({
-              title: "Lien copié !",
-              description: "Le lien a été copié dans le presse-papiers",
-            });
-          } else {
+        // ✅ Copie uniquement si skipCopy est false (sinon le modal fera une copie synchrone au clic)
+        if (!options?.skipCopy) {
+          try {
+            const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
+            const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
+            const result = await copyToClipboardSimple(fullUrl, userEvent);
+            if (result.success) {
+              toast({
+                title: "Lien copié !",
+                description: "Le lien a été copié dans le presse-papiers",
+              });
+            } else {
+              toast({
+                title: "Lien généré",
+                description: result.error || `Le lien a été généré. Copiez-le manuellement : ${fullUrl}`,
+                duration: 10000,
+              });
+            }
+          } catch (copyError: any) {
+            console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
             toast({
               title: "Lien généré",
-              description: result.error || `Le lien a été généré. Copiez-le manuellement : ${fullUrl}`,
+              description: copyError?.message || `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${fullUrl}`,
               duration: 10000,
             });
           }
-        } catch (copyError: any) {
-          console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
-          toast({
-            title: "Lien généré",
-            description: copyError?.message || `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${fullUrl}`,
-            duration: 10000,
-          });
         }
-        
         return fullUrl; // ✅ Retourner l'URL complète avec dates
       } else {
         // Fallback : Si pas de dates, utiliser l'URL courte
@@ -362,30 +362,31 @@ export const useGuestVerification = () => {
         // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation (fallback)
         console.log('🔗 [LIEN DE RÉSERVATION]:', shortUrl);
         
-        // ✅ COPIE FLUIDE : Même logique robuste que pour l'URL complète (mobile presse-papiers)
-        try {
-          const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
-          const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
-          const result = await copyToClipboardSimple(shortUrl, userEvent);
-          if (result.success) {
-            toast({
-              title: "Lien copié !",
-              description: "Le lien a été copié dans le presse-papiers",
-            });
-          } else {
+        if (!options?.skipCopy) {
+          try {
+            const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
+            const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
+            const result = await copyToClipboardSimple(shortUrl, userEvent);
+            if (result.success) {
+              toast({
+                title: "Lien copié !",
+                description: "Le lien a été copié dans le presse-papiers",
+              });
+            } else {
+              toast({
+                title: "Lien généré",
+                description: result.error || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
+                duration: 10000,
+              });
+            }
+          } catch (copyError: any) {
+            console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
             toast({
               title: "Lien généré",
-              description: result.error || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
+              description: copyError?.message || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
               duration: 10000,
             });
           }
-        } catch (copyError: any) {
-          console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
-          toast({
-            title: "Lien généré",
-            description: copyError?.message || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
-            duration: 10000,
-          });
         }
         return shortUrl; // ✅ Retourner l'URL courte
       }
