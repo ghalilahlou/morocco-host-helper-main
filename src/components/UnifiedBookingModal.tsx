@@ -284,9 +284,12 @@ export const UnifiedBookingModal = ({
       
       console.log('✅ Lien généré avec succès:', generatedUrl);
       
-      // ✅ PARTAGE NATIF iOS/Android - Compatible avec les deux plateformes
+      // ✅ MOBILE : Toujours ouvrir le modal avec le lien pour que l'utilisateur puisse copier (presse-papiers)
+      // Le tap sur "Copier" dans le modal est un geste direct → copie fiable sur iOS/Android
       if (isMobileDevice() && generatedUrl) {
-        // Vérifier si Web Share API est disponible
+        setShareModalUrl(generatedUrl);
+        setShareModalOpen(true);
+        // Ensuite proposer le partage natif si disponible
         if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
           try {
             // Préparer les données de partage
@@ -316,6 +319,7 @@ export const UnifiedBookingModal = ({
             await navigator.share(shareData);
             
             console.log('✅ Partage natif réussi');
+            setShareModalOpen(false);
             toast({
               title: "✅ Lien partagé !",
               description: "Le lien a été partagé avec succès",

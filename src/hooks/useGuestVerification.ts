@@ -362,65 +362,12 @@ export const useGuestVerification = () => {
         // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation (fallback)
         console.log('🔗 [LIEN DE RÉSERVATION]:', shortUrl);
         
-        // ✅ COPIE FLUIDE : Copie directe sans modal visible
+        // ✅ COPIE FLUIDE : Même logique robuste que pour l'URL complète (mobile presse-papiers)
         try {
+          const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
           const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
-          
-          // ✅ CRITIQUE pour iOS : La copie DOIT être synchrone avec l'événement utilisateur
-          if (navigator.clipboard && window.isSecureContext) {
-            try {
-              // Si on a un événement, l'utiliser directement pour iOS
-              if (userEvent) {
-                const nativeEvent = 'nativeEvent' in userEvent ? userEvent.nativeEvent : userEvent;
-                if (nativeEvent && 'isTrusted' in nativeEvent && nativeEvent.isTrusted) {
-                  // Copie synchrone dans le contexte de l'événement (iOS)
-                  await navigator.clipboard.writeText(shortUrl);
-                  console.log('✅ [GUEST VERIFICATION] Copié avec Clipboard API (événement fiable - fallback)');
-                  toast({
-                    title: "Lien copié !",
-                    description: "Le lien a été copié dans le presse-papiers",
-                  });
-                  return shortUrl;
-                }
-              }
-              
-              // Pour Android et autres, copie directe
-              await navigator.clipboard.writeText(shortUrl);
-              console.log('✅ [GUEST VERIFICATION] Copié avec Clipboard API (fallback)');
-              toast({
-                title: "Lien copié !",
-                description: "Le lien a été copié dans le presse-papiers",
-              });
-              return shortUrl;
-            } catch (clipboardError) {
-              console.warn('⚠️ [GUEST VERIFICATION] Clipboard API échoué, fallback:', clipboardError);
-              // Continue vers le fallback
-            }
-          }
-          
-          // Fallback avec input invisible
-          const input = document.createElement('input');
-          input.value = shortUrl;
-          input.style.position = 'fixed';
-          input.style.top = '0';
-          input.style.left = '0';
-          input.style.width = '2px';
-          input.style.height = '2px';
-          input.style.opacity = '0';
-          input.style.pointerEvents = 'none';
-          input.style.fontSize = '16px';
-          input.readOnly = true;
-          
-          document.body.appendChild(input);
-          input.focus();
-          input.select();
-          input.setSelectionRange(0, shortUrl.length);
-          
-          const success = document.execCommand('copy');
-          document.body.removeChild(input);
-          
-          if (success) {
-            console.log('✅ [GUEST VERIFICATION] Copié avec execCommand (fallback)');
+          const result = await copyToClipboardSimple(shortUrl, userEvent);
+          if (result.success) {
             toast({
               title: "Lien copié !",
               description: "Le lien a été copié dans le presse-papiers",
@@ -428,19 +375,18 @@ export const useGuestVerification = () => {
           } else {
             toast({
               title: "Lien généré",
-              description: `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
+              description: result.error || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
               duration: 10000,
             });
           }
-        } catch (copyError) {
+        } catch (copyError: any) {
           console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
           toast({
             title: "Lien généré",
-            description: `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${shortUrl}`,
+            description: copyError?.message || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
             duration: 10000,
           });
         }
-        
         return shortUrl; // ✅ Retourner l'URL courte
       }
     } catch (error) {

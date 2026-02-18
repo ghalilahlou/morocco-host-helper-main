@@ -106,62 +106,81 @@ export const copyToClipboardSimple = async (
     }
   }
 
-  // ✅ ÉTAPE 2 : Fallback avec textarea invisible (SANS overlay bloquant)
+  // ✅ ÉTAPE 2 : Fallback avec textarea (élément focusable pour iOS/Android)
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
     try {
-      // Créer un textarea (pas input) pour meilleure compatibilité
+      // Créer un textarea pour compatibilité mobile (iOS exige élément focusable/sélectionnable)
       const textarea = document.createElement('textarea');
       textarea.value = text;
-      textarea.readOnly = true; // Empêche la modification
+      // iOS : readOnly=false requis pour que execCommand('copy') fonctionne
+      textarea.readOnly = !isMobile;
+      textarea.setAttribute('aria-hidden', 'true');
       textarea.style.fontSize = '16px'; // Empêche le zoom automatique sur iOS
       
-      // ✅ MOBILE : Textarea invisible (PAS d'overlay bloquant)
-      // On utilise le partage natif sur mobile, donc pas besoin d'overlay
       if (isMobile) {
-        // Textarea invisible mais dans le DOM
+        // ✅ MOBILE : Élément dans le viewport mais quasi invisible (iOS ne copie que si focusable)
+        // position fixed + dans la page + opacity très faible = focusable sur iOS/Android
         textarea.style.position = 'fixed';
-        textarea.style.top = '-9999px';
-        textarea.style.left = '-9999px';
-        textarea.style.width = '1px';
-        textarea.style.height = '1px';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.width = '2px';
+        textarea.style.height = '2px';
         textarea.style.padding = '0';
         textarea.style.border = 'none';
-        textarea.style.opacity = '0';
+        textarea.style.opacity = '0.01';
         textarea.style.pointerEvents = 'none';
-        textarea.style.zIndex = '-1';
+        textarea.style.zIndex = '9999';
+        textarea.style.outline = 'none';
+        textarea.style.overflow = 'hidden';
         
         document.body.appendChild(textarea);
         
-        // Essayer la copie
-        setTimeout(() => {
+        const doCopy = () => {
           try {
             textarea.focus();
-            textarea.select();
             textarea.setSelectionRange(0, text.length);
+            textarea.select();
             
-            const successful = document.execCommand('copy');
-            document.body.removeChild(textarea);
+            let successful = document.execCommand('copy');
+            
+            // iOS fallback : utiliser l'API Selection si execCommand échoue
+            if (!successful && isIOSDevice && window.getSelection) {
+              const sel = window.getSelection();
+              if (sel) {
+                sel.removeAllRanges();
+                const range = document.createRange();
+                range.selectNodeContents(textarea);
+                sel.addRange(range);
+                successful = document.execCommand('copy');
+                sel.removeAllRanges();
+              }
+            }
+            
+            try { document.body.removeChild(textarea); } catch (e) {}
             
             if (successful) {
               console.log('✅ [CLIPBOARD] Copié avec execCommand (mobile)');
               resolve({ success: true });
             } else {
               console.log('ℹ️ [CLIPBOARD] Copie automatique échouée sur mobile');
-              // ✅ Retourner false SANS overlay bloquant
-              resolve({ 
-                success: false, 
-                error: 'Utilisez le bouton "Partager" pour envoyer le lien' 
+              resolve({
+                success: false,
+                error: 'Le lien a été généré. Appuyez longuement sur le lien ci-dessous pour le copier, ou utilisez "Partager".'
               });
             }
           } catch (error: any) {
             try { document.body.removeChild(textarea); } catch (e) {}
             console.error('❌ [CLIPBOARD] Erreur lors de la copie (mobile):', error);
-            resolve({ 
-              success: false, 
-              error: 'Utilisez le bouton "Partager" pour envoyer le lien' 
+            resolve({
+              success: false,
+              error: 'Le lien a été généré. Appuyez longuement sur le lien pour le copier, ou utilisez "Partager".'
             });
           }
-        }, 50);
+        };
+        
+        // Délai minimal pour laisser le DOM attacher l’élément (iOS)
+        const delay = isIOSDevice ? 50 : 10;
+        setTimeout(doCopy, delay);
       } else {
         // ✅ DESKTOP : Textarea invisible mais présent dans le DOM
         textarea.style.position = 'fixed';
