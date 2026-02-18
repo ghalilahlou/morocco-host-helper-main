@@ -13,6 +13,7 @@ import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
 import { ApiService } from '@/services/apiService';
+import { ShareModal } from '@/components/ShareModal';
 
 interface BookingDetailsModalProps {
   booking: EnrichedBooking;
@@ -39,6 +40,8 @@ export const BookingDetailsModal = ({
     isLoading: isGeneratingLink
   } = useGuestVerification();
   const [isGeneratingLocal, setIsGeneratingLocal] = useState(false); // ✅ State local pour bloquer immédiatement
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareModalUrl, setShareModalUrl] = useState<string>('');
 
   // Enhanced fallback: fetch guest name from multiple sources
   const [fallbackGuestName, setFallbackGuestName] = useState<string | null>(null);
@@ -390,8 +393,7 @@ export const BookingDetailsModal = ({
     // ✅ BLOQUER IMMÉDIATEMENT (avant même l'appel API)
     setIsGeneratingLocal(true);
     
-    // ✅ PRÉSERVER L'ÉVÉNEMENT UTILISATEUR pour la copie
-    const userEvent = event?.nativeEvent || undefined;
+    const userEvent = event || undefined;
 
     try {
       console.log('🔗 Génération du lien pour:', {
@@ -400,12 +402,22 @@ export const BookingDetailsModal = ({
         bookingReference: booking.bookingReference
       });
       
-      // ✅ SIMPLIFIÉ : Le lien est automatiquement copié dans le hook
-      // ✅ IMPORTANT : Passer l'événement utilisateur pour préserver le contexte
-      await generatePropertyVerificationUrl(propertyId, booking.id, {
-        userEvent: userEvent
+      // Ouvrir le pop-up partage (même format que partout : lien + message, WhatsApp, copier)
+      const url = await generatePropertyVerificationUrl(propertyId, booking.id, {
+        userEvent: userEvent,
+        skipCopy: true,
+        linkType: 'ics_direct',
+        reservationData: {
+          airbnbCode: booking.bookingReference || 'INDEPENDENT_BOOKING',
+          startDate: booking.checkInDate ? new Date(booking.checkInDate) : new Date(),
+          endDate: booking.checkOutDate ? new Date(booking.checkOutDate) : new Date(),
+          numberOfGuests: booking.numberOfGuests
+        }
       });
-      // Le toast de succès est déjà affiché dans le hook
+      if (url) {
+        setShareModalUrl(url);
+        setShareModalOpen(true);
+      }
     } catch (error) {
       console.error('❌ Erreur lors de la génération du lien:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
@@ -540,5 +552,16 @@ export const BookingDetailsModal = ({
         </div>
       </DialogContent>
     </Dialog>
+
+    <ShareModal
+      isOpen={shareModalOpen}
+      onClose={() => setShareModalOpen(false)}
+      url={shareModalUrl}
+      title="Partager le lien client"
+      propertyName={booking.property?.name}
+      guestName={booking.realGuestNames?.[0] || booking.guests?.[0]?.fullName}
+      checkIn={booking.checkInDate ? new Date(booking.checkInDate).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : undefined}
+      checkOut={booking.checkOutDate ? new Date(booking.checkOutDate).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : undefined}
+    />
   </>;
 };

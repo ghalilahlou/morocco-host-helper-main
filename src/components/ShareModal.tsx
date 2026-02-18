@@ -18,6 +18,7 @@ import {
   generateQRCodeUrl,
   canShare,
   isMobile,
+  getShareMessageText,
   ShareOptions 
 } from '@/lib/shareUtils';
 import { copyToClipboardSimple } from '@/lib/clipboardSimple';
@@ -44,6 +45,7 @@ export const ShareModal = ({
   checkOut
 }: ShareModalProps) => {
   const [copied, setCopied] = useState(false);
+  const [copiedFull, setCopiedFull] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
 
@@ -79,6 +81,31 @@ export const ShareModal = ({
       setIsSharing(false);
     }
   }, [url]);
+
+  // Copier le lien + le message (expression complète envoyée par WhatsApp/SMS)
+  const fullMessageText = getShareMessageText(shareOptions);
+  const handleCopyLinkAndMessage = useCallback(async (event?: React.MouseEvent) => {
+    setIsSharing(true);
+    try {
+      const result = await copyToClipboardSimple(fullMessageText, event);
+      if (result.success) {
+        setCopiedFull(true);
+        toast({
+          title: '✅ Lien et message copiés !',
+          description: 'Vous pouvez coller dans WhatsApp, SMS ou ailleurs.',
+        });
+        setTimeout(() => setCopiedFull(false), 3000);
+      } else {
+        toast({
+          title: 'Copie manuelle',
+          description: result.error || 'Sélectionnez le texte ci-dessous pour copier',
+          duration: 5000,
+        });
+      }
+    } finally {
+      setIsSharing(false);
+    }
+  }, [fullMessageText]);
 
   // Partage natif (Web Share API) - Compatible iOS + Android
   const handleNativeShare = useCallback(async () => {
@@ -161,9 +188,33 @@ export const ShareModal = ({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Zone de lien avec copie */}
+          {/* Message à partager (expression envoyée par WhatsApp/SMS) */}
           <div className="space-y-2">
-            <label className="text-sm font-medium text-muted-foreground">Lien de réservation</label>
+            <label className="text-sm font-medium text-muted-foreground">Message à partager</label>
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm text-foreground whitespace-pre-wrap">
+              {fullMessageText}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyLinkAndMessage}
+                disabled={isSharing}
+                className="gap-2"
+              >
+                {copiedFull ? (
+                  <Check className="h-4 w-4 text-green-600" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+                <span>{copiedFull ? 'Copié !' : 'Copier le lien et le message'}</span>
+              </Button>
+            </div>
+          </div>
+
+          {/* Lien seul avec copie */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-muted-foreground">Lien uniquement</label>
             <div className="flex gap-2">
               <Input
                 value={url}

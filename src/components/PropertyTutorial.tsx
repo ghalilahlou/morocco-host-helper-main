@@ -299,14 +299,19 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
       {/* Render nothing when hidden to keep hooks order stable */}
       {!isVisible ? null : (
       <>
-      {/* Overlay with blur */}
-      <div className="fixed inset-0 w-full h-full backdrop-blur-sm bg-black/30 z-[1000]" />
+      {/* Overlay avec blur - sur mobile, moins sombre pour laisser voir les boutons derrière */}
+      <div
+        className={cn(
+          "fixed inset-0 w-full h-full z-[1000]",
+          isMobile ? "bg-black/10" : "bg-black/30 backdrop-blur-sm"
+        )}
+      />
       
       {/* Tutorial Card - Responsive ; sur mobile : zones de toucher 44px, safe-area, lisibilité */}
       <Card 
         className={`fixed z-[1002] shadow-2xl border-2 border-primary/20 ${
           isMobile 
-            ? 'w-[calc(100vw-2rem)] max-w-[400px] min-w-[280px]' 
+            ? 'w-[calc(100vw-2rem)] max-w-[400px] min-w-[280px] bg-white/85 backdrop-blur-sm'
             : 'w-[90vw] max-w-80 mx-4 sm:w-80'
         }`}
         style={getTooltipPosition()}

@@ -67,6 +67,21 @@ export interface ShareResult {
 }
 
 /**
+ * Construit le message complet à partager (lien + texte d'accompagnement)
+ * Même format que WhatsApp / SMS pour cohérence dans le pop-up de partage.
+ */
+export const getShareMessageText = (options: ShareOptions): string => {
+  const { url, guestName, propertyName, checkIn, checkOut } = options;
+  const lines: string[] = [];
+  if (guestName) lines.push(`Pour: ${guestName}`);
+  if (propertyName) lines.push(`Propriété: ${propertyName}`);
+  if (checkIn && checkOut) lines.push(`Du ${checkIn} au ${checkOut}`);
+  lines.push('Cliquez sur le lien pour compléter votre réservation:');
+  lines.push(url);
+  return lines.join('\n');
+};
+
+/**
  * 📱 SOLUTION 1 : Web Share API (Partage natif)
  * Ouvre le menu de partage natif du système (iOS/Android)
  * L'utilisateur peut choisir l'app de destination (Airbnb, WhatsApp, etc.)

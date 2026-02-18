@@ -14,6 +14,7 @@ import { Dashboard } from './Dashboard';
 import { BookingWizardWithBoundary as BookingWizard } from './BookingWizard';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
 import { PropertyTutorial } from './PropertyTutorial';
+import { ShareModal } from './ShareModal';
 import { supabase } from '@/integrations/supabase/client';
 
 
@@ -37,6 +38,8 @@ export const PropertyDetail = () => {
   const [isGeneratingLocal, setIsGeneratingLocal] = useState(false);
   const [airbnbReservationsCount, setAirbnbReservationsCount] = useState(0);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareModalUrl, setShareModalUrl] = useState<string>('');
   
   // ✅ NETTOYAGE STRICT : Référence du propertyId précédent pour détecter les changements
   const previousPropertyIdRef = useRef<string | undefined>(propertyId);
@@ -124,13 +127,16 @@ export const PropertyDetail = () => {
     setIsGeneratingLocal(true);
 
     try {
-      // ✅ SIMPLIFIÉ : Le lien est automatiquement copié dans le hook
-      // ✅ MOBILE-OPTIMIZED : Préserver l'événement utilisateur complet pour la copie mobile
       const userEvent = event || undefined;
-      await generatePropertyVerificationUrl(property.id, undefined, {
-        userEvent: userEvent
+      // Générer le lien sans copie automatique, puis ouvrir le pop-up de partage (même format que réservations)
+      const url = await generatePropertyVerificationUrl(property.id, undefined, {
+        userEvent: userEvent,
+        skipCopy: true
       });
-      // Le toast de succès est déjà affiché dans le hook
+      if (url) {
+        setShareModalUrl(url);
+        setShareModalOpen(true);
+      }
     } catch (error) {
       console.error('❌ Erreur lors de la génération du lien:', error);
       toast({
@@ -444,6 +450,15 @@ export const PropertyDetail = () => {
             setProperty(updatedProperty);
           }
         }}
+      />
+
+      {/* Pop-up partage (même format que réservations : lien + message, WhatsApp, copier) */}
+      <ShareModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        url={shareModalUrl}
+        title="Partager le lien client"
+        propertyName={property?.name}
       />
     </div>
   );
