@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
-import { Copy, Check, Share2, MessageCircle, Mail, Smartphone, QrCode, X, ExternalLink } from 'lucide-react';
+import { Copy, Check, Share2, MessageCircle, Mail, Smartphone, QrCode, X, ExternalLink, ArrowLeft } from 'lucide-react';
 import { 
   shareNative, 
   shareToWhatsApp, 
@@ -171,23 +171,53 @@ export const ShareModal = ({
 
   const qrCodeUrl = generateQRCodeUrl(url, 200);
 
+  const onMobile = isMobile();
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Share2 className="h-5 w-5 text-primary" />
-            {title}
-          </DialogTitle>
-          <DialogDescription>
-            {propertyName && <span className="font-medium">{propertyName}</span>}
-            {checkIn && checkOut && (
-              <span className="text-muted-foreground"> • {checkIn} → {checkOut}</span>
-            )}
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto p-0">
+        {/* Mobile : barre avec flèche retour + titre + croix pour revenir au calendrier */}
+        {onMobile && (
+          <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background px-4 py-3 safe-area-inset-top">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="shrink-0 rounded-full h-10 w-10"
+              aria-label="Retour au calendrier"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <span className="flex-1 text-center font-semibold text-sm truncate">
+              {title}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="shrink-0 rounded-full h-10 w-10"
+              aria-label="Fermer"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+        )}
 
-        <div className="space-y-4 py-4">
+        <div className={onMobile ? 'px-4 pb-4' : 'p-6'}>
+          <DialogHeader className={onMobile ? 'sr-only' : ''}>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="h-5 w-5 text-primary" />
+              {title}
+            </DialogTitle>
+            <DialogDescription>
+              {propertyName && <span className="font-medium">{propertyName}</span>}
+              {checkIn && checkOut && (
+                <span className="text-muted-foreground"> • {checkIn} → {checkOut}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+        <div className="space-y-4 pt-4">
           {/* Message à partager (expression envoyée par WhatsApp/SMS) */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-muted-foreground">Message à partager</label>
@@ -340,6 +370,7 @@ export const ShareModal = ({
           <Button variant="ghost" onClick={onClose}>
             Fermer
           </Button>
+        </div>
         </div>
       </DialogContent>
     </Dialog>

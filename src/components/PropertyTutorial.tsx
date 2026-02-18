@@ -6,6 +6,7 @@ import { X, ChevronRight, ChevronLeft, Lightbulb } from 'lucide-react';
 import { CSSProperties } from 'react';
 import { useDeviceType } from '@/hooks/use-mobile';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { cn } from '@/lib/utils';
 
 interface TutorialStep {
   id: string;
@@ -252,11 +253,11 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
     if (currentStepData.target) {
       const element = document.querySelector(currentStepData.target);
       if (element) {
-        // Scroll to element first - adapté pour mobile et desktop
+        // Scroll to element: on mobile keep it in the visible area above the bottom sheet
         const scrollOptions: ScrollIntoViewOptions = isMobile
           ? {
               behavior: 'smooth',
-              block: 'center',
+              block: 'start',
               inline: 'nearest'
             }
           : {
@@ -296,78 +297,146 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
 
   return (
     <>
-      {/* Render nothing when hidden to keep hooks order stable */}
       {!isVisible ? null : (
-      <>
-      {/* Overlay avec blur - sur mobile, moins sombre pour laisser voir les boutons derrière */}
-      <div
-        className={cn(
-          "fixed inset-0 w-full h-full z-[1000]",
-          isMobile ? "bg-black/10" : "bg-black/30 backdrop-blur-sm"
-        )}
-      />
-      
-      {/* Tutorial Card - Responsive ; sur mobile : zones de toucher 44px, safe-area, lisibilité */}
-      <Card 
-        className={`fixed z-[1002] shadow-2xl border-2 border-primary/20 ${
-          isMobile 
-            ? 'w-[calc(100vw-2rem)] max-w-[400px] min-w-[280px] bg-white/85 backdrop-blur-sm'
-            : 'w-[90vw] max-w-80 mx-4 sm:w-80'
-        }`}
-        style={getTooltipPosition()}
-      >
-        <CardHeader className={`pb-3 ${isMobile ? 'px-4 pt-4 safe-area-inset-top' : ''}`}>
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Lightbulb className={`${isMobile ? 'h-5 w-5' : 'h-5 w-5'} text-primary shrink-0`} />
-              <Badge variant="secondary" className={`${isMobile ? 'text-xs px-2 py-0.5' : 'text-xs'}`}>
-                {currentStep + 1}/{tutorialSteps.length}
-              </Badge>
+        <>
+          {/* Overlay : léger sur mobile pour garder l’élément mis en évidence visible au-dessus du sheet */}
+          <div
+            className={cn(
+              'fixed inset-0 z-[1000]',
+              isMobile ? 'bg-black/20' : 'bg-black/30 backdrop-blur-sm'
+            )}
+            aria-hidden
+          />
+
+          {isMobile ? (
+            /* ——— Mobile : bottom sheet (n’obstrue pas les boutons, contenu en bas) ——— */
+            <div
+              className="fixed inset-x-0 bottom-0 z-[1002] flex flex-col rounded-t-2xl border-t-2 border-primary/20 bg-white shadow-2xl max-h-[58vh]"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            >
+              {/* Poignée */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-12 h-1 rounded-full bg-muted" aria-hidden />
+              </div>
+              <div className="flex-1 overflow-y-auto px-4 pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Lightbulb className="h-5 w-5 text-primary shrink-0" />
+                    <Badge variant="secondary" className="text-xs px-2 py-0.5 shrink-0">
+                      {currentStep + 1}/{tutorialSteps.length}
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleSkip}
+                    className="shrink-0 min-h-[44px] min-w-[44px] h-11 w-11 rounded-full"
+                    aria-label={t('tutorial.close') ?? 'Fermer'}
+                  >
+                    <X className="h-5 w-5" />
+                  </Button>
+                </div>
+                <h3 className="text-lg font-semibold mt-2 text-foreground">
+                  {t(currentStepData.titleKey)}
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed mt-2">
+                  {t(currentStepData.descriptionKey)}
+                </p>
+                {currentStepData.target && (
+                  <p className="text-xs text-primary font-medium mt-3 flex items-center gap-1.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary" />
+                    {t('tutorial.mobile.lookAbove')}
+                  </p>
+                )}
+                <div className="flex gap-3 mt-5">
+                  <Button
+                    variant="secondary"
+                    size="default"
+                    onClick={handlePrevious}
+                    disabled={currentStep === 0}
+                    className="min-h-[48px] flex-1 gap-2 text-sm"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    {t('tutorial.previous')}
+                  </Button>
+                  <Button
+                    onClick={handleNext}
+                    size="default"
+                    className="min-h-[48px] flex-1 gap-2 text-sm"
+                  >
+                    {currentStep === tutorialSteps.length - 1
+                      ? t('tutorial.finish')
+                      : t('tutorial.next')}
+                    {currentStep < tutorialSteps.length - 1 && (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSkip}
+                  className="w-full mt-3 py-2 text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  {t('tutorial.skip')}
+                </button>
+              </div>
             </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleSkip}
-              className={`shrink-0 ${isMobile ? 'min-h-[44px] min-w-[44px] h-11 w-11 p-0 rounded-full' : 'h-6 w-6 p-0'}`}
-              aria-label={t('tutorial.close') || 'Fermer'}
+          ) : (
+            /* ——— Desktop : carte flottante positionnée près de l’élément ——— */
+            <Card
+              className="fixed z-[1002] w-[90vw] max-w-80 mx-4 sm:w-80 shadow-2xl border-2 border-primary/20"
+              style={getTooltipPosition()}
             >
-              <X className={isMobile ? 'h-5 w-5' : 'h-4 w-4'} />
-            </Button>
-          </div>
-          <CardTitle className={isMobile ? 'text-lg mt-2 font-semibold' : 'text-lg'}>{t(currentStepData.titleKey)}</CardTitle>
-        </CardHeader>
-        <CardContent className={`pt-0 ${isMobile ? 'px-4 pb-4' : ''}`} style={isMobile ? { paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } : undefined}>
-          <CardDescription className={`${isMobile ? 'text-sm leading-relaxed' : 'text-sm'} mb-4`} style={isMobile ? { lineHeight: 1.5 } : undefined}>
-            {t(currentStepData.descriptionKey)}
-          </CardDescription>
-          
-          <div className={`flex items-center ${isMobile ? 'gap-3' : 'justify-between'}`}>
-            <Button 
-              variant="secondary" 
-              size={isMobile ? 'default' : 'sm'}
-              onClick={handlePrevious}
-              disabled={currentStep === 0}
-              className={`gap-2 bg-muted/50 hover:bg-muted text-muted-foreground ${isMobile ? 'min-h-[44px] flex-1 text-sm px-4' : ''}`}
-            >
-              <ChevronLeft className={isMobile ? 'h-4 w-4' : 'h-4 w-4'} />
-              <span>{t('tutorial.previous')}</span>
-            </Button>
-            <Button 
-              onClick={handleNext}
-              size={isMobile ? 'default' : 'sm'}
-              className={`gap-2 ${isMobile ? 'min-h-[44px] flex-1 text-sm px-4' : ''}`}
-            >
-              <span>
-                {currentStep === tutorialSteps.length - 1 ? t('tutorial.finish') : t('tutorial.next')}
-              </span>
-              {currentStep === tutorialSteps.length - 1 ? null : (
-                <ChevronRight className={isMobile ? 'h-4 w-4' : 'h-4 w-4'} />
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      </>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Lightbulb className="h-5 w-5 text-primary shrink-0" />
+                    <Badge variant="secondary" className="text-xs">
+                      {currentStep + 1}/{tutorialSteps.length}
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSkip}
+                    className="shrink-0 h-6 w-6 p-0"
+                    aria-label={t('tutorial.close') ?? 'Fermer'}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <CardTitle className="text-lg">{t(currentStepData.titleKey)}</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <CardDescription className="text-sm mb-4">
+                  {t(currentStepData.descriptionKey)}
+                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handlePrevious}
+                    disabled={currentStep === 0}
+                    className="gap-2 bg-muted/50 hover:bg-muted text-muted-foreground"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span>{t('tutorial.previous')}</span>
+                  </Button>
+                  <Button onClick={handleNext} size="sm" className="gap-2">
+                    <span>
+                      {currentStep === tutorialSteps.length - 1
+                        ? t('tutorial.finish')
+                        : t('tutorial.next')}
+                    </span>
+                    {currentStep < tutorialSteps.length - 1 && (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </>
   );
