@@ -44,10 +44,23 @@ export const PropertyList = ({
   };
   const handleDeleteProperty = async () => {
     if (!propertyToDelete) return;
-    console.log('Attempting to delete property:', propertyToDelete.id);
-    await deleteProperty(propertyToDelete.id);
+    console.log('🗑️ [PROPERTY LIST] Suppression de la propriété:', propertyToDelete.id);
+    
+    // Fermer la boîte de dialogue immédiatement pour une meilleure UX
+    const propertyIdToDelete = propertyToDelete.id;
     setDeleteConfirmOpen(false);
     setPropertyToDelete(null);
+    
+    try {
+      const success = await deleteProperty(propertyIdToDelete);
+      if (success) {
+        console.log('✅ [PROPERTY LIST] Propriété supprimée avec succès');
+        // Rafraîchir la liste des propriétés pour s'assurer que l'UI est à jour
+        refreshProperties();
+      }
+    } catch (error) {
+      console.error('❌ [PROPERTY LIST] Erreur lors de la suppression:', error);
+    }
   };
   if (isLoading) {
     return <div className="space-y-4">

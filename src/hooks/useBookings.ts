@@ -158,6 +158,33 @@ export const useBookings = (options?: UseBookingsOptions) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, propertyId]);
 
+  // ✅ CORRECTION : Nettoyer le cache des bookings quand une propriété est supprimée
+  useEffect(() => {
+    const handlePropertyDeleted = (event: CustomEvent<{ propertyId: string }>) => {
+      const deletedPropertyId = event.detail?.propertyId;
+      if (!deletedPropertyId) return;
+      
+      console.log('🧹 [USE BOOKINGS] Propriété supprimée, nettoyage du cache:', deletedPropertyId);
+      
+      // Invalider le cache pour cette propriété
+      const cacheKey = `bookings-${deletedPropertyId}`;
+      multiLevelCache.invalidate(cacheKey).catch(() => {});
+      bookingsCache.delete(cacheKey);
+      
+      // Si on affiche actuellement les bookings de cette propriété, vider l'état
+      if (propertyId === deletedPropertyId) {
+        console.log('🧹 [USE BOOKINGS] Vidage de l\'état car la propriété affichée a été supprimée');
+        setBookings([]);
+        setIsLoading(false);
+      }
+    };
+    
+    window.addEventListener('property-deleted', handlePropertyDeleted as EventListener);
+    return () => {
+      window.removeEventListener('property-deleted', handlePropertyDeleted as EventListener);
+    };
+  }, [propertyId]);
+
   // ✅ SIMPLIFICATION V2 : Subscriptions real-time avec debounce augmenté
   useEffect(() => {
     if (!user || propertyId === undefined) return;

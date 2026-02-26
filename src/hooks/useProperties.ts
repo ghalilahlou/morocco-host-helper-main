@@ -230,13 +230,15 @@ export const useProperties = () => {
     }
   };
 
-  const deleteProperty = async (id: string) => {
+  const deleteProperty = async (id: string): Promise<boolean> => {
     if (!user) {
       toast.error('User not authenticated');
-      return;
+      return false;
     }
 
     try {
+      console.log('🗑️ [PROPERTIES] Début de la suppression de la propriété:', id);
+      
       const { data, error } = await supabase.rpc('delete_property_with_reservations', {
         p_property_id: id,
         p_user_id: user.id
@@ -245,14 +247,29 @@ export const useProperties = () => {
       if (error) throw error;
 
       if (data) {
+        console.log('✅ [PROPERTIES] Propriété supprimée avec succès');
+        
+        // ✅ CORRECTION : Invalider le cache des propriétés
+        const cacheKey = `properties-${user.id}`;
+        propertiesCache.delete(cacheKey);
+        console.log('🧹 [PROPERTIES] Cache invalidé:', cacheKey);
+        
+        // ✅ CORRECTION : Mettre à jour l'état local immédiatement
         setProperties(prev => prev.filter(property => property.id !== id));
+        
+        // ✅ CORRECTION : Émettre un événement global pour que useBookings puisse nettoyer son cache
+        window.dispatchEvent(new CustomEvent('property-deleted', { detail: { propertyId: id } }));
+        
         toast.success('Propriété et toutes ses réservations supprimées avec succès');
+        return true;
       } else {
         toast.error('Propriété non trouvée ou non autorisée');
+        return false;
       }
     } catch (error) {
-      console.error('Error deleting property:', error);
+      console.error('❌ [PROPERTIES] Erreur lors de la suppression:', error);
       toast.error('Failed to delete property');
+      return false;
     }
   };
 
