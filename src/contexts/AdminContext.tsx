@@ -38,9 +38,6 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     try {
-      console.log('🔍 [Context] Vérification admin pour:', user.email);
-      
-      // SOLUTION TEMPORAIRE : Utiliser une requête RPC au lieu de RLS
       const { data: adminData, error } = await supabase.rpc('get_admin_user_by_id', {
         user_id_param: user.id
       });
@@ -50,10 +47,8 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsAdmin(false);
       } else if (adminData && adminData.length > 0) {
         const adminUser = adminData[0];
-        console.log('✅ [Context] Admin confirmé:', user.email, adminUser.role);
         setIsAdmin(!!adminUser && adminUser.is_active);
       } else {
-        console.log('ℹ️ [Context] Non-admin:', user.email);
         setIsAdmin(false);
       }
       
@@ -71,8 +66,6 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!isAdmin) return;
     
     try {
-      console.log('🔄 [Context] Chargement des données dashboard...');
-      
       // 🚀 OPTIMISATION: Requêtes parallèles optimisées avec sélections limitées
       const [usersRes, propertiesRes, bookingsRes, recentBookingsRes] = await Promise.all([
         supabase.rpc('get_users_for_admin'),
@@ -123,8 +116,6 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
       
       setDashboardData(data);
-      console.log('✅ [Context] Données dashboard chargées:', data);
-      
     } catch (error) {
       console.error('❌ [Context] Erreur chargement dashboard:', error);
     }

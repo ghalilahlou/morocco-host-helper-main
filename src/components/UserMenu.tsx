@@ -24,9 +24,6 @@ export const UserMenu: React.FC<UserMenuProps> = ({ onSignOut }) => {
   const { isAdmin } = useAdminContext();
   const navigate = useNavigate();
   const t = useT();
-  
-  // ✅ DEBUG TEMPORAIRE
-  console.log('👤 UserMenu - user:', user?.email, 'isAdmin:', isAdmin);
 
   if (!user) return null;
 

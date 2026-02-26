@@ -119,66 +119,48 @@ export const useBookings = (options?: UseBookingsOptions) => {
     previousPropertyIdRef.current = currentPropertyId;
   }, [propertyId]); // ✅ NETTOYAGE STRICT : Se déclencher uniquement quand propertyId change
 
+  // Quand propertyId est undefined, ne pas charger et sortir du mode loading (évite spinners infinis)
+  useEffect(() => {
+    if (propertyId === undefined) {
+      setIsLoading(false);
+      return;
+    }
+  }, [propertyId]);
+
   // ✅ PHASE 1 : Recharger quand propertyId change (après le nettoyage)
-  // Note: loadBookings est dans un useCallback avec les bonnes dépendances, donc pas besoin de l'ajouter ici
+  // Ne pas déclencher loadBookings quand propertyId est undefined (évite appels inutiles + warnings)
   useEffect(() => {
-    // ✅ PROTECTION : Ne charger que si propertyId est défini ou si c'est intentionnel
-    if (propertyId !== undefined || options?.propertyId === undefined) {
-      // ✅ CORRECTION RACE CONDITION : Vérifier le verrou AVANT de créer le setTimeout
-      if (loadingRef.current?.loading) {
-        console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, setTimeout ignoré (propertyId change)');
-        return;
-      }
-      
-      // ✅ PROTECTION : Debounce pour éviter les appels multiples rapides lors des changements de propertyId
-      if (loadBookingsDebounceRef.current) {
-        clearTimeout(loadBookingsDebounceRef.current);
-      }
-      loadBookingsDebounceRef.current = setTimeout(() => {
-        loadBookingsDebounceRef.current = null;
-        // ✅ CORRECTION RACE CONDITION : Vérifier à nouveau juste avant l'appel
-        if (!loadingRef.current?.loading) {
-          loadBookings();
-        } else {
-          console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, appel ignoré (propertyId change)');
-        }
-      }, 50); // 50ms de debounce pour grouper les appels rapides
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertyId]); // ✅ loadBookings est stable grâce au useCallback
+    if (propertyId === undefined) return;
 
-  // Reload bookings when user changes
-  useEffect(() => {
-    if (user) {
-      // ✅ PROTECTION : Ne charger que si propertyId est défini ou si c'est intentionnel
-      if (propertyId !== undefined || options?.propertyId === undefined) {
-        // ✅ CORRECTION RACE CONDITION : Vérifier le verrou AVANT de créer le setTimeout
-        if (loadingRef.current?.loading) {
-          console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, setTimeout ignoré (user change)');
-          return;
-        }
-        
-        // ✅ PROTECTION : Debounce pour éviter les appels multiples rapides lors des changements d'utilisateur
-        if (loadBookingsDebounceRef.current) {
-          clearTimeout(loadBookingsDebounceRef.current);
-        }
-        loadBookingsDebounceRef.current = setTimeout(() => {
-          loadBookingsDebounceRef.current = null;
-          // ✅ CORRECTION RACE CONDITION : Vérifier à nouveau juste avant l'appel
-          if (!loadingRef.current?.loading) {
-            loadBookings();
-          } else {
-            console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, appel ignoré (user change)');
-          }
-        }, 50); // 50ms de debounce pour grouper les appels rapides
-      }
+    if (loadingRef.current?.loading) return;
+    if (loadBookingsDebounceRef.current) {
+      clearTimeout(loadBookingsDebounceRef.current);
     }
+    loadBookingsDebounceRef.current = setTimeout(() => {
+      loadBookingsDebounceRef.current = null;
+      if (!loadingRef.current?.loading) loadBookings();
+    }, 50);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, propertyId]); // ✅ loadBookings est stable grâce au useCallback
+  }, [propertyId]);
 
-  // ✅ AMÉLIORATION : Set up real-time subscriptions for automatic updates avec debounce optimisé
+  // Reload bookings when user changes (uniquement si propertyId défini)
   useEffect(() => {
-    if (!user) return;
+    if (!user || propertyId === undefined) return;
+
+    if (loadingRef.current?.loading) return;
+    if (loadBookingsDebounceRef.current) {
+      clearTimeout(loadBookingsDebounceRef.current);
+    }
+    loadBookingsDebounceRef.current = setTimeout(() => {
+      loadBookingsDebounceRef.current = null;
+      if (!loadingRef.current?.loading) loadBookings();
+    }, 50);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, propertyId]);
+
+  // ✅ AMÉLIORATION : Set up real-time subscriptions uniquement quand propertyId est défini (évite CHANNEL_ERROR inutiles)
+  useEffect(() => {
+    if (!user || propertyId === undefined) return;
 
     debug('Setting up real-time subscriptions for bookings and guests');
 
@@ -363,7 +345,11 @@ export const useBookings = (options?: UseBookingsOptions) => {
         }
       )
       .subscribe((status) => {
-        debug('Real-time: Statut subscription', { status });
+        if (status === 'CHANNEL_ERROR') {
+          warn('Real-time: subscription en erreur (vérifier RLS / Realtime activé sur la table)', { channel: channelName });
+        } else {
+          debug('Real-time: Statut subscription', { status });
+        }
       });
 
     return () => {
@@ -419,10 +405,7 @@ export const useBookings = (options?: UseBookingsOptions) => {
     // ✅ PROTECTION : Éviter les appels quand propertyId est undefined
     // Si propertyId est undefined, ne charger que si c'est vraiment intentionnel (charger toutes les réservations)
     // Pour l'instant, on bloque tous les appels avec propertyId undefined pour éviter les problèmes
-    if (propertyId === undefined) {
-      console.warn('⚠️ [USE BOOKINGS] loadBookings ignoré - propertyId est undefined (chargement non autorisé)');
-      return;
-    }
+    if (propertyId === undefined) return;
     
     // ✅ CORRECTION RACE CONDITION : Vérifier ET acquérir le verrou atomiquement avec ID unique
     if (loadingRef.current?.loading) {
@@ -437,13 +420,6 @@ export const useBookings = (options?: UseBookingsOptions) => {
     const loadId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     loadingRef.current = { loading: true, id: loadId, timestamp: Date.now() };
     
-    // 🔴 DIAGNOSTIC URGENT : Tracer le flux des réservations (après avoir marqué comme en cours)
-    console.error('🔴🔴🔴 [DIAGNOSTIC] loadBookings APPELÉ', {
-      timestamp: new Date().toISOString(),
-      propertyId,
-      loadId,
-      loadingRefValue: loadingRef.current
-    });
     
     // ✅ PROTECTION : Debounce pour éviter les appels multiples rapides (nettoyer les anciens timeouts)
     // Note: Le debounce est géré au niveau des useEffect, pas ici pour éviter la récursion
@@ -1422,38 +1398,26 @@ export const useBookings = (options?: UseBookingsOptions) => {
             console.warn('⚠️ [USE BOOKINGS] Erreur lors de la mise en cache (non-bloquant)', cacheError);
           }
           
-          // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
           setBookings(prev => {
             const prevForCurrentProperty = propertyId 
               ? prev.filter(b => b.propertyId === propertyId)
               : prev;
-            
             const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
             const newIds = new Set(uniqueBookingsFiltered.map(b => b.id));
-            
-            // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
             const merged = uniqueBookingsFiltered.map(newBooking => {
               const existing = existingMap.get(newBooking.id);
               if (existing && existing.updated_at && newBooking.updated_at) {
                 const existingTime = new Date(existing.updated_at).getTime();
                 const newTime = new Date(newBooking.updated_at).getTime();
-                if (existingTime > newTime - 1000) {
-                  return existing; // Garder la version existante si plus récente
-                }
+                if (existingTime > newTime - 1000) return existing;
               }
               return newBooking;
             });
-            
-            // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
-            const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
-            const combinedMerged = [...merged, ...existingNotInNew];
-            
-            // Filtrer par propertyId si nécessaire
-            const finalMerged = propertyId
-              ? combinedMerged.filter(b => b.propertyId === propertyId)
-              : combinedMerged;
-            
-            return finalMerged;
+            const existingNotInNew = propertyId ? [] : prevForCurrentProperty.filter(b => !newIds.has(b.id));
+            const combined = [...merged, ...existingNotInNew];
+            const byId = new Map<string, EnrichedBooking>();
+            combined.forEach(b => { if (!byId.has(b.id)) byId.set(b.id, b); });
+            return Array.from(byId.values());
           });
           return;
         }
@@ -1497,41 +1461,28 @@ export const useBookings = (options?: UseBookingsOptions) => {
           console.warn('⚠️ [USE BOOKINGS] Erreur lors de la mise en cache (non-bloquant)', cacheError);
         }
         
-        // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
         setBookings(prev => {
           const prevForCurrentProperty = propertyId 
             ? prev.filter(b => b.propertyId === propertyId)
             : prev;
-          
           const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
           const newIds = new Set(enrichedBookingsFiltered.map(b => b.id));
-          
-          // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
           const merged = enrichedBookingsFiltered.map(newBooking => {
             const existing = existingMap.get(newBooking.id);
             if (existing && existing.updated_at && newBooking.updated_at) {
               const existingTime = new Date(existing.updated_at).getTime();
               const newTime = new Date(newBooking.updated_at).getTime();
-              if (existingTime > newTime - 1000) {
-                return existing; // Garder la version existante si plus récente
-              }
+              if (existingTime > newTime - 1000) return existing;
             }
             return newBooking;
           });
-          
-          // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
-          const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
-          const combinedMerged = [...merged, ...existingNotInNew];
-          
-          // Filtrer par propertyId si nécessaire
-          const finalMerged = propertyId
-            ? combinedMerged.filter(b => b.propertyId === propertyId)
-            : combinedMerged;
-          
-          return finalMerged;
+          const existingNotInNew = propertyId ? [] : prevForCurrentProperty.filter(b => !newIds.has(b.id));
+          const combined = [...merged, ...existingNotInNew];
+          const byId = new Map<string, EnrichedBooking>();
+          combined.forEach(b => { if (!byId.has(b.id)) byId.set(b.id, b); });
+          return Array.from(byId.values());
         });
         
-        // ✅ STABILISATION : Appeler get-guest-documents-unified UNE SEULE FOIS via la fonction helper
         callDocumentsGenerationOnce(propertyId);
         
         setIsLoading(false);
@@ -1720,41 +1671,29 @@ export const useBookings = (options?: UseBookingsOptions) => {
               console.warn('⚠️ [USE BOOKINGS] Erreur lors de la mise en cache (non-bloquant)', cacheError);
             }
             
-            // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
+            // Quand propertyId : ne pas réajouter les anciennes entrées (éviter doublons ICS)
             setBookings(prev => {
               const prevForCurrentProperty = propertyId 
                 ? prev.filter(b => b.propertyId === propertyId)
                 : prev;
-              
               const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
               const newIds = new Set(enrichedBookingsFiltered.map(b => b.id));
-              
-              // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
               const merged = enrichedBookingsFiltered.map(newBooking => {
                 const existing = existingMap.get(newBooking.id);
                 if (existing && existing.updated_at && newBooking.updated_at) {
                   const existingTime = new Date(existing.updated_at).getTime();
                   const newTime = new Date(newBooking.updated_at).getTime();
-                  if (existingTime > newTime - 1000) {
-                    return existing; // Garder la version existante si plus récente
-                  }
+                  if (existingTime > newTime - 1000) return existing;
                 }
                 return newBooking;
               });
-              
-              // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
-              const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
-              const combinedMerged = [...merged, ...existingNotInNew];
-              
-              // Filtrer par propertyId si nécessaire
-              const finalMerged = propertyId
-                ? combinedMerged.filter(b => b.propertyId === propertyId)
-                : combinedMerged;
-              
-              return finalMerged;
+              const existingNotInNew = propertyId ? [] : prevForCurrentProperty.filter(b => !newIds.has(b.id));
+              const combined = [...merged, ...existingNotInNew];
+              const byId = new Map<string, EnrichedBooking>();
+              combined.forEach(b => { if (!byId.has(b.id)) byId.set(b.id, b); });
+              return Array.from(byId.values());
             });
             
-            // ✅ STABILISATION : Appeler get-guest-documents-unified UNE SEULE FOIS via la fonction helper
             callDocumentsGenerationOnce(propertyId);
             
             setIsLoading(false);
@@ -2274,18 +2213,20 @@ export const useBookings = (options?: UseBookingsOptions) => {
           return newBooking;
         });
         
-        // ✅ CORRECTION CRITIQUE : Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
-        // Ceci évite de perdre des réservations si la requête est limitée ou filtrée
+        // Quand propertyId est défini : source de vérité = API (éviter de réinjecter d'anciennes entrées type ICS doublons)
         const newIds = new Set(uniqueEnrichedBookings.map(b => b.id));
-        const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
+        const existingNotInNew = propertyId ? [] : prevForCurrentProperty.filter(b => !newIds.has(b.id));
         
-        // Combiner les réservations mises à jour + les existantes non retournées
         const combinedMerged = [...merged, ...existingNotInNew];
         
-        // ✅ NETTOYAGE STRICT : S'assurer qu'on ne garde que les réservations de la propriété active
         const finalMerged = propertyId
           ? combinedMerged.filter(b => b.propertyId === propertyId)
           : combinedMerged;
+        
+        // Déduplication finale par id (garder première occurrence)
+        const byId = new Map<string, EnrichedBooking>();
+        finalMerged.forEach(b => { if (!byId.has(b.id)) byId.set(b.id, b); });
+        const dedupedFinal = Array.from(byId.values());
         
         // ✅ N'annuler que si un autre chargement est en cours ou version changée (ref défini avec id différent)
         const otherLoadNow = loadingRef.current != null && loadingRef.current.id !== loadId;
@@ -2300,24 +2241,9 @@ export const useBookings = (options?: UseBookingsOptions) => {
           return prev;
         }
         
-        // Mettre à jour le cache des IDs
-        lastBookingIdsRef.current = new Set(finalMerged.map(b => b.id));
+        lastBookingIdsRef.current = new Set(dedupedFinal.map(b => b.id));
         
-        // 🔴 DIAGNOSTIC URGENT : Log du résultat de la fusion
-        console.error('🔴🔴🔴 [DIAGNOSTIC] setBookings FINAL (fusion)', {
-          prevCount: prev.length,
-          prevForCurrentPropertyCount: prevForCurrentProperty.length,
-          uniqueEnrichedCount: uniqueEnrichedBookings.length,
-          mergedCount: merged.length,
-          existingNotInNewCount: existingNotInNew.length,
-          combinedMergedCount: combinedMerged.length,
-          finalMergedCount: finalMerged.length,
-          loadId,
-          version: currentVersion,
-          finalBookingIds: finalMerged.slice(0, 5).map(b => ({ id: b.id.substring(0, 8), name: b.guest_name }))
-        });
-        
-        return finalMerged;
+        return dedupedFinal;
       });
       
       // ✅ STABILISATION : Appeler get-guest-documents-unified UNE SEULE FOIS via la fonction helper

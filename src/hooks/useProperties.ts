@@ -38,9 +38,13 @@ export const useProperties = () => {
       return;
     }
 
-    // ✅ PROTECTION : Empêcher les appels multiples simultanés
+    // ✅ PROTECTION : Si un chargement est déjà en cours, utiliser le cache pour ne pas bloquer cet appelant
     if (loadingRef.current) {
-      console.log('⏳ loadProperties déjà en cours, appel ignoré');
+      const cachedNow = propertiesCache.get(cacheKey);
+      if (cachedNow && (Date.now() - cachedNow.timestamp) < PROPERTIES_CACHE_DURATION * 2) {
+        setProperties(cachedNow.data);
+      }
+      setIsLoading(false);
       return;
     }
 
