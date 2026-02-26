@@ -6,14 +6,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Property } from '@/types/booking';
 import { useProperties } from '@/hooks/useProperties';
-import { useBookings } from '@/hooks/useBookings';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useT } from '@/i18n/GuestLocaleProvider';
+
 interface PropertyListProps {
   onPropertySelect: (property: Property) => void;
 }
+
 export const PropertyList = ({
   onPropertySelect
 }: PropertyListProps) => {
@@ -24,9 +25,6 @@ export const PropertyList = ({
     deleteProperty,
     refreshProperties
   } = useProperties();
-  const {
-    bookings
-  } = useBookings();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -35,13 +33,13 @@ export const PropertyList = ({
     toast
   } = useToast();
   const isMobile = useIsMobile();
-  const getPropertyStats = (propertyId: string, property: Property) => {
-    const propertyBookings = bookings.filter(booking => booking.property_id === propertyId);
+  // ✅ SIMPLIFICATION : Ne pas charger les stats ici, elles seront chargées dans PropertyDetail
+  const getPropertyStats = (_propertyId: string, _property: Property) => {
     return {
-      total: propertyBookings.length,
-      pending: propertyBookings.filter(b => b.status === 'pending').length,
-      completed: propertyBookings.filter(b => b.status === 'completed').length,
-      hasAirbnbSync: false // TODO: Ajouter le champ airbnb_ics_url au type Property si nécessaire
+      total: 0,
+      pending: 0,
+      completed: 0,
+      hasAirbnbSync: false
     };
   };
   const handleDeleteProperty = async () => {
@@ -81,15 +79,15 @@ export const PropertyList = ({
             <Home className="h-10 w-10 text-muted-foreground" />
           </div>
           <div className="space-y-2">
-            <h2 className="text-xl sm:text-2xl font-semibold">Aucune propriété</h2>
+            <h2 className="text-xl sm:text-2xl font-semibold">{t('properties.noProperty')}</h2>
             <p className="text-muted-foreground max-w-md">
-              Créez votre première propriété pour commencer à gérer vos réservations et documents de conformité.
+              {t('properties.noPropertyDesc')}
             </p>
           </div>
           <Button onClick={() => setShowCreateDialog(true)} size="lg" className="gap-2">
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Ajouter une propriété</span>
-            <span className="sm:hidden">Ajouter</span>
+            <span className="hidden sm:inline">{t('properties.addProperty')}</span>
+            <span className="sm:hidden">{t('properties.add')}</span>
           </Button>
         </div>
         
@@ -241,32 +239,30 @@ export const PropertyList = ({
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Êtes-vous sûr ?</AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <p>
-                Voulez-vous vraiment supprimer la propriété "{propertyToDelete?.name}" ?
-              </p>
-              <div className="bg-red-50 border border-red-200 rounded-md p-3">
-                <p className="text-red-800 text-sm font-medium">
-                  ⚠️ ATTENTION : Cette action supprimera définitivement :
-                </p>
-                <ul className="text-red-700 text-sm mt-2 space-y-1">
-                  <li>• La propriété et toutes ses informations</li>
-                  <li>• Toutes les réservations associées</li>
-                  <li>• Tous les invités et leurs documents</li>
-                  <li>• Les contrats signés et formulaires de police</li>
-                  <li>• L'historique Airbnb synchronisé</li>
-                </ul>
-                <p className="text-red-800 text-sm font-medium mt-2">
-                  Cette action ne peut pas être annulée !
-                </p>
-              </div>
+            <AlertDialogTitle>{t('properties.deleteConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('properties.deleteConfirmDesc', { name: propertyToDelete?.name || '' })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="bg-red-50 border border-red-200 rounded-md p-3 mt-3">
+            <p className="text-red-800 text-sm font-medium">
+              ⚠️ {t('properties.deleteWarningTitle')}
+            </p>
+            <ul className="text-red-700 text-sm mt-2 space-y-1">
+              <li>• {t('properties.deleteWarningProperty')}</li>
+              <li>• {t('properties.deleteWarningBookings')}</li>
+              <li>• {t('properties.deleteWarningGuests')}</li>
+              <li>• {t('properties.deleteWarningContracts')}</li>
+              <li>• {t('properties.deleteWarningAirbnb')}</li>
+            </ul>
+            <p className="text-red-800 text-sm font-medium mt-2">
+              {t('properties.deleteWarningIrreversible')}
+            </p>
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('properties.cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteProperty} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Supprimer
+              {t('properties.confirmDelete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

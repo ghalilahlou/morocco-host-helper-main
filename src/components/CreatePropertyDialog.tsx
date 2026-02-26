@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -314,6 +314,9 @@ export const CreatePropertyDialog = ({
             <DialogTitle className="dialog-title" style={{ fontFamily: "'Fira Sans Condensed', sans-serif", fontWeight: 400, fontSize: '24px', color: '#040404' }}>
               {property ? t('property.dialog.editTitle') : t('property.dialog.addTitle')}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              {property ? t('property.dialog.editTitle') : t('property.dialog.addTitle')}
+            </DialogDescription>
         </DialogHeader>
         
         {/* Scrollable content area with custom scrollbar */}

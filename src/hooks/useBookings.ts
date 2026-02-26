@@ -158,16 +158,13 @@ export const useBookings = (options?: UseBookingsOptions) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, propertyId]);
 
-  // ✅ AMÉLIORATION : Set up real-time subscriptions uniquement quand propertyId est défini (évite CHANNEL_ERROR inutiles)
+  // ✅ SIMPLIFICATION V2 : Subscriptions real-time avec debounce augmenté
   useEffect(() => {
     if (!user || propertyId === undefined) return;
 
-    debug('Setting up real-time subscriptions for bookings and guests');
-
-    // ✅ PROTECTION : Éviter les boucles infinies et les appels multiples
     let isProcessing = false;
     let debounceTimeout: NodeJS.Timeout | null = null;
-    const DEBOUNCE_DELAY = 100; // ✅ OPTIMISÉ : Réduit de 300ms à 100ms pour une réactivité plus rapide
+    const DEBOUNCE_DELAY = 500; // ✅ AUGMENTÉ : 500ms pour éviter les appels multiples
     
     const debouncedLoadBookings = () => {
       if (debounceTimeout) {
@@ -175,9 +172,8 @@ export const useBookings = (options?: UseBookingsOptions) => {
       }
       
       debounceTimeout = setTimeout(() => {
-        if (!isProcessing) {
+        if (!isProcessing && !loadingRef.current?.loading) {
           isProcessing = true;
-          debug('Real-time: Déclenchement rafraîchissement automatique');
           loadBookings().finally(() => {
             isProcessing = false;
           });
@@ -403,26 +399,29 @@ export const useBookings = (options?: UseBookingsOptions) => {
   // ✅ STABILISATION : Envelopper loadBookings dans useCallback pour éviter les re-rendus infinis
   const loadBookings = useCallback(async () => {
     // ✅ PROTECTION : Éviter les appels quand propertyId est undefined
-    // Si propertyId est undefined, ne charger que si c'est vraiment intentionnel (charger toutes les réservations)
-    // Pour l'instant, on bloque tous les appels avec propertyId undefined pour éviter les problèmes
     if (propertyId === undefined) return;
     
-    // ✅ CORRECTION RACE CONDITION : Vérifier ET acquérir le verrou atomiquement avec ID unique
+    // ✅ CORRECTION RACE CONDITION V2 : Verrou avec timeout automatique pour éviter les blocages
+    const now = Date.now();
+    const LOCK_TIMEOUT_MS = 30000; // 30 secondes max pour un chargement
+    
     if (loadingRef.current?.loading) {
-      console.warn('⚠️ [USE BOOKINGS] loadBookings déjà en cours, ignoré', {
-        existingId: loadingRef.current.id,
-        existingTimestamp: loadingRef.current.timestamp
-      });
-      return;
+      // Vérifier si le verrou est bloqué depuis trop longtemps (timeout)
+      const lockAge = now - loadingRef.current.timestamp;
+      if (lockAge < LOCK_TIMEOUT_MS) {
+        // Verrou valide, ignorer silencieusement (pas de log pour éviter le spam)
+        return;
+      }
+      // Verrou expiré, le libérer et continuer
+      debug('🔓 [USE BOOKINGS] Verrou expiré après timeout, libération forcée');
+      loadingRef.current = null;
     }
     
-    // ✅ CORRECTION RACE CONDITION : Marquer IMMÉDIATEMENT avec ID unique pour éviter les écrasements
-    const loadId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    loadingRef.current = { loading: true, id: loadId, timestamp: Date.now() };
+    // Acquérir le verrou avec ID unique
+    const loadId = `${now}-${Math.random().toString(36).substring(2, 9)}`;
+    loadingRef.current = { loading: true, id: loadId, timestamp: now };
     
-    
-    // ✅ PROTECTION : Debounce pour éviter les appels multiples rapides (nettoyer les anciens timeouts)
-    // Note: Le debounce est géré au niveau des useEffect, pas ici pour éviter la récursion
+    // Nettoyer les anciens debounce timeouts
     if (loadBookingsDebounceRef.current) {
       clearTimeout(loadBookingsDebounceRef.current);
       loadBookingsDebounceRef.current = null;
@@ -430,56 +429,12 @@ export const useBookings = (options?: UseBookingsOptions) => {
     
     try {
       
-      // ✅ NETTOYAGE CACHE : Vider le cache une seule fois au chargement initial pour éliminer les données polluées
+      // ✅ NETTOYAGE CACHE SIMPLIFIÉ : Vider le cache une seule fois au chargement initial
       if (propertyId && !cacheCleanedRef.current) {
-        try {
-          const cacheKeyToClean = `bookings-${propertyId}`;
-          await multiLevelCache.invalidate(cacheKeyToClean).catch(() => {});
-          bookingsCache.delete(cacheKeyToClean);
-          cacheCleanedRef.current = true;
-        } catch (e) {
-          // Ignorer les erreurs de nettoyage
-        }
-      }
-      
-      // ✅ NETTOYAGE PRÉVENTIF : Invalider le cache si propertyId est défini pour éviter la pollution
-      if (propertyId) {
-        const cacheKeyToCheck = `bookings-${propertyId}`;
-        const cached = await multiLevelCache.get<EnrichedBooking[]>(cacheKeyToCheck);
-        if (cached) {
-          const cachedPropertyIds = [...new Set(cached.map(b => b.propertyId).filter(Boolean))];
-          const hasWrongPropertyIds = cachedPropertyIds.some(id => id !== propertyId);
-          if (hasWrongPropertyIds || cachedPropertyIds.length > 1) {
-            // ✅ PERFORMANCE : Logger seulement une fois par session
-            // ✅ PROTECTION : Gérer les erreurs sessionStorage (peut ne pas être disponible)
-            try {
-              const cleanupKey = `cache-cleanup-${propertyId}`;
-              const hasLoggedCleanup = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(cleanupKey) : null;
-              if (!hasLoggedCleanup) {
-                console.warn('🧹 [USE BOOKINGS] Nettoyage préventif : Cache pollué détecté, invalidation', {
-                  cacheKey: cacheKeyToCheck,
-                  expectedPropertyId: propertyId,
-                  cachedPropertyIds,
-                  cachedCount: cached.length,
-                  note: 'Ce message ne s\'affichera qu\'une fois par session'
-                });
-                if (typeof sessionStorage !== 'undefined') {
-                  sessionStorage.setItem(cleanupKey, 'true');
-                }
-              }
-            } catch (e) {
-              // ✅ PROTECTION : Si sessionStorage n'est pas disponible, logger quand même
-              console.warn('🧹 [USE BOOKINGS] Nettoyage préventif : Cache pollué détecté, invalidation', {
-                cacheKey: cacheKeyToCheck,
-                expectedPropertyId: propertyId,
-                cachedPropertyIds,
-                cachedCount: cached.length
-              });
-            }
-            await multiLevelCache.invalidate(cacheKeyToCheck);
-            bookingsCache.delete(cacheKeyToCheck);
-          }
-        }
+        const cacheKeyToClean = `bookings-${propertyId}`;
+        await multiLevelCache.invalidate(cacheKeyToClean).catch(() => {});
+        bookingsCache.delete(cacheKeyToClean);
+        cacheCleanedRef.current = true;
       }
       
       // ✅ PHASE 2 : Vérifier le cache multi-niveaux d'abord
@@ -491,244 +446,43 @@ export const useBookings = (options?: UseBookingsOptions) => {
         : `bookings-all-${user?.id || 'anonymous'}${dateRangeKey}`;
       
       const cached = await multiLevelCache.get<EnrichedBooking[]>(cacheKey);
-      if (cached) {
-        // ✅ ISOLATION STRICTE DU CACHE : Vérifier que le cache contient UNIQUEMENT les bonnes données
-        const cachedPropertyIds = [...new Set(cached.map(b => b.propertyId).filter(Boolean))];
-        const hasWrongPropertyIds = propertyId && cachedPropertyIds.some(id => id !== propertyId);
-        const hasMultiplePropertyIds = cachedPropertyIds.length > 1;
+      if (cached && cached.length > 0 && propertyId) {
+        // ✅ SIMPLIFICATION V2 : Filtrer directement le cache par propertyId
+        const cachedFiltered = cached.filter(b => b.propertyId === propertyId);
         
-        // ✅ NETTOYAGE CRITIQUE : Si le cache contient 0 réservations, l'invalider immédiatement
-        if (cached.length === 0) {
-          console.warn('⚠️ [USE BOOKINGS] Cache contient 0 réservations, invalidation immédiate', {
-            cacheKey,
-            propertyId
-          });
-          await multiLevelCache.invalidate(cacheKey);
-          bookingsCache.delete(cacheKey);
-        } 
-        // ✅ ISOLATION STRICTE : Si le cache contient des réservations d'autres propriétés, VIDER IMMÉDIATEMENT
-        else if (hasWrongPropertyIds || (propertyId && hasMultiplePropertyIds)) {
-          const otherPropertyIds = propertyId ? cachedPropertyIds.filter(id => id !== propertyId) : [];
-          // ✅ PERFORMANCE : Logger seulement une fois par session pour ne pas surcharger la console
-          // ✅ PROTECTION : Gérer les erreurs sessionStorage (peut ne pas être disponible)
-          try {
-            const pollutionKey = `cache-pollution-${propertyId}`;
-            const hasLoggedPollution = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(pollutionKey) : null;
-            if (!hasLoggedPollution) {
-              console.error('❌ [USE BOOKINGS] ISOLATION DU CACHE : Cache pollué par d\'autres propriétés!', {
-            cacheKey,
-            expectedPropertyId: propertyId,
-            cachedPropertyIds,
-                otherPropertyIds,
-                cachedCount: cached.length,
-                action: 'VIDAGE IMMÉDIAT DU CACHE',
-                note: 'Ce message ne s\'affichera qu\'une fois par session'
-              });
-              if (typeof sessionStorage !== 'undefined') {
-                sessionStorage.setItem(pollutionKey, 'true');
-              }
-            }
-          } catch (e) {
-            // ✅ PROTECTION : Si sessionStorage n'est pas disponible, logger quand même
-            console.error('❌ [USE BOOKINGS] ISOLATION DU CACHE : Cache pollué par d\'autres propriétés!', {
-              cacheKey,
-              expectedPropertyId: propertyId,
-              cachedPropertyIds,
-              otherPropertyIds,
-              cachedCount: cached.length,
-              action: 'VIDAGE IMMÉDIAT DU CACHE'
-            });
-          }
+        // Si le cache contient des données valides pour cette propriété, les utiliser
+        if (cachedFiltered.length > 0 && loadingRef.current?.id === loadId) {
+          debug('✅ [USE BOOKINGS] Cache valide, utilisation', { count: cachedFiltered.length });
           
-          // ✅ NETTOYAGE STRICT : VIDER le cache immédiatement au lieu de filtrer
-          await multiLevelCache.invalidate(cacheKey);
-          bookingsCache.delete(cacheKey);
-          
-          // ✅ NETTOYAGE COMPLET : Invalider aussi tous les caches liés à d'autres propriétés
-          // ✅ PERFORMANCE : Ne pas logger (trop verbeux), juste nettoyer silencieusement
-          if (otherPropertyIds.length > 0) {
-            // Invalider les caches des autres propriétés (silencieusement)
-            for (const otherPropId of otherPropertyIds) {
-              const otherCacheKey = `bookings-${otherPropId}${dateRangeKey}`;
-              await multiLevelCache.invalidate(otherCacheKey).catch(() => {});
-              bookingsCache.delete(otherCacheKey);
-            }
-          }
-          
-          // Ne pas utiliser le cache pollué, continuer avec le chargement
-        } 
-        // ✅ VALIDATION STRICTE : Vérifier que toutes les réservations correspondent au propertyId
-        else if (propertyId && cached.some(b => !b.propertyId || b.propertyId !== propertyId)) {
-          console.error('❌ [USE BOOKINGS] ISOLATION DU CACHE : Réservations sans propertyId ou propertyId incorrect détectées!', {
-            cacheKey,
-            expectedPropertyId: propertyId,
-            invalidBookings: cached.filter(b => !b.propertyId || b.propertyId !== propertyId).map(b => ({
-              id: b.id.substring(0, 8),
-              propertyId: b.propertyId
-            })),
-            action: 'VIDAGE IMMÉDIAT DU CACHE'
-          });
-          
-          // ✅ NETTOYAGE STRICT : VIDER le cache immédiatement
-          await multiLevelCache.invalidate(cacheKey);
-          bookingsCache.delete(cacheKey);
-          
-          // Ne pas utiliser le cache pollué, continuer avec le chargement
-        } 
-        // ✅ CACHE VALIDE : Utiliser le cache seulement s'il est strictement isolé
-        else {
-          // ✅ PROTECTION : Si propertyId est undefined, ne PAS utiliser le cache (peut être pollué)
-          if (propertyId === undefined) {
-            console.warn('⚠️ [USE BOOKINGS] Cache ignoré - propertyId est undefined, chargement depuis la base de données');
-            // Ne pas utiliser le cache, continuer avec le chargement depuis la base de données
-          } 
-          // ✅ CORRECTION RACE CONDITION : Ne pas utiliser le cache si un autre chargement est en cours
-          else if (loadingRef.current?.id !== loadId) {
-            console.warn('⚠️ [USE BOOKINGS] Cache ignoré - autre chargement en cours', {
-              currentLoadId: loadId,
-              existingLoadId: loadingRef.current?.id
-            });
-            // Ne pas utiliser le cache, continuer avec le chargement depuis la base de données
-          } else {
-            // ✅ CORRECTION CRITIQUE : Filtrer le cache par propertyId si nécessaire
-            const cachedFiltered = cached.filter(b => b.propertyId === propertyId);
-            
-            // 🔴 DIAGNOSTIC URGENT : Log avant utilisation du cache
-            console.error('🔴🔴🔴 [DIAGNOSTIC] CACHE UTILISÉ - setBookings depuis cache', {
-              cacheCount: cached.length,
-              cachedFilteredCount: cachedFiltered.length,
-              propertyId,
-              loadId,
-              cachedBookingIds: cachedFiltered.slice(0, 5).map(b => ({ id: b.id.substring(0, 8), name: b.guest_name, propertyId: b.propertyId }))
-            });
-            
-            debug('✅ [USE BOOKINGS] Cache valide et isolé, utilisation', { 
-              cacheKey, 
-              count: cached.length,
-              filteredCount: cachedFiltered.length,
-              propertyId, 
-              cachedPropertyIds,
-              allMatch: propertyId ? cached.every(b => b.propertyId === propertyId) : true
-            });
-            
-            // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
-            // ✅ CORRECTION RACE CONDITION : Fusion atomique avec vérification de version
-            setBookings(prev => {
-              // ✅ Vérifier que c'est toujours notre chargement
-              if (loadingRef.current?.id !== loadId) {
-                console.warn('⚠️ [USE BOOKINGS] Fusion cache annulée - autre chargement en cours');
-                return prev; // Ne pas modifier si un autre chargement est en cours
-              }
-              
-              const prevForCurrentProperty = propertyId 
-                ? prev.filter(b => b.propertyId === propertyId)
-                : prev;
-              
-              const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
-              const newIds = new Set(cachedFiltered.map(b => b.id));
-              
-              // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
-              const merged = cachedFiltered.map(newBooking => {
-                const existing = existingMap.get(newBooking.id);
-                if (existing && existing.updated_at && newBooking.updated_at) {
-                  const existingTime = new Date(existing.updated_at).getTime();
-                  const newTime = new Date(newBooking.updated_at).getTime();
-                  if (existingTime > newTime - 1000) {
-                    return existing; // Garder la version existante si plus récente
-                  }
-                }
-                return newBooking;
-              });
-              
-              // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
-              const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
-              const combinedMerged = [...merged, ...existingNotInNew];
-              
-              // Filtrer par propertyId si nécessaire
-              const finalMerged = propertyId
-                ? combinedMerged.filter(b => b.propertyId === propertyId)
-                : combinedMerged;
-              
-              // ✅ Vérifier à nouveau avant de retourner
-              if (loadingRef.current?.id !== loadId) {
-                console.warn('⚠️ [USE BOOKINGS] Fusion cache annulée - autre chargement en cours (vérification finale)');
-                return prev;
-              }
-              
-              return finalMerged;
-            });
+          setBookings(cachedFiltered);
+          setIsLoading(false);
+          loadingRef.current = null;
+          return;
+        }
+        
+        // Sinon, invalider le cache pollué silencieusement
+        await multiLevelCache.invalidate(cacheKey).catch(() => {});
+        bookingsCache.delete(cacheKey);
+      }
+      
+      // ✅ SIMPLIFICATION V2 : Cache mémoire simplifié
+      if (propertyId) {
+        const memoryCached = bookingsCache.get(cacheKey);
+        const nowMs = Date.now();
+        if (memoryCached && (nowMs - memoryCached.timestamp) < BOOKINGS_CACHE_DURATION) {
+          const memoryCachedFiltered = memoryCached.data.filter(b => b.propertyId === propertyId);
+          if (memoryCachedFiltered.length > 0 && loadingRef.current?.id === loadId) {
+            debug('✅ [USE BOOKINGS] Cache mémoire valide', { count: memoryCachedFiltered.length });
+            setBookings(memoryCachedFiltered);
             setIsLoading(false);
-            // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
-            if (loadingRef.current?.id === loadId) {
-              loadingRef.current = null;
-            }
+            loadingRef.current = null;
             return;
           }
         }
       }
       
-      // ✅ Fallback: Vérifier aussi le cache mémoire (compatibilité)
-      // ✅ PROTECTION : Ne pas utiliser le cache mémoire si propertyId est undefined
-      if (propertyId !== undefined) {
-        const memoryCached = bookingsCache.get(cacheKey);
-        const now = Date.now();
-        if (memoryCached && (now - memoryCached.timestamp) < BOOKINGS_CACHE_DURATION) {
-          // ✅ CORRECTION CRITIQUE : Filtrer le cache mémoire par propertyId si nécessaire
-          const memoryCachedFiltered = memoryCached.data.filter(b => b.propertyId === propertyId);
-        
-        debug('Using memory cached bookings', { 
-          cacheKey, 
-          count: memoryCached.data.length,
-          filteredCount: memoryCachedFiltered.length,
-          propertyId
-        });
-        
-        // ✅ CORRECTION CRITIQUE : Fusionner avec les réservations existantes au lieu de les remplacer
-        setBookings(prev => {
-          const prevForCurrentProperty = propertyId 
-            ? prev.filter(b => b.propertyId === propertyId)
-            : prev;
-          
-          const existingMap = new Map(prevForCurrentProperty.map(b => [b.id, b]));
-          const newIds = new Set(memoryCachedFiltered.map(b => b.id));
-          
-          // Fusionner : garder les nouvelles données mais préserver les mises à jour récentes
-          const merged = memoryCachedFiltered.map(newBooking => {
-            const existing = existingMap.get(newBooking.id);
-            if (existing && existing.updated_at && newBooking.updated_at) {
-              const existingTime = new Date(existing.updated_at).getTime();
-              const newTime = new Date(newBooking.updated_at).getTime();
-              if (existingTime > newTime - 1000) {
-                return existing; // Garder la version existante si plus récente
-              }
-            }
-            return newBooking;
-          });
-          
-          // Ajouter les réservations existantes qui n'étaient PAS dans les nouvelles données
-          const existingNotInNew = prevForCurrentProperty.filter(b => !newIds.has(b.id));
-          const combinedMerged = [...merged, ...existingNotInNew];
-          
-          // Filtrer par propertyId si nécessaire
-          const finalMerged = propertyId
-            ? combinedMerged.filter(b => b.propertyId === propertyId)
-            : combinedMerged;
-          
-          return finalMerged;
-        });
-        setIsLoading(false);
-        // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
-        if (loadingRef.current?.id === loadId) {
-          loadingRef.current = null;
-        }
-        return;
-        }
-      }
-      
-      // ✅ CORRECTION RACE CONDITION : Le verrou a déjà été mis au début de loadBookings
-      // Pas besoin de le remettre ici, mais on vérifie qu'il est toujours valide
+      // Vérifier que le verrou est toujours valide avant de continuer
       if (loadingRef.current?.id !== loadId) {
-        console.warn('⚠️ [USE BOOKINGS] Verrou perdu, arrêt du chargement');
         setIsLoading(false);
         return;
       }
@@ -834,271 +588,57 @@ export const useBookings = (options?: UseBookingsOptions) => {
           });
         }
         
-        // ✅ PHASE 2 : Ajouter pagination avec limite réduite pour éviter les timeouts
+        // Ajouter pagination et ordre
         query = query
           .order('check_in_date', { ascending: false })
-          .limit(Math.min(limit, 100)); // ✅ AUGMENTÉ : Limite à 100 pour inclure toutes les réservations
+          .limit(Math.min(limit, 100));
         
-        // 🔴 DIAGNOSTIC : Log de la requête SQL avant exécution
-        console.error('🔴🔴🔴 [DIAGNOSTIC SQL] Requête avant exécution', {
-          table: 'bookings',
-          filters: {
-            user_id: user.id,
-            property_id: propertyId,
-            dateRange: dateRange ? { start: dateRange.start, end: dateRange.end } : null
-          },
-          limit: Math.min(limit, 100),
-          orderBy: 'check_in_date DESC'
-        });
-        
-        // ✅ OPTIMISATION : Timeout augmenté à 20s pour laisser plus de temps à la vue matérialisée
-        // La vue matérialisée peut prendre du temps si elle n'est pas rafraîchie récemment
-        // Aligné avec guestSubmissionService (15s) mais un peu plus long pour les requêtes complexes
-        const TIMEOUT_MS = 20000; // 20 secondes
+        // Timeout de 15 secondes pour éviter les blocages
+        const TIMEOUT_MS = 15000;
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error(`Query timeout after ${TIMEOUT_MS/1000}s`)), TIMEOUT_MS)
+          setTimeout(() => reject(new Error('Query timeout')), TIMEOUT_MS)
         );
         
-        // ✅ CORRIGÉ : Utiliser Promise.race avec gestion d'erreur améliorée
         let result: any;
         try {
-          // ✅ URGENT : Exécuter la requête et capturer l'erreur directement
-          // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
-          // console.log('🔍 [USE BOOKINGS] Exécution de la requête Supabase...', ...);
-          
-          // ✅ URGENT : Exécuter la requête directement pour capturer l'erreur
-        try {
           result = await Promise.race([query, timeoutPromise]);
-          } catch (queryError: any) {
-            // ✅ OPTIMISATION : Ne logger que si ce n'est pas un timeout (géré ailleurs)
-            if (!queryError?.message?.includes('timeout')) {
-              // ✅ OPTIMISATION : Logger l'erreur une seule fois par session pour éviter la répétition
-              const errorKey = `bookings-query-error-${queryError?.code || 'unknown'}`;
-              const hasLoggedError = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(errorKey) : null;
-              if (!hasLoggedError) {
-                console.error('❌ [USE BOOKINGS] Erreur lors de l\'exécution de la requête:', {
-                  message: queryError?.message,
-                  code: queryError?.code,
-                  details: queryError?.details,
-                  hint: queryError?.hint
-                });
-                if (typeof sessionStorage !== 'undefined') {
-                  sessionStorage.setItem(errorKey, 'true');
-                }
-              }
-            }
-            result = { data: null, error: queryError };
-          }
+        } catch (queryError: any) {
+          result = { data: null, error: queryError };
+        }
           
-          // ✅ URGENT : Si result est une promesse Supabase, attendre le résultat
-          if (result && typeof result.then === 'function') {
-            const resolved = await result;
-            result = resolved;
-          }
-          
-          // ✅ CORRECTION CRITIQUE : Vérifier immédiatement si la réponse contient une erreur 500
-          // Même si Promise.race ne rejette pas, la requête peut retourner une erreur 500 dans la réponse
-          if (result?.error) {
-            const errorStatus = result.error.status || result.error.statusCode || result.error.code;
-            if (errorStatus === 500 || errorStatus === '500' || result.error.message?.includes('500')) {
-              console.warn('⚠️ [BOOKINGS] Erreur 500 détectée dans la réponse, passage immédiat au fallback', {
-                error: result.error
-              });
-              error = result.error;
-              bookingsData = null;
-              shouldUseFallback = true;
-              // Ne pas continuer avec cette réponse
-              throw new Error('500 Internal Server Error from mv_bookings_enriched');
-            }
-          }
-        } catch (raceError: any) {
-          // Si c'est le timeout, créer une erreur structurée
-          if (raceError?.message?.includes('timeout')) {
-            // ✅ OPTIMISATION : Logger le timeout une seule fois par session pour éviter la répétition
-            const timeoutKey = 'bookings-query-timeout-logged';
-            const hasLoggedTimeout = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(timeoutKey) : null;
-            if (!hasLoggedTimeout) {
-              console.warn(`⏱️ [USE BOOKINGS] Timeout après ${TIMEOUT_MS/1000}s - Passage au fallback (ce message ne s'affichera qu'une fois par session)`, {
-                timeout: TIMEOUT_MS,
-                note: 'Les réservations seront chargées depuis la table bookings directement'
-              });
-              if (typeof sessionStorage !== 'undefined') {
-                sessionStorage.setItem(timeoutKey, 'true');
-              }
-            }
-            
-            result = { 
-              data: null, 
-              error: { 
-                code: '57014', 
-                message: `Query timeout after ${TIMEOUT_MS/1000}s`,
-                status: 500,
-                statusCode: 500
-              } 
-            };
-            error = result.error;
-            bookingsData = null;
-            shouldUseFallback = true;
-          } else if (raceError?.message?.includes('500')) {
-            // Erreur 500 détectée, forcer le fallback
-            error = raceError;
-            bookingsData = null;
-            shouldUseFallback = true;
-          } else {
-            throw raceError;
-          }
+        // Si result est une promesse Supabase, attendre le résultat
+        if (result && typeof result.then === 'function') {
+          result = await result;
         }
         
-        // ✅ CORRECTION : Ne pas utiliser result?.data si on a déjà détecté une erreur
-        if (!shouldUseFallback && result) {
         bookingsData = result?.data;
         error = result?.error;
+        
+        // Détecter les erreurs critiques et forcer le fallback
+        if (error) {
+          const errMsg = error?.message || '';
+          const errStatus = (error as any)?.status || (error as any)?.statusCode;
+          const isError500 = errStatus === 500 || errMsg.includes('500');
+          const isNetworkError = errMsg.includes('Failed to fetch') || errMsg.includes('ERR_') || errMsg.includes('timeout');
           
-          // 🔴 DIAGNOSTIC : Log du résultat de la requête SQL
-          console.error('🔴🔴🔴 [DIAGNOSTIC SQL] Résultat de la requête', {
-            count: bookingsData?.length || 0,
-            hasError: !!error,
-            errorMessage: error?.message,
-            bookingIds: bookingsData?.map((b: any) => ({ 
-              id: b.id?.substring(0, 8), 
-              status: b.status, 
-              guest_name: b.guest_name,
-              property_id: b.property_id?.substring(0, 8)
-            })) || [],
-            propertyId: propertyId
-          });
-          
-          // ✅ URGENT : Capturer et logger l'erreur SQL spécifique de Supabase
-          if (error) {
-            // ✅ OPTIMISATION : Ne logger que les erreurs non-timeout et une seule fois par session
-            const errorMessage = error.message || String(error) || '';
-            const isTimeout = errorMessage.includes('timeout') || (error as any).code === '57014' || (error as any).code === '23';
-            
-            if (!isTimeout) {
-              const errorKey = `bookings-supabase-error-${(error as any).code || 'unknown'}`;
-              const hasLoggedError = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(errorKey) : null;
-              if (!hasLoggedError) {
-                console.error('❌ [USE BOOKINGS] ERREUR SUPABASE DIRECTE:', {
-                  message: error.message,
-                  code: (error as any).code,
-                  details: (error as any).details,
-                  hint: (error as any).hint,
-                  status: (error as any).status,
-                  statusCode: (error as any).statusCode
-                });
-                if (typeof sessionStorage !== 'undefined') {
-                  sessionStorage.setItem(errorKey, 'true');
-                }
-              }
-            }
+          if (isError500 || isNetworkError) {
+            shouldUseFallback = true;
           }
-          
-          // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
-          // Ce log était exécuté à chaque requête et causait des re-rendus infinis
-          // console.log('📊 [USE BOOKINGS] Résultat de la requête', ...);
-        }
-        
-        // ✅ OPTIMISATION : Détecter immédiatement les erreurs 500 dans la réponse
-        // Vérifier le status HTTP de la réponse (peut être dans result.status ou error.status)
-        const responseStatus = result?.status || (error as any)?.status || (error as any)?.statusCode;
-        const is500Response = responseStatus === 500 || responseStatus === '500';
-        
-        // ✅ NOUVEAU : Détecter aussi si data est null et qu'il y a une erreur (peut indiquer un 500)
-        const hasNoDataButError = !bookingsData && error;
-        const errorMessage = error?.message || String(error) || '';
-        const is500InMessage = errorMessage?.includes('500') || errorMessage?.includes('Internal Server Error');
-        
-        // ✅ CORRIGÉ : Détecter aussi les erreurs réseau qui peuvent masquer un 500
-        const isNetworkError = errorMessage?.includes('Failed to fetch') || 
-                               errorMessage?.includes('ERR_ABORTED') ||
-                               errorMessage?.includes('ERR_FAILED');
-        
-        if (is500Response || 
-            (error && ((error as any).status === 500 || (error as any).statusCode === 500)) ||
-            (hasNoDataButError && (is500InMessage || isNetworkError))) {
-          console.warn('⚠️ [BOOKINGS] Erreur 500 ou réseau détectée immédiatement, passage au fallback', {
-            responseStatus,
-            errorStatus: (error as any)?.status,
-            errorCode: (error as any)?.code,
-            errorMessage: error?.message,
-            hasData: !!bookingsData,
-            hasError: !!error,
-            hasNoDataButError,
-            is500InMessage,
-            isNetworkError
-          });
-          // Forcer l'erreur pour déclencher le fallback
-          error = error || { 
-            code: '500', 
-            status: 500, 
-            statusCode: 500,
-            message: 'Internal Server Error from mv_bookings_enriched'
-          };
-          // S'assurer que l'erreur a le bon format
-          if (!error.status && !error.statusCode) {
-            (error as any).status = 500;
-            (error as any).statusCode = 500;
-          }
-          // Forcer le fallback
-          shouldUseFallback = true;
         }
       } catch (err: any) {
-        // Capturer les erreurs de réseau, timeout, CORS, ou autres erreurs non gérées
         error = err;
         bookingsData = null;
         
-        // ✅ NOUVEAU : Détecter les erreurs CORS spécifiquement
-        const errorMessage = err.message || String(err) || '';
-        const isCorsError = 
-          errorMessage.includes('CORS') ||
-          errorMessage.includes('Access-Control-Allow-Origin') ||
-          errorMessage.includes('blocked by CORS') ||
-          errorMessage.includes('ERR_FAILED') ||
-          (err.name === 'TypeError' && errorMessage.includes('Failed to fetch'));
+        // Toute erreur critique = fallback
+        const errMsg = err?.message || '';
+        const isCriticalError = 
+          errMsg.includes('CORS') ||
+          errMsg.includes('timeout') ||
+          errMsg.includes('500') ||
+          errMsg.includes('Failed to fetch') ||
+          err.code === '57014';
         
-        if (isCorsError) {
-          console.warn('⚠️ [BOOKINGS] Erreur CORS détectée, passage immédiat au fallback vers table bookings');
-          shouldUseFallback = true;
-        }
-        
-        // ✅ CORRIGÉ : Détecter les timeouts (y compris TimeoutError et signal timed out)
-        const isTimeoutError = 
-          err.name === 'TimeoutError' ||
-          err.message?.includes('timeout') || 
-          err.message?.includes('Query timeout') ||
-          err.message?.includes('signal timed out') ||
-          err.code === '23' || // Code PostgreSQL pour timeout
-          err.code === '57014'; // Code de timeout PostgreSQL
-        
-        if (isTimeoutError) {
-          console.warn('⚠️ [BOOKINGS] Timeout détecté dans catch, passage au fallback', {
-            errName: err.name,
-            errMessage: err.message,
-            errCode: err.code
-          });
-          error.code = error.code || '57014';
-          error.status = error.status || 500;
-          error.statusCode = error.statusCode || 500;
-          shouldUseFallback = true;
-        }
-        
-        // ✅ NOUVEAU : Détecter les erreurs 500 dans le catch aussi
-        const errStatus = (err as any).status || (err as any).statusCode;
-        const errMessage = err.message || String(err) || '';
-        const is500InCatch = errStatus === 500 || errStatus === '500' || errMessage?.includes('500') || errMessage?.includes('Internal Server Error');
-        
-        if (is500InCatch) {
-          console.warn('⚠️ [BOOKINGS] Erreur 500 détectée dans catch, passage au fallback', {
-            errStatus,
-            errMessage,
-            errCode: err.code,
-            errName: err.name
-          });
-          // S'assurer que l'erreur a le bon format pour déclencher le fallback
-          if (!error.status && !error.statusCode) {
-            error.status = 500;
-            error.statusCode = 500;
-          }
+        if (isCriticalError) {
           shouldUseFallback = true;
         }
       }
@@ -1164,19 +704,6 @@ export const useBookings = (options?: UseBookingsOptions) => {
           is500Error ||
           isTimeoutError;
         
-        // ✅ DIAGNOSTIC : Log pour comprendre pourquoi le fallback n'est pas déclenché
-        if (!shouldFallback && error) {
-          console.warn('⚠️ [BOOKINGS] Fallback non déclenché malgré une erreur', {
-            shouldUseFallback,
-            isCorsError,
-            is500Error,
-            isTimeoutError,
-            errorCode: error.code,
-            errorMessage: error.message,
-            errorName: error.name
-          });
-        }
-        
         if (shouldFallback) {
           warn('Materialized view error, falling back to bookings table', { 
             error: error.message, 
@@ -1229,62 +756,10 @@ export const useBookings = (options?: UseBookingsOptions) => {
         }
         
         
-        // ✅ DIAGNOSTIC URGENT : Logger les paramètres de la requête
-        console.log('🔍 [DIAGNOSTIC] Paramètres de la requête SQL:', {
-          propertyId,
-          userId: user.id,
-          dateRange: dateRange ? {
-            start: dateRange.start.toISOString().split('T')[0],
-            end: dateRange.end.toISOString().split('T')[0]
-          } : null,
-          limit: Math.min(limit, 100)
-        });
-        
-        // ✅ CORRIGÉ : Utiliser check_in_date au lieu de created_at pour un meilleur tri
-        // Les réservations "completed" peuvent être plus anciennes par created_at mais plus récentes par check_in_date
+        // Exécuter la requête de fallback
         const { data: fallbackData, error: fallbackError } = await fallbackQuery
           .order('check_in_date', { ascending: false })
-          .limit(Math.min(limit, 100)); // ✅ AUGMENTÉ : Limite à 100 pour inclure plus de réservations "completed"
-        
-        // ✅ DIAGNOSTIC URGENT : Logger les résultats bruts de la requête
-        console.log('🔍 [DIAGNOSTIC] Résultats bruts de la requête SQL:', {
-          count: fallbackData?.length || 0,
-          hasError: !!fallbackError,
-          errorMessage: fallbackError?.message,
-          firstBooking: fallbackData?.[0] ? {
-            id: fallbackData[0].id?.substring(0, 8),
-            propertyId: fallbackData[0].property_id,
-            userId: fallbackData[0].user_id,
-            guestName: fallbackData[0].guest_name,
-            status: fallbackData[0].status,
-            checkIn: fallbackData[0].check_in_date
-          } : null
-        });
-        
-        // ✅ DEBUG : Logs détaillés pour diagnostiquer le problème
-        debug('📊 [LOAD BOOKINGS] Résultats du fallback', {
-          count: fallbackData?.length || 0,
-          propertyId,
-          userId: user.id,
-          bookingIds: fallbackData?.map(b => ({ 
-            id: b.id.substring(0, 8), 
-            propertyId: b.property_id, 
-            userId: b.user_id,
-            status: b.status 
-          })) || [],
-          bookingsByStatus: {
-            pending: fallbackData?.filter(b => b.status === 'pending').length || 0,
-            completed: fallbackData?.filter(b => b.status === 'completed').length || 0,
-            confirmed: fallbackData?.filter(b => b.status === 'confirmed').length || 0,
-            archived: fallbackData?.filter(b => b.status === 'archived').length || 0,
-            draft: fallbackData?.filter(b => b.status === 'draft').length || 0
-          },
-          error: fallbackError ? {
-            message: fallbackError.message,
-            code: fallbackError.code,
-            details: fallbackError
-          } : null
-        });
+          .limit(Math.min(limit, 100));
         
         if (fallbackError) {
           logError('Error loading bookings (fallback)', fallbackError as Error);
