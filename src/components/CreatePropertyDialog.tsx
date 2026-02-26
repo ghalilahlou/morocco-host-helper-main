@@ -15,7 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePropertyPhotoUpload } from '@/hooks/usePropertyPhotoUpload';
 import { DocumentPreview } from './DocumentPreview';
 import { SignaturePad } from './SignaturePad';
-import { useT } from '@/i18n/GuestLocaleProvider';
+import { useT, useGuestLocale } from '@/i18n/GuestLocaleProvider';
 import '@/styles/CreatePropertyDialog.css';
 interface CreatePropertyDialogProps {
   open: boolean;
@@ -50,6 +50,7 @@ export const CreatePropertyDialog = ({
   onSuccess
 }: CreatePropertyDialogProps) => {
   const t = useT();
+  const { locale } = useGuestLocale();
   const {
     addProperty,
     updateProperty
@@ -69,10 +70,23 @@ export const CreatePropertyDialog = ({
     t('property.defaultRule.checkoutTime')
   ], [t]);
   const defaultHouseRulesRef = useRef<string[]>([]);
+  const previousLocaleRef = useRef<string>(locale);
   defaultHouseRulesRef.current = getDefaultHouseRules();
   const [houseRules, setHouseRules] = useState<string[]>(() =>
     property?.house_rules?.length ? property.house_rules : getDefaultHouseRules()
   );
+
+  // Update house rules when locale changes (only for new properties without custom rules)
+  useEffect(() => {
+    // Only update if locale actually changed
+    if (previousLocaleRef.current !== locale) {
+      // Only update default rules for new properties (no saved rules)
+      if (!property?.house_rules?.length) {
+        setHouseRules(getDefaultHouseRules());
+      }
+      previousLocaleRef.current = locale;
+    }
+  }, [locale, getDefaultHouseRules, property?.house_rules?.length]);
   const {
     register,
     handleSubmit,

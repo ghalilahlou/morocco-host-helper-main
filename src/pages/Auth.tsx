@@ -200,8 +200,9 @@ export default function Auth() {
 
           <h1 className="text-2xl sm:text-3xl font-bold mb-4 sm:mb-6">Accédez à votre compte</h1>
 
-          <Tabs defaultValue="signin" className="w-full max-w-full min-w-0">
-            <TabsList className="grid grid-cols-2 w-full max-w-full rounded-lg bg-[hsl(var(--cta-basic)/0.2)] border border-[hsl(var(--cta-basic))] text-[hsl(var(--cta-basic))] p-1 h-11 sm:h-12 gap-0">
+          <div className="w-full min-w-0">
+            <Tabs defaultValue="signin" className="w-full max-w-full min-w-0 flex flex-col">
+              <TabsList className="grid grid-cols-2 w-full min-w-0 max-w-full rounded-lg bg-[hsl(var(--cta-basic)/0.2)] border border-[hsl(var(--cta-basic))] text-[hsl(var(--cta-basic))] p-1 h-11 sm:h-12 gap-0">
               <TabsTrigger value="signin" className="flex-1 min-w-0 rounded-md py-2.5 px-2 sm:px-3 text-sm font-medium data-[state=active]:bg-[hsl(var(--cta-basic))] data-[state=active]:text-gray-900 m-0">Se connecter</TabsTrigger>
               <TabsTrigger value="signup" className="flex-1 min-w-0 rounded-md py-2.5 px-2 sm:px-3 text-sm font-medium data-[state=active]:bg-[hsl(var(--cta-basic))] data-[state=active]:text-gray-900 m-0">S’inscrire</TabsTrigger>
             </TabsList>
@@ -305,7 +306,8 @@ export default function Auth() {
                 </Button>
               </form>
             </TabsContent>
-          </Tabs>
+            </Tabs>
+          </div>
         </div>
 
         {/* Right: Brand image */}

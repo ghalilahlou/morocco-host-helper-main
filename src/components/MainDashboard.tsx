@@ -22,6 +22,7 @@ import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { PropertyList } from '@/components/PropertyList';
 import { CreatePropertyDialog } from '@/components/CreatePropertyDialog';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 export const MainDashboard = () => {
   const navigate = useNavigate();
@@ -30,19 +31,20 @@ export const MainDashboard = () => {
   const { bookings, isLoading: bookingsLoading } = useBookings();
   const { toast } = useToast();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const t = useT();
 
   const handleSignOut = async () => {
     try {
       await signOut();
       toast({
-        title: "Déconnexion réussie",
-        description: "Vous avez été déconnecté avec succès."
+        title: t('mainDashboard.logoutSuccess'),
+        description: t('mainDashboard.logoutSuccessDesc')
       });
       navigate('/');
     } catch (error) {
       toast({
-        title: "Erreur de déconnexion",
-        description: "Une erreur s'est produite lors de la déconnexion.",
+        title: t('mainDashboard.logoutError'),
+        description: t('mainDashboard.logoutErrorDesc'),
         variant: "destructive"
       });
     }
@@ -72,12 +74,12 @@ export const MainDashboard = () => {
                 alt="Checky Logo"
                 className="w-8 h-8 object-contain"
               />
-              <h1 className="text-xl font-semibold text-gray-900">Dashboard</h1>
+              <h1 className="text-xl font-semibold text-gray-900">{t('mainDashboard.title')}</h1>
             </div>
             
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">
-                Bienvenue, {user?.email}
+                {t('mainDashboard.welcome', { email: user?.email || '' })}
               </span>
               <Button
                 onClick={handleSignOut}
@@ -86,7 +88,7 @@ export const MainDashboard = () => {
                 className="flex items-center space-x-2"
               >
                 <LogOut className="w-4 h-4" />
-                <span>Déconnexion</span>
+                <span>{t('mainDashboard.logout')}</span>
               </Button>
             </div>
           </div>
@@ -98,52 +100,52 @@ export const MainDashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Propriétés</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('mainDashboard.stats.properties')}</CardTitle>
               <Building2 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalProperties}</div>
               <p className="text-xs text-muted-foreground">
-                Propriétés enregistrées
+                {t('mainDashboard.stats.propertiesRegistered')}
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Réservations</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('mainDashboard.stats.bookings')}</CardTitle>
               <Calendar className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.totalBookings}</div>
               <p className="text-xs text-muted-foreground">
-                Total des réservations
+                {t('mainDashboard.stats.totalBookings')}
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">En attente</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('mainDashboard.stats.pending')}</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.pendingBookings}</div>
               <p className="text-xs text-muted-foreground">
-                Réservations en attente
+                {t('mainDashboard.stats.pendingBookings')}
               </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Terminées</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('mainDashboard.stats.completed')}</CardTitle>
               <CheckCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.completedBookings}</div>
               <p className="text-xs text-muted-foreground">
-                Réservations terminées
+                {t('mainDashboard.stats.completedBookings')}
               </p>
             </CardContent>
           </Card>
@@ -155,10 +157,10 @@ export const MainDashboard = () => {
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Plus className="h-5 w-5" />
-                <span>Nouvelle Propriété</span>
+                <span>{t('mainDashboard.actions.newProperty')}</span>
               </CardTitle>
               <CardDescription>
-                Ajouter une nouvelle propriété
+                {t('mainDashboard.actions.newPropertyDesc')}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -167,10 +169,10 @@ export const MainDashboard = () => {
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Users className="h-5 w-5" />
-                <span>Mon Profil</span>
+                <span>{t('mainDashboard.actions.profile')}</span>
               </CardTitle>
               <CardDescription>
-                Gérez vos informations personnelles
+                {t('mainDashboard.actions.profileDesc')}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -179,10 +181,10 @@ export const MainDashboard = () => {
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Settings className="h-5 w-5" />
-                <span>Paramètres</span>
+                <span>{t('mainDashboard.actions.settings')}</span>
               </CardTitle>
               <CardDescription>
-                Configurez vos préférences de compte
+                {t('mainDashboard.actions.settingsDesc')}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -191,10 +193,10 @@ export const MainDashboard = () => {
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <FileText className="h-5 w-5" />
-                <span>Sécurité</span>
+                <span>{t('mainDashboard.actions.security')}</span>
               </CardTitle>
               <CardDescription>
-                Changez votre mot de passe
+                {t('mainDashboard.actions.securityDesc')}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -204,10 +206,10 @@ export const MainDashboard = () => {
         <div className="bg-white rounded-lg shadow">
           <div className="px-6 py-4 border-b">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Mes Propriétés</h2>
+              <h2 className="text-lg font-semibold">{t('mainDashboard.myProperties')}</h2>
               <Button onClick={() => setShowCreateDialog(true)} size="sm">
                 <Plus className="h-4 w-4 mr-2" />
-                Ajouter une propriété
+                {t('properties.addProperty')}
               </Button>
             </div>
           </div>

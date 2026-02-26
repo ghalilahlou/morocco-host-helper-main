@@ -109,6 +109,8 @@ const assignBookingLayers = (bookings: BookingLayout[]): BookingLayout[] => {
   });
   
   const layeredBookings: BookingLayout[] = [];
+  let overflowCount = 0;
+  const MAX_LAYERS = 100;
   
   for (const booking of sortedBookings) {
     let assignedLayer = 0;
@@ -132,41 +134,18 @@ const assignBookingLayers = (bookings: BookingLayout[]): BookingLayout[] => {
         assignedLayer++;
       }
       
-      // ✅ OPTIMISÉ : Limite de sécurité renforcée avec meilleur message de debug
-      if (assignedLayer > 15) {
-        console.warn(`⚠️ Trop de couches (${assignedLayer}) pour la réservation ${booking.booking.id}. Placement forcé.`, {
-          bookingStart: booking.startDayIndex,
-          bookingSpan: booking.span,
-          weekIndex: booking.weekIndex,
-          totalBookingsInWeek: bookings.length
-        });
+      // ✅ Limite de sécurité : placement forcé silencieux au-delà de MAX_LAYERS
+      if (assignedLayer > MAX_LAYERS) {
+        overflowCount++;
         layeredBookings.push({ ...booking, layer: assignedLayer });
         placed = true;
       }
     }
   }
   
-  // ✅ NOUVEAU : Optimisation post-placement pour compacter les couches
-  // Réduire les "trous" dans les couches quand c'est possible
-  const maxLayer = Math.max(...layeredBookings.map(b => b.layer || 0));
-  for (let layer = 1; layer <= maxLayer; layer++) {
-    const bookingsInLayer = layeredBookings.filter(b => b.layer === layer);
-    
-    for (const booking of bookingsInLayer) {
-      // Essayer de déplacer cette réservation vers une couche inférieure
-      for (let targetLayer = 0; targetLayer < layer; targetLayer++) {
-        const bookingsInTargetLayer = layeredBookings.filter(b => b.layer === targetLayer);
-        const hasOverlap = bookingsInTargetLayer.some(existingBooking => 
-          doBookingPeriodsOverlap(booking, existingBooking)
-        );
-        
-        if (!hasOverlap) {
-          // Déplacer vers la couche inférieure
-          booking.layer = targetLayer;
-          break;
-        }
-      }
-    }
+  // ✅ Un seul warning résumé au lieu d'un par réservation
+  if (overflowCount > 0) {
+    console.warn(`⚠️ ${overflowCount} réservation(s) dépassent ${MAX_LAYERS} couches dans la semaine (${bookings.length} réservations au total)`);
   }
   
   return layeredBookings;

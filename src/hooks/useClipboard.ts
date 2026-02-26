@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 /**
  * Hook React moderne pour copier du texte dans le presse-papiers
@@ -9,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 export const useClipboard = () => {
   const [isCopying, setIsCopying] = useState(false);
   const { toast } = useToast();
+  const t = useT();
 
   const copy = useCallback(async (
     text: string,
@@ -38,8 +40,8 @@ export const useClipboard = () => {
               console.log('✅ [CLIPBOARD] Copié avec Clipboard API (événement fiable)');
               setIsCopying(false);
               toast({
-                title: "Lien copié !",
-                description: "Le lien a été copié dans le presse-papiers",
+                title: t('toast.linkCopied'),
+                description: t('toast.linkCopiedDesc'),
               });
               return true;
             }
@@ -50,8 +52,8 @@ export const useClipboard = () => {
           console.log('✅ [CLIPBOARD] Copié avec Clipboard API');
           setIsCopying(false);
           toast({
-            title: "Lien copié !",
-            description: "Le lien a été copié dans le presse-papiers",
+            title: t('toast.linkCopied'),
+            description: t('toast.linkCopiedDesc'),
           });
           return true;
         } catch (clipboardError) {
@@ -94,16 +96,16 @@ export const useClipboard = () => {
                 console.log('✅ [CLIPBOARD] Copié avec execCommand (fallback)');
                 setIsCopying(false);
                 toast({
-                  title: "Lien copié !",
-                  description: "Le lien a été copié dans le presse-papiers",
+                  title: t('toast.linkCopied'),
+                  description: t('toast.linkCopiedDesc'),
                 });
                 resolve(true);
               } else {
                 console.warn('❌ [CLIPBOARD] execCommand a échoué');
                 setIsCopying(false);
                 toast({
-                  title: "Copie échouée",
-                  description: "Veuillez copier le lien manuellement",
+                  title: t('toast.copyFailed'),
+                  description: t('toast.copyFailedDesc'),
                   variant: "destructive",
                 });
                 resolve(false);
@@ -117,8 +119,8 @@ export const useClipboard = () => {
               console.error('❌ [CLIPBOARD] Erreur execCommand:', error);
               setIsCopying(false);
               toast({
-                title: "Copie échouée",
-                description: "Veuillez copier le lien manuellement",
+                title: t('toast.copyFailed'),
+                description: t('toast.copyFailedDesc'),
                 variant: "destructive",
               });
               resolve(false);
@@ -128,8 +130,8 @@ export const useClipboard = () => {
           console.error('❌ [CLIPBOARD] Erreur lors de la configuration du fallback:', error);
           setIsCopying(false);
           toast({
-            title: "Erreur",
-            description: "Impossible de copier le lien",
+            title: t('toast.error'),
+            description: t('toast.cannotCopyLink'),
             variant: "destructive",
           });
           resolve(false);
@@ -139,13 +141,13 @@ export const useClipboard = () => {
       console.error('❌ [CLIPBOARD] Erreur générale:', error);
       setIsCopying(false);
       toast({
-        title: "Erreur",
-        description: "Impossible de copier le lien",
+        title: t('toast.error'),
+        description: t('toast.cannotCopyLink'),
         variant: "destructive",
       });
       return false;
     }
-  }, [toast]);
+  }, [toast, t]);
 
   return {
     copy,

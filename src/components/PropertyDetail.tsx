@@ -15,6 +15,7 @@ import { BookingWizardWithBoundary as BookingWizard } from './BookingWizard';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
 import { PropertyTutorial } from './PropertyTutorial';
 import { ShareModal } from './ShareModal';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { supabase } from '@/integrations/supabase/client';
 
 
@@ -29,6 +30,7 @@ export const PropertyDetail = () => {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { generatePropertyVerificationUrl, isLoading: isGeneratingLink } = useGuestVerification();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   
   // All state hooks
   const [property, setProperty] = useState<Property | null>(null);
@@ -134,21 +136,72 @@ export const PropertyDetail = () => {
         skipCopy: true
       });
       if (url) {
-        setShareModalUrl(url);
-        setShareModalOpen(true);
+        if (isMobile) {
+          setShareModalUrl(url);
+          setShareModalOpen(true);
+        } else {
+          // ✅ CORRIGÉ : Copie desktop avec fallback execCommand
+          // navigator.clipboard.writeText peut échouer si le geste utilisateur
+          // a expiré pendant l'appel API (generatePropertyVerificationUrl est async ~1-2s)
+          let copied = false;
+          
+          if (navigator.clipboard && window.isSecureContext) {
+            try {
+              await navigator.clipboard.writeText(url);
+              copied = true;
+            } catch (clipErr) {
+              console.warn('⚠️ Clipboard API échoué (geste utilisateur expiré), fallback execCommand', clipErr);
+            }
+          }
+          
+          // Fallback : textarea + execCommand('copy')
+          if (!copied) {
+            try {
+              const textarea = document.createElement('textarea');
+              textarea.value = url;
+              textarea.style.position = 'fixed';
+              textarea.style.top = '0';
+              textarea.style.left = '0';
+              textarea.style.width = '1px';
+              textarea.style.height = '1px';
+              textarea.style.opacity = '0';
+              document.body.appendChild(textarea);
+              textarea.focus();
+              textarea.select();
+              textarea.setSelectionRange(0, url.length);
+              copied = document.execCommand('copy');
+              document.body.removeChild(textarea);
+            } catch (fallbackErr) {
+              console.error('❌ Fallback execCommand échoué:', fallbackErr);
+            }
+          }
+          
+          if (copied) {
+            toast({
+              title: t('toast.linkCopied'),
+              description: t('toast.linkCopiedDesc'),
+            });
+          } else {
+            toast({
+              title: t('toast.linkGenerated'),
+              description: t('toast.linkGeneratedDesc'),
+              duration: 10000,
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('❌ Erreur lors de la génération du lien:', error);
       toast({
-        title: "Erreur",
-        description: "Impossible de générer le lien. Veuillez réessayer.",
+        title: t('toast.error'),
+        description: t('toast.cannotCopyLink'),
         variant: "destructive"
       });
     } finally {
       // ✅ TOUJOURS réinitialiser le flag local
       setIsGeneratingLocal(false);
     }
-  }, [property?.id, generatePropertyVerificationUrl, toast, isGeneratingLocal, isGeneratingLink]);
+  }, [property?.id, generatePropertyVerificationUrl, toast, isGeneratingLocal, isGeneratingLink, isMobile]);
 
   // All useEffect hooks
 

@@ -14,6 +14,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
 import { ApiService } from '@/services/apiService';
 import { ShareModal } from '@/components/ShareModal';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { parseLocalDate } from '@/utils/dateUtils';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface BookingDetailsModalProps {
   booking: EnrichedBooking;
@@ -28,6 +31,7 @@ export const BookingDetailsModal = ({
   onClose,
   onEdit
 }: BookingDetailsModalProps) => {
+  const t = useT();
   const {
     updateBooking,
     deleteBooking
@@ -39,6 +43,7 @@ export const BookingDetailsModal = ({
     generatePropertyVerificationUrl,
     isLoading: isGeneratingLink
   } = useGuestVerification();
+  const isMobile = useIsMobile();
   const [isGeneratingLocal, setIsGeneratingLocal] = useState(false); // ✅ State local pour bloquer immédiatement
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareModalUrl, setShareModalUrl] = useState<string>('');
@@ -402,28 +407,85 @@ export const BookingDetailsModal = ({
         bookingReference: booking.bookingReference
       });
       
-      // Ouvrir le pop-up partage (même format que partout : lien + message, WhatsApp, copier)
-      const url = await generatePropertyVerificationUrl(propertyId, booking.id, {
+      // ICS/manual : passer le code résa (bookingReference) pour que le backend associe le lien à la bonne résa
+      const startDate = booking.checkInDate
+        ? (typeof booking.checkInDate === 'string' ? parseLocalDate(booking.checkInDate) : new Date(booking.checkInDate))
+        : new Date();
+      const endDate = booking.checkOutDate
+        ? (typeof booking.checkOutDate === 'string' ? parseLocalDate(booking.checkOutDate) : new Date(booking.checkOutDate))
+        : new Date();
+      const url = await generatePropertyVerificationUrl(propertyId, booking.bookingReference || booking.id, {
         userEvent: userEvent,
         skipCopy: true,
         linkType: 'ics_direct',
         reservationData: {
           airbnbCode: booking.bookingReference || 'INDEPENDENT_BOOKING',
-          startDate: booking.checkInDate ? new Date(booking.checkInDate) : new Date(),
-          endDate: booking.checkOutDate ? new Date(booking.checkOutDate) : new Date(),
+          startDate,
+          endDate,
           numberOfGuests: booking.numberOfGuests
         }
       });
       if (url) {
-        setShareModalUrl(url);
-        setShareModalOpen(true);
+        if (isMobile) {
+          setShareModalUrl(url);
+          setShareModalOpen(true);
+        } else {
+          // ✅ CORRIGÉ : Copie desktop avec fallback execCommand
+          // navigator.clipboard.writeText peut échouer si le geste utilisateur
+          // a expiré pendant l'appel API (generatePropertyVerificationUrl est async ~1-2s)
+          let copied = false;
+          
+          if (navigator.clipboard && window.isSecureContext) {
+            try {
+              await navigator.clipboard.writeText(url);
+              copied = true;
+            } catch (clipErr) {
+              console.warn('⚠️ Clipboard API échoué (geste utilisateur expiré), fallback execCommand', clipErr);
+            }
+          }
+          
+          // Fallback : textarea + execCommand('copy')
+          if (!copied) {
+            try {
+              const textarea = document.createElement('textarea');
+              textarea.value = url;
+              textarea.style.position = 'fixed';
+              textarea.style.top = '0';
+              textarea.style.left = '0';
+              textarea.style.width = '1px';
+              textarea.style.height = '1px';
+              textarea.style.opacity = '0';
+              document.body.appendChild(textarea);
+              textarea.focus();
+              textarea.select();
+              textarea.setSelectionRange(0, url.length);
+              copied = document.execCommand('copy');
+              document.body.removeChild(textarea);
+            } catch (fallbackErr) {
+              console.error('❌ Fallback execCommand échoué:', fallbackErr);
+            }
+          }
+          
+          if (copied) {
+            toast({
+              title: t('toast.linkCopied'),
+              description: t('toast.linkCopiedDesc'),
+            });
+          } else {
+            toast({
+              title: t('toast.linkGenerated'),
+              description: t('toast.linkGeneratedDesc'),
+              duration: 10000,
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('❌ Erreur lors de la génération du lien:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
       toast({
-        title: "Erreur",
-        description: `Impossible de générer le lien: ${errorMessage}`,
+        title: t('toast.error'),
+        description: t('toast.cannotGenerateLink', { error: errorMessage }),
         variant: "destructive"
       });
     } finally {
@@ -436,8 +498,8 @@ export const BookingDetailsModal = ({
     try {
       await deleteBooking(booking.id);
       toast({
-        title: 'Réservation supprimée',
-        description: 'La réservation a été supprimée avec succès.'
+        title: t('toast.bookingDeleted'),
+        description: t('toast.bookingDeletedDesc')
       });
       // Notify app to refresh lists/calendars immediately
       window.dispatchEvent(new CustomEvent('booking-deleted', {
@@ -449,8 +511,8 @@ export const BookingDetailsModal = ({
     } catch (error) {
       console.error('Error deleting booking:', error);
       toast({
-        title: 'Erreur',
-        description: "Impossible de supprimer la réservation.",
+        title: t('toast.error'),
+        description: t('toast.cannotDeleteBooking'),
         variant: 'destructive'
       });
     }
@@ -465,7 +527,7 @@ export const BookingDetailsModal = ({
               <div className="w-3 h-3 rounded-full" style={{
                 backgroundColor: booking.status === 'completed' ? '#10b981' : booking.status === 'pending' ? '#94a3b8' : '#64748b'
               }}></div>
-              {booking.bookingReference || booking.realGuestNames[0] || booking.guests?.[0]?.fullName || fallbackGuestName || `Réservation #${booking.id.slice(-6)}`}
+              {booking.bookingReference || booking.realGuestNames[0] || booking.guests?.[0]?.fullName || fallbackGuestName || t('booking.reservationNumber', { id: booking.id.slice(-6) })}
               {getStatusBadge()}
             </DialogTitle>
             <Button variant="ghost" size="icon" onClick={onClose}>
@@ -473,7 +535,7 @@ export const BookingDetailsModal = ({
             </Button>
           </div>
           <DialogDescription>
-            Détails et actions pour la réservation du {formatDate(booking.checkInDate)} au {formatDate(booking.checkOutDate)}
+            {t('booking.detailsFor', { from: formatDate(booking.checkInDate), to: formatDate(booking.checkOutDate) })}
           </DialogDescription>
         </DialogHeader>
 
@@ -482,11 +544,11 @@ export const BookingDetailsModal = ({
           {/* Informations principales - Version simplifiée */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Référence</CardTitle>
+              <CardTitle className="text-lg">{t('booking.reference')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <p className="font-medium text-sm">Code réservation {booking.bookingReference ? 'Airbnb' : ''}</p>
+                <p className="font-medium text-sm">{booking.bookingReference ? t('booking.reservationCodeAirbnb') : t('booking.reservationCode')}</p>
                 <p className="text-lg font-mono">
                   {booking.bookingReference || booking.id.slice(-12).toUpperCase()}
                 </p>
@@ -496,21 +558,21 @@ export const BookingDetailsModal = ({
                 <div className="flex items-center space-x-3">
                   <Calendar className="w-5 h-5 text-muted-foreground" />
                   <div>
-                    <p className="font-medium">Arrivée</p>
+                    <p className="font-medium">{t('booking.arrival')}</p>
                     <p className="text-muted-foreground">{formatDate(booking.checkInDate)}</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3">
                   <Calendar className="w-5 h-5 text-muted-foreground" />
                   <div>
-                    <p className="font-medium">Départ</p>
+                    <p className="font-medium">{t('booking.departure')}</p>
                     <p className="text-muted-foreground">{formatDate(booking.checkOutDate)}</p>
                   </div>
                 </div>
               </div>
 
               <div className="text-center">
-                <span className="text-lg sm:text-2xl font-bold">{calculateNights()} nuit(s)</span>
+                <span className="text-lg sm:text-2xl font-bold">{t('booking.nights', { count: calculateNights() })}</span>
               </div>
 
             </CardContent>
@@ -519,7 +581,7 @@ export const BookingDetailsModal = ({
           {/* ✅ UNIFIÉ : Actions simplifiées - uniquement "Copier le lien" en bleu */}
           {(booking.propertyId || booking.property?.id) && <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Actions</CardTitle>
+                <CardTitle className="text-lg">{t('booking.actions')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button 
@@ -532,12 +594,12 @@ export const BookingDetailsModal = ({
                     {isGeneratingLocal || isGeneratingLink ? (
                       <>
                         <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                        <span>Génération...</span>
+                        <span>{t('booking.generating')}</span>
                       </>
                     ) : (
                       <>
                         <Copy className="w-4 h-4 mr-2" />
-                        <span>Copier le lien</span>
+                        <span>{t('booking.copyLink')}</span>
                       </>
                     )}
                   </span>
@@ -545,7 +607,7 @@ export const BookingDetailsModal = ({
                 
 
                 <p className="text-xs text-muted-foreground mt-2">
-                  Génère et copie automatiquement le lien de vérification client avec les dates de cette réservation pré-remplies
+                  {t('booking.copyLinkDescriptionDesktop')}
                 </p>
               </CardContent>
             </Card>}
@@ -557,7 +619,7 @@ export const BookingDetailsModal = ({
       isOpen={shareModalOpen}
       onClose={() => setShareModalOpen(false)}
       url={shareModalUrl}
-      title="Partager le lien client"
+      title={t('booking.shareLink')}
       propertyName={booking.property?.name}
       guestName={booking.realGuestNames?.[0] || booking.guests?.[0]?.fullName}
       checkIn={booking.checkInDate ? new Date(booking.checkInDate).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : undefined}

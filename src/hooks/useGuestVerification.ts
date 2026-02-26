@@ -6,6 +6,7 @@ import { PropertyVerificationToken, GuestSubmission } from '@/types/guestVerific
 import { useAuth } from './useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { formatLocalDate } from '@/utils/dateUtils';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 // ✅ NOUVEAU : Fonction pour nettoyer le nom du guest avant de l'inclure dans l'URL
 function cleanGuestNameForUrl(guestName: string): string {
@@ -54,6 +55,7 @@ function cleanGuestNameForUrl(guestName: string): string {
 export const useGuestVerification = () => {
   const { user } = useAuth();
   const { toast } = useToast(); // ✅ Utiliser le hook au lieu de l'import direct
+  const t = useT();
   const [tokens, setTokens] = useState<PropertyVerificationToken[]>([]);
   const [submissions, setSubmissions] = useState<GuestSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -336,21 +338,21 @@ export const useGuestVerification = () => {
             const result = await copyToClipboardSimple(fullUrl, userEvent);
             if (result.success) {
               toast({
-                title: "Lien copié !",
-                description: "Le lien a été copié dans le presse-papiers",
+                title: t('toast.linkCopied'),
+                description: t('toast.linkCopiedDesc'),
               });
             } else {
               toast({
-                title: "Lien généré",
-                description: result.error || `Le lien a été généré. Copiez-le manuellement : ${fullUrl}`,
+                title: t('toast.linkGenerated'),
+                description: result.error || t('toast.linkGeneratedDesc'),
                 duration: 10000,
               });
             }
           } catch (copyError: any) {
             console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
             toast({
-              title: "Lien généré",
-              description: copyError?.message || `Le lien a été généré mais n'a pas pu être copié automatiquement. Lien: ${fullUrl}`,
+              title: t('toast.linkGenerated'),
+              description: copyError?.message || t('toast.linkGeneratedDesc'),
               duration: 10000,
             });
           }
@@ -369,21 +371,21 @@ export const useGuestVerification = () => {
             const result = await copyToClipboardSimple(shortUrl, userEvent);
             if (result.success) {
               toast({
-                title: "Lien copié !",
-                description: "Le lien a été copié dans le presse-papiers",
+                title: t('toast.linkCopied'),
+                description: t('toast.linkCopiedDesc'),
               });
             } else {
               toast({
-                title: "Lien généré",
-                description: result.error || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
+                title: t('toast.linkGenerated'),
+                description: result.error || t('toast.linkGeneratedDesc'),
                 duration: 10000,
               });
             }
           } catch (copyError: any) {
             console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
             toast({
-              title: "Lien généré",
-              description: copyError?.message || `Le lien a été généré. Copiez-le manuellement : ${shortUrl}`,
+              title: t('toast.linkGenerated'),
+              description: copyError?.message || t('toast.linkGeneratedDesc'),
               duration: 10000,
             });
           }

@@ -63,6 +63,22 @@ export const AirbnbSyncManager = ({
     setIsSuccess(false);
 
     try {
+      // ✅ NOUVEAU : Vérifier si le même lien ICS est utilisé par une autre propriété
+      const { data: otherProperties, error: checkError } = await supabase
+        .from('properties')
+        .select('id, name')
+        .eq('airbnb_ics_url', icsUrl.trim())
+        .neq('id', propertyId);
+      
+      if (!checkError && otherProperties && otherProperties.length > 0) {
+        const names = otherProperties.map(p => p.name || 'Sans nom').join(', ');
+        toast({
+          title: "⚠️ Lien ICS partagé",
+          description: `Ce lien ICS est déjà utilisé par : ${names}. Les mêmes réservations seront synchronisées sur les deux propriétés.`,
+          variant: "destructive"
+        });
+      }
+
       const { error } = await supabase
         .from('properties')
         .update({ airbnb_ics_url: icsUrl.trim() })

@@ -206,13 +206,17 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
   const isLoadingRef = useRef(false);
 
   // Optimized load function with caching and debug logging
-  const loadAirbnbReservations = useCallback(async () => {
+  // forceReload: après une sync ICS, forcer le rechargement même si un chargement est en cours / cache présent
+  const loadAirbnbReservations = useCallback(async (forceReload?: boolean) => {
     if (!propertyId) return;
     
-    // ✅ PROTECTION : Empêcher les appels multiples simultanés
-    if (isLoadingRef.current) {
+    // ✅ PROTECTION : Empêcher les appels multiples simultanés (sauf après sync)
+    if (isLoadingRef.current && !forceReload) {
       console.log('⏳ loadAirbnbReservations déjà en cours, appel ignoré');
       return;
+    }
+    if (forceReload) {
+      isLoadingRef.current = false;
     }
 
     // ✅ NOUVEAU : Vérifier si le lien ICS est configuré pour cette propriété
@@ -244,11 +248,13 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     // ✅ NOUVEAU : clé de cache inclut propriété + plage de dates
     const cacheKey = `${propertyId}-${startStr}-${endStr}`;
     
-    // Check cache first pour cette plage précise
-    const cached = airbnbCache.get(cacheKey);
-    if (cached) {
-      setAirbnbReservations(cached.data);
-      return;
+    // Check cache first pour cette plage précise (sauf après sync)
+    if (!forceReload) {
+      const cached = airbnbCache.get(cacheKey);
+      if (cached) {
+        setAirbnbReservations(cached.data);
+        return;
+      }
     }
     
     isLoadingRef.current = true;
@@ -263,10 +269,13 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
         bookingsRef.current // ✅ Passer les bookings actuels pour les afficher dans le calendrier
       );
       
+      // ✅ Ne garder que les événements Airbnb (ceux venant de airbnb_reservations).
+      // Les événements source === 'booking' sont déjà dans `bookings` et seraient dupliqués.
+      const airbnbOnlyEvents = calendarEvents.filter((e: { source?: string }) => e.source === 'airbnb');
       // ✅ CORRIGÉ : Convertir les événements en réservations Airbnb avec enrichissement
       // ⚠️ IMPORTANT : event.end est +1 jour pour l'affichage FullCalendar (date exclusive)
       // Mais endDate dans AirbnbReservation doit être la date réelle de départ (sans +1 jour)
-      const formattedReservations: AirbnbReservation[] = calendarEvents.map(event => {
+      const formattedReservations: AirbnbReservation[] = airbnbOnlyEvents.map(event => {
         // Le titre peut être soit un nom (ex: "Jean") soit "Réservation [CODE]"
         let guestName: string | undefined = undefined;
         
@@ -586,8 +595,8 @@ const handleManualRefresh = useCallback(async () => {
           await new Promise(resolve => setTimeout(resolve, 1000)); // Augmenté à 1s pour laisser le temps aux websockets
         }
         
-        // ✅ ÉTAPE 2 : Recharger les réservations Airbnb (utiliser loadAirbnbReservations pour la cohérence)
-        await loadAirbnbReservations();
+        // ✅ ÉTAPE 2 : Forcer le rechargement des réservations Airbnb (évite "déjà en cours, appel ignoré")
+        await loadAirbnbReservations(true);
         
         setSyncStatus('success');
         setLastSyncDate(new Date());

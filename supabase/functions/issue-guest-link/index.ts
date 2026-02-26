@@ -537,11 +537,15 @@ serve(async (req) => {
           console.log('📅 Dates normalisées pour la réservation:', { checkInDate, checkOutDate });
           
           // Vérifier si une réservation existe déjà pour ce code Airbnb
+          // ✅ CORRIGÉ : .order().limit(1) avant .maybeSingle() pour éviter l'erreur
+          // quand des doublons existent déjà (maybeSingle échoue si >1 résultat)
           const { data: existingBooking } = await server
             .from('bookings')
             .select('id, status')
             .eq('property_id', propertyId)
             .eq('booking_reference', reservationData.airbnbCode)
+            .order('updated_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
           let bookingId: string;
@@ -571,11 +575,14 @@ serve(async (req) => {
             console.log('🆕 Création nouvelle réservation ICS');
             
             // ✅ PROTECTION : Dernière vérification avant insertion pour éviter les doublons
+            // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
             const { data: lastCheckBooking } = await server
               .from('bookings')
               .select('id, status')
               .eq('property_id', propertyId)
               .eq('booking_reference', reservationData.airbnbCode)
+              .order('updated_at', { ascending: false })
+              .limit(1)
               .maybeSingle();
             
             if (lastCheckBooking) {
@@ -609,6 +616,8 @@ serve(async (req) => {
                     .select('id')
                     .eq('property_id', propertyId)
                     .eq('booking_reference', reservationData.airbnbCode)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
                     .maybeSingle();
                   
                   if (existingBookingAfterError) {

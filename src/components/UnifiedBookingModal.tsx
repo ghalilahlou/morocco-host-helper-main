@@ -34,7 +34,7 @@ import { ContractService, getContractPdfUrl } from '@/services/contractService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { ShareModal } from '@/components/ShareModal';
-import { isMobile as isMobileDevice } from '@/lib/shareUtils';
+import { copyToClipboardSimple } from '@/lib/clipboardSimple';
 import { parseLocalDate } from '@/utils/dateUtils';
 import { useT } from '@/i18n/GuestLocaleProvider';
 
@@ -250,35 +250,54 @@ export const UnifiedBookingModal = ({
     };
     doPrefetch();
     return () => { cancelled = true; setCachedGuestLinkUrl(null); };
-  }, [isOpen, booking?.id, propertyId, isAirbnb, generatePropertyVerificationUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- generatePropertyVerificationUrl stable; avoid re-prefetch and new token on every render
+  }, [isOpen, booking?.id, propertyId, isAirbnb]);
 
-  // ✅ GÉNÉRATION DE LIEN : Si lien en cache → copie synchrone (presse-papiers). Sinon → génération puis copie.
+  // ✅ GÉNÉRATION DE LIEN : Desktop = copie directe vers session guest (pas de panneau). Mobile = panneau partage + copie.
   const handleGenerateGuestLink = async (event?: React.MouseEvent) => {
-    // ✅ MÊME LOGIQUE QUE AIRBNB : Copie + panneau partage (Copier, WhatsApp, SMS, Email, Partager…)
-    // Lien déjà préchargé → copie immédiate dans le presse-papiers puis ouverture du panneau partage (desktop + mobile)
+    // Utiliser le viewport (useIsMobile) pour desktop = copie seule, mobile = ShareModal (pas userAgent)
+    // Lien déjà préchargé
     if (cachedGuestLinkUrl) {
-      setShareModalUrl(cachedGuestLinkUrl);
-      setShareModalOpen(true);
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(cachedGuestLinkUrl)
-          .then(() => {
-            toast({
-              title: "Lien copié !",
-              description: "Le lien est dans le presse-papiers. Collez-le où vous voulez ou partagez via le panneau.",
+      if (isMobile) {
+        // ✅ MOBILE : Ouvrir le panneau partage (Copier, WhatsApp, SMS, Email…)
+        setShareModalUrl(cachedGuestLinkUrl);
+        setShareModalOpen(true);
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(cachedGuestLinkUrl)
+            .then(() => {
+              toast({
+                title: t('toast.linkCopied'),
+                description: t('toast.linkCopiedDesc'),
+              });
+            })
+            .catch(() => {
+              toast({
+                title: t('toast.linkGenerated'),
+                description: t('toast.linkGeneratedDesc'),
+                duration: 8000,
+              });
             });
-          })
-          .catch(() => {
-            toast({
-              title: "Lien prêt",
-              description: "Utilisez le bouton « Copier » dans le panneau pour copier le lien.",
-              duration: 8000,
-            });
+        } else {
+          toast({
+            title: t('toast.linkGenerated'),
+            description: t('toast.linkGeneratedDesc'),
           });
+        }
       } else {
-        toast({
-          title: "Lien prêt",
-          description: "Copiez le lien depuis le panneau ou partagez via WhatsApp, SMS, Email…",
-        });
+        // ✅ DESKTOP : Copie fiable (clipboardSimple + événement) pour que le presse-papiers fonctionne
+        const result = await copyToClipboardSimple(cachedGuestLinkUrl, event?.nativeEvent);
+        if (result.success) {
+          toast({
+            title: t('toast.linkCopied'),
+            description: t('toast.linkCopiedDesc'),
+          });
+        } else {
+          toast({
+            title: t('toast.linkGenerated'),
+            description: result.error || t('toast.linkGeneratedDesc'),
+            duration: 8000,
+          });
+        }
       }
       return;
     }
@@ -329,7 +348,8 @@ export const UnifiedBookingModal = ({
             guestName: airbnbRes.guestName,
             numberOfGuests: airbnbRes.numberOfGuests
           },
-          userEvent: userEvent
+          userEvent: userEvent,
+          skipCopy: true
         });
       } else {
         // ✅ ENRICHIE : Pour les réservations manuelles, inclure les dates avec linkType ics_direct
@@ -350,7 +370,8 @@ export const UnifiedBookingModal = ({
           endDateISO: endDate.toISOString()
         });
         
-        generatedUrl = await generatePropertyVerificationUrl(propertyId, manualBooking.id, {
+        // ICS/manual : passer le code résa (bookingReference) pour que le backend associe le lien à la bonne résa
+        generatedUrl = await generatePropertyVerificationUrl(propertyId, manualBooking.bookingReference || manualBooking.id, {
           linkType: 'ics_direct', // ✅ FORCÉ : Toujours utiliser ics_direct
           reservationData: {
             airbnbCode: manualBooking.bookingReference || 'INDEPENDENT_BOOKING',
@@ -358,74 +379,67 @@ export const UnifiedBookingModal = ({
             endDate: endDate,
             numberOfGuests: manualBooking.numberOfGuests
           },
-          userEvent: userEvent
+          userEvent: userEvent,
+          skipCopy: true
         });
       }
       
       console.log('✅ Lien généré avec succès:', generatedUrl);
       
-      // ✅ MÊME LOGIQUE QUE AIRBNB : Toujours ouvrir le panneau partage (desktop + mobile) pour copier / WhatsApp / SMS / Email
+      // ✅ DESKTOP : Copie seule, lien direct vers session guest (pas de panneau). MOBILE : panneau partage + partage natif.
       if (generatedUrl) {
-        setShareModalUrl(generatedUrl);
-        setShareModalOpen(true);
-        // Sur mobile, proposer en plus le partage natif (menu système)
-        if (isMobileDevice() && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-          try {
-            // Préparer les données de partage
-            // Android: certaines versions ne supportent pas text+url ensemble
-            const shareTitle = `Lien de réservation${propertyName ? ` - ${propertyName}` : ''}`;
-            let shareData: ShareData = {
-              title: shareTitle,
-              text: 'Cliquez ici pour compléter votre réservation',
-              url: generatedUrl
-            };
-            
-            // Vérifier avec canShare si disponible (iOS Safari, Chrome moderne)
-            if (navigator.canShare) {
-              if (!navigator.canShare(shareData)) {
-                // Fallback Android : essayer sans text
-                console.log('📱 [SHARE] Fallback Android: URL seule');
-                shareData = { title: shareTitle, url: generatedUrl };
-                
-                if (!navigator.canShare(shareData)) {
-                  // Dernier recours : juste l'URL
-                  shareData = { url: generatedUrl };
-                }
-              }
-            }
-            
-            console.log('📱 [SHARE] Tentative de partage natif:', shareData);
-            await navigator.share(shareData);
-            
-            console.log('✅ Partage natif réussi');
-            setShareModalOpen(false);
-            toast({
-              title: "✅ Lien partagé !",
-              description: "Le lien a été partagé avec succès",
-            });
-          } catch (shareError: any) {
-            // AbortError = utilisateur a annulé (normal, pas d'erreur)
-            if (shareError.name === 'AbortError') {
-              console.log('📱 Partage annulé par l\'utilisateur');
-            } 
-            // NotAllowedError = problème de contexte sécurisé
-            else if (shareError.name === 'NotAllowedError') {
-              console.warn('⚠️ Partage non autorisé, ouverture du modal de fallback');
-              setShareModalUrl(generatedUrl);
-              setShareModalOpen(true);
-            }
-            // Autre erreur : fallback au modal
-            else {
-              console.warn('⚠️ Partage natif échoué, fallback au modal:', shareError.message || shareError);
-              setShareModalUrl(generatedUrl);
-              setShareModalOpen(true);
-            }
-          }
-        } else {
-          // Navigateur sans Web Share API : ouvrir le modal
-          console.log('📱 [SHARE] Web Share API non disponible, ouverture du modal');
+        if (isMobile) {
           setShareModalUrl(generatedUrl);
           setShareModalOpen(true);
+          // Sur mobile, proposer en plus le partage natif (menu système)
+          if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+            try {
+              const shareTitle = `Lien de réservation${propertyName ? ` - ${propertyName}` : ''}`;
+              let shareData: ShareData = {
+                title: shareTitle,
+                text: 'Cliquez ici pour compléter votre réservation',
+                url: generatedUrl
+              };
+              if (navigator.canShare) {
+                if (!navigator.canShare(shareData)) {
+                  shareData = { title: shareTitle, url: generatedUrl };
+                  if (!navigator.canShare(shareData)) shareData = { url: generatedUrl };
+                }
+              }
+              await navigator.share(shareData);
+              setShareModalOpen(false);
+              toast({ title: "✅ Lien partagé !", description: "Le lien a été partagé avec succès" });
+            } catch (shareError: any) {
+              if (shareError.name === 'AbortError') {
+                console.log('📱 Partage annulé par l\'utilisateur');
+              } else if (shareError.name === 'NotAllowedError') {
+                setShareModalUrl(generatedUrl);
+                setShareModalOpen(true);
+              } else {
+                setShareModalUrl(generatedUrl);
+                setShareModalOpen(true);
+              }
+            }
+          } else {
+            setShareModalUrl(generatedUrl);
+            setShareModalOpen(true);
+          }
+        } else {
+          // ✅ DESKTOP : Copie directe, lien envoie vers la session guest réservation (pas d’ouverture du panneau)
+          const copyResult = await copyToClipboardSimple(generatedUrl, event?.nativeEvent);
+          if (copyResult.success) {
+              toast({
+                title: "Lien copié !",
+                description: "Le lien a été copié. Collez-le pour l’envoyer à votre client ; il ouvrira directement la session de réservation.",
+              });
+          } else {
+            toast({
+              title: "Lien généré",
+              description: copyResult.error || "Le lien ouvre directement la session guest. Copiez-le manuellement.",
+              duration: 8000,
+            });
+          }
+          setCachedGuestLinkUrl(generatedUrl);
         }
       }
     } catch (error) {
@@ -1432,7 +1446,7 @@ export const UnifiedBookingModal = ({
           {/* ✅ UNIFIÉ : Section Référence */}
           <Card>
             <CardHeader className={cn(isMobile ? "p-3 pb-2" : "")}>
-              <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>Référence</CardTitle>
+              <CardTitle className={cn(isMobile ? "text-base" : "text-lg")}>{t('booking.reference')}</CardTitle>
             </CardHeader>
             <CardContent className={cn(
               isMobile ? "p-3 pt-0 space-y-2" : "space-y-4"
@@ -1441,7 +1455,7 @@ export const UnifiedBookingModal = ({
                 <p className={cn(
                   "font-medium",
                   isMobile ? "text-xs" : "text-sm"
-                )}>Code réservation {isAirbnb ? 'Airbnb' : ''}</p>
+                )}>{isAirbnb ? t('booking.reservationCodeAirbnb') : t('booking.reservationCode')}</p>
                 <p className={cn(
                   "font-mono break-all",
                   isMobile ? "text-base" : "text-lg"
@@ -1457,21 +1471,21 @@ export const UnifiedBookingModal = ({
                 <div className="flex items-center space-x-3">
                   <Calendar className="w-5 h-5 text-muted-foreground" />
                   <div>
-                    <p className="font-medium">Arrivée</p>
+                    <p className="font-medium">{t('booking.arrival')}</p>
                     <p className="text-muted-foreground">{formatDate(checkIn)}</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3">
                   <Calendar className="w-5 h-5 text-muted-foreground" />
                   <div>
-                    <p className="font-medium">Départ</p>
+                    <p className="font-medium">{t('booking.departure')}</p>
                     <p className="text-muted-foreground">{formatDate(checkOut)}</p>
                   </div>
                 </div>
               </div>
 
               <div className="text-center">
-                <span className="text-lg sm:text-2xl font-bold">{calculateNights()} nuit(s)</span>
+                <span className="text-lg sm:text-2xl font-bold">{t('booking.nights', { count: calculateNights() })}</span>
               </div>
             </CardContent>
           </Card>
@@ -1940,7 +1954,7 @@ export const UnifiedBookingModal = ({
           {propertyId && status !== 'completed' && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Actions</CardTitle>
+                <CardTitle className="text-lg">{t('booking.actions')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button 
@@ -1952,12 +1966,12 @@ export const UnifiedBookingModal = ({
                     {isGeneratingLocal || isGeneratingLink ? (
                       <>
                         <span className="w-4 h-4 mr-2 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />
-                        <span>Génération...</span>
+                        <span>{t('booking.generating')}</span>
                       </>
                     ) : (
                       <>
                         <Copy className="w-4 h-4 mr-2" />
-                        <span>Copier le lien</span>
+                        <span>{t('booking.copyLink')}</span>
                       </>
                     )}
                   </span>
@@ -1965,10 +1979,10 @@ export const UnifiedBookingModal = ({
                 
                 <p className="text-xs text-muted-foreground mt-2">
                   {cachedGuestLinkUrl
-                    ? 'Le lien est prêt : un appui copie dans le presse-papiers. Collez où vous voulez.'
-                    : isMobileDevice()
-                      ? 'Le lien sera copié dans le presse-papiers et les options de partage s\'ouvriront.'
-                      : 'Génère et copie le lien de vérification client avec les dates de cette réservation.'
+                    ? t('booking.copyLinkDescriptionReady')
+                    : isMobile
+                      ? t('booking.copyLinkDescriptionMobile')
+                      : t('booking.copyLinkDescriptionGenerate')
                   }
                 </p>
               </CardContent>
@@ -1981,19 +1995,19 @@ export const UnifiedBookingModal = ({
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer la réservation</AlertDialogTitle>
+            <AlertDialogTitle>{t('booking.deleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Êtes-vous sûr de vouloir supprimer cette réservation ? Cette action est irréversible et supprimera également tous les documents associés (contrat, fiche de police, pièces d'identité).
+              {t('booking.deleteDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Annuler</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>{t('booking.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteBooking}
               disabled={isDeleting}
               className="bg-red-600 hover:bg-red-700"
             >
-              {isDeleting ? 'Suppression...' : 'Supprimer'}
+              {isDeleting ? t('booking.deleting') : t('booking.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -70,6 +70,21 @@ export const AirbnbSyncHelp = () => {
 
     setIsLoading(true);
     try {
+      // ✅ NOUVEAU : Vérifier si le même lien ICS est utilisé par une autre propriété
+      const { data: otherProperties, error: checkError } = await supabase
+        .from('properties')
+        .select('id, name')
+        .eq('airbnb_ics_url', airbnbUrl.trim())
+        .neq('id', propertyId);
+      
+      if (!checkError && otherProperties && otherProperties.length > 0) {
+        const names = otherProperties.map(p => p.name || 'Sans nom').join(', ');
+        toast.warning(
+          `⚠️ Ce lien ICS est déjà utilisé par : ${names}. Les mêmes réservations seront synchronisées sur les deux propriétés.`,
+          { duration: 8000 }
+        );
+      }
+
       // 1) Persist the URL in the property
       const { error: upErr } = await supabase
         .from('properties')
@@ -194,7 +209,7 @@ export const AirbnbSyncHelp = () => {
         .from('bookings')
         .select('id')
         .eq('property_id', propertyId)
-        .or('booking_reference.like.HM%,booking_reference.like.CL%,booking_reference.like.PN%,booking_reference.like.ZN%,booking_reference.like.JN%,booking_reference.like.UN%,booking_reference.like.FN%,booking_reference.like.HN%,booking_reference.like.KN%,booking_reference.like.SN%');
+        .or('booking_reference.like.HM%,booking_reference.like.CL%,booking_reference.like.PN%,booking_reference.like.ZN%,booking_reference.like.JN%,booking_reference.like.UN%,booking_reference.like.FN%,booking_reference.like.HN%,booking_reference.like.KN%,booking_reference.like.SN%,booking_reference.like.UID:%');
       
       if (fetchError) {
         console.error('Erreur lors de la récupération des bookings:', fetchError);

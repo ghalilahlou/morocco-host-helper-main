@@ -101,8 +101,9 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
 
 
 
+  // Total = réservations (bookings) uniquement ; ne pas additionner Airbnb pour éviter 50+29=79
   const stats = {
-    total: filteredBookings.length + airbnbReservationsCount,
+    total: filteredBookings.length,
     pending: filteredBookings.filter(b => b.status === 'pending').length,
     completed: filteredBookings.filter(b => b.status === 'completed').length,
     archived: filteredBookings.filter(b => b.status === 'archived').length,

@@ -10,6 +10,7 @@ import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { debug } from '@/lib/logger';
 import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { isAirbnbCode } from '@/utils/airbnbCodeFilter';
 
 // ✅ OPTIMISATION : Lazy loading pour CalendarView (composant lourd)
 const CalendarView = lazy(() => import('./CalendarView'));
@@ -63,35 +64,11 @@ export const Dashboard = memo(({
   // 🚀 OPTIMISATION: Memoize filtered bookings pour éviter les re-calculs
   const filteredBookings = useMemo(() => {
     const filtered = bookings.filter(booking => {
-      // ✅ FILTRE 1 : Exclure les réservations Airbnb ICS non terminées
-      // Une réservation ICS non terminée est identifiée par :
-      // - status = 'pending'
-      // - bookingReference existe et n'est pas 'INDEPENDENT_BOOKING' (code Airbnb)
-      // - Pas de guests complets (pas de fullName, documentNumber, nationality pour tous les guests)
-      const isAirbnbICS = 'source' in booking && booking.source === 'airbnb';
-      const hasBookingReference = booking.bookingReference && booking.bookingReference !== 'INDEPENDENT_BOOKING';
-      const hasCompleteGuests = booking.guests && booking.guests.length > 0 && 
-        booking.guests.every(guest => 
-          guest.fullName && 
-          guest.documentNumber && 
-          guest.nationality
-        );
-      
-      // ✅ Exclure les réservations ICS non terminées (pas de guests complets)
-      const isICSReservationNotCompleted = !isAirbnbICS && 
-        booking.status === 'pending' && 
-        hasBookingReference && 
-        !hasCompleteGuests;
-      
-      if (isICSReservationNotCompleted) {
-        return false; // Exclure cette réservation
+      // ✅ CORRIGÉ : Exclure les réservations ICS (codes Airbnb HM..., UID:...) de la vue Cards
+      // Ces réservations sont gérées par le calendrier via calendarData.ts
+      if (isAirbnbCode(booking.bookingReference)) {
+        return false;
       }
-      
-      // ✅ CORRECTION : Afficher TOUTES les réservations dans les cartes
-      // Le filtre précédent excluait les réservations sans documents complets
-      // Cela créait une incohérence entre les statistiques et l'affichage
-      // Maintenant, toutes les réservations sont affichées, et les cartes peuvent
-      // indiquer visuellement quels documents manquent
       
       // ✅ FILTRE 3 : Recherche par terme
       const matchesSearch = !searchTerm || 
@@ -112,13 +89,7 @@ export const Dashboard = memo(({
         searchTerm,
         statusFilter,
         viewMode,
-        excludedICS: bookings.filter(b => {
-          const isAirbnbICS = 'source' in b && b.source === 'airbnb';
-          const hasBookingReference = b.bookingReference && b.bookingReference !== 'INDEPENDENT_BOOKING';
-          const hasCompleteGuests = b.guests && b.guests.length > 0 && 
-            b.guests.every(guest => guest.fullName && guest.documentNumber && guest.nationality);
-          return !isAirbnbICS && b.status === 'pending' && hasBookingReference && !hasCompleteGuests;
-        }).length
+        excludedICS: bookings.filter(b => isAirbnbCode(b.bookingReference)).length
       });
     }
     
@@ -129,6 +100,9 @@ export const Dashboard = memo(({
   // ✅ CORRIGÉ: Une réservation est "Terminée" si elle a tous ses documents générés OU si son statut est 'completed'
   // ✅ AMÉLIORATION : Les réservations archivées ne sont comptées que dans 'archived', pas dans 'pending' ou 'completed'
   const stats = useMemo(() => {
+    // ✅ CORRIGÉ : Exclure les bookings ICS des stats (ils sont gérés par le calendrier)
+    const nonICSBookings = bookings.filter(b => !isAirbnbCode(b.bookingReference));
+    
     const isBookingCompleted = (b: any) => {
       // Exclure les réservations archivées
       if (b.status === 'archived') return false;
@@ -140,77 +114,22 @@ export const Dashboard = memo(({
       const hasContract = b.documentsGenerated?.contract === true &&
                          !!b.documentsGenerated?.contractUrl;
       
-      // ✅ CORRECTION : Une réservation est "completed" seulement si :
-      // 1. Le statut est 'completed' ET les documents sont vraiment générés (avec URLs)
-      // 2. OU les deux documents sont générés avec URLs (même si le statut n'est pas 'completed')
       const isCompleted = (b.status === 'completed' && hasPoliceForm && hasContract) ||
                           (hasPoliceForm && hasContract);
-      
-      // 🔴 DIAGNOSTIC : Log pour identifier les réservations comptées comme "completed"
-      if (isCompleted) {
-        console.log('🔴 [DIAGNOSTIC COMPLETED] Réservation comptée comme terminée:', {
-          id: b.id?.substring(0, 8),
-          fullId: b.id,
-          status: b.status,
-          hasPoliceForm,
-          hasContract,
-          policeForm: b.documentsGenerated?.policeForm,
-          police: b.documentsGenerated?.police,
-          contract: b.documentsGenerated?.contract,
-          contractUrl: b.documentsGenerated?.contractUrl ? 'présent' : 'absent',
-          policeUrl: b.documentsGenerated?.policeUrl ? 'présent' : 'absent',
-          documentsGenerated: JSON.stringify(b.documentsGenerated),
-          reason: b.status === 'completed' && hasPoliceForm && hasContract 
-            ? 'status=completed + documents avec URLs' 
-            : hasPoliceForm && hasContract 
-            ? 'documents avec URLs (statut non-completed)' 
-            : 'autre',
-          checkInDate: b.checkInDate,
-          checkOutDate: b.checkOutDate,
-          guestName: b.guest_name
-        });
-      } else if (b.status === 'completed') {
-        // 🔴 DIAGNOSTIC : Log pour les réservations avec status='completed' mais sans documents
-        console.warn('⚠️ [DIAGNOSTIC] Réservation avec status=completed mais documents incomplets:', {
-          id: b.id?.substring(0, 8),
-          fullId: b.id,
-          status: b.status,
-          hasPoliceForm,
-          hasContract,
-          policeForm: b.documentsGenerated?.policeForm,
-          police: b.documentsGenerated?.police,
-          contract: b.documentsGenerated?.contract,
-          contractUrl: b.documentsGenerated?.contractUrl ? 'présent' : 'absent',
-          policeUrl: b.documentsGenerated?.policeUrl ? 'présent' : 'absent',
-          documentsGenerated: JSON.stringify(b.documentsGenerated)
-        });
-      }
       
       return isCompleted;
     };
     
     // Filtrer les réservations non-archivées pour les compteurs pending/completed
-    const nonArchivedBookings = bookings.filter(b => b.status !== 'archived');
+    const nonArchivedBookings = nonICSBookings.filter(b => b.status !== 'archived');
     
     const completedBookings = nonArchivedBookings.filter(b => isBookingCompleted(b));
     
-    // 🔴 DIAGNOSTIC : Log du résultat final
-    console.log('🔴 [DIAGNOSTIC STATS] Calcul des statistiques:', {
-      total: bookings.length,
-      nonArchived: nonArchivedBookings.length,
-      completed: completedBookings.length,
-      completedIds: completedBookings.map(b => ({
-        id: b.id?.substring(0, 8),
-        status: b.status,
-        hasDocs: !!(b.documentsGenerated?.policeForm || b.documentsGenerated?.police) && !!b.documentsGenerated?.contract
-      }))
-    });
-    
     return {
-      total: bookings.length,
+      total: nonICSBookings.length,
       pending: nonArchivedBookings.filter(b => !isBookingCompleted(b)).length,
       completed: completedBookings.length,
-      archived: bookings.filter(b => b.status === 'archived').length
+      archived: nonICSBookings.filter(b => b.status === 'archived').length
     };
   }, [bookings]);
 

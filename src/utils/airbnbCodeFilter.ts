@@ -21,6 +21,10 @@ export function isAirbnbCode(str: string | null | undefined): boolean {
   
   const trimmed = str.trim().toUpperCase();
   
+  // ✅ CORRIGÉ : Détecter aussi les booking_reference en format UID: (fallback ICS)
+  // Ces entrées sont créées par sync-airbnb-unified quand aucun code Airbnb (HM...) n'est trouvé
+  if (trimmed.startsWith('UID:')) return true;
+  
   // Vérifier si ça commence par un préfixe Airbnb
   const hasAirbnbPrefix = AIRBNB_CODE_PREFIXES.some(prefix => 
     trimmed.startsWith(prefix)
@@ -69,6 +73,9 @@ export function getAirbnbFilterClause(): string {
   // Ajouter les cas null et INDEPENDENT_BOOKING
   conditions.unshift('booking_reference.is.null');
   conditions.unshift('booking_reference.eq.INDEPENDENT_BOOKING');
+  
+  // ✅ CORRIGÉ : Aussi exclure les UID: (fallback ICS quand pas de code Airbnb)
+  conditions.push('booking_reference.not.like.UID:%');
   
   return conditions.join(',');
 }

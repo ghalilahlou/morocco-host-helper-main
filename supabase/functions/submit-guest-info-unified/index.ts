@@ -33,7 +33,7 @@ interface GuestInfo {
   idType?: string;
   idNumber?: string;
   dateOfBirth?: string;
-  documentIssueDate?: string; // ✅ Date de délivrance de la pièce d'identité
+  documentIssueDate?: string; // ✅ Date d'expiration du document (stockée sous ce nom pour compatibilité DB)
   profession?: string;
   motifSejour?: string;
   adressePersonnelle?: string;
@@ -345,11 +345,14 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
     log('info', 'Recherche de la réservation Airbnb');
     
     // Essayer d'abord dans la table bookings (réservations créées via le système unifié)
+    // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
     const { data: bookingReservation, error: bookingError } = await supabase
       .from('bookings')
       .select('*')
       .eq('property_id', tokenData.property.id)
       .eq('booking_reference', airbnbCode)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     let airbnbReservation: any = null;
@@ -663,11 +666,14 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
     log('info', 'Dates normalisées pour la réservation', { checkInDate, checkOutDate });
     
     // Vérifier si une réservation existe déjà pour ce code Airbnb
+    // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
     const { data: existingBooking } = await supabase
       .from('bookings')
       .select('id, status')
       .eq('property_id', tokenData.property.id)
       .eq('booking_reference', reservationData.airbnbCode)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     let bookingId: string;
@@ -806,11 +812,14 @@ async function saveGuestDataInternal(
         }
       } else {
         // Pour les réservations Airbnb, utiliser property_id + booking_reference
+        // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
         const { data } = await supabase
           .from('bookings')
           .select('id')
           .eq('property_id', booking.propertyId)
           .eq('booking_reference', booking.airbnbCode)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         existingBooking = data;
       }
@@ -967,14 +976,15 @@ async function saveGuestDataInternal(
       };
       
       // ✅ FIX CRITIQUE : Vérifier à nouveau juste avant l'insertion pour éviter les doublons
-      // MAIS utiliser les MÊMES critères que la recherche initiale pour éviter les faux positifs
-      // Pour INDEPENDENT_BOOKING, on doit aussi vérifier guest_name + check_in_date
+      // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
       // Pour les réservations Airbnb, booking_reference suffit car il est unique
       let lastCheckQuery = supabase
         .from('bookings')
         .select('id, status')
         .eq('property_id', booking.propertyId)
-        .eq('booking_reference', booking.airbnbCode);
+        .eq('booking_reference', booking.airbnbCode)
+        .order('updated_at', { ascending: false })
+        .limit(1);
       
       // ✅ FIX CRITIQUE : Pour les réservations indépendantes, ajouter les critères supplémentaires
       // Sinon TOUTES les réservations indépendantes de la même propriété seraient considérées comme doublons !
@@ -1033,11 +1043,14 @@ async function saveGuestDataInternal(
             log('warn', 'Violation contrainte unique détectée (doublon évité)', { error: insertError });
             
             // Récupérer la réservation existante avec les MÊMES critères
+            // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
             let existingQuery = supabase
               .from('bookings')
               .select('id')
               .eq('property_id', booking.propertyId)
-              .eq('booking_reference', booking.airbnbCode);
+              .eq('booking_reference', booking.airbnbCode)
+              .order('updated_at', { ascending: false })
+              .limit(1);
             
             // ✅ FIX CRITIQUE : Pour les réservations indépendantes, ajouter les critères supplémentaires
             if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
@@ -1189,7 +1202,7 @@ async function saveGuestDataInternal(
       document_type: sanitizedGuest.idType || 'passport',
       document_number: sanitizedGuest.idNumber || '',
       date_of_birth: processedDateOfBirth,
-      document_issue_date: sanitizedGuest.documentIssueDate || null, // ✅ Date de délivrance
+      document_issue_date: sanitizedGuest.documentIssueDate || null, // ✅ Date d'expiration du document
       phone: sanitizedGuest.phone || null,
       // ✅ CRITIQUE : Ajouter tous les champs pour la variabilisation complète
       place_of_birth: '', // Non disponible dans GuestInfo pour l'instant
@@ -1245,7 +1258,7 @@ async function saveGuestDataInternal(
           document_type: guestData.document_type,
           document_number: guestData.document_number,
           date_of_birth: guestData.date_of_birth,
-          document_issue_date: guestData.document_issue_date, // ✅ Date de délivrance
+          document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
           phone: guestData.phone,
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
@@ -1289,7 +1302,7 @@ async function saveGuestDataInternal(
             document_type: guestData.document_type,
             document_number: guestData.document_number,
             date_of_birth: guestData.date_of_birth,
-            document_issue_date: guestData.document_issue_date, // ✅ Date de délivrance
+            document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
             phone: guestData.phone,
             place_of_birth: guestData.place_of_birth,
             profession: guestData.profession,
@@ -1348,7 +1361,7 @@ async function saveGuestDataInternal(
           document_type: guestData.document_type,
           document_number: guestData.document_number,
           date_of_birth: guestData.date_of_birth,
-          document_issue_date: guestData.document_issue_date, // ✅ Date de délivrance
+          document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
           phone: guestData.phone,
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
@@ -1941,7 +1954,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
               document_type: g.documentType || g.document_type || g.idType || 'passport',
               document_number: g.documentNumber || g.document_number || g.idNumber || g.document_number || '',
               date_of_birth: g.dateOfBirth || g.date_of_birth || g.dateOfBirth || null,
-              document_issue_date: g.documentIssueDate || g.document_issue_date || null, // ✅ Date de délivrance
+              document_issue_date: g.documentIssueDate || g.document_issue_date || null, // ✅ Date d'expiration du document
               place_of_birth: g.placeOfBirth || g.place_of_birth || '',
               profession: g.profession || '',
               motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
@@ -2216,11 +2229,24 @@ async function sendGuestContractInternal(
     });
 
     if (invokeError) {
+      let responseBody: unknown = null;
+      try {
+        const ctx = (invokeError as { context?: { json?: () => Promise<unknown> } }).context;
+        if (ctx && typeof ctx.json === 'function') {
+          responseBody = await ctx.json();
+        }
+      } catch (_) {
+        // ignore
+      }
       log('error', 'Erreur lors de l\'appel à send-guest-contract', {
         error: invokeError.message,
-        errorDetails: invokeError
+        errorDetails: invokeError,
+        responseBody
       });
-      throw new Error(`Envoi email échoué: ${invokeError.message || 'Erreur inconnue'}`);
+      const detail = responseBody && typeof responseBody === 'object' && responseBody !== null && 'error' in responseBody
+        ? String((responseBody as { error?: unknown }).error)
+        : invokeError.message;
+      throw new Error(`Envoi email échoué: ${detail || 'Erreur inconnue'}`);
     }
 
     if (!result || !result.success) {
@@ -4362,19 +4388,51 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
   let hostSignature = null;
   let hostSignatureType = null;
 
-  // Priorité: contract_template.landlord_signature -> host_profiles -> autres
-  if (contractTemplate.landlord_signature) {
-    hostSignature = contractTemplate.landlord_signature;
-    hostSignatureType = contractTemplate.landlord_signature.startsWith('data:image/svg') ? 'svg' : 'image';
+  // Vérifier si une valeur est une vraie signature (pas un placeholder texte)
+  const isRealSignature = (val: string | null | undefined): boolean => {
+    if (!val || typeof val !== 'string' || val.length < 80) return false;
+    const placeholder = /^VOTRE_SIGNATURE_ICI|^signature\s*$|^\[.*\]$/i;
+    if (placeholder.test(val.trim())) return false;
+    return val.startsWith('data:image/') || val.startsWith('http://') || val.startsWith('https://');
+  };
+
+  const rawLandlordSig = contractTemplate.landlord_signature;
+  // Priorité: contract_template.landlord_signature (si valide) -> host_profiles -> autres
+  if (rawLandlordSig && isRealSignature(rawLandlordSig)) {
+    hostSignature = rawLandlordSig;
+    hostSignatureType = rawLandlordSig.startsWith('data:image/svg') ? 'svg' : 'image';
   } else if (host?.signature_svg) {
     hostSignature = host.signature_svg;
     hostSignatureType = 'svg';
   } else if (host?.signature_image_url) {
     hostSignature = host.signature_image_url;
     hostSignatureType = 'image';
-  } else if (contract_template?.landlord_signature_url) {
+  } else if (contract_template?.landlord_signature_url && isRealSignature(contract_template.landlord_signature_url)) {
     hostSignature = contract_template.landlord_signature_url;
     hostSignatureType = 'image';
+  }
+
+  // ✅ Signature par réservation : si le host a signé pour cette réservation (dashboard), l'utiliser en dernier recours
+  if (!hostSignature) {
+    const { data: hostSigRow } = await client
+      .from('host_signatures')
+      .select('signature_data')
+      .eq('booking_id', bookingId)
+      .order('signed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (hostSigRow?.signature_data && isRealSignature(hostSigRow.signature_data)) {
+      hostSignature = hostSigRow.signature_data;
+      hostSignatureType = hostSigRow.signature_data.startsWith('data:image/svg') ? 'svg' : 'image';
+      log('info', '[buildContractContext] Signature host utilisée depuis host_signatures (réservation)', { bookingId });
+    }
+  }
+
+  if (rawLandlordSig && !hostSignature) {
+    log('warn', '[buildContractContext] landlord_signature ignoré (placeholder ou invalide), fallback host_profiles utilisé', {
+      length: rawLandlordSig?.length,
+      preview: rawLandlordSig?.substring(0, 40)
+    });
   }
 
   log('info', '[buildContractContext] Host signature resolution:', {
@@ -4565,8 +4623,9 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       ice: hostICE || undefined,
       tax_id: hostTaxId || undefined,
       
-      // Signature
+      // Signature (signatureType pour compatibilité PDF, signature_type pour cohérence)
       signature: hostSignature,
+      signatureType: hostSignatureType ?? undefined,
       signature_type: hostSignatureType,
       signature_svg: host?.signature_svg || null,
       signature_image_url: host?.signature_image_url || null,
@@ -5504,12 +5563,16 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
 
   // ✅ SIGNATURE DU BAILLEUR - Dans le rectangle de gauche
   const hostSignature = ctx.host.signature;
-  const hostSignatureType = ctx.host.signatureType;
+  const hostSignatureType = ctx.host.signatureType ?? ctx.host.signature_type;
   
+  const isHostSigSvg = hostSignatureType === 'svg' || (typeof hostSignature === 'string' && hostSignature.startsWith('data:image/svg'));
+  const isHostSigEmbeddableImage = hostSignature && hostSignature.length >= 80 &&
+    (hostSignature.startsWith('data:image/png') || hostSignature.startsWith('data:image/jpeg') || hostSignature.startsWith('data:image/jpg') || hostSignature.startsWith('http'));
+
   if (hostSignature) {
     try {
-      if (hostSignatureType === 'svg') {
-        // Pour SVG, afficher le nom en italique avec mention "signature électronique"
+      if (isHostSigSvg) {
+        // Pour SVG, afficher le nom avec mention "signature électronique"
         currentPage.drawText(hostName, {
           x: col1 + 10,
           y: y - signatureBoxHeight + 30,
@@ -5522,8 +5585,8 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
           size: bodySize - 2,
           font: fontRegular
         });
-      } else if (hostSignature.startsWith('data:image/') || hostSignature.startsWith('http')) {
-        // Pour les images, essayer d'intégrer la signature
+      } else if (isHostSigEmbeddableImage) {
+        // Pour les images PNG/JPEG (ou URL), intégrer la signature
         let signatureImageBytes;
         
         if (hostSignature.startsWith('data:')) {

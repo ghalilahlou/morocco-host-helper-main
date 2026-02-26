@@ -12,6 +12,7 @@ import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface MobileDashboardProps {
   onNewBooking: () => void;
@@ -30,6 +31,7 @@ export const MobileDashboard = memo(({
   onRefreshBookings,
   propertyId
 }: MobileDashboardProps) => {
+  const t = useT();
   // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
   const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings({ propertyId });
   
@@ -83,7 +85,7 @@ export const MobileDashboard = memo(({
         onNewBooking={onNewBooking}
       />
       
-      <MobileLayout title="Tableau de bord">
+      <MobileLayout title={t('mobile.dashboard')}>
         {/* Stats Cards - Mobile Optimized */}
         <div className="grid grid-cols-2 gap-4 mb-6">
           <motion.div
@@ -92,7 +94,7 @@ export const MobileDashboard = memo(({
             className="bg-white rounded-xl p-4 shadow-sm border border-gray-200"
           >
             <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
-            <div className="text-sm text-gray-600">Total</div>
+            <div className="text-sm text-gray-600">{t('mobile.total')}</div>
           </motion.div>
           
           <motion.div
@@ -102,7 +104,7 @@ export const MobileDashboard = memo(({
             className="bg-white rounded-xl p-4 shadow-sm border border-gray-200"
           >
             <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
-            <div className="text-sm text-gray-600">En attente</div>
+            <div className="text-sm text-gray-600">{t('mobile.pending')}</div>
           </motion.div>
         </div>
 
@@ -115,7 +117,7 @@ export const MobileDashboard = memo(({
             className="flex-1"
           >
             <Grid className="w-4 h-4 mr-2" />
-            Cartes
+            {t('mobile.cards')}
           </Button>
           <Button
             variant={viewMode === 'calendar' ? 'default' : 'outline'}
@@ -124,7 +126,7 @@ export const MobileDashboard = memo(({
             className="flex-1"
           >
             <CalendarDays className="w-4 h-4 mr-2" />
-            Calendrier
+            {t('mobile.calendar')}
           </Button>
           <Button
             variant="outline"
@@ -146,7 +148,7 @@ export const MobileDashboard = memo(({
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
-                placeholder="Rechercher..."
+                placeholder={t('mobile.searchPlaceholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 h-12"
@@ -156,13 +158,13 @@ export const MobileDashboard = memo(({
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="h-12">
                 <Filter className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Filtrer par statut" />
+                <SelectValue placeholder={t('mobile.filterByStatus')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tous les statuts</SelectItem>
-                <SelectItem value="pending">En attente</SelectItem>
-                <SelectItem value="completed">Terminées</SelectItem>
-                <SelectItem value="archived">Archivées</SelectItem>
+                <SelectItem value="all">{t('mobile.allStatuses')}</SelectItem>
+                <SelectItem value="pending">{t('mobile.pendingStatus')}</SelectItem>
+                <SelectItem value="completed">{t('mobile.completedStatus')}</SelectItem>
+                <SelectItem value="archived">{t('mobile.archivedStatus')}</SelectItem>
               </SelectContent>
             </Select>
           </motion.div>
@@ -185,12 +187,12 @@ export const MobileDashboard = memo(({
                     <Plus className="w-10 h-10 text-gray-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    {bookings.length === 0 ? 'Aucune réservation' : 'Aucun résultat'}
+                    {bookings.length === 0 ? t('mobile.noBooking') : t('mobile.noResult')}
                   </h3>
                   <p className="text-gray-600 mb-6 px-4">
                     {bookings.length === 0 
-                      ? 'Créez votre première réservation pour commencer.'
-                      : 'Aucune réservation ne correspond à vos critères.'
+                      ? t('mobile.createFirst')
+                      : t('mobile.noMatch')
                     }
                   </p>
                   {bookings.length === 0 && (
@@ -199,7 +201,7 @@ export const MobileDashboard = memo(({
                       className="w-full max-w-xs h-12"
                     >
                       <Plus className="w-5 h-5 mr-2" />
-                      Créer une réservation
+                      {t('mobile.createBooking')}
                     </Button>
                   )}
                 </div>

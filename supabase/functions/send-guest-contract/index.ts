@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { Resend } from "npm:resend@4.0.0";
 
-const resend = new Resend(Deno.env.get("RESEND_API_KEY") as string);
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") || "notifications@resend.dev";
+const RESEND_API_URL = "https://api.resend.com/emails";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,6 +34,14 @@ serve(async (req) => {
       status: 405,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
+  }
+
+  if (!RESEND_API_KEY || RESEND_API_KEY.trim() === "") {
+    console.error("send-guest-contract: RESEND_API_KEY is missing");
+    return new Response(
+      JSON.stringify({ error: "RESEND_API_KEY is not configured", success: false }),
+      { status: 503, headers: { "Content-Type": "application/json", ...corsHeaders } }
+    );
   }
 
   try {
@@ -138,37 +146,57 @@ serve(async (req) => {
       </div>
     `;
 
-    const { data, error } = await resend.emails.send({
-      from: FROM_EMAIL,
-      to: [guestEmail],
-      subject,
-      html,
+    const res = await fetch(RESEND_API_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: FROM_EMAIL,
+        to: [guestEmail],
+        subject,
+        html,
+      }),
     });
 
-    if (error) {
-      console.error("Resend error:", error);
-      return new Response(JSON.stringify({ error: String(error) }), {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      });
+    const resBody = await res.json().catch(() => ({} as Record<string, unknown>));
+
+    if (!res.ok) {
+      const errorMessage = (resBody as { message?: string }).message ?? resBody?.error ?? `HTTP ${res.status}`;
+      console.error("Resend API error:", res.status, errorMessage, resBody);
+      return new Response(
+        JSON.stringify({
+          error: String(errorMessage),
+          success: false,
+          hint: "Check RESEND_API_KEY and Resend domain/from-email verification",
+        }),
+        {
+          status: res.status >= 500 ? 502 : 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
     }
 
     console.log(`✅ Email envoyé avec succès à ${guestEmail} pour ${guestName}`);
 
-    return new Response(JSON.stringify({ 
-      success: true, 
+    return new Response(JSON.stringify({
+      success: true,
       message: "Email envoyé avec succès",
-      data 
+      data: resBody,
     }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
-  } catch (error: any) {
-    console.error("send-guest-contract error:", error);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error("send-guest-contract error:", message, stack);
     return new Response(
-      JSON.stringify({ 
-        error: error?.message || "Unknown error",
-        details: error?.stack || "No stack trace available"
+      JSON.stringify({
+        error: message,
+        success: false,
+        ...(stack && { details: stack }),
       }),
       { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
