@@ -587,19 +587,31 @@ export const useBookings = (options?: UseBookingsOptions) => {
               .from('bookings')
               .select(`*, guests (*), property:properties (*)`);
           } else {
-            // ✅ MODE NORMAL : Requête avec filtres par user_id et property_id
+            // ✅ MODE NORMAL : Requête optimisée avec colonnes essentielles seulement
             // Note: Le filtrage des codes Airbnb est géré par calendarData.ts
             query = supabase
               .from('bookings')
-              .select(`*, guests (*), property:properties (*)`)
+              .select(`
+                id,
+                property_id,
+                user_id,
+                check_in_date,
+                check_out_date,
+                number_of_guests,
+                booking_reference,
+                guest_name,
+                status,
+                created_at,
+                updated_at,
+                documents_generated,
+                guests (id, full_name, date_of_birth, nationality, document_number),
+                property:properties (id, name, address, property_type)
+              `)
               .eq('user_id', user.id);
         
             // Ajouter le filtre par propriété si fourni
             if (propertyId) {
               query = query.eq('property_id', propertyId);
-              console.log('🔍 [USE BOOKINGS] Filtering bookings by property_id', { propertyId, userId: user.id });
-            } else {
-              console.warn('⚠️ [USE BOOKINGS] No propertyId provided - loading all bookings for user', { userId: user.id });
             }
           }
         }
@@ -620,8 +632,8 @@ export const useBookings = (options?: UseBookingsOptions) => {
           .order('check_in_date', { ascending: false })
           .limit(Math.min(limit, 100));
         
-        // Timeout de 15 secondes pour éviter les blocages
-        const TIMEOUT_MS = 15000;
+        // Timeout de 8 secondes pour éviter les blocages (réduit de 15s pour améliorer l'UX)
+        const TIMEOUT_MS = 8000;
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Query timeout')), TIMEOUT_MS)
         );
@@ -732,10 +744,10 @@ export const useBookings = (options?: UseBookingsOptions) => {
           isTimeoutError;
         
         if (shouldFallback) {
-          warn('Materialized view error, falling back to bookings table', { 
-            error: error.message, 
-            code: error.code,
-            status: (error as any).status || (error as any).statusCode
+          // ✅ OPTIMISATION : Log silencieux pour éviter le spam de warnings
+          // Le fallback est normal quand la requête principale timeout
+          console.log('🔄 [USE BOOKINGS] Fallback vers requête simplifiée', { 
+            reason: error.message?.substring(0, 50)
           });
         
         // ✅ OPTIMISATION : Fallback optimisé - sélectionner seulement les colonnes nécessaires
