@@ -333,22 +333,8 @@ export const calculateBookingLayout = (
         const lastDayDate = normalizeDate(new Date(week[endIndex].date.getFullYear(), week[endIndex].date.getMonth(), week[endIndex].date.getDate()));
         const isEnd = lastDayDate.getTime() === normalizedCheckOut.getTime();
         
-        // ✅ DIAGNOSTIC RÉDUIT : Log détaillé restreint (une seule fois par réservation et seulement en développement)
-        if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0) {
-          const bookingStatus = 'status' in booking ? (booking as Booking).status : 'N/A';
-        console.log(`📅 [CALCUL LAYOUT] Réservation ${booking.id.substring(0, 8)}... dans semaine ${weekIndex}:`, {
-          bookingId: booking.id,
-            status: bookingStatus,
-          checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
-          checkOut: normalizedCheckOut.toLocaleDateString('fr-FR'),
-          startDayIndex: startIndex,
-          endDayIndex: endIndex,
-          span,
-          isStart,
-          dayNumber: week[startIndex].dayNumber,
-            expectedDayNumber: normalizedCheckIn.getDate()
-        });
-        }
+        // ✅ OPTIMISATION : Logs désactivés pour améliorer la performance
+        // Décommenter pour le debug si nécessaire
         
         const bookingLayout = {
           booking,

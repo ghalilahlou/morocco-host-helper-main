@@ -571,7 +571,6 @@ const handleManualRefresh = useCallback(async () => {
         // ✅ CORRIGÉ : Rafraîchir les bookings D'ABORD (comme dans handleManualRefresh)
         // Cela garantit que les bookings sont synchronisés avec les nouvelles réservations ICS
         if (onRefreshBookings) {
-          console.log('🔄 Rafraîchissement des bookings après sync...');
           await onRefreshBookings();
           // Attendre un court instant pour que les subscriptions se mettent à jour
           await new Promise(resolve => setTimeout(resolve, 1000)); // Augmenté à 1s pour laisser le temps aux websockets

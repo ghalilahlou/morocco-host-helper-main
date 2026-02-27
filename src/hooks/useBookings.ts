@@ -1755,14 +1755,11 @@ export const useBookings = (options?: UseBookingsOptions) => {
       logError('Error loading bookings', error as Error);
     } finally {
       // ✅ CORRECTION RACE CONDITION : Ne libérer le verrou que si c'est notre chargement
+      // Si loadingRef.current est null, le verrou a déjà été libéré (c'est normal)
       if (loadingRef.current?.id === loadId) {
         loadingRef.current = null;
-      } else {
-        console.warn('⚠️ [USE BOOKINGS] Verrou non libéré - autre chargement en cours', {
-          currentLoadId: loadId,
-          existingLoadId: loadingRef.current?.id
-        });
       }
+      // Note: pas de warning si le verrou est déjà null - c'est un comportement normal
       
       // ✅ PROTECTION : Nettoyer le debounce
       if (loadBookingsDebounceRef.current) {

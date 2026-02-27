@@ -191,8 +191,6 @@ export class AirbnbEdgeFunctionService {
   }
 
   static async getSyncStatus(propertyId: string) {
-    console.log('📊 Getting sync status for property:', propertyId);
-    
     const { data, error } = await supabase
       .from('airbnb_sync_status')
       .select('*')
@@ -204,7 +202,6 @@ export class AirbnbEdgeFunctionService {
       return null;
     }
 
-    console.log('📊 Sync status:', data);
     return data;
   }
 }

@@ -83,13 +83,7 @@ export const PropertyDetail = () => {
         return;
       }
       
-      // ✅ DIAGNOSTIC : Log pour vérifier le comptage
-      console.log('🔍 [PROPERTY DETAIL] Airbnb reservations count:', {
-        propertyId: property.id,
-        hasIcsUrl: !!propertyData?.airbnb_ics_url,
-        totalReservations: reservations?.length || 0,
-        today: today.toISOString().split('T')[0]
-      });
+      // ✅ OPTIMISATION : Log désactivé pour améliorer la performance
       
       setAirbnbReservationsCount(reservations?.length || 0);
     } catch (error) {
