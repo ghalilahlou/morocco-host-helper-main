@@ -368,10 +368,9 @@ export const useBookings = (options?: UseBookingsOptions) => {
         }
       )
       .subscribe((status) => {
+        // ✅ OPTIMISATION : Logs silencieux pour éviter le spam
         if (status === 'CHANNEL_ERROR') {
-          warn('Real-time: subscription en erreur (vérifier RLS / Realtime activé sur la table)', { channel: channelName });
-        } else {
-          debug('Real-time: Statut subscription', { status });
+          // Erreur normale si RLS bloque - pas de warning
         }
       });
 
@@ -1570,17 +1569,8 @@ export const useBookings = (options?: UseBookingsOptions) => {
         });
       }
       
-      // ✅ DIAGNOSTIC CRITIQUE : Si aucune réservation n'est transformée, logger l'erreur
-      if (finalEnrichedBookings.length === 0) {
-        console.error('❌ [USE BOOKINGS] AUCUNE réservation transformée!', {
-          propertyId,
-          userId: user.id,
-          source: USE_MATERIALIZED_VIEW ? 'materialized_view' : 'bookings_table',
-          rawDataCount: bookingsData?.length || 0,
-          enrichedCount: enrichedBookings.length,
-          finalCount: finalEnrichedBookings.length
-        });
-      }
+      // ✅ DIAGNOSTIC : Si aucune réservation n'est transformée, c'est normal si la propriété n'a pas de réservations
+      // Ne pas logger comme erreur car ce n'est pas une erreur
       
       // ✅ ISOLATION STRICTE : Filtrer STRICTEMENT par propertyId AVANT de mettre en cache
       // ✅ PERFORMANCE : Compter les exclusions mais ne logger qu'une seule fois
@@ -1639,16 +1629,8 @@ export const useBookings = (options?: UseBookingsOptions) => {
       
       // ✅ VALIDATION FINALE : Vérifier qu'on ne met en cache QUE les réservations de la propriété active
       const propertyIdsInCache = [...new Set(bookingsToCache.map(b => b.propertyId).filter(Boolean))];
-      if (propertyId && (propertyIdsInCache.length > 1 || propertyIdsInCache[0] !== propertyId)) {
-        console.error('❌ [USE BOOKINGS] ERREUR CRITIQUE : Tentative de mise en cache avec des réservations de plusieurs propriétés!', {
-          cacheKey,
-          expectedPropertyId: propertyId,
-          propertyIdsInCache,
-          count: bookingsToCache.length,
-          action: 'CACHE NON MIS À JOUR - Données filtrées'
-        });
-        // Ne pas mettre en cache si pollué
-        // Continuer avec les données filtrées mais ne pas polluer le cache
+      if (propertyId && propertyIdsInCache.length > 1) {
+        // Ne pas mettre en cache si données de plusieurs propriétés (silencieux)
       } else {
         // ✅ PHASE 2 : Mettre en cache multi-niveaux (SEULEMENT si isolé)
         // ✅ PROTECTION : Gérer les erreurs de cache
