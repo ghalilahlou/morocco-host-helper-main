@@ -233,17 +233,22 @@ export const useAdmin = () => {
 
   // Charger les réservations récentes
   const loadRecentBookings = async () => {
-    const { data } = await supabase
-      .from('bookings')
-      .select(`
-        *,
-        properties(name),
-        guests(full_name)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(10);
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('id, booking_reference, check_in_date, check_out_date, status, created_at, property_id, guest_name')
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-    return data || [];
+      if (error) {
+        console.error('Error loading recent bookings:', error);
+        return [];
+      }
+      return data || [];
+    } catch (error) {
+      console.error('Error loading recent bookings:', error);
+      return [];
+    }
   };
 
   // Charger les utilisateurs récents

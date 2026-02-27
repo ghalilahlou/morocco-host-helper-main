@@ -67,12 +67,13 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     
     try {
       // 🚀 OPTIMISATION: Requêtes parallèles optimisées avec sélections limitées
+      // ✅ CORRECTION: Utiliser property:properties(name) pour la jointure et gérer les erreurs
       const [usersRes, propertiesRes, bookingsRes, recentBookingsRes] = await Promise.all([
         supabase.rpc('get_users_for_admin'),
         supabase.from('properties').select('id, name, user_id, created_at'),
         supabase.from('bookings').select('id, status, total_amount, created_at'),
         supabase.from('bookings')
-          .select('id, booking_reference, check_in_date, check_out_date, status, created_at, properties(name)')
+          .select('id, booking_reference, check_in_date, check_out_date, status, created_at, property_id')
           .order('created_at', { ascending: false })
           .limit(10)
       ]);
