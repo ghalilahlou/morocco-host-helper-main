@@ -256,6 +256,11 @@ export default {
   'properties.deleteWarningIrreversible': '¡Esta acción no se puede deshacer!',
   'properties.cancel': 'Cancelar',
   'properties.confirmDelete': 'Eliminar',
+  'properties.deleting': 'Eliminando...',
+  'properties.deleteSuccess': 'Propiedad eliminada',
+  'properties.deleteSuccessDesc': 'La propiedad y todos los datos asociados han sido eliminados.',
+  'properties.deleteError': 'Error al eliminar',
+  'properties.deleteErrorDesc': 'Se produjo un error al eliminar la propiedad. Por favor, inténtelo de nuevo.',
 
   // Menú de perfil (app anfitrión)
   'profile.menu.profile': 'Perfil',

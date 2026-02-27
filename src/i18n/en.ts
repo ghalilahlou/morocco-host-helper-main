@@ -288,6 +288,11 @@ export default {
   'properties.deleteWarningIrreversible': 'This action cannot be undone!',
   'properties.cancel': 'Cancel',
   'properties.confirmDelete': 'Delete',
+  'properties.deleting': 'Deleting...',
+  'properties.deleteSuccess': 'Property deleted',
+  'properties.deleteSuccessDesc': 'The property and all associated data have been deleted.',
+  'properties.deleteError': 'Deletion failed',
+  'properties.deleteErrorDesc': 'An error occurred while deleting the property. Please try again.',
 
   // Profile menu (host app)
   'profile.menu.profile': 'Profile',

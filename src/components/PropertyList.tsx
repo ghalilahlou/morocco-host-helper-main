@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Home, Plus, Edit, MapPin, Users, MoreVertical, Calendar, Trash2 } from 'lucide-react';
+import { Home, Plus, Edit, MapPin, Users, MoreVertical, Calendar, Trash2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -29,6 +29,7 @@ export const PropertyList = ({
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const {
     toast
   } = useToast();
@@ -46,20 +47,30 @@ export const PropertyList = ({
     if (!propertyToDelete) return;
     console.log('🗑️ [PROPERTY LIST] Suppression de la propriété:', propertyToDelete.id);
     
-    // Fermer la boîte de dialogue immédiatement pour une meilleure UX
     const propertyIdToDelete = propertyToDelete.id;
-    setDeleteConfirmOpen(false);
-    setPropertyToDelete(null);
+    setIsDeleting(true);
     
     try {
       const success = await deleteProperty(propertyIdToDelete);
       if (success) {
         console.log('✅ [PROPERTY LIST] Propriété supprimée avec succès');
-        // Rafraîchir la liste des propriétés pour s'assurer que l'UI est à jour
+        toast({
+          title: t('properties.deleteSuccess'),
+          description: t('properties.deleteSuccessDesc'),
+        });
         refreshProperties();
       }
     } catch (error) {
       console.error('❌ [PROPERTY LIST] Erreur lors de la suppression:', error);
+      toast({
+        title: t('properties.deleteError'),
+        description: t('properties.deleteErrorDesc'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmOpen(false);
+      setPropertyToDelete(null);
     }
   };
   if (isLoading) {
@@ -273,9 +284,20 @@ export const PropertyList = ({
             </p>
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('properties.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteProperty} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {t('properties.confirmDelete')}
+            <AlertDialogCancel disabled={isDeleting}>{t('properties.cancel')}</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteProperty} 
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {t('properties.deleting')}
+                </>
+              ) : (
+                t('properties.confirmDelete')
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

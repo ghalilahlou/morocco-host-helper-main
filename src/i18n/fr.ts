@@ -288,6 +288,11 @@ export default {
   'properties.deleteWarningIrreversible': 'Cette action ne peut pas être annulée !',
   'properties.cancel': 'Annuler',
   'properties.confirmDelete': 'Supprimer',
+  'properties.deleting': 'Suppression...',
+  'properties.deleteSuccess': 'Propriété supprimée',
+  'properties.deleteSuccessDesc': 'La propriété et toutes les données associées ont été supprimées.',
+  'properties.deleteError': 'Échec de la suppression',
+  'properties.deleteErrorDesc': 'Une erreur est survenue lors de la suppression de la propriété. Veuillez réessayer.',
 
   // Menu profil (app hôte)
   'profile.menu.profile': 'Profil',
