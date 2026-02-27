@@ -212,28 +212,18 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     
     // ✅ PROTECTION : Empêcher les appels multiples simultanés (sauf après sync)
     if (isLoadingRef.current && !forceReload) {
-      console.log('⏳ loadAirbnbReservations déjà en cours, appel ignoré');
-      return;
+      return; // Silencieux pour éviter le spam de logs
     }
     if (forceReload) {
       isLoadingRef.current = false;
     }
 
-    // ✅ NOUVEAU : Vérifier si le lien ICS est configuré pour cette propriété
-    const { data: propertyData, error: propertyError } = await supabase
-      .from('properties')
-      .select('airbnb_ics_url')
-      .eq('id', propertyId)
-      .single();
-    
-    // Si pas de lien ICS ou erreur, ne pas charger les réservations Airbnb
-    if (propertyError || !propertyData?.airbnb_ics_url) {
-      console.log('ℹ️ [CalendarView] Pas de lien ICS configuré, réservations Airbnb non chargées');
+    // ✅ OPTIMISATION : Utiliser hasIcs déjà chargé au lieu de faire une requête supplémentaire
+    // Si hasIcs n'est pas encore chargé, on attend (le useEffect pour hasIcs se chargera de rappeler)
+    if (!hasIcs) {
       setAirbnbReservations([]);
       return;
     }
-    
-    console.log('✅ [CalendarView] Lien ICS présent, chargement des réservations Airbnb...');
 
     // Déterminer la plage de dates du mois courant
     const year = currentDate.getFullYear();
@@ -307,11 +297,9 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
         };
       });
       
-      // ✅ NOUVEAU : Enrichir les réservations Airbnb avec les données de bookings
-      // Cela permet d'avoir les noms validés même si calendarData.ts n'a pas pu les trouver
-      // ✅ CORRIGÉ : Utiliser bookingsRef pour éviter les dépendances dans useCallback
-      const currentBookings = bookingsRef.current; // Utiliser la référence actuelle
-      const enrichedReservations = await Promise.all(formattedReservations.map(async (reservation) => {
+      // ✅ OPTIMISATION : Enrichissement synchrone (pas besoin de Promise.all car pas d'async)
+      const currentBookings = bookingsRef.current;
+      const finalReservations = formattedReservations.map(reservation => {
         // Chercher une réservation correspondante dans bookings enrichis
         const matchingBooking = currentBookings.find(b => {
           const bookingStart = new Date(b.checkInDate);
@@ -329,29 +317,20 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
           return datesMatch || refMatch;
         });
         
-        // Si on trouve une réservation enrichie avec des noms réels, propager toutes les propriétés
-        // Laisser getUnifiedBookingDisplayText() choisir quel nom afficher selon sa logique de priorité
         if (matchingBooking) {
           const enrichedBooking = matchingBooking as EnrichedBooking;
-          // ✅ CORRIGÉ : Propager TOUTES les propriétés enrichies sans choisir manuellement le guestName
-          // getUnifiedBookingDisplayText() fera le choix selon sa logique de priorité
           return {
             ...reservation,
-            // Propager toutes les propriétés enrichies pour que getUnifiedBookingDisplayText fonctionne
             hasRealSubmissions: enrichedBooking.hasRealSubmissions,
             realGuestNames: enrichedBooking.realGuestNames || [],
             realGuestCount: enrichedBooking.realGuestCount || 0,
-            // Ne PAS choisir manuellement le guestName - laisser getUnifiedBookingDisplayText() le faire
             guest_name: (enrichedBooking as any).guest_name || reservation.guestName,
-            // Garder le guestName original de la réservation si pas de guest_name enrichi
             guestName: reservation.guestName
           } as any;
         }
         
         return reservation;
-      }));
-      
-      const finalReservations = enrichedReservations;
+      });
       
       // ✅ CORRIGÉ : Utiliser les réservations enrichies au lieu des réservations formatées
       // Mettre en cache par propriété + plage de dates
@@ -382,31 +361,34 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
       // ✅ IMPORTANT : Réinitialiser le flag après le chargement
       isLoadingRef.current = false;
     }
-  }, [propertyId, currentDate, debugMode]); // ✅ Ne pas inclure bookings pour éviter les re-renders, on utilise bookingsRef
+  }, [propertyId, currentDate, hasIcs]); // ✅ Inclure hasIcs car on l'utilise dans la fonction
 
-  // Charger les réservations et le statut au chargement
+  // ✅ OPTIMISATION : Charger l'URL ICS une seule fois au montage ou changement de propriété
   useEffect(() => {
-    loadAirbnbReservations();
-  }, [loadAirbnbReservations]);
-
-useEffect(() => {
-  if (!propertyId) {
-    setIcsUrl(null);
-    setHasIcs(false);
-    return;
-  }
-  (async () => {
-    const { data, error } = await supabase
-      .from('properties')
-      .select('airbnb_ics_url')
-      .eq('id', propertyId)
-      .single();
-    if (!error) {
-      setIcsUrl(data?.airbnb_ics_url || null);
-      setHasIcs(!!data?.airbnb_ics_url);
+    if (!propertyId) {
+      setIcsUrl(null);
+      setHasIcs(false);
+      return;
     }
-  })();
-}, [propertyId]);
+    (async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('airbnb_ics_url')
+        .eq('id', propertyId)
+        .single();
+      if (!error) {
+        setIcsUrl(data?.airbnb_ics_url || null);
+        setHasIcs(!!data?.airbnb_ics_url);
+      }
+    })();
+  }, [propertyId]);
+
+  // ✅ OPTIMISATION : Charger les réservations Airbnb seulement quand hasIcs est défini
+  useEffect(() => {
+    if (hasIcs) {
+      loadAirbnbReservations();
+    }
+  }, [hasIcs, loadAirbnbReservations]);
 
 // ✅ NOUVEAU : Fonction de rafraîchissement automatique
 const handleAutoRefresh = useCallback(async () => {

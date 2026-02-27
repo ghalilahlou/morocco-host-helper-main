@@ -81,16 +81,20 @@ export function getAirbnbFilterClause(): string {
 }
 
 /**
- * Logs de débogage pour le filtrage
+ * Logs de débogage pour le filtrage (désactivé en production)
  */
-export function logFilteringDebug(bookings: any[], context: string) {
-  const airbnbCodes = bookings.filter(hasAirbnbReference);
-  const cleanBookings = bookings.filter(b => !hasAirbnbReference(b));
+export function logFilteringDebug(_bookings: any[], _context: string) {
+  // ✅ OPTIMISATION : Logs désactivés pour améliorer la performance
+  // Décommenter pour le debug si nécessaire
+  /*
+  const airbnbCodes = _bookings.filter(hasAirbnbReference);
+  const cleanBookings = _bookings.filter(b => !hasAirbnbReference(b));
   
-  console.log(`🔍 [FILTRAGE ${context}]`, {
-    total: bookings.length,
+  console.log(`🔍 [FILTRAGE ${_context}]`, {
+    total: _bookings.length,
     airbnbCodes: airbnbCodes.length,
     clean: cleanBookings.length,
     airbnbCodesList: airbnbCodes.map(b => b.booking_reference || b.bookingReference)
   });
+  */
 }

@@ -47,7 +47,6 @@ export async function fetchAirbnbCalendarEvents(
     // Fetching Airbnb calendar events
 
     // ✅ FILTRAGE NIVEAU 1 : SQL - Exclure les codes Airbnb à la source
-    console.log('🔍 [FILTRAGE NIVEAU 1] Requête SQL avec exclusion des codes Airbnb');
     
     const { data: bookingsData, error: bookingsError } = await supabase
       .from('bookings')
@@ -65,13 +64,7 @@ export async function fetchAirbnbCalendarEvents(
     }
 
     // ✅ FILTRAGE NIVEAU 2 : JavaScript - Double vérification
-    console.log('🔍 [FILTRAGE NIVEAU 2] Validation JavaScript côté client');
     const cleanBookingsData = bookingsData ? filterOutAirbnbCodes(bookingsData as any[]) : [];
-    
-    // Log de débogage
-    if (bookingsData) {
-      logFilteringDebug(bookingsData as any[], 'BOOKINGS');
-    }
 
     // ✅ CORRIGÉ : Récupérer les données Airbnb et les enrichir avec les données de bookings
     const { data: airbnbData, error: airbnbError } = await supabase
@@ -87,12 +80,6 @@ export async function fetchAirbnbCalendarEvents(
       return [];
     }
 
-    console.log('📊 [DONNÉES CHARGÉES]', {
-      airbnbReservations: airbnbData?.length || 0,
-      bookingsClean: cleanBookingsData.length,
-      bookingsOriginal: bookingsData?.length || 0,
-      filtered: (bookingsData?.length || 0) - cleanBookingsData.length
-    });
 
     // ✅ CORRIGÉ : Enrichir les réservations Airbnb avec les données validées de bookings
     // Match par dates ou booking_reference
@@ -244,12 +231,6 @@ export async function fetchAllCalendarEvents(
         };
       });
 
-    console.log('📊 [fetchAllCalendarEvents] Événements chargés:', {
-      airbnbEvents: airbnbEvents.length,
-      bookingEvents: bookingEvents.length,
-      total: airbnbEvents.length + bookingEvents.length,
-      dateRange: `${start} → ${end}`
-    });
 
     // Combine and return all events
     const allEvents = [...airbnbEvents, ...bookingEvents];
