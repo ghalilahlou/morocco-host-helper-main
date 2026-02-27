@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
 
@@ -18,26 +18,25 @@ export const useAirbnbSync = (propertyId: string) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // ✅ OPTIMISATION : Éviter les appels multiples simultanés
+  const loadingStatusRef = useRef(false);
+  
   // Load sync status from database
   const loadSyncStatus = useCallback(async () => {
-    if (!propertyId) {
-      
-      setIsLoading(false);
+    if (!propertyId || loadingStatusRef.current) {
       return;
     }
 
     try {
-      
+      loadingStatusRef.current = true;
       setIsLoading(true);
       
       const status = await AirbnbEdgeFunctionService.getSyncStatus(propertyId);
-      
-      
       setSyncStatus(status);
-    } catch (error) {
-      console.error('❌ useAirbnbSync: Exception loading sync status:', error);
+    } catch {
       setSyncStatus(null);
     } finally {
+      loadingStatusRef.current = false;
       setIsLoading(false);
     }
   }, [propertyId]);
@@ -45,24 +44,22 @@ export const useAirbnbSync = (propertyId: string) => {
   // Perform sync operation using Edge Function
   const performSync = useCallback(async (icsUrl: string) => {
     if (!propertyId || !icsUrl || isSyncing) {
-      
       return { success: false, error: 'Invalid parameters or sync in progress' };
     }
 
-    
     setIsSyncing(true);
     
     try {
-      const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, icsUrl);
+      // ✅ Invalider le cache de statut avant la synchronisation
+      AirbnbEdgeFunctionService.invalidateSyncStatusCache(propertyId);
       
+      const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, icsUrl);
       
       // Reload status after sync to get updated data
       await loadSyncStatus();
       
       return result;
     } catch (error) {
-      console.error('❌ performSync: Caught error:', error);
-      
       // Reload status to get error details
       await loadSyncStatus();
       

@@ -412,21 +412,13 @@ export const useGuestVerification = () => {
     try {
       setIsLoading(true);
       
-      // Use direct database access since no Edge Function exists for this
+      // ✅ OPTIMISATION : Requête simplifiée sans jointure pour éviter les erreurs 500
       const { data, error } = await supabase
         .from('property_verification_tokens')
-        .select(`
-          *,
-          properties (
-            id,
-            name,
-            address
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        // Erreur masquée en production
         return;
       }
 

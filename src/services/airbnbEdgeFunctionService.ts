@@ -16,25 +16,18 @@ export class AirbnbEdgeFunctionService {
     // ✅ PROTECTION : Vérifier si une synchronisation est déjà en cours pour cette propriété
     const existingSync = this.syncInProgress.get(propertyId);
     if (existingSync) {
-      console.log('⏳ Synchronisation déjà en cours pour cette propriété, réutilisation de la promesse existante');
       return existingSync;
     }
     
     // Créer une nouvelle promesse de synchronisation
     const syncPromise = (async () => {
       try {
-        console.log('🚀 AirbnbEdgeFunctionService: Starting sync', { propertyId, icsUrl });
-        
         // Get current session
         const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
-        console.error('❌ No active session');
         return { success: false, error: 'No active session' };
       }
-
-      console.log('👤 Session found, user ID:', session.user.id);
-      console.log('📡 Calling Edge Function...');
       
       const { data, error } = await supabase.functions.invoke('sync-airbnb-unified', {
         body: {
@@ -46,17 +39,8 @@ export class AirbnbEdgeFunctionService {
         }
       });
 
-      console.log('📊 Edge Function response:', { data, error });
-
       // ✅ CORRIGÉ : Gérer les erreurs HTTP (non-2xx status codes)
       if (error) {
-        console.error('❌ Edge Function error:', error);
-        console.error('❌ Error details:', {
-          message: error.message,
-          context: error.context,
-          status: error.context?.status,
-          body: error.context?.body
-        });
         
         // Try to extract error message from various possible locations
         let errorMessage = error.message || 'Edge Function error';
@@ -103,20 +87,12 @@ export class AirbnbEdgeFunctionService {
 
       // Si success est false ou non défini, traiter comme une erreur
       if (data.success === false || (data.error && !data.success)) {
-        console.error('❌ Edge Function returned error:', data.error || data.message);
         return { 
           success: false, 
           error: data.error || data.message || 'Unknown error from Edge Function',
           details: data.details
         };
       }
-
-      // Si success est explicitement true, ou si skipped est true (cas de sync non nécessaire)
-      if (data.success === true || data.skipped === true) {
-        console.log('✅ Edge Function succeeded or skipped');
-      }
-
-      console.log('✅ Sync completed via Edge Function');
       
       // ✅ CORRIGÉ : Invalider le cache des réservations après une synchronisation
       this.invalidateReservationsCache(propertyId);
@@ -128,7 +104,6 @@ export class AirbnbEdgeFunctionService {
       };
 
       } catch (error) {
-        console.error('❌ AirbnbEdgeFunctionService error:', error);
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error'
@@ -155,11 +130,8 @@ export class AirbnbEdgeFunctionService {
     const now = Date.now();
     
     if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
-      console.log('📋 Using cached reservations for property:', propertyId, `(${cached.data.length} reservations)`);
       return cached.data;
     }
-    
-    console.log('📋 Getting reservations for property:', propertyId);
     
     const { data, error } = await supabase
       .from('airbnb_reservations')
@@ -168,12 +140,10 @@ export class AirbnbEdgeFunctionService {
       .order('start_date', { ascending: true });
 
     if (error) {
-      console.error('❌ Error fetching reservations:', error);
       return [];
     }
 
     const reservations = data || [];
-    console.log('📋 Found reservations:', reservations.length);
     
     // ✅ Mettre en cache
     this.reservationsCache.set(propertyId, { data: reservations, timestamp: now });
@@ -190,7 +160,19 @@ export class AirbnbEdgeFunctionService {
     }
   }
 
+  // ✅ OPTIMISATION : Cache pour le statut de synchronisation
+  private static syncStatusCache = new Map<string, { data: any, timestamp: number }>();
+  private static readonly SYNC_STATUS_CACHE_TTL = 3000; // 3 secondes de cache
+  
   static async getSyncStatus(propertyId: string) {
+    // ✅ Vérifier le cache d'abord
+    const cached = this.syncStatusCache.get(propertyId);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < this.SYNC_STATUS_CACHE_TTL) {
+      return cached.data;
+    }
+    
     const { data, error } = await supabase
       .from('airbnb_sync_status')
       .select('*')
@@ -198,10 +180,21 @@ export class AirbnbEdgeFunctionService {
       .maybeSingle();
 
     if (error) {
-      console.error('❌ Error fetching sync status:', error);
       return null;
     }
 
+    // ✅ Mettre en cache
+    this.syncStatusCache.set(propertyId, { data, timestamp: now });
+    
     return data;
+  }
+  
+  // ✅ NOUVEAU : Invalider le cache de statut après synchronisation
+  static invalidateSyncStatusCache(propertyId?: string) {
+    if (propertyId) {
+      this.syncStatusCache.delete(propertyId);
+    } else {
+      this.syncStatusCache.clear();
+    }
   }
 }

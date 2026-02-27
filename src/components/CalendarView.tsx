@@ -22,7 +22,7 @@ import {
 } from './calendar/CalendarUtils';
 import { AirbnbSyncService, AirbnbReservation } from '@/services/airbnbSyncService';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
-import { fetchAirbnbCalendarEvents, fetchAllCalendarEvents, CalendarEvent } from '@/services/calendarData';
+import { fetchAirbnbCalendarEvents, fetchAllCalendarEvents, CalendarEvent, invalidateAirbnbEventsCache } from '@/services/calendarData';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
@@ -561,6 +561,8 @@ const handleManualRefresh = useCallback(async () => {
         // ✅ CORRIGÉ : Invalider TOUS les caches avant de rafraîchir
         // Cela évite d'afficher des données obsolètes ou en double
         airbnbCache.clear();
+        // ✅ Invalider également le cache des événements Airbnb
+        invalidateAirbnbEventsCache(propertyId);
         if (propertyId) {
           // Invalider TOUS les caches pour cette propriété (avec ou sans dateRange)
           const { multiLevelCache } = await import('@/services/multiLevelCache');
@@ -568,12 +570,9 @@ const handleManualRefresh = useCallback(async () => {
           await multiLevelCache.invalidatePattern(`bookings-${propertyId}-*`);
         }
         
-        // ✅ CORRIGÉ : Rafraîchir les bookings D'ABORD (comme dans handleManualRefresh)
-        // Cela garantit que les bookings sont synchronisés avec les nouvelles réservations ICS
+        // ✅ OPTIMISATION : Rafraîchir les bookings sans délai inutile
         if (onRefreshBookings) {
           await onRefreshBookings();
-          // Attendre un court instant pour que les subscriptions se mettent à jour
-          await new Promise(resolve => setTimeout(resolve, 1000)); // Augmenté à 1s pour laisser le temps aux websockets
         }
         
         // ✅ ÉTAPE 2 : Forcer le rechargement des réservations Airbnb (évite "déjà en cours, appel ignoré")

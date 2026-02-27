@@ -397,29 +397,24 @@ export const useBookings = (options?: UseBookingsOptions) => {
     // ✅ STABILISATION : Marquer comme appelé immédiatement pour éviter les appels multiples
     documentsGenerationCalledRef.current.add(callKey);
     
-    // Appeler de manière asynchrone pour ne pas bloquer le chargement initial
+    // ✅ DÉSACTIVÉ TEMPORAIREMENT : L'Edge Function cause des erreurs CORS
+    // Réactiver quand l'Edge Function sera correctement déployée
+    // L'appel est désactivé pour améliorer les performances de chargement
+    /*
     setTimeout(async () => {
       try {
-        // ✅ NETTOYAGE LOGS : Supprimé pour éviter les re-rendus
         const { data, error } = await supabase.functions.invoke('get-guest-documents-unified', {
           body: { propertyId: currentPropertyId }
         });
         
         if (error) {
-          // ✅ NETTOYAGE LOGS : Supprimé pour éviter les re-rendus
-          // En cas d'erreur, retirer la clé pour permettre un nouvel essai
           documentsGenerationCalledRef.current.delete(callKey);
-        } else {
-          // ✅ NETTOYAGE LOGS : Supprimé pour éviter les re-rendus
-          // Ne PAS appeler loadBookings() ici pour éviter la boucle infinie
-          // Les documents seront chargés au prochain chargement naturel
         }
       } catch (err) {
-        // ✅ NETTOYAGE LOGS : Supprimé pour éviter les re-rendus
-        // En cas d'exception, retirer la clé pour permettre un nouvel essai
         documentsGenerationCalledRef.current.delete(callKey);
       }
-    }, 2000); // Délai augmenté à 2s pour éviter les appels trop fréquents
+    }, 2000);
+    */
   }, []);
   
   // ✅ STABILISATION : Envelopper loadBookings dans useCallback pour éviter les re-rendus infinis

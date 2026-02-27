@@ -22,19 +22,14 @@ interface AirbnbReservation {
 class UnifiedAirbnbSyncService {
   static async fetchAndParseICS(icsUrl: string, forceProxy: boolean = false): Promise<AirbnbReservation[]> {
     try {
-      console.log(`📡 Fetching ICS data from: ${icsUrl}`);
-      
       let response;
-      let usedProxy = false;
       
       if (forceProxy) {
-        console.log('🔄 Using CORS proxy as requested');
         const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(icsUrl)}`;
         response = await fetch(proxyUrl, {
           method: 'GET',
           headers: { 'Accept': 'text/calendar, text/plain, */*' }
         });
-        usedProxy = true;
       } else {
         try {
           response = await fetch(icsUrl, {
@@ -44,15 +39,12 @@ class UnifiedAirbnbSyncService {
               'User-Agent': 'Morocco-Host-Helper/1.0'
             }
           });
-          console.log('✅ Direct fetch successful');
-        } catch (directError) {
-          console.log('⚠️ Direct fetch failed, trying with CORS proxy...');
+        } catch {
           const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(icsUrl)}`;
           response = await fetch(proxyUrl, {
             method: 'GET',
             headers: { 'Accept': 'text/calendar, text/plain, */*' }
           });
-          usedProxy = true;
         }
       }
       
@@ -61,11 +53,8 @@ class UnifiedAirbnbSyncService {
       }
       
       const icsContent = await response.text();
-      console.log(`📋 ICS Content length: ${icsContent.length} characters (${usedProxy ? 'via proxy' : 'direct'})`);
-      
       return this.parseICSContent(icsContent);
     } catch (error) {
-      console.error('❌ Error fetching ICS:', error);
       throw error;
     }
   }
@@ -73,8 +62,6 @@ class UnifiedAirbnbSyncService {
   static parseICSContent(icsContent: string): AirbnbReservation[] {
     const events = icsContent.split('BEGIN:VEVENT');
     const reservations: AirbnbReservation[] = [];
-    
-    console.log(`📋 Found ${events.length - 1} VEVENT blocks`);
     
     for (let i = 1; i < events.length; i++) {
       const eventContent = 'BEGIN:VEVENT' + events[i];
@@ -84,7 +71,6 @@ class UnifiedAirbnbSyncService {
       }
     }
     
-    console.log(`✅ Parsed ${reservations.length} reservations`);
     return reservations;
   }
 
@@ -138,7 +124,6 @@ class UnifiedAirbnbSyncService {
       }
 
       if (!startDate || !endDate) {
-        console.log('⚠️ Event missing dates:', { uid, summary });
         return null;
       }
 
@@ -151,17 +136,6 @@ class UnifiedAirbnbSyncService {
       if (!airbnbBookingId && uid) {
         airbnbBookingId = `UID:${uid}`;
       }
-      
-      // Debug logging
-      console.log(`🔍 Event parsing debug:`, {
-        uid: uid.substring(0, 20) + '...',
-        summary,
-        descriptionLength: description.length,
-        descriptionPreview: description.substring(0, 100) + '...',
-        airbnbBookingId,
-        guestName,
-        numberOfGuests
-      });
 
       return {
         id: uid || `airbnb-${Date.now()}-${Math.random()}`,
@@ -174,8 +148,7 @@ class UnifiedAirbnbSyncService {
         numberOfGuests,
         rawEvent: eventContent.substring(0, 500) + '...'
       };
-    } catch (error) {
-      console.error('❌ Error parsing event:', error);
+    } catch {
       return null;
     }
   }
@@ -214,7 +187,6 @@ class UnifiedAirbnbSyncService {
       
       return new Date(year, month, day);
     } catch (error) {
-      console.error('❌ Error parsing ICS date:', error, 'Date string:', dateStr);
       throw error;
     }
   }
@@ -313,14 +285,9 @@ serve(async (req) => {
     propertyId = body.propertyId;
     force = body.force || false;
     forceProxy = body.forceProxy || false;
-  } catch (parseError) {
-    console.error('❌ Error parsing request body:', parseError);
+  } catch {
     return new Response(
-      JSON.stringify({ 
-        success: false,
-        error: 'Invalid request body',
-        details: parseError instanceof Error ? parseError.message : 'Unknown parsing error'
-      }),
+      JSON.stringify({ success: false, error: 'Invalid request body' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -336,21 +303,14 @@ serve(async (req) => {
   }
 
   try {
-    // Vérifier les variables d'environnement
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('❌ Variables d\'environnement manquantes:', {
-        hasUrl: !!supabaseUrl,
-        hasServiceKey: !!supabaseServiceKey
-      });
       throw new Error('Missing Supabase environment variables');
     }
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
-
-    console.log(`🔄 Starting unified sync for property ${propertyId}`);
 
     // Get property with ICS URL
     const { data: property, error: propertyError } = await supabaseClient
@@ -360,7 +320,6 @@ serve(async (req) => {
       .single();
 
     if (propertyError || !property?.airbnb_ics_url) {
-      console.log('❌ No ICS URL configured for property:', propertyId);
       return new Response(
         JSON.stringify({ 
           success: false,
@@ -384,7 +343,6 @@ serve(async (req) => {
         const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
         
         if (lastSync > fourHoursAgo && syncStatus.sync_status === 'success') {
-          console.log('⏭️ Sync skipped - last sync was recent and successful');
           return new Response(
             JSON.stringify({ 
               success: true,
@@ -409,9 +367,7 @@ serve(async (req) => {
       });
 
     // Fetch and parse ICS data
-    console.log(`🔄 Fetching ICS data from: ${property.airbnb_ics_url}`);
     const reservations = await UnifiedAirbnbSyncService.fetchAndParseICS(property.airbnb_ics_url, forceProxy);
-    console.log(`📅 Found ${reservations.length} reservations`);
 
     // Store reservations in database
   const toLocalYmd = (d: Date) => {
@@ -422,39 +378,22 @@ serve(async (req) => {
   };
 
   const reservationData = reservations
-      .filter(r => {
-        const hasBookingId = !!r.airbnbBookingId;
-        if (!hasBookingId) {
-          console.log(`⚠️ Skipping reservation without booking ID: ${r.summary}`);
-          console.log(`   Description: ${r.description}`);
-          console.log(`   Raw event: ${r.rawEvent?.substring(0, 200)}...`);
-        }
-        return hasBookingId;
-      })
-      .map(r => {
-        try {
-          return {
-            property_id: propertyId,
-            airbnb_booking_id: r.airbnbBookingId!,
-            summary: r.summary,
-            // ✅ IMPORTANT: utiliser la date locale (éviter les décalages UTC)
-            start_date: toLocalYmd(r.startDate),
-            end_date: toLocalYmd(r.endDate),
-            guest_name: r.guestName,
-            number_of_guests: r.numberOfGuests,
-            description: r.description,
-            raw_event_data: { rawEvent: r.rawEvent }
-          };
-        } catch (error) {
-          console.error('❌ Error mapping reservation:', error, 'Reservation:', r);
-          throw error;
-        }
-      });
+      .filter(r => !!r.airbnbBookingId)
+      .map(r => ({
+        property_id: propertyId,
+        airbnb_booking_id: r.airbnbBookingId!,
+        summary: r.summary,
+        start_date: toLocalYmd(r.startDate),
+        end_date: toLocalYmd(r.endDate),
+        guest_name: r.guestName,
+        number_of_guests: r.numberOfGuests,
+        description: r.description,
+        raw_event_data: { rawEvent: r.rawEvent }
+      }));
 
     // ✅ SOLUTION : Utiliser un seul upsert en batch pour éviter les duplications
     let upsertResult: any[] = [];
     if (reservationData.length > 0) {
-      console.log('🔄 Synchronisation unifiée - mise à jour des dates depuis le fichier ICS uniquement');
       
       // 1. Récupérer toutes les données validées existantes en une seule requête
       const airbnbCodes = reservationData.map(r => r.airbnb_booking_id).filter(Boolean);
@@ -481,8 +420,8 @@ serve(async (req) => {
       // 2. Préparer les données pour l'upsert en préservant les noms validés
       const reservationsToUpsert = reservationData.map(reservation => {
         // Priorité : bookings > airbnb_reservations existantes > nouveau ICS
-        const validatedGuestName: string | undefined = validatedBookingsMap.get(reservation.airbnb_booking_id) 
-          || existingReservationsMap.get(reservation.airbnb_booking_id);
+        const validatedGuestName = (validatedBookingsMap.get(reservation.airbnb_booking_id) 
+          || existingReservationsMap.get(reservation.airbnb_booking_id)) as string | undefined;
         
         // Vérifier si le nom est valide (pas un code, pas "phone", etc.)
         const isValidGuestName = validatedGuestName && 
@@ -519,82 +458,49 @@ serve(async (req) => {
         .select();
       
       if (upsertError) {
-        console.error('❌ Erreur lors de l\'upsert batch:', upsertError);
         throw upsertError;
       }
       
-      const preservedCount = reservationsToUpsert.filter(r => 
-        validatedBookingsMap.has(r.airbnb_booking_id) || 
-        existingReservationsMap.has(r.airbnb_booking_id)
-      ).length;
-      
-      console.log(`✅ Synchronisation terminée: ${reservationsToUpsert.length} réservations, ${preservedCount} noms préservés`);
       upsertResult = upsertedReservations || [];
     } else {
       upsertResult = [];
     }
 
-    // ✅ NOUVEAU : Nettoyage intelligent des anciennes réservations
-    // Supprimer les réservations qui ne sont plus dans le fichier ICS actuel
-    console.log('🧹 Nettoyage des anciennes réservations...');
+    // Nettoyage intelligent des anciennes réservations
     let deletedCount = 0;
     
     try {
       if (reservationData.length > 0) {
-        // Récupérer tous les booking IDs du fichier ICS actuel
         const currentBookingIds = reservationData.map(r => r.airbnb_booking_id).filter(Boolean);
         
         if (currentBookingIds.length > 0) {
-          // Supprimer les réservations de cette propriété qui ne sont plus dans le fichier ICS
-          const { data: deletedReservations, error: deleteError } = await supabaseClient
+          const { data: deletedReservations } = await supabaseClient
             .from('airbnb_reservations')
             .delete()
             .eq('property_id', propertyId)
             .not('airbnb_booking_id', 'in', `(${currentBookingIds.join(',')})`)
-            .select('id, airbnb_booking_id, summary');
+            .select('id');
 
-          if (deleteError) {
-            console.error('❌ Erreur lors du nettoyage:', deleteError);
-          } else {
-            deletedCount = deletedReservations?.length || 0;
-            console.log(`✅ ${deletedCount} anciennes réservations supprimées`);
-            
-            // Log des réservations supprimées (pour traçabilité)
-            if (deletedCount > 0) {
-              console.log('📋 Réservations supprimées:');
-              deletedReservations?.forEach((r: any) => {
-                console.log(`   - ${r.airbnb_booking_id}: ${r.summary}`);
-              });
-            }
-          }
+          deletedCount = deletedReservations?.length || 0;
         }
       } else {
-        // Si le fichier ICS est vide, supprimer TOUTES les réservations de cette propriété
-        console.log('⚠️ Fichier ICS vide - suppression de toutes les réservations de cette propriété');
-        const { data: deletedReservations, error: deleteError } = await supabaseClient
+        const { data: deletedReservations } = await supabaseClient
           .from('airbnb_reservations')
           .delete()
           .eq('property_id', propertyId)
           .select('id');
           
-        if (!deleteError) {
-          deletedCount = deletedReservations?.length || 0;
-          console.log(`✅ ${deletedCount} réservations supprimées (fichier ICS vide)`);
-        }
+        deletedCount = deletedReservations?.length || 0;
       }
-    } catch (cleanupError) {
-      console.error('❌ Erreur lors du nettoyage des anciennes réservations:', cleanupError);
+    } catch {
       // Ne pas faire échouer la synchronisation pour cette erreur
     }
 
-    // ✅ NOUVEAU : Créer automatiquement les tokens sécurisés pour les codes Airbnb HM…
-    console.log('🔐 Génération automatique des tokens sécurisés pour les codes Airbnb...');
+    // Créer automatiquement les tokens sécurisés pour les codes Airbnb HM…
     let tokensCreated = 0;
     try {
       const pepper = Deno.env.get('ACCESS_CODE_PEPPER');
-      if (!pepper) {
-        console.warn('⚠️ ACCESS_CODE_PEPPER not configured - skipping automatic token creation');
-      } else {
+      if (pepper) {
         // Filtrer uniquement les codes Airbnb valides (HM...)
         const airbnbCodes = reservationData
           .map(r => ({ 
@@ -603,8 +509,6 @@ serve(async (req) => {
             summary: r.summary 
           }))
           .filter(item => item.code && /^HM[A-Z0-9]{8,12}$/.test(String(item.code)));
-
-        console.log(`🎯 Found ${airbnbCodes.length} valid Airbnb codes (HM...)`);
 
         if (airbnbCodes.length > 0) {
           // Dédupliquer par code Airbnb
@@ -617,7 +521,6 @@ serve(async (req) => {
           });
 
           const uniqueCodes = Array.from(uniqueCodesMap.values());
-          console.log(`📋 Creating tokens for ${uniqueCodes.length} unique Airbnb codes`);
 
           // Fonction de hashage sécurisée (identique à issue-guest-link)
           async function hashAccessCode(code: string): Promise<string> {
@@ -664,27 +567,16 @@ serve(async (req) => {
           }));
 
           if (tokenRows.length > 0) {
-            const { data: insertedTokens, error: tokenError } = await supabaseClient
+            const { data: insertedTokens } = await supabaseClient
               .from('property_verification_tokens')
               .upsert(tokenRows, { onConflict: 'property_id,airbnb_confirmation_code' })
-              .select('id, airbnb_confirmation_code, expires_at');
+              .select('id');
 
-            if (tokenError) {
-              console.error('❌ Failed to create automatic tokens:', tokenError);
-            } else {
-              tokensCreated = insertedTokens?.length || 0;
-              console.log(`✅ Created/updated ${tokensCreated} automatic tokens for Airbnb codes`);
-              
-              // Log des tokens créés (sans exposer les codes en clair)
-              insertedTokens?.forEach(token => {
-                console.log(`   - Token pour code HM*** (expires: ${token.expires_at})`);
-              });
-            }
+            tokensCreated = insertedTokens?.length || 0;
           }
         }
       }
-    } catch (error) {
-      console.error('❌ Error creating automatic tokens:', error);
+    } catch {
       // Ne pas faire échouer la synchronisation pour cette erreur
     }
 
@@ -698,8 +590,6 @@ serve(async (req) => {
         reservations_count: reservationData.length,
         last_error: null
       });
-
-    console.log(`✅ Unified sync completed for property ${propertyId}: ${reservationData.length} reservations`);
 
     return new Response(
       JSON.stringify({
@@ -717,9 +607,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('❌ Unified sync error:', error);
-    
-    // Update sync status to "error" - safely (propertyId is available from closure)
+    // Update sync status to "error"
     try {
       const supabaseUrl = Deno.env.get('SUPABASE_URL');
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -736,16 +624,15 @@ serve(async (req) => {
             last_sync_at: new Date().toISOString()
           });
       }
-    } catch (errorLogError) {
-      console.error('❌ Error logging failed:', errorLogError);
+    } catch {
+      // Silently ignore error logging failures
     }
 
     return new Response(
       JSON.stringify({ 
         success: false,
         error: error.message || 'Unknown error occurred',
-        propertyId: propertyId || 'unknown',
-        details: error.stack || 'No stack trace available'
+        propertyId: propertyId || 'unknown'
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

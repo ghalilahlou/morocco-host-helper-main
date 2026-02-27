@@ -1,8 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
-import { getUnifiedBookingDisplayText, isValidGuestName } from '@/utils/bookingDisplay';
+import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
-import { filterOutAirbnbCodes, logFilteringDebug, getAirbnbFilterClause } from '@/utils/airbnbCodeFilter';
 
 export interface CalendarEvent {
   id: string;
@@ -21,52 +20,40 @@ export interface CalendarEvent {
  * @param end - End date in YYYY-MM-DD format
  * @returns Array of calendar events
  */
+// ✅ OPTIMISATION : Cache mémoire pour éviter les requêtes répétées
+const airbnbEventsCache = new Map<string, { data: CalendarEvent[], timestamp: number }>();
+const AIRBNB_EVENTS_CACHE_TTL = 10000; // 10 secondes
+
 export async function fetchAirbnbCalendarEvents(
   propertyId: string, 
   start: string, 
   end: string
 ): Promise<CalendarEvent[]> {
   try {
-    // Defensive checks for date format
     if (!start || !end || !propertyId) {
-      console.warn('fetchAirbnbCalendarEvents: Missing required parameters', { propertyId, start, end });
       return [];
     }
 
-    // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter les décalages de timezone
+    // ✅ Vérifier le cache d'abord
+    const cacheKey = `${propertyId}-${start}-${end}`;
+    const cached = airbnbEventsCache.get(cacheKey);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < AIRBNB_EVENTS_CACHE_TTL) {
+      return cached.data;
+    }
+
     let startDate: Date;
     let endDate: Date;
     try {
       startDate = parseLocalDate(start);
       endDate = parseLocalDate(end);
-    } catch (error) {
-      console.error('fetchAirbnbCalendarEvents: Invalid date format', { start, end, error });
+    } catch {
       return [];
     }
 
-    // Fetching Airbnb calendar events
-
-    // ✅ FILTRAGE NIVEAU 1 : SQL - Exclure les codes Airbnb à la source
-    
-    const { data: bookingsData, error: bookingsError } = await supabase
-      .from('bookings')
-      .select('id, booking_reference, guest_name, check_in_date, check_out_date, status, guest_email')
-      .eq('property_id', propertyId)
-      .gte('check_in_date', start)
-      .lte('check_out_date', end)
-      // ✅ FILTRAGE SQL : Exclure TOUS les codes Airbnb
-      .or(getAirbnbFilterClause())
-      .order('check_in_date', { ascending: true });
-
-    if (bookingsError) {
-      console.error('❌ Error fetching bookings:', bookingsError);
-      // Ne pas retourner vide, continuer avec airbnb_reservations seulement
-    }
-
-    // ✅ FILTRAGE NIVEAU 2 : JavaScript - Double vérification
-    const cleanBookingsData = bookingsData ? filterOutAirbnbCodes(bookingsData as any[]) : [];
-
-    // ✅ CORRIGÉ : Récupérer les données Airbnb et les enrichir avec les données de bookings
+    // ✅ OPTIMISATION : Une seule requête Supabase pour airbnb_reservations
+    // On n'a plus besoin de la requête bookings car on fait l'enrichissement côté CalendarView
     const { data: airbnbData, error: airbnbError } = await supabase
       .from('airbnb_reservations')
       .select('airbnb_booking_id, summary, guest_name, start_date, end_date')
@@ -76,76 +63,24 @@ export async function fetchAirbnbCalendarEvents(
       .order('start_date', { ascending: true });
 
     if (airbnbError) {
-      console.error('❌ Error fetching Airbnb reservations:', airbnbError);
       return [];
     }
 
-
-    // ✅ CORRIGÉ : Enrichir les réservations Airbnb avec les données validées de bookings
-    // Match par dates ou booking_reference
-    const data = (airbnbData || []).map(ar => {
-      // Chercher une réservation correspondante dans bookings NETTOYÉS
-      const matchingBooking = cleanBookingsData?.find((b: any) => {
-        // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone
-        const bookingStart = parseLocalDate(b.check_in_date);
-        const bookingEnd = parseLocalDate(b.check_out_date);
-        const airbnbStart = parseLocalDate(ar.start_date);
-        const airbnbEnd = parseLocalDate(ar.end_date);
-        
-        // Match par dates exactes
-        const datesMatch = bookingStart.getTime() === airbnbStart.getTime() && 
-                          bookingEnd.getTime() === airbnbEnd.getTime();
-        
-        // Match par booking_reference contenant airbnb_booking_id
-        const refMatch = b.booking_reference && ar.airbnb_booking_id && 
-                        (b.booking_reference.includes(ar.airbnb_booking_id) || 
-                         ar.airbnb_booking_id.includes(b.booking_reference));
-        
-        return datesMatch || refMatch;
-      });
-      
-      // ✅ CORRIGÉ : Utiliser isValidGuestName importé de bookingDisplay
-      // Utiliser le guest_name de bookings s'il est valide, sinon celui d'airbnb_reservations
-      let finalGuestName = ar.guest_name;
-      if (matchingBooking && (matchingBooking as any).guest_name && isValidGuestName((matchingBooking as any).guest_name)) {
-        finalGuestName = (matchingBooking as any).guest_name;
-      } else if (ar.guest_name && isValidGuestName(ar.guest_name)) {
-        finalGuestName = ar.guest_name;
-      }
-      
-      return {
-        airbnb_booking_id: ar.airbnb_booking_id,
-        guest_name: finalGuestName,
-        start_date: ar.start_date,
-        end_date: ar.end_date,
-        is_validated: !!(matchingBooking && (matchingBooking as any).guest_name && isValidGuestName((matchingBooking as any).guest_name))
-      };
-    });
-
-    // Pas d'erreur à vérifier ici car on a déjà vérifié bookingsError et airbnbError
-
     // Map each row to the calendar event shape
-    const events: CalendarEvent[] = (data || []).map(row => {
-      // ✅ CORRIGÉ : Utiliser parseLocalDate pour éviter le décalage timezone lors de la conversion
+    const events: CalendarEvent[] = (airbnbData || []).map(row => {
       const startDateObj = parseLocalDate(row.start_date);
       const endDateObj = parseLocalDate(row.end_date);
       
-      // Calculate end date + 1 day BUT keep local midnight to avoid timezone shifts
-      // ⚠️ IMPORTANT : On ajoute +1 jour pour FullCalendar (qui utilise des dates exclusives)
+      // +1 jour pour FullCalendar (dates exclusives)
       const endDateForCalendar = new Date(endDateObj);
       endDateForCalendar.setDate(endDateForCalendar.getDate() + 1);
-      const yyyy = endDateForCalendar.getFullYear();
-      const mm = String(endDateForCalendar.getMonth() + 1).padStart(2, '0');
-      const dd = String(endDateForCalendar.getDate()).padStart(2, '0');
-      const endStr = `${yyyy}-${mm}-${dd}`;
+      const endStr = formatLocalDate(endDateForCalendar);
       
-      // ✅ CORRIGÉ : Utilise la logique unifiée getUnifiedBookingDisplayText() pour éviter les doubles logiques
-      // Créer un objet temporaire AirbnbReservation pour utiliser la fonction unifiée
       const tempReservation: AirbnbReservation = {
         id: row.airbnb_booking_id,
         summary: '',
-        startDate: startDateObj, // ✅ CORRIGÉ : Utiliser parseLocalDate
-        endDate: endDateObj, // ✅ CORRIGÉ : Utiliser parseLocalDate
+        startDate: startDateObj,
+        endDate: endDateObj,
         description: '',
         guestName: row.guest_name || undefined,
         numberOfGuests: undefined,
@@ -153,28 +88,40 @@ export async function fetchAirbnbCalendarEvents(
         rawEvent: ''
       };
       
-      // Utiliser la fonction unifiée qui gère déjà toute la logique de nettoyage et de formatage
       const displayTitle = getUnifiedBookingDisplayText(tempReservation, true);
-      
-      // ✅ CORRIGÉ : Utiliser les dates parsées en heure locale pour éviter le décalage
       const startStr = formatLocalDate(startDateObj);
       
       return {
         id: row.airbnb_booking_id,
         title: displayTitle,
-        start: `${startStr}T00:00:00`, // ✅ CORRIGÉ : Utiliser date parsée en heure locale
-        // Use local-midnight string to avoid off-by-one due to toISOString (UTC)
+        start: `${startStr}T00:00:00`,
         end: `${endStr}T00:00:00`,
         allDay: true,
         source: 'airbnb'
       };
     });
 
+    // ✅ Mettre en cache
+    airbnbEventsCache.set(cacheKey, { data: events, timestamp: now });
+
     return events;
 
-  } catch (error) {
-    console.error('❌ Error in fetchAirbnbCalendarEvents:', error);
+  } catch {
     return [];
+  }
+}
+
+// ✅ NOUVEAU : Fonction pour invalider le cache (à appeler après une synchronisation)
+export function invalidateAirbnbEventsCache(propertyId?: string) {
+  if (propertyId) {
+    // Supprimer toutes les entrées du cache pour cette propriété
+    for (const key of airbnbEventsCache.keys()) {
+      if (key.startsWith(propertyId)) {
+        airbnbEventsCache.delete(key);
+      }
+    }
+  } else {
+    airbnbEventsCache.clear();
   }
 }
 
