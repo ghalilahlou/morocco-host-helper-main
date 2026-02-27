@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -11,27 +11,46 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import authImage from '@/assets/hero-laptop.jpg';
 import { urls } from '@/config/runtime';
+
 export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
   const navigate = useNavigate();
+  const hasCheckedSession = useRef(false);
   const {
     toast
   } = useToast();
+  
   useEffect(() => {
-    // Check if user is already logged in
+    // ✅ OPTIMISATION : Vérifier la session une seule fois avec timeout
+    if (hasCheckedSession.current) return;
+    hasCheckedSession.current = true;
+    
     const checkUser = async () => {
-      const {
-        data: {
-          session
+      try {
+        // Timeout de 3 secondes maximum pour la vérification de session
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('timeout')), 3000)
+        );
+        
+        const sessionPromise = supabase.auth.getSession();
+        
+        const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
+        
+        if (result?.data?.session) {
+          navigate('/dashboard/');
+          return;
         }
-      } = await supabase.auth.getSession();
-      if (session) {
-        navigate('/dashboard/');
+      } catch {
+        // En cas de timeout ou erreur, on continue à afficher le formulaire
+      } finally {
+        setIsCheckingSession(false);
       }
     };
+    
     checkUser();
   }, [navigate]);
 
@@ -186,6 +205,23 @@ export default function Auth() {
       navigate('/dashboard/');
     }
   };
+
+  // ✅ Afficher un loader minimal pendant la vérification de session
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <img
+            src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png"
+            alt="Checky Logo"
+            className="w-20 h-20 object-contain animate-pulse"
+          />
+          <Loader2 className="h-6 w-6 animate-spin text-[hsl(var(--cta-basic))]" />
+        </div>
+      </div>
+    );
+  }
+
   return <div className="min-h-screen bg-white">
       <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-4 sm:gap-6 p-4 sm:p-4 md:p-8">
         {/* Left: Auth form - mobile : cadrage centré, marges symétriques */}
