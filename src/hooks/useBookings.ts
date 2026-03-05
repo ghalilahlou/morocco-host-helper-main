@@ -217,10 +217,38 @@ export const useBookings = (options?: UseBookingsOptions) => {
       if (uniqueBookings.length > 0) {
         try {
           const enriched = await enrichBookingsWithGuestSubmissions(uniqueBookings);
-          if (!isStale()) {
-            setBookings(enriched);
-            await multiLevelCache.set(cacheKey, enriched, CACHE_TTL).catch(() => {});
+          if (isStale()) return;
+
+          // STEP 3.5: Batch-fetch signer names from contract_signatures
+          // for bookings whose guest_name is a placeholder
+          const placeholders = ['guest', 'client', 'invité', 'invite', 'voyageur', 'reservation', 'réservation', 'unknown', 'inconnu', ''];
+          const needsName = enriched.filter(b =>
+            (!b.realGuestNames || b.realGuestNames.length === 0) &&
+            placeholders.includes((b.guest_name || '').trim().toLowerCase())
+          );
+
+          if (needsName.length > 0) {
+            const { data: sigs } = await supabase
+              .from('contract_signatures')
+              .select('booking_id, signer_name')
+              .in('booking_id', needsName.map(b => b.id))
+              .not('signer_name', 'is', null);
+
+            if (sigs && sigs.length > 0) {
+              const sigMap = new Map(sigs.map(s => [s.booking_id, s.signer_name]));
+              enriched.forEach(b => {
+                const name = sigMap.get(b.id);
+                if (name && (!b.realGuestNames || b.realGuestNames.length === 0)) {
+                  b.realGuestNames = [name];
+                  b.realGuestCount = 1;
+                  b.hasRealSubmissions = true;
+                }
+              });
+            }
           }
+
+          setBookings(enriched);
+          await multiLevelCache.set(cacheKey, enriched, CACHE_TTL).catch(() => {});
         } catch (enrichErr: any) {
           debug('Enrichment failed (non-blocking)', { error: enrichErr?.message });
           if (!isStale()) {

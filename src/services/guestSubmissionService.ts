@@ -2,7 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Booking } from '@/types/booking';
 
 let submissionsCache: { data: any[], timestamp: number } | null = null;
-const CACHE_DURATION = 2000; // 2s – short TTL so realtime triggers show fresh data quickly
+const CACHE_DURATION = 30000; // 30s – balanced between freshness and avoiding repeated fetches
 
 /** Invalidate the in-memory guest submissions cache (call on realtime events). */
 export const invalidateSubmissionsCache = () => {
@@ -11,7 +11,7 @@ export const invalidateSubmissionsCache = () => {
 
 interface GuestSubmissionData {
   id: string;
-  resolved_booking_id: string | null;  // ✅ CORRECTION : Utiliser resolved_booking_id
+  booking_id: string | null;
   guest_data: any;
   document_urls: any;
   signature_data: string | null;
@@ -82,22 +82,22 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
         });
       }
       
-      // ✅ OPTIMISATION SQL : Sélectionner uniquement les colonnes strictement nécessaires
-      // Éviter de charger des colonnes lourdes (JSON, métadonnées inutiles)
+      // Query guest_submissions directly (the view v_guest_submissions misses rows
+      // whose token_id doesn't match a real property_verification_tokens row).
       const queryPromise = supabase
-        .from('v_guest_submissions')
+        .from('guest_submissions')
         .select(`
           id,
-          resolved_booking_id,
+          booking_id,
           guest_data,
           document_urls,
           signature_data,
           status,
           submitted_at
-        `) // ✅ OPTIMISÉ : Seulement les colonnes nécessaires, pas de SELECT *
-        .in('resolved_booking_id', limitedBookingIds)
-        .not('resolved_booking_id', 'is', null)
-        .limit(200); // ✅ AUGMENTÉ : Limite à 200 résultats avec timeout plus long
+        `)
+        .in('booking_id', limitedBookingIds)
+        .not('booking_id', 'is', null)
+        .limit(200);
       
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error(`Query timeout after ${TIMEOUT_MS}ms`)), TIMEOUT_MS)
@@ -214,9 +214,8 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       console.log('✅ Fetched guest submissions:', submissions);
     }
 
-    // ✅ CORRECTION : Utiliser resolved_booking_id
     const submissionsByBooking = (submissions || []).reduce((acc, submission) => {
-      const bookingId = submission.resolved_booking_id;  // ✅ Utiliser resolved_booking_id
+      const bookingId = submission.booking_id;
       if (!bookingId) return acc;
       
       if (!acc[bookingId]) {

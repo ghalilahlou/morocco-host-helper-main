@@ -193,11 +193,15 @@ export const getUnifiedBookingDisplayText = (
     ? airbnbReservation?.guestName 
     : regularBooking?.guest_name;
   
+  // Placeholder names that should not be displayed as real guest names
+  const PLACEHOLDER_NAMES = ['guest', 'client', 'invité', 'invite', 'voyageur', 'traveler', 'traveller', 'réservation', 'reservation', 'unknown', 'inconnu', 'n/a', 'na', 'test'];
+
   if (guestName) {
     const cleanedGuestName = cleanGuestName(guestName);
-    
-    // ✅ NOUVEAU : Vérifier si c'est un code Airbnb - si oui, passer directement au fallback
-    if (isAirbnbCode(cleanedGuestName)) {
+
+    if (PLACEHOLDER_NAMES.includes(cleanedGuestName.toLowerCase())) {
+      // Skip – fall through to next priorities
+    } else if (isAirbnbCode(cleanedGuestName)) {
       // C'est un code Airbnb, on ne l'affiche pas - on passe au fallback "Réservation"
       // Continue vers PRIORITÉ 4
     } else {

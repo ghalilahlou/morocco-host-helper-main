@@ -14,6 +14,8 @@ import { DocumentsViewer } from './DocumentsViewer';
 import { TestDocumentUpload } from './TestDocumentUpload';
 import { useState, useEffect, memo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
+import { EnrichedBooking } from '@/services/guestSubmissionService';
 
 interface BookingCardProps {
   booking: Booking;
@@ -38,7 +40,8 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
     uploadedDocuments: 0,
     hasSignature: false
   });
-  const [hasAnyDocuments, setHasAnyDocuments] = useState(false); // ✅ NOUVEAU : Vérifier si des documents existent
+  const [hasAnyDocuments, setHasAnyDocuments] = useState(false);
+  const [signerName, setSignerName] = useState<string | null>(null);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR', {
@@ -115,13 +118,29 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
           summary.guestSubmissionsCount > 0 ||
           summary.uploadedDocumentsCount > 0
         );
+
+        // Fetch signer name from contract_signatures if guest_name is a placeholder
+        const needsName = !booking.guest_name || 
+          ['guest', 'réservation', 'reservation'].includes(booking.guest_name.trim().toLowerCase());
+        if (needsName) {
+          const { data: sig } = await supabase
+            .from('contract_signatures')
+            .select('signer_name')
+            .eq('booking_id', booking.id)
+            .not('signer_name', 'is', null)
+            .limit(1)
+            .maybeSingle();
+          if (sig?.signer_name) {
+            setSignerName(sig.signer_name);
+          }
+        }
       } catch (error) {
         console.error('❌ Error loading verification counts:', error);
       }
     };
     
     loadVerificationCounts();
-  }, [booking.id, booking.documentsGenerated]);
+  }, [booking.id, booking.documentsGenerated, booking.guest_name]);
 
   const handleDownloadPolice = async () => {
     try {
@@ -217,9 +236,16 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
           <div className="space-y-1">
               <div className="flex items-center space-x-2">
                 <h3 className="font-semibold text-foreground">
-                  {booking.guests?.[0]?.fullName || 
-                   booking.guest_name || 
-                   'Réservation sans nom'}
+                  {(() => {
+                    const enriched = booking as unknown as EnrichedBooking;
+                    if (enriched.realGuestNames?.length > 0) {
+                      return enriched.realGuestNames[0];
+                    }
+                    if (signerName) return signerName;
+                    const display = getUnifiedBookingDisplayText(booking, true);
+                    if (display && display !== 'Réservation') return display;
+                    return booking.guests?.[0]?.fullName || booking.guest_name || 'Réservation sans nom';
+                  })()}
                 </h3>
                 {getStatusBadge()}
                 {/* ✅ NOUVEAU : Indicateur d'alerte si completed sans documents */}

@@ -450,28 +450,17 @@ export const UnifiedBookingModal = ({
 
   // ✅ TITRE : Code de réservation ou nom du client
   const getTitle = () => {
+    // Use the unified display text which already prioritises guest names
+    if (displayName && displayName !== 'Réservation') {
+      return displayName;
+    }
+
     if (isAirbnb) {
       const airbnbRes = booking as AirbnbReservation;
-      const rawEvent = airbnbRes.rawEvent || '';
-      const patterns = [/details\/([A-Z0-9]{8,12})/i, /tails\/([A-Z0-9]{8,12})/i, /\/([A-Z0-9]{8,12})\\/i, /\b([A-Z0-9]{8,12})\b/g];
-      
-      for (const pattern of patterns) {
-        const matches = rawEvent.match(pattern);
-        if (matches) {
-          const code = matches[1].toUpperCase();
-          if (code !== 'RESERVED' && code !== 'AVAILABLE' && /^[A-Z0-9]{8,12}$/.test(code)) {
-            return code;
-          }
-        }
-      }
       return airbnbRes.airbnbBookingId || 'Réservation Airbnb';
-    } else {
-      const manualBooking = booking as Booking | EnrichedBooking;
-      return bookingCode || 
-        (isEnriched && (manualBooking as EnrichedBooking).realGuestNames[0]) ||
-        (manualBooking as Booking).guests?.[0]?.fullName ||
-        `Réservation #${booking.id.slice(-6)}`;
     }
+
+    return bookingCode || `Réservation #${booking.id.slice(-6)}`;
   };
 
   // ✅ CODE RÉSERVATION : Extraction intelligente
@@ -572,111 +561,46 @@ export const UnifiedBookingModal = ({
         setDocuments({ contractUrl: null, contractId: null, policeUrl: null, policeId: null, identityDocuments: [], loading: true });
       }
 
-      // ✅ ÉTAPE 3 : Chargement depuis uploaded_documents avec timeout progressif
-      // ✅ AUGMENTÉ : 10 secondes pour laisser le temps aux requêtes parallèles de se terminer
-      const TIMEOUT_MS = 10000; // 10 secondes
+      const TIMEOUT_MS = 5000;
       let timeoutReached = false;
       const timeoutId = setTimeout(() => {
         timeoutReached = true;
-        console.warn(`⏱️ [UNIFIED MODAL] Timeout de ${TIMEOUT_MS/1000}s atteint - Affichage du bouton de vérification manuelle`);
         setShowManualCheck(true);
-        // ✅ NE PAS arrêter le loading - laisser les requêtes continuer en arrière-plan
-        // Les documents seront mis à jour dès qu'ils arriveront
       }, TIMEOUT_MS);
 
       try {
-        const startTime = Date.now();
-        console.log('⏱️ [UNIFIED MODAL] Début des requêtes parallèles...');
-        
-        // ✅ PARALLÉLISATION : Utiliser Promise.allSettled pour ne pas bloquer
-        const [uploadedDocsResult, generatedDocsResult, bookingDataResult, edgeFunctionResult, guestSubmissionsResult] = await Promise.allSettled([
-          // Requête 1 : uploaded_documents (documents uploadés ou générés)
+        // 3 fast DB queries in parallel (no Edge Function – it runs in background)
+        const [uploadedDocsResult, bookingDataResult, guestSubmissionsResult] = await Promise.allSettled([
           supabase
             .from('uploaded_documents')
             .select('id, document_url, file_path, document_type, is_signed, extracted_data, guests(full_name, document_number)')
-            .eq('booking_id', booking.id) // ✅ UUID correct
+            .eq('booking_id', booking.id)
             .in('document_type', ['contract', 'police', 'identity', 'identity_upload', 'id-document', 'passport'])
             .order('created_at', { ascending: false }),
-          // ✅ NOUVEAU : Requête 1.5 : generated_documents (si cette table existe)
-          supabase
-            .from('generated_documents')
-            .select('id, document_url, document_type, is_signed, created_at')
-            .eq('booking_id', booking.id) // ✅ UUID correct
-            .in('document_type', ['contract', 'police', 'identity'])
-            .order('created_at', { ascending: false })
-            .then(result => result)
-            .catch(() => ({ data: [], error: null })), // ✅ Fallback si la table n'existe pas
-          // Requête 3 : documents_generated depuis bookings (si pas déjà fait)
-          // ✅ CORRIGÉ : Ne sélectionner que documents_generated (les colonnes legacy n'existent pas)
           !docsGenerated ? supabase
             .from('bookings')
             .select('documents_generated')
-            .eq('id', booking.id) // ✅ UUID correct
+            .eq('id', booking.id)
             .single() : Promise.resolve({ data: null, error: null }),
-          // Requête 4 : Edge function get-guest-documents-unified (fallback complet)
-          supabase.functions.invoke('get-guest-documents-unified', {
-            body: { bookingId: booking.id }
-          }).catch(err => {
-            console.warn('⚠️ [UNIFIED MODAL] Edge function error (non-bloquant):', err);
-            return { data: null, error: err };
-          }),
-          // ✅ NOUVEAU : Requête 5 : guest_submissions (Meet Guest Info) - document_urls
           supabase
             .from('guest_submissions')
             .select('id, document_urls, guest_data, submitted_at')
-            .eq('booking_id', booking.id) // ✅ UUID correct
+            .eq('booking_id', booking.id)
             .order('submitted_at', { ascending: false })
             .limit(1)
         ]);
 
         clearTimeout(timeoutId);
-        
-        const elapsedTime = Date.now() - startTime;
-        console.log(`⏱️ [UNIFIED MODAL] Requêtes terminées en ${elapsedTime}ms`);
-        
-        // ✅ Si le timeout avait été atteint, masquer le bouton maintenant que les données arrivent
-        if (timeoutReached) {
-          console.log('✅ [UNIFIED MODAL] Requêtes terminées après le timeout - Mise à jour des documents');
-          setShowManualCheck(false);
-        } else {
-          setShowManualCheck(false);
-        }
-        
-        console.log('✅ [UNIFIED MODAL] Toutes les requêtes terminées avec succès');
+        setShowManualCheck(false);
 
-        // Traiter uploaded_documents
+        // Fire edge function in background (non-blocking) to patch missing data later
+        const edgeFunctionPromise = supabase.functions.invoke('get-guest-documents-unified', {
+          body: { bookingId: booking.id }
+        }).catch(() => ({ data: null, error: null }));
+
         let uploadedDocs: any[] = [];
         if (uploadedDocsResult.status === 'fulfilled' && !uploadedDocsResult.value.error) {
           uploadedDocs = uploadedDocsResult.value.data || [];
-          console.log('📄 [UNIFIED MODAL] Documents trouvés dans uploaded_documents:', uploadedDocs.length);
-        } else if (uploadedDocsResult.status === 'rejected') {
-          console.error('❌ [UNIFIED MODAL] Erreur uploaded_documents:', uploadedDocsResult.reason);
-        } else if (uploadedDocsResult.value.error) {
-          console.error('❌ [UNIFIED MODAL] Erreur uploaded_documents:', uploadedDocsResult.value.error);
-        }
-
-        // ✅ NOUVEAU : Traiter generated_documents
-        let generatedDocs: any[] = [];
-        if (generatedDocsResult.status === 'fulfilled' && !generatedDocsResult.value.error) {
-          generatedDocs = generatedDocsResult.value.data || [];
-          console.log('📄 [UNIFIED MODAL] Documents trouvés dans generated_documents:', generatedDocs.length);
-          
-          // ✅ COMBINER : Ajouter generated_documents à uploadedDocs pour traitement unifié
-          if (generatedDocs.length > 0) {
-            uploadedDocs = [
-              ...uploadedDocs,
-              ...generatedDocs.map(doc => ({
-                ...doc,
-                file_path: doc.document_url, // ✅ Normaliser le format
-                extracted_data: null
-              }))
-            ];
-            console.log('✅ [UNIFIED MODAL] Documents combinés (uploaded + generated):', uploadedDocs.length);
-          }
-        } else if (generatedDocsResult.status === 'rejected') {
-          console.warn('⚠️ [UNIFIED MODAL] Table generated_documents n\'existe peut-être pas:', generatedDocsResult.reason);
-        } else if (generatedDocsResult.value?.error) {
-          console.warn('⚠️ [UNIFIED MODAL] Erreur generated_documents (non-bloquant):', generatedDocsResult.value.error);
         }
 
         // Traiter documents_generated
@@ -694,21 +618,8 @@ export const UnifiedBookingModal = ({
         // ✅ STOCKER : Sauvegarder dans l'état pour l'affichage
         setBookingDocsGeneratedState(bookingDocsGenerated);
 
-        // Traiter edge function get-guest-documents-unified
+        // Edge function runs in background – resolve later
         let edgeFunctionDocs: any = null;
-        if (edgeFunctionResult.status === 'fulfilled' && !edgeFunctionResult.value.error) {
-          const edgeData = edgeFunctionResult.value.data;
-          if (edgeData?.success && edgeData?.bookings && edgeData.bookings.length > 0) {
-            edgeFunctionDocs = edgeData.bookings[0];
-            console.log('📄 [UNIFIED MODAL] Documents depuis edge function:', {
-              hasContract: edgeFunctionDocs?.documents?.contract?.length > 0,
-              hasPolice: edgeFunctionDocs?.documents?.police?.length > 0,
-              hasIdentity: edgeFunctionDocs?.documents?.identity?.length > 0
-            });
-          }
-        } else if (edgeFunctionResult.status === 'rejected') {
-          console.warn('⚠️ [UNIFIED MODAL] Edge function rejected:', edgeFunctionResult.reason);
-        }
 
         // ✅ NOUVEAU : Traiter guest_submissions (Meet Guest Info) - document_urls
         let guestSubmissionsDocs: { contractUrl?: string; policeUrl?: string; identityUrls?: string[] } = {};
@@ -988,76 +899,8 @@ export const UnifiedBookingModal = ({
                                   (typeof docsGenerated?.police === 'object' && docsGenerated?.police !== null) ||
                                   (typeof bookingDocsGenerated?.police === 'object' && bookingDocsGenerated?.police !== null);
 
-        console.log('✅ [UNIFIED MODAL] Documents finaux:', {
-          contractUrl: !!finalContractUrl,
-          policeUrl: !!finalPoliceUrl,
-          identityCount: finalIdentityDocs.length,
-          hasContractGenerated,
-          hasPoliceGenerated,
-          uploadedDocsCount: uploadedDocs.length,
-          generatedDocsCount: generatedDocs.length,
-          edgeFunctionDocs: !!edgeFunctionDocs,
-          guestSubmissionsDocs: {
-            hasContract: !!guestSubmissionsDocs.contractUrl,
-            hasPolice: !!guestSubmissionsDocs.policeUrl,
-            identityCount: guestSubmissionsDocs.identityUrls?.length || 0
-          },
-          identitySources: {
-            fromUploadedDocs: identityDocs.length,
-            fromGuestSubmissions: guestSubmissionsIdentityDocs.length,
-            fromEdgeFunction: edgeIdentityDocs.length,
-            fromDocsGenerated: identityDocsFromDocsGenerated.length,
-            fromDirect: directIdentityUrl ? 1 : 0,
-            totalUnique: finalIdentityDocs.length
-          },
-          sources: {
-            fromUploadedDocs: !!contractDoc?.url || !!policeDoc?.url,
-            fromGuestSubmissions: !!guestSubmissionsDocs.contractUrl || !!guestSubmissionsDocs.policeUrl,
-            fromEdgeFunction: !!edgeContractUrl || !!edgePoliceUrl,
-            fromInitial: !!initialContractUrl || !!initialPoliceUrl,
-            fromDocsGenerated: !!(bookingDocsGenerated?.contractUrl || bookingDocsGenerated?.policeUrl)
-          }
-        });
-        
-        // ✅ DIAGNOSTIC : Log détaillé si aucun document n'est trouvé
-        if (!finalContractUrl && !finalPoliceUrl && finalIdentityDocs.length === 0) {
-          console.warn('⚠️ [UNIFIED MODAL] AUCUN DOCUMENT TROUVÉ - Diagnostic:', {
-            bookingId: booking.id,
-            uploadedDocs: uploadedDocs.length,
-            generatedDocs: generatedDocs.length,
-            edgeFunctionSuccess: !!edgeFunctionDocs,
-            guestSubmissionsCount: guestSubmissionsResult.status === 'fulfilled' ? (guestSubmissionsResult.value.data?.length || 0) : 0,
-            docsGenerated: bookingDocsGenerated,
-            initialUrls: {
-              contract: !!initialContractUrl,
-              police: !!initialPoliceUrl,
-              identity: !!directIdentityUrl
-            },
-            identitySources: {
-              fromUploadedDocs: identityDocs.length,
-              fromGuestSubmissions: guestSubmissionsIdentityDocs.length,
-              fromEdgeFunction: edgeIdentityDocs.length,
-              fromDocsGenerated: identityDocsFromDocsGenerated.length,
-              fromDirect: directIdentityUrl ? 1 : 0
-            }
-          });
-        }
-        
-        // ✅ DIAGNOSTIC SPÉCIFIQUE : Log si aucune pièce d'identité n'est trouvée
-        if (finalIdentityDocs.length === 0) {
-          console.warn('⚠️ [UNIFIED MODAL] AUCUNE PIÈCE D\'IDENTITÉ TROUVÉE - Diagnostic:', {
-            bookingId: booking.id,
-            uploadedDocsIdentity: uploadedDocs.filter(d => ['identity', 'identity_upload', 'id-document', 'passport'].includes(d.document_type)).length,
-            generatedDocsIdentity: generatedDocs.filter(d => d.document_type === 'identity').length,
-            guestSubmissionsIdentityUrls: guestSubmissionsDocs.identityUrls?.length || 0,
-            edgeFunctionIdentity: edgeIdentityDocs.length,
-            docsGeneratedIdentity: {
-              identityUrl: !!bookingDocsGenerated?.identityUrl || !!docsGenerated?.identityUrl,
-              identityArray: Array.isArray(bookingDocsGenerated?.identity) || Array.isArray(docsGenerated?.identity),
-              identityObject: !!(bookingDocsGenerated?.identity?.url) || !!(docsGenerated?.identity?.url)
-            },
-            directIdentityUrl: !!directIdentityUrl
-          });
+        if (import.meta.env.DEV) {
+          console.log('✅ [MODAL] docs:', { contract: !!finalContractUrl, police: !!finalPoliceUrl, id: finalIdentityDocs.length });
         }
 
         // ✅ STOCKAGE : Stocker aussi les indicateurs de génération pour l'affichage
@@ -1073,14 +916,26 @@ export const UnifiedBookingModal = ({
           ...(hasPoliceGenerated && !finalPoliceUrl ? { policeGenerated: true } : {})
         } as any;
         
-        console.log('💾 [UNIFIED MODAL] Mise à jour de l\'état documents:', {
-          contractUrl: !!documentsToSet.contractUrl,
-          policeUrl: !!documentsToSet.policeUrl,
-          identityCount: documentsToSet.identityDocuments.length,
-          loading: documentsToSet.loading
-        });
-        
         setDocuments(documentsToSet);
+
+        // Background: patch with edge function data if it brings something new
+        edgeFunctionPromise.then(efResult => {
+          if (!efResult?.data?.success) return;
+          const efBooking = efResult.data.bookings?.[0];
+          if (!efBooking) return;
+          const efContract = efBooking.documents?.contract?.[0]?.url;
+          const efPolice = efBooking.documents?.police?.[0]?.url;
+          const efIdentity = efBooking.documents?.identity || [];
+          if ((!finalContractUrl && efContract) || (!finalPoliceUrl && efPolice) || (finalIdentityDocs.length === 0 && efIdentity.length > 0)) {
+            setDocuments(prev => ({
+              ...prev,
+              contractUrl: prev.contractUrl || efContract || null,
+              policeUrl: prev.policeUrl || efPolice || null,
+              identityDocuments: prev.identityDocuments.length > 0 ? prev.identityDocuments : efIdentity.map((d: any, i: number) => ({ id: `ef-${i}`, url: d.url, guestName: d.guestName || 'Invité' })),
+              loading: false
+            }));
+          }
+        });
         
         // ✅ Vérifier si la réservation a des données clients suffisantes
         const hasIdentityDocuments = finalIdentityDocs.length > 0;
@@ -1480,7 +1335,7 @@ export const UnifiedBookingModal = ({
           {/* ✅ CORRIGÉ : Afficher les boutons "Générer" uniquement si :
               - La réservation est terminée (completed) OU
               - La réservation est en attente (pending) ET a des données clients (guests complets OU pièces d'identité) */}
-          {!isAirbnb && (
+          {!isAirbnb && isEffectivelyCompleted && (
             <Card>
               <CardHeader className={cn(isMobile ? "p-3 pb-2" : "")}>
                 <CardTitle className={cn(
@@ -1609,19 +1464,7 @@ export const UnifiedBookingModal = ({
                           )}>Document contractuel {status === 'completed' ? 'signé' : 'à signer physiquement'}</p>
                     </div>
                   </div>
-                  {/* ✅ DIAGNOSTIC : Log pour comprendre pourquoi les documents ne s'affichent pas */}
-                  {(() => {
-                    console.log('🔍 [UNIFIED MODAL] État d\'affichage contrat:', {
-                      hasContractUrl: !!documents.contractUrl,
-                      hasGuestData,
-                      status,
-                      contractUrl: documents.contractUrl ? documents.contractUrl.substring(0, 50) + '...' : null,
-                      docsGeneratedState: docsGeneratedState,
-                      bookingDocsGeneratedState: bookingDocsGeneratedState,
-                      canGenerate: hasGuestData || (docsGeneratedState?.contract === true) || (bookingDocsGeneratedState?.contract === true)
-                    });
-                    return null;
-                  })()}
+                  
                   {documents.contractUrl ? (
                     <div className={cn(
                       "flex flex-wrap items-center gap-2",
@@ -1774,16 +1617,7 @@ export const UnifiedBookingModal = ({
                       )}>Formulaire de déclaration de police</p>
                     </div>
                   </div>
-                  {/* ✅ DIAGNOSTIC : Log pour comprendre pourquoi les documents ne s'affichent pas */}
-                  {(() => {
-                    console.log('🔍 [UNIFIED MODAL] État d\'affichage police:', {
-                      hasPoliceUrl: !!documents.policeUrl,
-                      hasGuestData,
-                      status,
-                      policeUrl: documents.policeUrl ? documents.policeUrl.substring(0, 50) + '...' : null
-                    });
-                    return null;
-                  })()}
+                  
                   {documents.policeUrl ? (
                     <div className={cn(
                       "flex gap-2",

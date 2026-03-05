@@ -72,20 +72,8 @@ export const Dashboard = memo(({
       return matchesSearch && matchesStatus;
     });
     
-    // ✅ OPTIMISATION : Logs désactivés en production pour améliorer les performances
-    if (import.meta.env.DEV) {
-      debug('📋 [DASHBOARD] Réservations filtrées', {
-        total: bookings.length,
-        filtered: filtered.length,
-        searchTerm,
-        statusFilter,
-        viewMode,
-        excludedICS: bookings.filter(b => isAirbnbCode(b.bookingReference)).length
-      });
-    }
-    
     return filtered;
-  }, [bookings, searchTerm, statusFilter, viewMode]);
+  }, [bookings, searchTerm, statusFilter]);
 
   // Écouter l'événement de création de réservation depuis CalendarHeader
   useEffect(() => {
