@@ -55,18 +55,10 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
   };
 
   const getStatusBadge = () => {
-    switch (booking.status) {
-      case 'completed':
-        return <Badge variant="default" className="bg-success text-success-foreground">Terminé</Badge>;
-      case 'confirmed':
-        return <Badge variant="default" className="bg-amber-500 text-white">Confirmé</Badge>;
-      case 'pending':
-        return <Badge variant="secondary">En attente</Badge>;
-      case 'archived':
-        return <Badge variant="outline">Archivé</Badge>;
-      default:
-        return <Badge variant="secondary">En attente</Badge>;
+    if (hasAnyDocuments && booking.status === 'completed') {
+      return <Badge variant="default" className="bg-emerald-500 text-white">Terminé</Badge>;
     }
+    return <Badge variant="secondary" className="bg-[#222] text-white">En attente</Badge>;
   };
 
   const canGenerateDocuments = booking.guests.length > 0;

@@ -537,68 +537,18 @@ const handleOpenConfig = useCallback(() => {
     
     
     // ÉTAPE 2: Appliquer les couleurs avec conflits inclus
-    // ✅ LOGIQUE CORRIGÉE - PRIORITÉ ABSOLUE À INDEPENDENT_BOOKING :
-    // - ROUGE : Conflits
-    // - GRIS : Réservations INDEPENDENT_BOOKING confirmées/completed (Mouhcine, Zaineb)
-    // - GRIS : Réservations validées avec NOM de guest
-    // - NOIR : Réservations en attente avec CODE Airbnb (HM52S5FSAZ, HMKNEJMCRM)
+    // Unified 2-state color logic:
+    //   ROUGE = conflit
+    //   GRIS  = terminé (documents contract + police présents)
+    //   NOIR  = en attente (documents manquants)
     bookings.forEach(booking => {
-      // ✅ PRIORITÉ 1: Rouge si en conflit
       if (conflicts.includes(booking.id)) {
         overrides[booking.id] = BOOKING_COLORS.conflict.tailwind;
-      } 
-      // ✅ PRIORITÉ 2 (NOUVELLE): INDEPENDENT_BOOKING confirmées → TOUJOURS GRIS
-      // Cette vérification AVANT toute autre logique garantit que les réservations 
-      // indépendantes validées restent grises même avec la sync ICS activée
-      else if (
-        booking.bookingReference === 'INDEPENDENT_BOOKING' && 
-        (booking.status === 'confirmed' || booking.status === 'completed')
-      ) {
-        // GRIS pour réservations indépendantes confirmées (Mouhcine, Zaineb)
-        overrides[booking.id] = BOOKING_COLORS.completed.tailwind; // Gris clair #E5E5E5
-      } 
-      else {
-        // Vérifier si la réservation a un code Airbnb
-        const hasAirbnbCode = booking.bookingReference && 
-          booking.bookingReference !== 'INDEPENDENT_BOOKING' &&
-          /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test(booking.bookingReference);
-        
-        // Vérifier si la réservation est validée (a des documents et guests complets)
-        const documents = getBookingDocumentStatus(booking);
-        const isValidated = documents.isValidated;
-        
-        // ✅ NOUVEAU : Vérifier si le displayText est un NOM (pas un code)
-        // Utiliser getUnifiedBookingDisplayText pour obtenir le texte affiché
-        const displayText = getUnifiedBookingDisplayText(booking, true);
-        const hasValidName = displayText && 
-          displayText.length >= 2 && 
-          /[a-zA-ZÀ-ÿ]{2,}/.test(displayText) && // Contient au moins 2 lettres
-          !/^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test(displayText); // Pas un code
-        
-        // ✅ LOGIQUE : PRIORITÉ AUX CODES (ALIGNÉE AVEC CalendarBookingBar)
-        // 1. Si c'est un code Airbnb ET complété/confirmé → GRIS
-        // 2. Si c'est un code Airbnb ET pas complété/confirmé → NOIR
-        // 3. Si c'est validé (avec nom de guest) → GRIS
-        // 4. Si le displayText est un NOM (pas un code) → GRIS
-        
-        const isCompleted = booking.status === 'completed';
-        const isConfirmed = booking.status === 'confirmed';
-        
-        // ✅ FIX : Vérifier d'abord si la réservation ICS/Airbnb est complétée
-        if (hasAirbnbCode && (isCompleted || isConfirmed || hasValidName)) {
-          // GRIS pour codes Airbnb complétés/confirmés (guest a validé)
-          overrides[booking.id] = BOOKING_COLORS.completed.tailwind; // Gris clair #E5E5E5
-        } else if (hasAirbnbCode && !isValidated && !hasValidName) {
-          // NOIR pour codes Airbnb en attente (HM52S5FSAZ, HMKNEJMCRM, etc.)
-          overrides[booking.id] = 'bg-[#222222]';
-        } else if (isValidated || updatedMatchedBookings.includes(booking.id) || hasValidName) {
-          // GRIS pour réservations validées avec nom de guest (Mouhcine, Zaineb)
-          // OU réservations avec nom valide (pas un code)
-          overrides[booking.id] = BOOKING_COLORS.completed.tailwind; // Gris clair #E5E5E5
-        } else {
-          // NOIR par défaut pour autres réservations en attente
-          overrides[booking.id] = BOOKING_COLORS.default?.tailwind || BOOKING_COLORS.manual.tailwind;
-        }
+      } else {
+        const hasDocs = booking.documentsGenerated?.contract && booking.documentsGenerated?.policeForm;
+        overrides[booking.id] = hasDocs
+          ? BOOKING_COLORS.completed.tailwind   // Gris clair
+          : 'bg-[#222222]';                     // Noir
       }
     });
 
@@ -620,15 +570,11 @@ const handleOpenConfig = useCallback(() => {
       });
       
       if (!hasManualMatch) {
-        // ✅ PRIORITÉ 1: Rouge si en conflit
         if (conflicts.includes(reservation.id)) {
           overrides[reservation.id] = BOOKING_COLORS.conflict.tailwind;
         } else {
-        overrides[reservation.id] = AirbnbSyncService.getAirbnbReservationColor(
-          reservation,
-          updatedMatchedBookings,
-            conflicts // ✅ Inclure les conflits
-        );
+          // Airbnb-only reservations are always "en attente" (noir) since no docs
+          overrides[reservation.id] = 'bg-[#222222]';
         }
       }
     });
@@ -1012,14 +958,15 @@ const handleOpenConfig = useCallback(() => {
   }, [conflictDetails, allReservations, calendarDays]);
 
   const getStats = useMemo(() => {
-    const completed = bookings.filter(b => b.status === 'completed').length;
-    
-    const pending = bookings.filter(b => 
-      b.status !== 'completed'
-    ).length + airbnbReservations.filter(r => 
+    const completed = bookings.filter(b =>
+      b.documentsGenerated?.contract && b.documentsGenerated?.policeForm
+    ).length;
+
+    const totalBookings = bookings.length + airbnbReservations.filter(r =>
       !matchedBookings.includes(r.id)
     ).length;
     
+    const pending = totalBookings - completed;
     const conflictsCount = conflicts.length;
 
     return { completed, pending, conflicts: conflictsCount };

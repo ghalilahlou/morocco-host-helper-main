@@ -78,13 +78,11 @@ const BookingsStatHover = ({ label, count, bookings, className, formatDate, extr
                   </p>
                 </div>
                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                  b.status === 'completed'
+                  (b.documentsGenerated?.contract && b.documentsGenerated?.policeForm)
                     ? 'bg-emerald-50 text-emerald-600'
-                    : b.status === 'confirmed'
-                    ? 'bg-blue-50 text-blue-600'
-                    : 'bg-amber-50 text-amber-600'
+                    : 'bg-gray-100 text-gray-700'
                 }`}>
-                  {b.status === 'completed' ? 'Terminé' : b.status === 'confirmed' ? 'Confirmé' : 'En attente'}
+                  {(b.documentsGenerated?.contract && b.documentsGenerated?.policeForm) ? 'Terminé' : 'En attente'}
                 </span>
               </div>
             ))}
@@ -395,14 +393,12 @@ export const PropertyDetail = () => {
 
   const propertyBookings = bookings.filter(booking => booking.propertyId === property.id);
 
-  const isBookingCompleted = (booking: any) => booking.status === 'completed';
+  const isBookingCompleted = (booking: any) =>
+    booking.documentsGenerated?.contract && booking.documentsGenerated?.policeForm;
 
-  // Bookings that were created by Airbnb sync (have HM... codes) are already
-  // counted in airbnbReservationsCount, so we split them out to avoid double-counting.
   const airbnbCodedBookings = propertyBookings.filter(b => isAirbnbCode(b.bookingReference));
   const manualBookings = propertyBookings.filter(b => !isAirbnbCode(b.bookingReference));
 
-  // Unique airbnb-only count (those WITHOUT a matching booking entry)
   const uniqueAirbnbOnly = Math.max(0, airbnbReservationsCount - airbnbCodedBookings.length);
 
   const completedBookings = propertyBookings.filter(b => isBookingCompleted(b));

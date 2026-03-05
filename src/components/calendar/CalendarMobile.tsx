@@ -204,36 +204,21 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
           
           const isConflict = conflicts.includes(booking.id);
           
-          // ✅ Vérifier le statut de la réservation
-          const status = 'status' in booking ? (booking as Booking).status : undefined;
-          const isCompleted = status === 'completed';
-          const isConfirmed = status === 'confirmed';
-          
+          // Unified 2-state: docs present → gris (terminé), otherwise → noir (en attente)
+          const bTyped = 'status' in booking ? (booking as Booking) : null;
+          const hasDocs = bTyped?.documentsGenerated?.contract && bTyped?.documentsGenerated?.policeForm;
+
           let color: string;
           let textColor: string;
-          
-          // ✅ CORRIGÉ : Couleurs selon le design Figma - ALIGNÉ AVEC CalendarBookingBar
-          // 1. Rouge pour conflits
-          // 2. GRIS pour codes Airbnb/ICS COMPLÉTÉS/CONFIRMÉS
-          // 3. NOIR pour codes Airbnb/ICS EN ATTENTE
-          // 4. GRIS pour noms valides
+
           if (isConflict) {
-            color = BOOKING_COLORS.conflict.hex; // Rouge #FF5A5F
+            color = BOOKING_COLORS.conflict.hex;
             textColor = 'text-white';
-          } else if ((hasAirbnbCode || isAirbnb) && (isCompleted || isConfirmed || isValidName)) {
-            // ✅ FIX : GRIS pour codes Airbnb/ICS complétés/confirmés
-            color = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
-            textColor = 'text-gray-900';
-          } else if (hasAirbnbCode || isAirbnb) {
-            // NOIR pour codes Airbnb/ICS en attente
-            color = '#222222'; // Noir pour codes (comme dans Figma)
-            textColor = 'text-white';
-          } else if (isValidName) {
-            // GRIS pour noms valides (vérifier APRÈS les codes)
-            color = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
+          } else if (hasDocs) {
+            color = BOOKING_COLORS.completed.hex;
             textColor = 'text-gray-900';
           } else {
-            color = BOOKING_COLORS.default.hex; // Noir #1A1A1A pour autres réservations en attente
+            color = '#222222';
             textColor = 'text-white';
           }
           
@@ -277,16 +262,13 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
           const isConflict = conflicts.includes(bookingData.booking.id);
           let color: string;
           let textColor: string;
-          
-          // ✅ AIRBNB : Couleurs selon le statut
+
           if (isConflict) {
-            color = BOOKING_COLORS.conflict.hex; // Rouge Airbnb #FF5A5F
+            color = BOOKING_COLORS.conflict.hex;
             textColor = 'text-white';
-          } else if (isValidName) {
-            color = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
-            textColor = 'text-gray-900';
           } else {
-            color = BOOKING_COLORS.default.hex; // Gris foncé/noir #1A1A1A
+            // Airbnb-only entries have no docs → always noir (en attente)
+            color = '#222222';
             textColor = 'text-white';
           }
           

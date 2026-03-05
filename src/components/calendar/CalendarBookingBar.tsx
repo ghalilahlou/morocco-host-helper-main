@@ -71,54 +71,21 @@ export const CalendarBookingBar = memo(({
   // Si c'est un code → réservation EN ATTENTE (noir)
   const isValidName = isValidGuestName(displayLabel);
   
-  // 4. Déterminer le statut (uniquement pour les bookings manuels)
-  const status = 'status' in booking ? (booking as Booking).status : undefined;
-  const isCompleted = status === 'completed';
-  const isConfirmed = status === 'confirmed';
-  
-  // ✅ ICS/AIRBNB : Détecter les réservations ICS/Airbnb issues de fichiers ICS
-  // Toute réservation avec bookingReference au format Airbnb (HM, CL, etc.) est considérée comme ICS/Airbnb
-  const hasAirbnbCode = 'bookingReference' in booking && 
-    (booking as Booking).bookingReference && 
-    (booking as Booking).bookingReference !== 'INDEPENDENT_BOOKING' &&
-    /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test((booking as Booking).bookingReference);
-  
-  // ✅ RÉSERVATION INDÉPENDANTE : Détecter si c'est une réservation indépendante confirmée
-  const isIndependentConfirmed = 'bookingReference' in booking &&
-    (booking as Booking).bookingReference === 'INDEPENDENT_BOOKING' &&
-    (isConfirmed || isCompleted);
-  
-  // ✅ AIRBNB : Détecter si c'est une réservation Airbnb réelle (depuis airbnb_reservations)
-  const isAirbnb = 'airbnb_booking_id' in booking || 
-    ('source' in booking && (booking as any).source === 'airbnb');
+  // Unified 2-state: documents present → gris (terminé), otherwise → noir (en attente)
+  const bookingTyped = 'status' in booking ? (booking as Booking) : null;
+  const hasDocs = bookingTyped?.documentsGenerated?.contract && bookingTyped?.documentsGenerated?.policeForm;
 
-  // ✅ COPIÉ EXACTEMENT DE CalendarMobile.tsx (lignes 224-242)
-  // Couleurs selon le design Figma - ALIGNÉ AVEC MOBILE
-  // 1. Rouge pour conflits
-  // 2. GRIS pour codes Airbnb/ICS COMPLÉTÉS/CONFIRMÉS OU avec nom valide
-  // 3. NOIR pour codes Airbnb/ICS EN ATTENTE
-  // 4. GRIS pour noms valides
-  // 5. NOIR par défaut
   let barColor: string;
   let textColor: string;
 
   if (isConflict) {
-    barColor = BOOKING_COLORS.conflict.hex; // Rouge #FF5A5F
+    barColor = BOOKING_COLORS.conflict.hex;
     textColor = 'text-white';
-  } else if ((hasAirbnbCode || isAirbnb) && (isCompleted || isConfirmed || isValidName)) {
-    // ✅ EXACTEMENT COMME MOBILE : GRIS pour codes Airbnb/ICS complétés/confirmés ou avec nom valide
-    barColor = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
-    textColor = 'text-gray-900';
-  } else if (hasAirbnbCode || isAirbnb) {
-    // NOIR pour codes Airbnb/ICS en attente
-    barColor = '#222222'; // Noir pour codes (comme dans Figma)
-    textColor = 'text-white';
-  } else if (isValidName) {
-    // GRIS pour noms valides (vérifier APRÈS les codes)
-    barColor = BOOKING_COLORS.completed.hex; // Gris clair #E5E5E5
+  } else if (hasDocs) {
+    barColor = BOOKING_COLORS.completed.hex; // Gris clair
     textColor = 'text-gray-900';
   } else {
-    barColor = BOOKING_COLORS.default.hex; // Noir #1A1A1A pour autres réservations en attente
+    barColor = '#222222'; // Noir
     textColor = 'text-white';
   }
   
@@ -145,8 +112,6 @@ export const CalendarBookingBar = memo(({
         zIndex: 1000 + (bookingData.layer || 0),
         boxShadow: isConflict 
           ? '0 4px 12px rgba(220,38,38,0.25)' 
-          : isAirbnb
-          ? '0 2px 8px rgba(255,56,92,0.30)' // ✅ AIRBNB : Ombre rose pour Airbnb
           : '0 2px 6px rgba(15,23,42,0.20)',
         border: 'none',
         pointerEvents: 'auto', // ✅ CRITIQUE : S'assurer que les événements sont activés

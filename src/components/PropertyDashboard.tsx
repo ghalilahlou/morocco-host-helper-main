@@ -102,10 +102,13 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
 
 
   // Total = réservations (bookings) uniquement ; ne pas additionner Airbnb pour éviter 50+29=79
+  const completedCount = filteredBookings.filter(b =>
+    b.documentsGenerated?.contract && b.documentsGenerated?.policeForm
+  ).length;
   const stats = {
     total: filteredBookings.length,
-    pending: filteredBookings.filter(b => b.status === 'pending' || b.status === 'confirmed').length,
-    completed: filteredBookings.filter(b => b.status === 'completed').length,
+    pending: filteredBookings.length - completedCount - filteredBookings.filter(b => b.status === 'archived').length,
+    completed: completedCount,
     archived: filteredBookings.filter(b => b.status === 'archived').length,
     airbnb: airbnbReservationsCount,
   };
@@ -207,9 +210,9 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <FileCheck className="h-4 w-4" style={{ color: BOOKING_COLORS.completed.hex }} />
+                <FileCheck className="h-4 w-4 text-emerald-500" />
                 <div>
-                  <div className="text-lg sm:text-2xl font-bold" style={{ color: BOOKING_COLORS.completed.hex }}>{stats.completed}</div>
+                  <div className="text-lg sm:text-2xl font-bold text-emerald-500">{stats.completed}</div>
                   <div className="text-xs text-muted-foreground">Terminé</div>
                 </div>
               </div>

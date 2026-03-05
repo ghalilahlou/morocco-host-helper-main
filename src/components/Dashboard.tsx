@@ -65,8 +65,9 @@ export const Dashboard = memo(({
                            booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            (booking.guests || []).some(guest => guest?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()));
       
-      // ✅ FILTRE 4 : Filtre par statut
-      const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
+      const hasDocs = booking.documentsGenerated?.contract && booking.documentsGenerated?.policeForm;
+      const effectiveStatus = hasDocs ? 'completed' : 'pending';
+      const matchesStatus = statusFilter === 'all' || effectiveStatus === statusFilter;
       
       return matchesSearch && matchesStatus;
     });

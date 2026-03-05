@@ -165,21 +165,16 @@ export const UnifiedBookingModal = ({
 
   // ✅ STATUS BADGE : Couleur selon le statut
   const getStatusBadge = () => {
-    const statusColors = {
-      completed: { bg: '#10b981', text: 'Terminé' },
-      pending: { bg: BOOKING_COLORS.pending.hex, text: 'En attente' },
-      confirmed: { bg: '#f59e0b', text: 'Confirmé' },
-      default: { bg: '#64748b', text: 'En attente' }
-    };
-    
-    const statusInfo = statusColors[status as keyof typeof statusColors] || statusColors.default;
-    
+    const isCompleted = status === 'completed';
     return (
       <Badge 
         variant="secondary" 
-        style={{ backgroundColor: statusInfo.bg, color: 'white' }}
+        style={{ 
+          backgroundColor: isCompleted ? '#10b981' : '#222222',
+          color: 'white' 
+        }}
       >
-        {statusInfo.text}
+        {isCompleted ? 'Terminé' : 'En attente'}
       </Badge>
     );
   };
@@ -1307,14 +1302,10 @@ export const UnifiedBookingModal = ({
 
   const hasAllRequiredDocuments = documents.contractUrl && documents.policeUrl && documents.identityDocuments.length > 0;
 
-  // Effective status: downgrade 'completed' to 'confirmed' when documents are missing.
-  // A booking should only show "Terminé" if it truly has all required documents.
-  const status = (() => {
-    if (rawStatus === 'completed' && !documents.loading && !hasAllRequiredDocuments) {
-      return 'confirmed';
-    }
-    return rawStatus;
-  })();
+  // Unified display status: only 2 states visible to the user.
+  // "Terminé" = all documents present, "En attente" = anything else.
+  const isEffectivelyCompleted = !documents.loading && hasAllRequiredDocuments;
+  const status = isEffectivelyCompleted ? 'completed' : (rawStatus === 'archived' ? 'archived' : 'pending');
 
   const handleClose = (open: boolean) => {
     if (!open) onClose();
@@ -1395,9 +1386,7 @@ export const UnifiedBookingModal = ({
               isMobile ? "text-lg" : ""
             )}>
               <div className="w-3 h-3 rounded-full" style={{
-                backgroundColor: status === 'completed' ? '#10b981' : 
-                                status === 'pending' ? BOOKING_COLORS.pending.hex : 
-                                BOOKING_COLORS.completed.hex
+                backgroundColor: status === 'completed' ? '#10b981' : '#222222'
               }}></div>
               {getTitle()}
               {getStatusBadge()}
@@ -1491,7 +1480,7 @@ export const UnifiedBookingModal = ({
           {/* ✅ CORRIGÉ : Afficher les boutons "Générer" uniquement si :
               - La réservation est terminée (completed) OU
               - La réservation est en attente (pending) ET a des données clients (guests complets OU pièces d'identité) */}
-          {(status === 'completed' || status === 'confirmed' || (status === 'pending' && hasGuestData)) && !isAirbnb && (
+          {!isAirbnb && (
             <Card>
               <CardHeader className={cn(isMobile ? "p-3 pb-2" : "")}>
                 <CardTitle className={cn(
@@ -1509,7 +1498,7 @@ export const UnifiedBookingModal = ({
                 isMobile ? "p-3 pt-0 space-y-2" : "space-y-4"
               )}>
                 {/* ✅ NOUVEAU : Afficher un avertissement si documents manquants pour réservation completed */}
-                {(status === 'confirmed' || (rawStatus === 'completed' && !hasAllRequiredDocuments)) && !documents.loading && (
+                {!isEffectivelyCompleted && !documents.loading && (
                   <div className="bg-amber-50 border-2 border-amber-200 rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-amber-600" />
