@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Download, FileText, Users, Shield, Eye } from 'lucide-react';
+import { Download, FileText, Users, Shield, Eye, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { Booking } from '@/types/booking';
 import { useToast } from '@/hooks/use-toast';
 import { DocumentStorageService } from '@/services/documentStorageService';
 import { DocumentSynchronizationService } from '@/services/documentSynchronizationService';
+import { getCachedDocuments, setCachedDocuments, invalidateDocumentsCache } from '@/services/documentsCache';
 import { UnifiedDocument } from '@/types/document';
 import jsPDF from 'jspdf';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -63,7 +64,7 @@ export const DocumentsViewer = ({
     toast
   } = useToast();
   useEffect(() => {
-    loadDocuments();
+    loadDocuments(false); // false = utiliser le cache si disponible
   }, [booking.id]);
   const handleGenerateIDDocuments = async () => {
     try {
@@ -111,6 +112,7 @@ export const DocumentsViewer = ({
         ...prev,
         guestDocuments: identityDocs
       }));
+      invalidateDocumentsCache(booking.id); // Invalider pour prochain chargement
       
       toast({
         title: "Documents récupérés",
@@ -128,8 +130,18 @@ export const DocumentsViewer = ({
     }
   };
 
-  const loadDocuments = async () => {
+  const loadDocuments = async (forceRefresh = false) => {
     try {
+      // ✅ PHASE 3 - Cache par booking.id (ANALYSE_PERFORMANCE_STORAGE_GUEST_DOCUMENTS.md)
+      if (!forceRefresh) {
+        const cached = getCachedDocuments(booking.id);
+        if (cached) {
+          setDocuments(cached);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       setIsLoading(true);
       console.log('📋 Loading documents for booking:', booking.id);
 
@@ -199,6 +211,7 @@ export const DocumentsViewer = ({
       }
 
       setDocuments(transformedDocs);
+      setCachedDocuments(booking.id, transformedDocs);
     } catch (error) {
       console.error('❌ Error loading documents:', error);
       toast({
@@ -369,14 +382,24 @@ export const DocumentsViewer = ({
                 {booking.checkInDate} to {booking.checkOutDate} • {booking.numberOfGuests} guests
               </CardDescription>
             </div>
-            <Button 
-              variant="outline" 
-              onClick={onClose}
-              size={isMobile ? "sm" : "default"}
-              className={cn(isMobile ? "w-full" : "")}
-            >
-              Fermer
-            </Button>
+            <div className={cn("flex gap-2", isMobile ? "w-full" : "")}>
+              <Button
+                variant="ghost"
+                size={isMobile ? "sm" : "default"}
+                onClick={() => loadDocuments(true)}
+                title="Rafraîchir les documents"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={onClose}
+                size={isMobile ? "sm" : "default"}
+                className={cn(isMobile ? "flex-1" : "")}
+              >
+                Fermer
+              </Button>
+            </div>
           </div>
         </CardHeader>
         
@@ -787,8 +810,8 @@ export const DocumentsViewer = ({
                             title: "Nettoyage terminé",
                             description: data.message || "Doublons supprimés avec succès"
                           });
-                          // Recharger les documents
-                          loadDocuments();
+                          invalidateDocumentsCache(booking.id);
+                          loadDocuments(true); // Force refresh après nettoyage
                         }
                       } catch (error) {
                         console.error('❌ Erreur nettoyage:', error);

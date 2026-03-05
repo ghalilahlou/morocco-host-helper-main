@@ -119,7 +119,7 @@ export const UnifiedBookingModal = ({
         : parseLocalDate((booking as Booking).checkOutDate))
     : new Date();
 
-  const status = booking
+  const rawStatus = booking
     ? (isAirbnb 
         ? 'pending' 
         : (booking as Booking).status || 'pending')
@@ -133,10 +133,9 @@ export const UnifiedBookingModal = ({
   // ✅ CORRIGÉ : Utiliser useMemo pour éviter les problèmes d'ordre d'initialisation et références circulaires
   const bookingTyped = booking as Booking;
   const isICSReservation = useMemo(() => {
-    if (isAirbnb || !bookingTyped || status !== 'pending') return false;
+    if (isAirbnb || !bookingTyped || rawStatus !== 'pending') return false;
     if (!bookingTyped.bookingReference || bookingTyped.bookingReference === 'INDEPENDENT_BOOKING') return false;
     
-    // Vérifier si tous les guests sont complets
     const hasCompleteGuests = bookingTyped.guests && bookingTyped.guests.length > 0 && 
       bookingTyped.guests.every(guest => 
         guest.fullName && 
@@ -144,9 +143,8 @@ export const UnifiedBookingModal = ({
         guest.nationality
       );
     
-    // C'est une réservation ICS si pas de guests complets
     return !hasCompleteGuests;
-  }, [isAirbnb, booking, status]); // ✅ CORRIGÉ : Utiliser booking au lieu de bookingTyped pour éviter les problèmes de référence
+  }, [isAirbnb, booking, rawStatus]);
 
   // ✅ PROPERTY ID : Priorité propertyId > booking.propertyId > booking.property?.id
   const propertyId = propPropertyId || 
@@ -170,7 +168,7 @@ export const UnifiedBookingModal = ({
     const statusColors = {
       completed: { bg: '#10b981', text: 'Terminé' },
       pending: { bg: BOOKING_COLORS.pending.hex, text: 'En attente' },
-      confirmed: { bg: BOOKING_COLORS.completed.hex, text: 'Confirmé' },
+      confirmed: { bg: '#f59e0b', text: 'Confirmé' },
       default: { bg: '#64748b', text: 'En attente' }
     };
     
@@ -507,8 +505,7 @@ export const UnifiedBookingModal = ({
   // ⚠️ CRITIQUE : Ce useEffect doit TOUJOURS être appelé (même si booking est null)
   useEffect(() => {
     const loadDocuments = async () => {
-      // ✅ MODIFIÉ : Charger aussi pour les réservations 'pending' (nouvelles réservations créées par host)
-      if (!booking || (status !== 'completed' && status !== 'pending') || isAirbnb || !booking.id) {
+      if (!booking || (rawStatus !== 'completed' && rawStatus !== 'pending' && rawStatus !== 'confirmed') || isAirbnb || !booking.id) {
         setDocuments({ contractUrl: null, contractId: null, policeUrl: null, policeId: null, identityDocuments: [], loading: false });
         setShowManualCheck(false);
         return;
@@ -1140,7 +1137,7 @@ export const UnifiedBookingModal = ({
     };
 
     loadDocuments();
-  }, [status, isAirbnb, booking?.id]);
+  }, [rawStatus, isAirbnb, booking?.id]);
 
   // ✅ GÉNÉRATION DU CONTRAT (copié depuis BookingCard)
   const handleGenerateContract = async () => {
@@ -1308,21 +1305,19 @@ export const UnifiedBookingModal = ({
     return null;
   }
 
-  // ✅ NOUVEAU : Vérifier si tous les documents requis sont présents
   const hasAllRequiredDocuments = documents.contractUrl && documents.policeUrl && documents.identityDocuments.length > 0;
-  
-  // ✅ NOUVEAU : Fonction pour gérer la fermeture avec validation
-  const handleClose = (open: boolean) => {
-    if (!open && status === 'completed' && !hasAllRequiredDocuments) {
-      // ✅ Empêcher la fermeture si documents incomplets
-      toast({
-        title: "Documents manquants",
-        description: "Tous les documents (ID, Contrat, Police) doivent être présents avant de fermer le dossier.",
-        variant: "destructive"
-      });
-      return;
+
+  // Effective status: downgrade 'completed' to 'confirmed' when documents are missing.
+  // A booking should only show "Terminé" if it truly has all required documents.
+  const status = (() => {
+    if (rawStatus === 'completed' && !documents.loading && !hasAllRequiredDocuments) {
+      return 'confirmed';
     }
-    onClose();
+    return rawStatus;
+  })();
+
+  const handleClose = (open: boolean) => {
+    if (!open) onClose();
   };
   
   // ✅ CORRIGÉ : Fonction pour générer les documents manquants individuellement
@@ -1496,7 +1491,7 @@ export const UnifiedBookingModal = ({
           {/* ✅ CORRIGÉ : Afficher les boutons "Générer" uniquement si :
               - La réservation est terminée (completed) OU
               - La réservation est en attente (pending) ET a des données clients (guests complets OU pièces d'identité) */}
-          {(status === 'completed' || (status === 'pending' && hasGuestData)) && !isAirbnb && (
+          {(status === 'completed' || status === 'confirmed' || (status === 'pending' && hasGuestData)) && !isAirbnb && (
             <Card>
               <CardHeader className={cn(isMobile ? "p-3 pb-2" : "")}>
                 <CardTitle className={cn(
@@ -1514,27 +1509,26 @@ export const UnifiedBookingModal = ({
                 isMobile ? "p-3 pt-0 space-y-2" : "space-y-4"
               )}>
                 {/* ✅ NOUVEAU : Afficher un avertissement si documents manquants pour réservation completed */}
-                {status === 'completed' && !hasAllRequiredDocuments && !documents.loading && (
-                  <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 space-y-3">
+                {(status === 'confirmed' || (rawStatus === 'completed' && !hasAllRequiredDocuments)) && !documents.loading && (
+                  <div className="bg-amber-50 border-2 border-amber-200 rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-red-600" />
-                      <p className="font-semibold text-red-900">Documents manquants</p>
+                      <AlertTriangle className="w-5 h-5 text-amber-600" />
+                      <p className="font-semibold text-amber-900">Documents manquants</p>
                     </div>
-                    <p className="text-sm text-red-700">
-                      Cette réservation est terminée mais ne contient pas tous les documents requis (ID, Contrat, Police).
+                    <p className="text-sm text-amber-700">
+                      Cette réservation ne contient pas tous les documents requis (ID, Contrat, Police). Générez-les pour finaliser le dossier.
                     </p>
-                    <div className="flex flex-wrap gap-2 text-xs text-red-600">
-                      {!documents.contractUrl && <span className="px-2 py-1 bg-red-100 rounded">❌ Contrat manquant</span>}
-                      {/* ✅ MODIFIÉ: Ne pas afficher "Police manquante" si le contrat est signé (génération automatique) */}
-                      {!documents.policeUrl && !documents.contractUrl && <span className="px-2 py-1 bg-red-100 rounded">❌ Police manquante</span>}
-                      {documents.identityDocuments.length === 0 && <span className="px-2 py-1 bg-red-100 rounded">❌ ID manquant</span>}
+                    <div className="flex flex-wrap gap-2 text-xs text-amber-700">
+                      {!documents.contractUrl && <span className="px-2 py-1 bg-amber-100 rounded">❌ Contrat manquant</span>}
+                      {!documents.policeUrl && <span className="px-2 py-1 bg-amber-100 rounded">❌ Police manquante</span>}
+                      {documents.identityDocuments.length === 0 && <span className="px-2 py-1 bg-amber-100 rounded">❌ ID manquant</span>}
                     </div>
                     <Button
                       variant="default"
                       size="sm"
                       onClick={handleGenerateMissingDocuments}
                       disabled={isGeneratingMissingDocs}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white"
+                      className="w-full bg-amber-600 hover:bg-amber-700 text-white"
                     >
                       {isGeneratingMissingDocs ? (
                         <>

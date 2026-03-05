@@ -104,7 +104,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
   // Total = réservations (bookings) uniquement ; ne pas additionner Airbnb pour éviter 50+29=79
   const stats = {
     total: filteredBookings.length,
-    pending: filteredBookings.filter(b => b.status === 'pending').length,
+    pending: filteredBookings.filter(b => b.status === 'pending' || b.status === 'confirmed').length,
     completed: filteredBookings.filter(b => b.status === 'completed').length,
     archived: filteredBookings.filter(b => b.status === 'archived').length,
     airbnb: airbnbReservationsCount,
@@ -293,6 +293,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
               bookings={filteredBookings}
               onRefreshBookings={refreshBookings}
               propertyId={selectedProperty.id}
+              airbnbIcsUrl={selectedProperty.airbnb_ics_url}
             />
           ) : (
             <CalendarView
@@ -300,6 +301,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
               onEditBooking={onEditBooking}
               propertyId={selectedProperty.id}
               onRefreshBookings={refreshBookings}
+              airbnbIcsUrl={selectedProperty.airbnb_ics_url}
             />
           )}
         </>

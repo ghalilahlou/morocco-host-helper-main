@@ -41,9 +41,29 @@ serve(async (req) => {
 
     const { bucket, path, expiresIn = 3600 } = await req.json();
 
+    const ALLOWED_BUCKETS = ['guest-documents', 'contract-signatures', 'generated-documents'];
+
     if (!bucket || !path) {
       return new Response(JSON.stringify({
         error: 'bucket and path are required'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (!ALLOWED_BUCKETS.includes(bucket)) {
+      return new Response(JSON.stringify({
+        error: 'Bucket not allowed'
+      }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (path.includes('..') || path.startsWith('/')) {
+      return new Response(JSON.stringify({
+        error: 'Invalid path'
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

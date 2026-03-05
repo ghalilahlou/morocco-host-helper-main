@@ -52,14 +52,13 @@ export async function fetchAirbnbCalendarEvents(
       return [];
     }
 
-    // ✅ OPTIMISATION : Une seule requête Supabase pour airbnb_reservations
-    // On n'a plus besoin de la requête bookings car on fait l'enrichissement côté CalendarView
+    // Overlap query: reservation overlaps [start, end] when it starts before end AND ends after start
     const { data: airbnbData, error: airbnbError } = await supabase
       .from('airbnb_reservations')
       .select('airbnb_booking_id, summary, guest_name, start_date, end_date')
       .eq('property_id', propertyId)
-      .gte('start_date', start)
-      .lte('end_date', end)
+      .lte('start_date', end)
+      .gte('end_date', start)
       .order('start_date', { ascending: true });
 
     if (airbnbError) {

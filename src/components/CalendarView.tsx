@@ -22,44 +22,22 @@ import {
 } from './calendar/CalendarUtils';
 import { AirbnbSyncService, AirbnbReservation } from '@/services/airbnbSyncService';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
-import { fetchAirbnbCalendarEvents, fetchAllCalendarEvents, CalendarEvent, invalidateAirbnbEventsCache } from '@/services/calendarData';
+import { fetchAirbnbCalendarEvents, invalidateAirbnbEventsCache } from '@/services/calendarData';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { filterOutAirbnbCodes, logFilteringDebug } from '@/utils/airbnbCodeFilter';
 import { formatLocalDate } from '@/utils/dateUtils';
 import { hasAllRequiredDocumentsForCalendar, getBookingDocumentStatus } from '@/utils/bookingDocuments';
-
-// ✅ Import pour le diagnostic
-const normalizeDocumentFlag = (value: any): boolean => {
-  if (!value) return false;
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value > 0;
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === 'object') {
-    if ('completed' in value) return Boolean(value.completed);
-    if ('isSigned' in value) return Boolean((value as any).isSigned);
-    if ('signed' in value) return Boolean((value as any).signed);
-    if ('status' in value) {
-      const status = String((value as any).status || '').toLowerCase();
-      return ['generated', 'completed', 'signed', 'valid', 'validated', 'valide', 'ready'].includes(status);
-    }
-    if ('url' in value) return Boolean((value as any).url);
-    if ('value' in value) return Boolean((value as any).value);
-    if ('timestamp' in value) return Boolean((value as any).timestamp);
-    return Object.keys(value).length > 0;
-  }
-  return false;
-};
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface CalendarViewProps {
   bookings: EnrichedBooking[];
   onEditBooking: (booking: Booking) => void;
-  propertyId?: string; // Added to fetch Airbnb reservations
-  onRefreshBookings?: () => void; // ✅ NOUVEAU : Callback pour rafraîchir les bookings
+  propertyId?: string;
+  onRefreshBookings?: () => void;
+  airbnbIcsUrl?: string | null;
 }
 
 // 🚀 OPTIMISATION: Cache intelligent avec TTL et limite de taille
@@ -119,8 +97,9 @@ class AirbnbCache {
 
 const airbnbCache = new AirbnbCache();
 
-export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefreshBookings }: CalendarViewProps) => {
+export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefreshBookings, airbnbIcsUrl }: CalendarViewProps) => {
   const navigate = useNavigate();
+  const t = useT();
   
   // ✅ CORRIGÉ : Utiliser useRef pour capturer bookings sans causer de re-renders
   const bookingsRef = useRef(bookings);
@@ -144,63 +123,25 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
   const calendarSectionRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
-  // ✅ NOUVEAU : États pour le rafraîchissement automatique
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState(30000); // 30 secondes
-  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const isMobile = useIsMobile();
 
-  // Check for debug mode from URL
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     setDebugMode(urlParams.get('debugCalendar') === '1');
   }, []);
 
-  // ✅ NOUVEAU : Gestion de la connectivité
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-    
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
-
-  // ✅ CORRIGÉ : Désactivé le rafraîchissement automatique qui cause la boucle infinie
-  // Le rafraîchissement se fera uniquement via les subscriptions en temps réel
-  /*
-  useEffect(() => {
-    if (!autoRefreshEnabled || !isOnline) return;
-
-    const scheduleRefresh = () => {
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-      
-      refreshTimeoutRef.current = setTimeout(async () => {
-        if (autoRefreshEnabled && isOnline) {
-          await handleAutoRefresh();
-          scheduleRefresh();
-        }
-      }, refreshInterval);
-    };
-
-    scheduleRefresh();
-
-    return () => {
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-    };
-  }, [autoRefreshEnabled, isOnline, refreshInterval, propertyId, handleAutoRefresh]);
-  */
 
   // ✅ PROTECTION : Garder une trace des chargements en cours
   const isLoadingRef = useRef(false);
@@ -250,18 +191,8 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     isLoadingRef.current = true;
     
     try {
-      // ✅ CORRECTION : Utiliser fetchAllCalendarEvents pour charger TOUS les types de réservations
-      // (Airbnb + réservations normales) au lieu de seulement les réservations Airbnb
-      const calendarEvents = await fetchAllCalendarEvents(
-        propertyId, 
-        startStr, 
-        endStr, 
-        bookingsRef.current // ✅ Passer les bookings actuels pour les afficher dans le calendrier
-      );
-      
-      // ✅ Ne garder que les événements Airbnb (ceux venant de airbnb_reservations).
-      // Les événements source === 'booking' sont déjà dans `bookings` et seraient dupliqués.
-      const airbnbOnlyEvents = calendarEvents.filter((e: { source?: string }) => e.source === 'airbnb');
+      // Only fetch airbnb events - bookings are already in the `bookings` prop
+      const airbnbOnlyEvents = await fetchAirbnbCalendarEvents(propertyId, startStr, endStr);
       // ✅ CORRIGÉ : Convertir les événements en réservations Airbnb avec enrichissement
       // ⚠️ IMPORTANT : event.end est +1 jour pour l'affichage FullCalendar (date exclusive)
       // Mais endDate dans AirbnbReservation doit être la date réelle de départ (sans +1 jour)
@@ -332,28 +263,12 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
         return reservation;
       });
       
-      // ✅ CORRIGÉ : Utiliser les réservations enrichies au lieu des réservations formatées
-      // Mettre en cache par propriété + plage de dates
       airbnbCache.set(cacheKey, finalReservations);
       setAirbnbReservations(finalReservations);
-      
-      // Get sync status
-      const status = await AirbnbEdgeFunctionService.getSyncStatus(propertyId);
-      if (status) {
-        if (status.last_sync_at) {
-          setLastSyncDate(new Date(status.last_sync_at));
-        } else {
-          setLastSyncDate(undefined);
-        }
-        if (status.sync_status === 'success' || formattedReservations.length > 0) {
-          setSyncStatus('success');
-        } else if (status.sync_status === 'syncing') {
-          setSyncStatus('syncing');
-        } else if (status.sync_status === 'error') {
-          setSyncStatus('error');
-        } else {
-          setSyncStatus('idle');
-        }
+
+      // If we got results, mark sync as success without an extra network call
+      if (formattedReservations.length > 0) {
+        setSyncStatus('success');
       }
     } catch (error) {
       console.error('Error loading Airbnb reservations:', error);
@@ -363,25 +278,11 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     }
   }, [propertyId, currentDate, hasIcs]); // ✅ Inclure hasIcs car on l'utilise dans la fonction
 
-  // ✅ OPTIMISATION : Charger l'URL ICS une seule fois au montage ou changement de propriété
+  // Sync hasIcs/icsUrl from prop (no extra Supabase query needed)
   useEffect(() => {
-    if (!propertyId) {
-      setIcsUrl(null);
-      setHasIcs(false);
-      return;
-    }
-    (async () => {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('airbnb_ics_url')
-        .eq('id', propertyId)
-        .single();
-      if (!error) {
-        setIcsUrl(data?.airbnb_ics_url || null);
-        setHasIcs(!!data?.airbnb_ics_url);
-      }
-    })();
-  }, [propertyId]);
+    setIcsUrl(airbnbIcsUrl || null);
+    setHasIcs(!!airbnbIcsUrl);
+  }, [airbnbIcsUrl]);
 
   // ✅ OPTIMISATION : Charger les réservations Airbnb seulement quand hasIcs est défini
   useEffect(() => {
@@ -390,57 +291,33 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     }
   }, [hasIcs, loadAirbnbReservations]);
 
-// ✅ NOUVEAU : Fonction de rafraîchissement automatique
-const handleAutoRefresh = useCallback(async () => {
-  if (isRefreshing || !isOnline) return;
-  
-  setIsRefreshing(true);
-  try {
-    await loadAirbnbReservations();
-    setLastRefresh(new Date());
-  } catch (error) {
-    console.error('❌ Auto-refresh failed:', error);
-  } finally {
-    setIsRefreshing(false);
-  }
-}, [isRefreshing, isOnline, loadAirbnbReservations]);
-
-// ✅ CORRIGÉ : Fonction de rafraîchissement manuel - UNIFIÉE avec la logique de sync
-// Rafraîchit à la fois les bookings ET les airbnbReservations pour éviter les faux conflits
 const handleManualRefresh = useCallback(async () => {
   if (isRefreshing) return;
   
   setIsRefreshing(true);
   try {
-    // ✅ ÉTAPE 1 : Rafraîchir les bookings D'ABORD (si callback fourni)
-    // Cela garantit que les bookings sont à jour avant de détecter les conflits
     if (onRefreshBookings) {
-      console.log('🔄 Rafraîchissement des bookings...');
       await onRefreshBookings();
-      // Attendre un court instant pour que les subscriptions se mettent à jour
-      await new Promise(resolve => setTimeout(resolve, 500));
     }
-    
-    // ✅ ÉTAPE 2 : Nettoyer le cache et recharger les réservations Airbnb
     airbnbCache.clear();
-    await loadAirbnbReservations();
-    setLastRefresh(new Date());
+    invalidateAirbnbEventsCache(propertyId);
+    await loadAirbnbReservations(true);
     
     toast({
-      title: "Calendrier mis à jour",
-      description: "Les données ont été rafraîchies avec succès",
+      title: t('airbnb.calendarUpdated.title'),
+      description: t('airbnb.calendarUpdated.desc'),
     });
   } catch (error) {
-    console.error('❌ Manual refresh failed:', error);
+    console.error('Manual refresh failed:', error);
     toast({
-      title: "Erreur de rafraîchissement",
-      description: "Impossible de mettre à jour le calendrier",
+      title: t('airbnb.refreshError.title'),
+      description: t('airbnb.refreshError.desc'),
       variant: "destructive",
     });
   } finally {
     setIsRefreshing(false);
   }
-}, [isRefreshing, loadAirbnbReservations, onRefreshBookings, toast]);
+}, [isRefreshing, loadAirbnbReservations, onRefreshBookings, propertyId, toast, t]);
 
 // ✅ CORRIGÉ : Real-time subscription avec debounce et throttle pour éviter les rechargements excessifs
   const reloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -521,40 +398,30 @@ const handleManualRefresh = useCallback(async () => {
     }
   }, []);
 
-  // Handle sync from calendar button - VERSION CORRIGÉE
   const handleSyncFromCalendar = useCallback(async () => {
     if (!propertyId) return;
     
     try {
       setIsSyncing(true);
       
-      // Get property data to find ICS URL
-      const { data: property, error } = await supabase
-        .from('properties')
-        .select('airbnb_ics_url')
-        .eq('id', propertyId)
-        .single();
-
-      if (error || !property?.airbnb_ics_url) {
-        // Au lieu de rediriger, juste afficher un message
+      if (!icsUrl) {
         toast({
-          title: "Configuration requise",
-          description: "Configurez l'URL de votre calendrier Airbnb pour activer la synchronisation.",
+          title: t('airbnb.configRequired.title'),
+          description: t('airbnb.configRequired.desc'),
           variant: "default"
         });
         setIsSyncing(false);
         return;
       }
 
-      // Call the sync service
-      const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, property.airbnb_ics_url);
+      const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, icsUrl);
       
       if (result.success) {
         // Silent success on mobile, only show on desktop
         if (window.innerWidth >= 768) {
           toast({
-            title: "Synchronisation réussie",
-            description: `${result.count || 0} réservations synchronisées. Naviguez dans le calendrier pour voir toutes les réservations.`
+            title: t('airbnb.syncSuccess.title'),
+            description: t('airbnb.syncSuccess.desc', { count: result.count || 0 })
           });
         }
         
@@ -582,22 +449,22 @@ const handleManualRefresh = useCallback(async () => {
         setLastSyncDate(new Date());
       } else {
         toast({
-          title: "Erreur de synchronisation",
-          description: result.error || "Impossible de synchroniser.",
+          title: t('airbnb.syncError.title'),
+          description: result.error || t('airbnb.syncError.desc'),
           variant: "destructive"
         });
       }
     } catch (error) {
       console.error('Sync error:', error);
       toast({
-        title: "Erreur de synchronisation",
-        description: "Une erreur inattendue s'est produite.",
+        title: t('airbnb.syncError.title'),
+        description: t('airbnb.syncErrorUnexpected.desc'),
         variant: "destructive"
       });
     } finally {
       setIsSyncing(false);
     }
-  }, [propertyId, navigate, toast, loadAirbnbReservations]);
+  }, [propertyId, icsUrl, toast, t, loadAirbnbReservations, onRefreshBookings]);
 
 const handleOpenConfig = useCallback(() => {
   if (propertyId) {
@@ -605,13 +472,9 @@ const handleOpenConfig = useCallback(() => {
   }
 }, [navigate, propertyId]);
 
-// ✅ CORRIGÉ : Auto-sync UNIQUEMENT au premier chargement, pas à chaque changement
-  const hasAutoSynced = useRef(false);
-  useEffect(() => {
-    if (!propertyId || hasAutoSynced.current) return;
-    hasAutoSynced.current = true;
-    handleSyncFromCalendar();
-  }, [propertyId]); // ✅ Retiré handleSyncFromCalendar des dépendances
+  // On mount, just load existing data from DB (no full Airbnb sync).
+  // User can trigger a sync manually via the "Synchronisation" button.
+  // The real-time subscription on airbnb_reservations handles live updates.
 
   // ✅ CORRIGÉ : Détection des conflits AVANT le calcul des couleurs pour les inclure
   // Ne passer que airbnbReservations en 2e argument : detectBookingConflicts ajoute déjà les bookings
@@ -1148,11 +1011,8 @@ const handleOpenConfig = useCallback(() => {
     }).filter((g) => g.reservations.length > 0);
   }, [conflictDetails, allReservations, calendarDays]);
 
-  // ✅ CORRIGÉ : Stats avec conflits détectés dynamiquement
   const getStats = useMemo(() => {
-    const completed = bookings.filter(b => 
-      matchedBookings.includes(b.id) && b.status === 'completed'
-    ).length;
+    const completed = bookings.filter(b => b.status === 'completed').length;
     
     const pending = bookings.filter(b => 
       b.status !== 'completed'
@@ -1160,25 +1020,30 @@ const handleOpenConfig = useCallback(() => {
       !matchedBookings.includes(r.id)
     ).length;
     
-    // ✅ CORRIGÉ : Utiliser les conflits détectés dynamiquement
     const conflictsCount = conflicts.length;
 
     return { completed, pending, conflicts: conflictsCount };
   }, [bookings, airbnbReservations, matchedBookings, conflicts]);
 
-  // ✅ CORRIGÉ : Auto-mark matched manual bookings as completed avec gestion d'erreurs
+  // Auto-confirm matched bookings: only mark as 'confirmed' (not 'completed')
+  // 'completed' requires actual documents (contract + police). Matching Airbnb dates
+  // only proves the reservation exists, not that guest has submitted documents.
   useEffect(() => {
     if (matchedBookings.length === 0) return;
     
-    // ✅ CORRIGÉ : Utiliser Promise.all pour attendre toutes les mises à jour (forEach n'attend pas les promesses)
     Promise.all(
       matchedBookings.map(async (id) => {
         const b = bookings.find((bk) => bk.id === id);
-        if (b && b.status !== 'completed') {
+        if (!b) return;
+
+        const hasAllDocuments = b.documentsGenerated?.contract && b.documentsGenerated?.policeForm;
+
+        if (hasAllDocuments && b.status !== 'completed') {
           const { error } = await supabase.from('bookings').update({ status: 'completed' }).eq('id', id);
-          if (error) {
-            console.error('❌ Erreur lors de la mise à jour du statut:', error);
-          }
+          if (error) console.error('❌ Erreur mise à jour statut completed:', error);
+        } else if (!hasAllDocuments && b.status === 'pending') {
+          const { error } = await supabase.from('bookings').update({ status: 'confirmed' }).eq('id', id);
+          if (error) console.error('❌ Erreur mise à jour statut confirmed:', error);
         }
       })
     ).catch((error) => {
@@ -1325,7 +1190,7 @@ const handleOpenConfig = useCallback(() => {
                     const { error } = await supabase.from('bookings').delete().eq('id', id);
                     if (error) throw error;
                     if (onRefreshBookings) await onRefreshBookings();
-                    toast({ title: 'Réservation supprimée', description: 'La réservation a été supprimée.' });
+                    toast({ title: t('airbnb.bookingDeleted.title'), description: t('airbnb.bookingDeleted.desc') });
                   }
                 }}
               />
@@ -1368,15 +1233,15 @@ const handleOpenConfig = useCallback(() => {
                 }
                 
                 toast({
-                  title: "Réservation supprimée",
-                  description: "La réservation a été supprimée avec succès.",
+                  title: t('airbnb.bookingDeleted.title'),
+                  description: t('airbnb.bookingDeleted.desc'),
                 });
               }
             } catch (error) {
               console.error('Error deleting booking:', error);
               toast({
-                title: "Erreur",
-                description: "Impossible de supprimer la réservation.",
+                title: t('airbnb.deleteError.title'),
+                description: t('airbnb.deleteError.desc'),
                 variant: "destructive"
               });
               throw error;

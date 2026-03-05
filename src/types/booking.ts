@@ -21,6 +21,8 @@ export interface Property {
   max_occupancy?: number;
   description?: string;
   photo_url?: string;
+  airbnb_ics_url?: string;
+  contact_info?: any;
   house_rules?: string[];
   contract_template?: any;
   created_at?: string;

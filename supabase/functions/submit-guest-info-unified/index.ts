@@ -2310,9 +2310,12 @@ async function updateFinalStatus(
       hasPoliceUrl: !!documentsGenerated.policeUrl
     });
     
-    // ✅ Utiliser des statuts valides pour l'énum booking_status (frontend attend 'pending' | 'completed' | 'archived')
+    // Only mark 'completed' when ALL required documents are present (contract + police).
+    // Having just a signature is not enough – it means 'confirmed' at best.
+    const hasAllDocs = !!documentsGenerated.contractUrl && !!documentsGenerated.policeUrl;
+    const newStatus = hasAllDocs ? 'completed' : (hasSignature ? 'confirmed' : 'pending');
     const updateData = {
-      status: hasSignature ? 'completed' : 'pending',
+      status: newStatus,
       documents_generated: documentsGenerated,
       updated_at: new Date().toISOString()
     };

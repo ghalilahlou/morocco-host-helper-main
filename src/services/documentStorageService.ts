@@ -213,33 +213,9 @@ export class DocumentStorageService {
         }
       }
 
-      // Fallback: If no DB records found, list storage files directly for this booking
-      if (documents.length === 0) {
-        try {
-          const { data: files, error: listErr } = await supabase.storage
-            .from('guest-documents')
-            .list(booking.id, { limit: 100 });
-          if (!listErr && files && files.length > 0) {
-            for (const f of files) {
-              const path = `${booking.id}/${f.name}`;
-              const { data: signed } = await supabase.functions.invoke('storage-sign-url', {
-                body: { bucket: 'guest-documents', path: path, expiresIn: 3600 }
-              });
-              if (signed?.signedUrl) {
-                documents.push({
-                  id: path,
-                  fileName: f.name,
-                  url: signed.signedUrl,
-                  bookingId: booking.id,
-                  createdAt: new Date().toISOString(),
-                });
-              }
-            }
-          }
-        } catch (fallbackErr) {
-          console.warn('⚠️ Fallback storage listing failed:', fallbackErr);
-        }
-      }
+      // ✅ PHASE 1 - DÉSACTIVÉ : Fallback storage.list (ANALYSE_PERFORMANCE_STORAGE_GUEST_DOCUMENTS.md)
+      // Les appels .list() sur guest-documents saturaient la table objects. La DB est la source de vérité.
+      // if (documents.length === 0) { ... storage.list(booking.id) ... }
 
       // Extract and normalize guest names from booking before calling edge function
       const bookingGuests = (booking as any).guests || [];

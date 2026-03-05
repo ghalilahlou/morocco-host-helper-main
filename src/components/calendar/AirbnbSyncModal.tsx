@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertCircle, CheckCircle, Loader2, Calendar, Link as LinkIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface AirbnbSyncModalProps {
   isOpen: boolean;
@@ -25,12 +26,13 @@ export const AirbnbSyncModal = ({
 }: AirbnbSyncModalProps) => {
   const [icsUrl, setIcsUrl] = useState('https://www.airbnb.com/calendar/ical/1443787715795572441.ics?s=bb6ae14e907a21abef5295b2f51e2af8');
   const { toast } = useToast();
+  const t = useT();
 
   const handleSync = async () => {
     if (!icsUrl.trim()) {
       toast({
-        title: "URL requise",
-        description: "Veuillez saisir l'URL du calendrier Airbnb",
+        title: t('airbnb.icsUrlRequired.title'),
+        description: t('airbnb.icsUrlRequired.desc'),
         variant: "destructive"
       });
       return;
@@ -41,14 +43,14 @@ export const AirbnbSyncModal = ({
       // Silent success on mobile, only show on desktop
       if (window.innerWidth >= 768) {
         toast({
-          title: "Synchronisation réussie",
-          description: "Les réservations Airbnb ont été importées avec succès"
+          title: t('airbnb.syncSuccess.title'),
+          description: t('airbnb.syncSuccess.desc', { count: 0 })
         });
       }
     } catch (error) {
       toast({
-        title: "Erreur de synchronisation",
-        description: "Impossible d'importer les réservations Airbnb",
+        title: t('airbnb.syncError.title'),
+        description: t('airbnb.syncError.desc'),
         variant: "destructive"
       });
     }

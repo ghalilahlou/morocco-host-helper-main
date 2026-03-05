@@ -573,7 +573,7 @@ export type Database = {
       }
     }
     Enums: {
-      booking_status: "pending" | "completed" | "archived"
+      booking_status: "pending" | "confirmed" | "completed" | "archived"
       document_type: "passport" | "national_id"
     }
     CompositeTypes: {
@@ -702,7 +702,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      booking_status: ["pending", "completed", "archived"],
+      booking_status: ["pending", "confirmed", "completed", "archived"],
       document_type: ["passport", "national_id"],
     },
   },

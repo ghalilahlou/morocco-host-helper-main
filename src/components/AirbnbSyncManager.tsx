@@ -8,6 +8,7 @@ import { Link as LinkIcon, Save, Check, RefreshCw, AlertCircle, CheckCircle } fr
 import { supabase } from '@/integrations/supabase/client';
 import { useAirbnbSync } from '@/hooks/useAirbnbSync';
 import { useToast } from '@/hooks/use-toast';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface AirbnbSyncManagerProps {
   propertyId: string;
@@ -27,6 +28,7 @@ export const AirbnbSyncManager = ({
   const [isSuccess, setIsSuccess] = useState(false);
   const [canEdit, setCanEdit] = useState(!currentIcsUrl); // Allow editing if no URL set initially
   const { toast } = useToast();
+  const t = useT();
   
   const { 
     syncStatus, 
@@ -38,8 +40,8 @@ export const AirbnbSyncManager = ({
   const handleSave = async () => {
     if (!icsUrl.trim()) {
       toast({
-        title: "URL requise",
-        description: "Veuillez entrer une URL de calendrier Airbnb valide.",
+        title: t('airbnb.icsUrlRequired.title'),
+        description: t('airbnb.icsUrlRequired.desc'),
         variant: "destructive"
       });
       return;
@@ -52,8 +54,8 @@ export const AirbnbSyncManager = ({
     
     if (!isAirbnbUrl || !isIcalUrl) {
       toast({
-        title: "URL invalide",
-        description: "L'URL doit être un lien de calendrier Airbnb (.ics).",
+        title: t('airbnb.icsUrlInvalid.title'),
+        description: t('airbnb.icsUrlInvalid.desc'),
         variant: "destructive"
       });
       return;
@@ -73,8 +75,8 @@ export const AirbnbSyncManager = ({
       if (!checkError && otherProperties && otherProperties.length > 0) {
         const names = otherProperties.map(p => p.name || 'Sans nom').join(', ');
         toast({
-          title: "⚠️ Lien ICS partagé",
-          description: `Ce lien ICS est déjà utilisé par : ${names}. Les mêmes réservations seront synchronisées sur les deux propriétés.`,
+          title: t('airbnb.icsUrlShared.title'),
+          description: t('airbnb.icsUrlShared.desc', { names }),
           variant: "destructive"
         });
       }
@@ -91,16 +93,16 @@ export const AirbnbSyncManager = ({
       onUrlUpdated?.(icsUrl.trim());
       
       toast({
-        title: "Configuration sauvegardée",
-        description: "L'URL du calendrier Airbnb a été mise à jour avec succès."
+        title: t('airbnb.configSaved.title'),
+        description: t('airbnb.configSaved.desc')
       });
 
       setTimeout(() => setIsSuccess(false), 2000);
     } catch (error) {
       console.error('Error saving ICS URL:', error);
       toast({
-        title: "Erreur de sauvegarde",
-        description: "Impossible de sauvegarder l'URL du calendrier.",
+        title: t('airbnb.saveError.title'),
+        description: t('airbnb.saveError.desc'),
         variant: "destructive"
       });
     } finally {
@@ -111,8 +113,8 @@ export const AirbnbSyncManager = ({
   const handleSync = async () => {
     if (!currentIcsUrl) {
       toast({
-        title: "Configuration requise",
-        description: "Veuillez d'abord configurer l'URL du calendrier Airbnb.",
+        title: t('airbnb.configRequiredSync.title'),
+        description: t('airbnb.configRequiredSync.desc'),
         variant: "destructive"
       });
       return;
@@ -125,22 +127,22 @@ export const AirbnbSyncManager = ({
         // Silent success on mobile, only show on desktop
         if (window.innerWidth >= 768) {
           toast({
-            title: "Synchronisation réussie",
-            description: `${result.count || 0} réservations synchronisées.`
+            title: t('airbnb.syncSuccess.title'),
+            description: t('airbnb.syncSuccess.desc', { count: result.count || 0 })
           });
         }
       } else {
         toast({
-          title: "Erreur de synchronisation",
-          description: result.error || "Impossible de synchroniser le calendrier Airbnb.",
+          title: t('airbnb.syncError.title'),
+          description: result.error || t('airbnb.syncError.desc'),
           variant: "destructive"
         });
       }
     } catch (error) {
       console.error('Exception in handleSync:', error);
       toast({
-        title: "Erreur de synchronisation",
-        description: "Une erreur inattendue s'est produite.",
+        title: t('airbnb.syncError.title'),
+        description: t('airbnb.syncErrorUnexpected.desc'),
         variant: "destructive"
       });
     }

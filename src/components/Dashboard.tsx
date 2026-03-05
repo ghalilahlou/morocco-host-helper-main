@@ -8,7 +8,7 @@ import { useBookings } from '@/hooks/useBookings';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { debug } from '@/lib/logger';
-import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
+
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { isAirbnbCode } from '@/utils/airbnbCodeFilter';
 
@@ -19,10 +19,11 @@ const CalendarView = lazy(() => import('./CalendarView'));
 interface DashboardProps {
   onNewBooking: () => void;
   onEditBooking: (booking: Booking) => void;
-  bookings?: EnrichedBooking[]; // Optional prop for filtered bookings
-  onDeleteBooking?: (id: string) => Promise<void>; // Optional delete function
-  onRefreshBookings?: () => void; // Optional refresh function
-  propertyId?: string; // Added for Airbnb calendar integration
+  bookings?: EnrichedBooking[];
+  onDeleteBooking?: (id: string) => Promise<void>;
+  onRefreshBookings?: () => void;
+  propertyId?: string;
+  airbnbIcsUrl?: string | null;
 }
 
 export const Dashboard = memo(({ 
@@ -31,35 +32,24 @@ export const Dashboard = memo(({
   bookings: propBookings,
   onDeleteBooking,
   onRefreshBookings,
-  propertyId
+  propertyId,
+  airbnbIcsUrl
 }: DashboardProps) => {
   const t = useT();
-  // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
-  const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings({ propertyId });
   
-  // Use prop bookings if provided, otherwise use all bookings
-  const bookings = propBookings || allBookings;
+  // When Dashboard is used inside PropertyDetail, bookings/callbacks come as props.
+  // Only fall back to useBookings when used standalone (no props).
+  const fallback = useBookings({ propertyId: propBookings ? undefined : propertyId });
   
-  const handleDeleteBooking = onDeleteBooking || deleteBooking;
-  const handleRefreshBookings = onRefreshBookings || refreshBookings;
+  const bookings = propBookings || fallback.bookings;
+  const handleDeleteBooking = onDeleteBooking || fallback.deleteBooking;
+  const handleRefreshBookings = onRefreshBookings || fallback.refreshBookings;
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('calendar');
   
-  // Refresh bookings when component mounts
-  // ✅ CORRECTION : Ajouter handleRefreshBookings dans les dépendances pour éviter les appels multiples
-  useEffect(() => {
-    // ✅ PROTECTION : Ne rafraîchir que si propertyId est défini
-    if (propertyId) {
-      handleRefreshBookings();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertyId]); // ✅ Ne dépendre que de propertyId, pas de handleRefreshBookings pour éviter les boucles
-  
-  // Log bookings changes for debugging
-  useEffect(() => {
-    
-  }, [bookings]);
+  // Bookings are already loaded by useBookings in the parent (PropertyDetail).
+  // No need to trigger a redundant refresh here.
 
   // 🚀 OPTIMISATION: Memoize filtered bookings pour éviter les re-calculs
   const filteredBookings = useMemo(() => {
@@ -95,43 +85,6 @@ export const Dashboard = memo(({
     
     return filtered;
   }, [bookings, searchTerm, statusFilter, viewMode]);
-
-  // 🚀 OPTIMISATION: Memoize stats pour éviter les re-calculs
-  // ✅ CORRIGÉ: Une réservation est "Terminée" si elle a tous ses documents générés OU si son statut est 'completed'
-  // ✅ AMÉLIORATION : Les réservations archivées ne sont comptées que dans 'archived', pas dans 'pending' ou 'completed'
-  const stats = useMemo(() => {
-    // ✅ CORRIGÉ : Exclure les bookings ICS des stats (ils sont gérés par le calendrier)
-    const nonICSBookings = bookings.filter(b => !isAirbnbCode(b.bookingReference));
-    
-    const isBookingCompleted = (b: any) => {
-      // Exclure les réservations archivées
-      if (b.status === 'archived') return false;
-      
-      // ✅ CORRECTION : Vérifier que les documents sont vraiment générés (avec URLs)
-      const hasPoliceForm = (b.documentsGenerated?.policeForm === true || 
-                             b.documentsGenerated?.police === true) &&
-                            !!b.documentsGenerated?.policeUrl;
-      const hasContract = b.documentsGenerated?.contract === true &&
-                         !!b.documentsGenerated?.contractUrl;
-      
-      const isCompleted = (b.status === 'completed' && hasPoliceForm && hasContract) ||
-                          (hasPoliceForm && hasContract);
-      
-      return isCompleted;
-    };
-    
-    // Filtrer les réservations non-archivées pour les compteurs pending/completed
-    const nonArchivedBookings = nonICSBookings.filter(b => b.status !== 'archived');
-    
-    const completedBookings = nonArchivedBookings.filter(b => isBookingCompleted(b));
-    
-    return {
-      total: nonICSBookings.length,
-      pending: nonArchivedBookings.filter(b => !isBookingCompleted(b)).length,
-      completed: completedBookings.length,
-      archived: nonICSBookings.filter(b => b.status === 'archived').length
-    };
-  }, [bookings]);
 
   // Écouter l'événement de création de réservation depuis CalendarHeader
   useEffect(() => {
@@ -252,6 +205,7 @@ export const Dashboard = memo(({
               onEditBooking={onEditBooking}
               propertyId={propertyId}
               onRefreshBookings={handleRefreshBookings}
+              airbnbIcsUrl={airbnbIcsUrl}
             />
           </Suspense>
         </div>

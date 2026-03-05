@@ -282,10 +282,16 @@ serve(async (req) => {
         guests(id, full_name, document_number, nationality, document_type)
       `);
 
+    // ✅ PHASE 1 - Limite de résultats pour éviter la surcharge (ANALYSE_PERFORMANCE_STORAGE_GUEST_DOCUMENTS.md)
+    const MAX_BOOKINGS_BY_PROPERTY = 100;
+
     if (bookingId) {
       bookingQuery = bookingQuery.eq('id', bookingId);
     } else if (propertyId) {
-      bookingQuery = bookingQuery.eq('property_id', propertyId);
+      bookingQuery = bookingQuery
+        .eq('property_id', propertyId)
+        .order('check_in_date', { ascending: false })
+        .limit(MAX_BOOKINGS_BY_PROPERTY);
     }
 
     const { data: bookings, error: bookingError } = await bookingQuery;
@@ -573,70 +579,21 @@ serve(async (req) => {
           }
         }
 
-        // ✅ NOUVEAU : Récupérer les documents manquants depuis le Storage
-        console.log(`🔍 Checking for missing documents in Storage for booking ${booking.id}`);
-        
-        // ✅ CORRECTION : Ne PAS générer automatiquement les documents manquants
-        // Cette fonction doit seulement RÉCUPÉRER les documents existants, pas les générer
-        // La génération doit être faite explicitement par l'utilisateur via l'interface
-        // Cela évite les appels inutiles à submit-guest-info-unified et les erreurs 401
-        
-        // Vérifier si des documents sont manquants et les récupérer depuis le Storage
+        // ✅ PHASE 1 - DÉSACTIVÉ : Fallback storage.list (ANALYSE_PERFORMANCE_STORAGE_GUEST_DOCUMENTS.md)
+        // Les appels à getDocumentUrlFromStorage() provoquaient 50 000+ requêtes /storage/v1/object/list/guest-documents
+        // et saturaient la table objects (CPU 100%). La DB est désormais la seule source de vérité.
+        // Si un document manque en DB, il sera indiqué dans missingTypes. La génération se fait via l'UI.
         if (categorizedDocs.contract.length === 0) {
-          console.log(`🔍 No contract found in DB, checking Storage...`);
-          const contractUrl = await getDocumentUrlFromStorage(supabase, 'contract', booking.id);
-          if (contractUrl) {
-            categorizedDocs.contract.push({
-              id: `storage-contract-${booking.id}`,
-              type: 'contract',
-              fileName: `contract-${booking.id}.pdf`,
-              url: contractUrl,
-              createdAt: new Date().toISOString()
-            });
-            console.log(`✅ Contract retrieved from Storage`);
-          } else {
-            // ✅ CORRIGÉ : Ne pas générer automatiquement, juste logger qu'il est manquant
-            console.log(`ℹ️ No contract found in Storage for booking ${booking.id}`);
-            // La génération doit être faite explicitement par l'utilisateur
-          }
+          console.log(`ℹ️ No contract in DB for booking ${booking.id} (storage fallback disabled)`);
         }
-        
         if (categorizedDocs.police.length === 0) {
-          console.log(`🔍 No police form found in DB, checking Storage...`);
-          const policeUrl = await getDocumentUrlFromStorage(supabase, 'police', booking.id);
-          if (policeUrl) {
-            categorizedDocs.police.push({
-              id: `storage-police-${booking.id}`,
-              type: 'police',
-              fileName: `police-${booking.id}.pdf`,
-              url: policeUrl,
-              createdAt: new Date().toISOString()
-            });
-            console.log(`✅ Police form retrieved from Storage`);
-          } else {
-            // ✅ CORRIGÉ : Ne pas générer automatiquement, juste logger qu'il est manquant
-            console.log(`ℹ️ No police form found in Storage for booking ${booking.id}`);
-            // La génération doit être faite explicitement par l'utilisateur
-          }
+          console.log(`ℹ️ No police form in DB for booking ${booking.id} (storage fallback disabled)`);
         }
-        
         if (categorizedDocs.identity.length === 0) {
-          console.log(`🔍 No identity document found in DB, checking Storage...`);
-          const identityUrl = await getDocumentUrlFromStorage(supabase, 'identity', booking.id);
-          if (identityUrl) {
-            categorizedDocs.identity.push({
-              id: `storage-identity-${booking.id}`,
-              type: 'identity',
-              fileName: `identity-${booking.id}.pdf`,
-              url: identityUrl,
-              createdAt: new Date().toISOString()
-            });
-            console.log(`✅ Identity document retrieved from Storage`);
-          }
-          // Note: Les documents d'identité sont généralement uploadés par l'invité, pas générés automatiquement
+          console.log(`ℹ️ No identity doc in DB for booking ${booking.id} (storage fallback disabled)`);
         }
-        
-        // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings
+
+        // ✅ Mettre à jour documents_generated dans la table bookings
         const hasContract = categorizedDocs.contract.length > 0;
         const hasPolice = categorizedDocs.police.length > 0;
         const hasIdentity = categorizedDocs.identity.length > 0;

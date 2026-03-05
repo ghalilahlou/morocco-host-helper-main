@@ -58,6 +58,8 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
     switch (booking.status) {
       case 'completed':
         return <Badge variant="default" className="bg-success text-success-foreground">Terminé</Badge>;
+      case 'confirmed':
+        return <Badge variant="default" className="bg-amber-500 text-white">Confirmé</Badge>;
       case 'pending':
         return <Badge variant="secondary">En attente</Badge>;
       case 'archived':

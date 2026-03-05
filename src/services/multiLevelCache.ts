@@ -1,10 +1,17 @@
 /**
  * Service de cache multi-niveaux pour optimiser les performances
  * 
+ * ✅ SOLUTION INNOVANTE : Cache-First Architecture
+ * 
  * Architecture :
- * - Level 1: Memory Cache (Map) - TTL court (30s)
- * - Level 2: IndexedDB - TTL long (5min)
- * - Level 3: Database Query - Source de vérité
+ * - Level 1: Memory Cache (Map) - TTL court (60s) - Accès instantané
+ * - Level 2: IndexedDB - TTL long (24h) - Persistant entre sessions
+ * - Level 3: Database Query - Source de vérité (arrière-plan)
+ * 
+ * Avantages :
+ * - Affichage instantané depuis le cache
+ * - Fonctionne hors-ligne
+ * - Mise à jour transparente en arrière-plan
  */
 
 interface CacheEntry<T> {
@@ -16,14 +23,14 @@ interface CacheEntry<T> {
 class MultiLevelCache {
   // Level 1: Memory Cache
   private memoryCache = new Map<string, CacheEntry<any>>();
-  private memoryTTL = 30000; // 30 secondes
+  private memoryTTL = 60000; // ✅ OPTIMISÉ : 60 secondes (était 30s)
 
   // Level 2: IndexedDB
-  private dbName = 'morocco-host-cache';
-  private dbVersion = 1;
+  private dbName = 'morocco-host-cache-v2';
+  private dbVersion = 2;
   private storeName = 'cache';
   private db: IDBDatabase | null = null;
-  private indexedDBTTL = 300000; // 5 minutes
+  private indexedDBTTL = 24 * 60 * 60 * 1000; // ✅ OPTIMISÉ : 24 heures (était 5min)
 
   /**
    * Initialiser IndexedDB
@@ -58,14 +65,19 @@ class MultiLevelCache {
 
   /**
    * Obtenir une valeur du cache (multi-niveaux)
+   * @param key - Clé du cache
+   * @param allowExpired - Si true, retourne les données même expirées (utile en cas de timeout réseau)
    */
-  async get<T>(key: string): Promise<T | null> {
+  async get<T>(key: string, allowExpired = false): Promise<T | null> {
     const now = Date.now();
 
     // ✅ Level 1: Memory cache
     const memory = this.memoryCache.get(key);
-    if (memory && (now - memory.timestamp) < memory.ttl) {
-      return memory.data as T;
+    if (memory) {
+      const isValid = (now - memory.timestamp) < memory.ttl;
+      if (isValid || allowExpired) {
+        return memory.data as T;
+      }
     }
 
     // ✅ Level 2: IndexedDB cache
@@ -78,14 +90,19 @@ class MultiLevelCache {
       return new Promise((resolve) => {
         request.onsuccess = () => {
           const result = request.result;
-          if (result && (now - result.timestamp) < result.ttl) {
-            // ✅ Re-hydrater le cache mémoire
-            this.memoryCache.set(key, {
-              data: result.data,
-              timestamp: result.timestamp,
-              ttl: result.ttl
-            });
-            resolve(result.data as T);
+          if (result) {
+            const isValid = (now - result.timestamp) < result.ttl;
+            if (isValid || allowExpired) {
+              // ✅ Re-hydrater le cache mémoire
+              this.memoryCache.set(key, {
+                data: result.data,
+                timestamp: result.timestamp,
+                ttl: result.ttl
+              });
+              resolve(result.data as T);
+            } else {
+              resolve(null);
+            }
           } else {
             resolve(null);
           }
@@ -102,6 +119,13 @@ class MultiLevelCache {
   }
 
   /**
+   * ✅ NOUVEAU : Obtenir les données même expirées (fallback en cas de timeout)
+   */
+  async getExpired<T>(key: string): Promise<T | null> {
+    return this.get<T>(key, true);
+  }
+
+  /**
    * Mettre une valeur en cache (multi-niveaux)
    */
   async set<T>(key: string, data: T, ttl?: number): Promise<void> {
@@ -115,21 +139,19 @@ class MultiLevelCache {
       ttl: cacheTTL
     });
 
-    // ✅ Level 2: IndexedDB cache (seulement si TTL > memoryTTL)
+    // Level 2: IndexedDB cache (only for longer TTLs)
     if (cacheTTL > this.memoryTTL) {
       try {
         const db = await this.initIndexedDB();
         const tx = db.transaction([this.storeName], 'readwrite');
         const store = tx.objectStore(this.storeName);
-        await store.put({
-          key,
-          data,
-          timestamp: now,
-          ttl: cacheTTL
+        const request = store.put({ key, data, timestamp: now, ttl: cacheTTL });
+        await new Promise<void>((resolve, reject) => {
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
         });
-      } catch (error) {
-        // IndexedDB non disponible, ignorer silencieusement
-        console.debug('IndexedDB not available for cache write');
+      } catch {
+        // IndexedDB not available - memory cache is still active
       }
     }
   }

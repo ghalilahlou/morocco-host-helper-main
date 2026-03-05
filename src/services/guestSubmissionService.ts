@@ -1,9 +1,13 @@
 import { supabase } from '@/integrations/supabase/client';
 import { Booking } from '@/types/booking';
 
-// ✅ CACHE : Éviter les appels répétés
 let submissionsCache: { data: any[], timestamp: number } | null = null;
-const CACHE_DURATION = 5000; // 5 secondes
+const CACHE_DURATION = 2000; // 2s – short TTL so realtime triggers show fresh data quickly
+
+/** Invalidate the in-memory guest submissions cache (call on realtime events). */
+export const invalidateSubmissionsCache = () => {
+  submissionsCache = null;
+};
 
 interface GuestSubmissionData {
   id: string;

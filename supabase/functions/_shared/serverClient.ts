@@ -43,29 +43,12 @@ export async function verifyPropertyToken(token: string) {
 
   if (activeTokenData) {
     tokenData = activeTokenData;
-    console.log('✅ Token actif trouvé dans verifyPropertyToken');
   } else {
-    console.log('⚠️ Token non-actif, recherche de token existant...');
-    
-    // Si pas de token actif, chercher n'importe quel token avec cette valeur
-    const { data: anyTokenData, error: anyTokenError } = await client
-      .from('property_verification_tokens')
-      .select('property_id, token, is_active, expires_at')
-      .eq('token', token)
-      .single();
-
-    if (anyTokenData) {
-      tokenData = anyTokenData;
-      console.log('✅ Token trouvé (même si inactif) dans verifyPropertyToken');
-    } else {
-      throw new AuthenticationError('Invalid property token', { error: anyTokenError });
-    }
+    throw new AuthenticationError('Invalid or inactive property token');
   }
 
-  // ✅ CORRECTION : Vérification d'expiration plus flexible
   if (tokenData.expires_at && new Date(tokenData.expires_at) < new Date()) {
-    console.warn('⚠️ Token expiré mais autorisation accordée pour la soumission');
-    // Ne pas bloquer pour l'expiration, juste logger l'avertissement
+    throw new AuthenticationError('Token expired');
   }
 
   // Now verify with the RPC function using both parameters

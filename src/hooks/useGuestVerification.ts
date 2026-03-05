@@ -406,98 +406,142 @@ export const useGuestVerification = () => {
   };
 
   // Load verification tokens for user's properties
+  // ✅ OPTIMISATION : Cette fonction n'est PAS appelée automatiquement au montage
+  // Elle est disponible mais doit être appelée explicitement si nécessaire
   const loadVerificationTokens = async () => {
     if (!user) return;
 
     try {
-      setIsLoading(true);
+      // ✅ OPTIMISATION : Ne pas bloquer le chargement avec setIsLoading
+      // setIsLoading(true); // ❌ Supprimé pour ne pas bloquer l'UI
       
       // ✅ OPTIMISATION : Requête simplifiée sans jointure pour éviter les erreurs 500
-      const { data, error } = await supabase
+      // ✅ CORRECTION : Ajouter un timeout court pour éviter les blocages
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Verification tokens timeout')), 3000)
+      );
+      
+      const queryPromise = supabase
         .from('property_verification_tokens')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('id, property_id, token, is_active, created_at')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      let result;
+      try {
+        result = await Promise.race([queryPromise, timeoutPromise]);
+      } catch (timeoutErr) {
+        console.warn('⏱️ [useGuestVerification] Timeout loading verification tokens (non-bloquant)');
+        return; // Continuer sans bloquer
+      }
+
+      const { data, error } = result as any;
 
       if (error) {
+        console.warn('⚠️ [useGuestVerification] Erreur chargement tokens (non-bloquant):', error.message);
         return;
       }
 
       setTokens(data || []);
     } catch (error) {
       // Erreur masquée en production
-    } finally {
-      setIsLoading(false);
     }
+    // ✅ OPTIMISATION : Pas de finally avec setIsLoading(false) car on n'a pas mis true
   };
 
   // Load guest submissions for user's properties
+  // ✅ OPTIMISATION : Cette fonction est LENTE car elle appelle une edge function pour chaque propriété
+  // Elle n'est PAS appelée automatiquement au montage pour ne pas bloquer le dashboard
   const loadGuestSubmissions = async () => {
     if (!user) return;
 
     try {
-      // Get all properties for this user first
-      const { data: userProperties, error: propsError } = await supabase
-        .from('properties')
-        .select('id')
-        .eq('user_id', user.id);
+      // ✅ OPTIMISATION : Timeout global de 10 secondes pour éviter les blocages
+      const GLOBAL_TIMEOUT = 10000;
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Guest submissions global timeout')), GLOBAL_TIMEOUT)
+      );
 
-      if (propsError || !userProperties?.length) {
-        // Erreur masquée en production
-        setSubmissions([]);
-        return;
-      }
+      const loadPromise = (async () => {
+        // Get all properties for this user first
+        const { data: userProperties, error: propsError } = await supabase
+          .from('properties')
+          .select('id')
+          .eq('user_id', user.id);
 
-      // Use the new edge function to get guest submissions for all user properties
-      const allSubmissions: GuestSubmission[] = [];
-      
-      for (const property of userProperties) {
-        try {
-          const { data, error } = await supabase.functions.invoke('get-guest-documents-unified', {
-            body: { propertyId: property.id }
-          });
-
-          if (error) {
-            // Erreur masquée en production
-            continue;
-          }
-
-          // Transform the edge function response to match our types
-          // The function returns { success, bookings, totalBookings }
-          const bookings = data?.bookings || [];
-          const propertySubmissions: GuestSubmission[] = bookings.map((booking: any) => ({
-            id: booking.bookingId || `booking-${Date.now()}-${Math.random()}`,
-            token_id: '', // Not returned by edge function, but not needed for display
-            booking_data: null, // Not returned by edge function
-            guest_data: {
-              guests: [{
-                fullName: 'Guest', // Default name since the function doesn't return guest names
-                documentType: 'identity', // Default type
-                documentNumber: 'N/A'
-              }]
-            },
-            document_urls: [
-              ...(booking.documents?.identity || []).map((doc: any) => doc.url),
-              ...(booking.documents?.contract || []).map((doc: any) => doc.url),
-              ...(booking.documents?.police || []).map((doc: any) => doc.url)
-            ],
-            signature_data: undefined,
-            submitted_at: new Date().toISOString(),
-            status: 'completed' as const,
-            reviewed_by: undefined,
-            reviewed_at: undefined,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }));
-
-          allSubmissions.push(...propertySubmissions);
-        } catch (edgeError) {
-          // Erreur masquée en production
+        if (propsError || !userProperties?.length) {
+          setSubmissions([]);
+          return;
         }
+
+        // ✅ OPTIMISATION : Limiter à 3 propriétés max pour éviter les appels multiples
+        const limitedProperties = userProperties.slice(0, 3);
+        
+        // ✅ OPTIMISATION : Appeler en parallèle au lieu de séquentiellement
+        const allSubmissions: GuestSubmission[] = [];
+        
+        const promises = limitedProperties.map(async (property) => {
+          try {
+            // Timeout individuel de 5 secondes par propriété
+            const individualTimeout = new Promise<null>((resolve) => 
+              setTimeout(() => resolve(null), 5000)
+            );
+            
+            const fetchPromise = supabase.functions.invoke('get-guest-documents-unified', {
+              body: { propertyId: property.id }
+            });
+
+            const result = await Promise.race([fetchPromise, individualTimeout]);
+            
+            if (!result || (result as any).error) {
+              return [];
+            }
+
+            const data = (result as any).data;
+            const bookings = data?.bookings || [];
+            return bookings.map((booking: any) => ({
+              id: booking.bookingId || `booking-${Date.now()}-${Math.random()}`,
+              token_id: '',
+              booking_data: null,
+              guest_data: {
+                guests: [{
+                  fullName: 'Guest',
+                  documentType: 'identity',
+                  documentNumber: 'N/A'
+                }]
+              },
+              document_urls: [
+                ...(booking.documents?.identity || []).map((doc: any) => doc.url),
+                ...(booking.documents?.contract || []).map((doc: any) => doc.url),
+                ...(booking.documents?.police || []).map((doc: any) => doc.url)
+              ],
+              signature_data: undefined,
+              submitted_at: new Date().toISOString(),
+              status: 'completed' as const,
+              reviewed_by: undefined,
+              reviewed_at: undefined,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }));
+          } catch {
+            return [];
+          }
+        });
+
+        const results = await Promise.all(promises);
+        results.forEach(submissions => allSubmissions.push(...submissions));
+        
+        setSubmissions(allSubmissions);
+      })();
+
+      // Attendre avec timeout global
+      await Promise.race([loadPromise, timeoutPromise]);
+    } catch (error: any) {
+      // ✅ OPTIMISATION : Log uniquement si ce n'est pas un timeout (cas attendu)
+      if (!error?.message?.includes('timeout')) {
+        console.warn('⚠️ [useGuestVerification] Erreur chargement submissions (non-bloquant)');
       }
-      
-      setSubmissions(allSubmissions);
-    } catch (error) {
-      // Erreur masquée en production
     }
   };
 
@@ -572,10 +616,23 @@ export const useGuestVerification = () => {
     }
   };
 
+  // ✅ OPTIMISATION : Ne PAS charger automatiquement les tokens et submissions au montage
+  // Ces données ne sont pas nécessaires immédiatement pour le dashboard
+  // Elles seront chargées à la demande (lazy loading) quand l'utilisateur en a besoin
+  // Cela accélère significativement le chargement initial du dashboard
   useEffect(() => {
+    // ✅ DÉSACTIVÉ : Ces appels bloquaient le chargement initial du dashboard
+    // loadVerificationTokens(); // ❌ Retourne souvent une erreur 500
+    // loadGuestSubmissions();   // ❌ Fait plusieurs appels lents à l'edge function
+    
+    // ✅ OPTIONNEL : Charger en arrière-plan après un délai (non-bloquant)
     if (user) {
-      loadVerificationTokens();
-      loadGuestSubmissions();
+      const timer = setTimeout(() => {
+        // Charger les tokens silencieusement en arrière-plan
+        loadVerificationTokens().catch(() => {});
+      }, 3000); // Attendre 3 secondes après le chargement initial
+      
+      return () => clearTimeout(timer);
     }
   }, [user]);
 

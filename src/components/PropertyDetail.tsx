@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Building2, MapPin, Users, Link as LinkIcon, ArrowLeft, Edit, HelpCircle } from 'lucide-react';
+import { Building2, MapPin, Users, Link as LinkIcon, ArrowLeft, HelpCircle, CalendarDays, ArrowRight } from 'lucide-react';
 import { Property, Booking } from '@/types/booking';
 import { useProperties } from '@/hooks/useProperties';
 import { useBookings } from '@/hooks/useBookings';
@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useGuestVerification } from '@/hooks/useGuestVerification';
 import { useToast } from '@/hooks/use-toast';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { Dashboard } from './Dashboard';
 import { BookingWizardWithBoundary as BookingWizard } from './BookingWizard';
 import { CreatePropertyDialog } from './CreatePropertyDialog';
@@ -17,8 +18,87 @@ import { PropertyTutorial } from './PropertyTutorial';
 import { ShareModal } from './ShareModal';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { supabase } from '@/integrations/supabase/client';
+import { isAirbnbCode } from '@/utils/airbnbCodeFilter';
 
 
+
+interface BookingsStatHoverProps {
+  label: string;
+  count: number;
+  bookings: any[];
+  className: string;
+  formatDate: (d: string) => string;
+  extraCount?: number;
+}
+
+const BookingsStatHover = ({ label, count, bookings, className, formatDate, extraCount = 0 }: BookingsStatHoverProps) => {
+  const sorted = [...bookings].sort(
+    (a, b) => new Date(a.checkInDate).getTime() - new Date(b.checkInDate).getTime()
+  );
+  const displayed = sorted.slice(0, 12);
+  const remaining = bookings.length - displayed.length + extraCount;
+
+  return (
+    <HoverCard openDelay={200} closeDelay={100}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className={`text-xl md:text-2xl font-bold cursor-default hover:opacity-75 transition-opacity ${className}`}
+        >
+          {count} {label}
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent
+        side="bottom"
+        align="center"
+        className="w-80 p-0 rounded-xl shadow-xl border border-gray-200"
+      >
+        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 rounded-t-xl">
+          <p className="text-sm font-semibold text-gray-700">
+            {count} {label}
+          </p>
+        </div>
+        {bookings.length === 0 && extraCount === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-gray-400">
+            Aucune réservation
+          </div>
+        ) : (
+          <div className="max-h-72 overflow-y-auto divide-y divide-gray-50">
+            {displayed.map((b) => (
+              <div key={b.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors">
+                <CalendarDays className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {b.guest_name || b.bookingReference || 'Sans nom'}
+                  </p>
+                  <p className="text-xs text-gray-500 flex items-center gap-1">
+                    {formatDate(b.checkInDate)}
+                    <ArrowRight className="w-3 h-3" />
+                    {formatDate(b.checkOutDate)}
+                  </p>
+                </div>
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                  b.status === 'completed'
+                    ? 'bg-emerald-50 text-emerald-600'
+                    : b.status === 'confirmed'
+                    ? 'bg-blue-50 text-blue-600'
+                    : 'bg-amber-50 text-amber-600'
+                }`}>
+                  {b.status === 'completed' ? 'Terminé' : b.status === 'confirmed' ? 'Confirmé' : 'En attente'}
+                </span>
+              </div>
+            ))}
+            {remaining > 0 && (
+              <div className="px-4 py-2 text-center text-xs text-gray-400">
+                + {remaining} autre{remaining > 1 ? 's' : ''} réservation{remaining > 1 ? 's' : ''}
+              </div>
+            )}
+          </div>
+        )}
+      </HoverCardContent>
+    </HoverCard>
+  );
+};
 
 export const PropertyDetail = () => {
   const { propertyId } = useParams<{ propertyId: string }>();
@@ -45,52 +125,53 @@ export const PropertyDetail = () => {
   
   // ✅ NETTOYAGE STRICT : Référence du propertyId précédent pour détecter les changements
   const previousPropertyIdRef = useRef<string | undefined>(propertyId);
+  
+  // ✅ OPTIMISATION : Cache et debounce pour éviter les appels multiples
+  const airbnbCountCacheRef = useRef<{ propertyId: string; count: number; timestamp: number } | null>(null);
+  const airbnbCountLoadingRef = useRef(false);
+  const AIRBNB_CACHE_DURATION = 60000; // 1 minute
 
-  // All useCallback hooks MUST be before any early returns
   const loadAirbnbCount = useCallback(async () => {
     if (!property?.id) return;
-    
-    try {
-      // ✅ NOUVEAU : Vérifier d'abord si le lien ICS est configuré
-      const { data: propertyData, error: propertyError } = await supabase
-        .from('properties')
-        .select('airbnb_ics_url')
-        .eq('id', property.id)
-        .single();
-      
-      // Si pas de lien ICS ou erreur, ne pas compter les réservations Airbnb
-      if (propertyError || !propertyData?.airbnb_ics_url) {
-        console.log('ℹ️ [PROPERTY DETAIL] Pas de lien ICS configuré, comptage Airbnb = 0');
-        setAirbnbReservationsCount(0);
-        return;
-      }
-      
-      // ✅ CORRIGÉ : Charger seulement les réservations Airbnb actives (non passées)
-      // Pour correspondre à ce qui est affiché dans le calendrier
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const { data: reservations, error } = await supabase
-        .from('airbnb_reservations')
-        .select('id, start_date, end_date')
-        .eq('property_id', property.id)
-        .gte('end_date', today.toISOString().split('T')[0]) // Seulement les réservations non terminées
-        .order('start_date', { ascending: true });
-      
-      if (error) {
-        console.error('Error loading Airbnb reservations count:', error);
-        setAirbnbReservationsCount(0);
-        return;
-      }
-      
-      // ✅ OPTIMISATION : Log désactivé pour améliorer la performance
-      
-      setAirbnbReservationsCount(reservations?.length || 0);
-    } catch (error) {
-      console.error('Error loading Airbnb reservations count:', error);
-      setAirbnbReservationsCount(0);
+
+    const cache = airbnbCountCacheRef.current;
+    const now = Date.now();
+    if (cache && cache.propertyId === property.id && (now - cache.timestamp) < AIRBNB_CACHE_DURATION) {
+      setAirbnbReservationsCount(cache.count);
+      return;
     }
-  }, [property?.id]);
+
+    if (airbnbCountLoadingRef.current) return;
+    airbnbCountLoadingRef.current = true;
+
+    try {
+      if (!property.airbnb_ics_url) {
+        setAirbnbReservationsCount(0);
+        airbnbCountCacheRef.current = { propertyId: property.id, count: 0, timestamp: Date.now() };
+        return;
+      }
+
+      const { count, error } = await supabase
+        .from('airbnb_reservations')
+        .select('*', { count: 'exact', head: true })
+        .eq('property_id', property.id);
+
+      if (error) {
+        console.error('Error loading Airbnb count:', error);
+        setAirbnbReservationsCount(0);
+        return;
+      }
+
+      const total = count ?? 0;
+      setAirbnbReservationsCount(total);
+      airbnbCountCacheRef.current = { propertyId: property.id, count: total, timestamp: Date.now() };
+    } catch (error) {
+      console.error('Error loading Airbnb count:', error);
+      setAirbnbReservationsCount(0);
+    } finally {
+      airbnbCountLoadingRef.current = false;
+    }
+  }, [property?.id, property?.airbnb_ics_url]);
 
   const handleNewBooking = useCallback(() => {
     setEditingBooking(undefined);
@@ -277,28 +358,7 @@ export const PropertyDetail = () => {
     }
   }, [property]);
 
-  // ✅ DIAGNOSTIC : Log pour vérifier le filtrage et identifier les problèmes
-  useEffect(() => {
-    if (property?.id && bookings.length > 0) {
-      const propertyBookings = bookings.filter(booking => booking.propertyId === property.id);
-      const bookingsWithPropertyId = bookings.filter(b => b.propertyId === property.id);
-      const bookingsWithoutPropertyId = bookings.filter(b => !b.propertyId);
-      const bookingsWithOtherPropertyId = bookings.filter(b => b.propertyId && b.propertyId !== property.id);
-
-      // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
-      // Ce log était dans un useEffect et s'exécutait à chaque changement de bookings/property
-      // console.log('🔍 [PROPERTY DETAIL] Diagnostic du filtrage des réservations:', ...);
-
-      // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
-      // Ces logs étaient dans un useEffect et s'exécutaient à chaque changement
-      // if (bookingsWithOtherPropertyId.length > 0) {
-      //   console.warn('⚠️ [PROPERTY DETAIL] PROBLÈME DÉTECTÉ: Des réservations d\'autres propriétés sont présentes!', ...);
-      // }
-      // if (bookingsWithoutPropertyId.length > 0) {
-      //   console.warn('⚠️ [PROPERTY DETAIL] PROBLÈME DÉTECTÉ: Des réservations sans propertyId sont présentes!', ...);
-      // }
-    }
-  }, [bookings, property?.id, airbnbReservationsCount]);
+  // Diagnostic removed - was causing unnecessary re-renders on every bookings change
 
   const handleTutorialComplete = () => {
     localStorage.setItem('client-dashboard-tutorial-seen', 'true');
@@ -333,24 +393,35 @@ export const PropertyDetail = () => {
     );
   }
 
-  // Filter bookings by this property
   const propertyBookings = bookings.filter(booking => booking.propertyId === property.id);
 
-  // ✅ CORRIGÉ: Une réservation est "Terminée" si elle a tous ses documents générés OU si son statut est 'completed'
-  const isBookingCompleted = (booking: any) => {
-    // Vérifier si les documents sont générés
-    const hasPoliceForm = booking.documentsGenerated?.policeForm === true || 
-                          booking.documentsGenerated?.police === true;
-    const hasContract = booking.documentsGenerated?.contract === true;
-    
-    // Réservation complétée = statut 'completed' OU (a police form ET contrat)
-    return booking.status === 'completed' || (hasPoliceForm && hasContract);
-  };
+  const isBookingCompleted = (booking: any) => booking.status === 'completed';
+
+  // Bookings that were created by Airbnb sync (have HM... codes) are already
+  // counted in airbnbReservationsCount, so we split them out to avoid double-counting.
+  const airbnbCodedBookings = propertyBookings.filter(b => isAirbnbCode(b.bookingReference));
+  const manualBookings = propertyBookings.filter(b => !isAirbnbCode(b.bookingReference));
+
+  // Unique airbnb-only count (those WITHOUT a matching booking entry)
+  const uniqueAirbnbOnly = Math.max(0, airbnbReservationsCount - airbnbCodedBookings.length);
+
+  const completedBookings = propertyBookings.filter(b => isBookingCompleted(b));
+  const pendingBookings = propertyBookings.filter(b => !isBookingCompleted(b));
+
+  const totalAll = manualBookings.length + airbnbCodedBookings.length + uniqueAirbnbOnly;
 
   const stats = {
-    total: propertyBookings.length + airbnbReservationsCount,
-    pending: propertyBookings.filter(b => !isBookingCompleted(b)).length + airbnbReservationsCount,
-    completed: propertyBookings.filter(b => isBookingCompleted(b)).length,
+    total: totalAll,
+    completed: completedBookings.length,
+    pending: totalAll - completedBookings.length,
+  };
+
+  const formatDate = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+    } catch {
+      return dateStr;
+    }
   };
 
   return (
@@ -418,17 +489,31 @@ export const PropertyDetail = () => {
             
             {/* Partie droite : Stats + Boutons */}
             <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6 flex-shrink-0">
-              {/* Stats selon modèle Figma (37 / 23 / 14) */}
+              {/* Stats with hover preview */}
               <div className="flex items-center gap-4">
-                <div className="text-xl md:text-2xl font-bold text-black">
-                  {stats.total} {t('dashboard.total')}
-                </div>
-                <div className="text-xl md:text-2xl font-bold" style={{ color: '#059669' }}>
-                  {stats.completed} {t('dashboard.completed')}
-                </div>
-                <div className="text-xl md:text-2xl font-bold text-gray-500">
-                  {stats.pending} {t('dashboard.pending')}
-                </div>
+                <BookingsStatHover
+                  label={t('dashboard.total')}
+                  count={stats.total}
+                  bookings={propertyBookings}
+                  className="text-black"
+                  formatDate={formatDate}
+                  extraCount={uniqueAirbnbOnly}
+                />
+                <BookingsStatHover
+                  label={t('dashboard.completed')}
+                  count={stats.completed}
+                  bookings={completedBookings}
+                  className="text-emerald-600"
+                  formatDate={formatDate}
+                />
+                <BookingsStatHover
+                  label={t('dashboard.pending')}
+                  count={stats.pending}
+                  bookings={pendingBookings}
+                  className="text-gray-500"
+                  formatDate={formatDate}
+                  extraCount={uniqueAirbnbOnly}
+                />
               </div>
               
               {/* Boutons selon modèle Figma */}
@@ -469,6 +554,7 @@ export const PropertyDetail = () => {
           onDeleteBooking={deleteBooking}
           onRefreshBookings={refreshBookings}
           propertyId={property.id}
+          airbnbIcsUrl={property.airbnb_ics_url}
         />
       </div>
 

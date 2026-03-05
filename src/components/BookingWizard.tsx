@@ -22,6 +22,7 @@ import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
+import { useT } from '@/i18n/GuestLocaleProvider';
 
 // ✅ ErrorBoundary local pour isoler le wizard
 class WizardErrorBoundary extends Component<
@@ -113,6 +114,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
   // ✅ FIX CRITIQUE : Utiliser le MÊME propertyId que Dashboard pour synchroniser les états
   const { addBooking, updateBooking, refreshBookings } = useBookings({ propertyId });
   const { toast } = useToast();
+  const t = useT();
   
   // ✅ PROTECTION : Capturer l'userId au mount pour éviter les crashs si déconnexion temporaire
   const initialUserIdRef = useRef<string | null>(null);
@@ -244,8 +246,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
 
     // ✅ FEEDBACK VISUEL : Afficher un toast de chargement
     const loadingToast = toast({
-      title: "Création en cours...",
-      description: "Veuillez patienter, la réservation est en cours de création.",
+      title: t('bookingWizard.creating.title'),
+      description: t('bookingWizard.creating.desc'),
     });
 
     try {
@@ -253,8 +255,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       if (!propertyId) {
         console.error('❌ Tentative de création booking sans propertyId');
         toast({
-          title: "Erreur critique",
-          description: "Impossible de créer une réservation sans propriété sélectionnée. Veuillez rafraîchir la page.",
+          title: t('bookingWizard.errorNoProperty.title'),
+          description: t('bookingWizard.errorNoProperty.desc'),
           variant: "destructive"
         });
         setIsSubmitting(false);
@@ -269,8 +271,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       if (!session) {
         console.error('❌ Session expirée pendant la création de réservation');
         toast({
-          title: "Session expirée",
-          description: "Votre session a expiré. Veuillez vous reconnecter.",
+          title: t('bookingWizard.sessionExpired.title'),
+          description: t('bookingWizard.sessionExpired.desc'),
           variant: "destructive"
         });
         return;
@@ -312,8 +314,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             userData: userData
           });
           toast({
-            title: "Erreur d'authentification",
-            description: "Impossible de créer la réservation : utilisateur non authentifié. Veuillez vous reconnecter.",
+            title: t('bookingWizard.authError.title'),
+            description: t('bookingWizard.authError.desc'),
             variant: "destructive"
           });
           setIsSubmitting(false);
@@ -348,8 +350,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           } else if (conflictingBookings && Array.isArray(conflictingBookings) && conflictingBookings.length > 0) {
             console.error('❌ Conflit détecté avec réservations existantes:', conflictingBookings);
           toast({
-            title: "Conflit de réservation",
-              description: `Une ou plusieurs réservations existent déjà pour ces dates (${conflictingBookings.length} conflit(s) détecté(s)). Veuillez choisir d'autres dates.`,
+            title: t('bookingWizard.conflict.title'),
+              description: t('bookingWizard.conflict.desc', { count: conflictingBookings.length }),
             variant: "destructive"
           });
           return;
@@ -383,8 +385,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         if (propertyCheckError || !propertyCheck) {
           console.error('❌ [DIAGNOSTIC] Erreur vérification propriété:', propertyCheckError);
           toast({
-            title: "Erreur de propriété",
-            description: "Impossible de vérifier la propriété. Veuillez réessayer.",
+            title: t('bookingWizard.propertyError.title'),
+            description: t('bookingWizard.propertyError.desc'),
             variant: "destructive"
           });
           return;
@@ -396,8 +398,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             currentUserId: userId
           });
           toast({
-            title: "Erreur de permissions",
-            description: "Vous n'êtes pas autorisé à créer une réservation pour cette propriété.",
+            title: t('bookingWizard.permissionError.title'),
+            description: t('bookingWizard.permissionError.desc'),
             variant: "destructive"
           });
           return;
@@ -457,7 +459,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           }
           
           toast({
-            title: "Erreur de création",
+            title: t('bookingWizard.createError.title'),
             description: errorMessage,
             variant: "destructive"
           });
@@ -467,8 +469,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         if (!bookingData) {
           console.error('❌ [DIAGNOSTIC] Aucune donnée retournée après insertion');
           toast({
-            title: "Erreur de création",
-            description: "La réservation n'a pas pu être créée. Aucune donnée retournée.",
+            title: t('bookingWizard.createError.title'),
+            description: t('bookingWizard.createError.desc'),
             variant: "destructive"
           });
           return;
@@ -526,8 +528,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
                 } else {
                   console.warn('⚠️ [STORAGE] Échec stockage document:', doc.file.name, storageResult.error);
                   toast({
-                    title: "Document non enregistré",
-                    description: `La pièce d'identité "${doc.file.name}" n'a pas pu être enregistrée. ${storageResult.error || ''} Vous pourrez la ré-uploader depuis la fiche de la réservation.`,
+                    title: t('bookingWizard.docNotSaved.title'),
+                    description: t('bookingWizard.docNotSaved.desc', { filename: doc.file.name, error: storageResult.error || '' }),
                     variant: "destructive",
                   });
                 }
@@ -537,8 +539,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             } catch (storageError) {
               console.error('❌ [STORAGE] Erreur stockage document:', doc.file.name, storageError);
               toast({
-                title: "Erreur d'enregistrement",
-                description: `Impossible d'enregistrer la pièce d'identité "${doc.file.name}". Vous pourrez la ré-uploader depuis la fiche de la réservation.`,
+                title: t('bookingWizard.docError.title'),
+                description: t('bookingWizard.docError.desc', { filename: doc.file.name }),
                 variant: "destructive",
               });
             }
@@ -883,13 +885,13 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             
             if (generatedDocs.length > 0) {
               toast({
-                title: "Réservation créée avec succès",
-                description: `${generatedDocs.join(' et ')} généré${generatedDocs.length > 1 ? 's' : ''} automatiquement.`,
+                title: t('bookingWizard.success.title'),
+                description: t('bookingWizard.success.desc', { docs: generatedDocs.join(' et '), plural: generatedDocs.length > 1 ? 's' : '' }),
               });
             } else {
             toast({
-              title: "Réservation créée",
-                description: "La réservation a été créée. Les documents seront générés automatiquement en arrière-plan.",
+              title: t('bookingWizard.successBasic.title'),
+                description: t('bookingWizard.successBasic.desc'),
               });
             }
           } catch (error) {
@@ -898,8 +900,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             // La réservation est déjà créée, les documents pourront être générés manuellement plus tard
             await refreshBookings();
             toast({
-              title: "Réservation créée",
-              description: "La réservation a été créée avec succès. Les documents pourront être générés depuis la vue de la réservation.",
+              title: t('bookingWizard.successBasic.title'),
+              description: t('bookingWizard.successManualDocs.desc'),
               variant: "default"
             });
           }
@@ -919,16 +921,16 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               if (!result.success) {
                 console.error('Failed to store document:', result.error);
                 toast({
-                  title: "Document non enregistré",
-                  description: result.error || `La pièce d'identité "${doc.file.name}" n'a pas pu être enregistrée.`,
+                  title: t('bookingWizard.docNotSaved.title'),
+                  description: result.error || t('bookingWizard.docNotSaved.desc', { filename: doc.file.name, error: '' }),
                   variant: "destructive",
                 });
               }
             } catch (error) {
               console.error('❌ Error storing document:', error);
               toast({
-                title: "Erreur d'enregistrement",
-                description: `Impossible d'enregistrer "${doc.file.name}".`,
+                title: t('bookingWizard.docError.title'),
+                description: t('bookingWizard.docError.desc', { filename: doc.file.name }),
                 variant: "destructive",
               });
             }
@@ -948,7 +950,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
           numberOfGuests: formData.numberOfGuests,
           bookingReference: formData.bookingReference,
           guests: formData.guests,
-          status: formData.guests.length > 0 ? 'completed' : 'pending'
+          status: formData.guests.length > 0 ? 'confirmed' : 'pending'
         });
 
         // ✅ CORRECTION: Transaction sécurisée pour la synchronisation des invités
@@ -1049,8 +1051,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
         } catch (guestSyncError) {
           console.error('❌ Critical error during guest sync:', guestSyncError);
           toast({
-            title: "Erreur de synchronisation",
-            description: "Échec de la mise à jour des invités. Veuillez réessayer.",
+            title: t('bookingWizard.syncError.title'),
+            description: t('bookingWizard.syncError.desc'),
             variant: "destructive"
           });
           return; // Don't continue if guest sync fails
@@ -1084,10 +1086,10 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
       const finalGuestsCheck = Array.isArray(formData.guests) ? formData.guests : [];
       if (editingBooking || !formData.uploadedDocuments || formData.uploadedDocuments.length === 0 || finalGuestsCheck.length === 0) {
         toast({
-          title: editingBooking ? "Réservation mise à jour" : "Réservation créée",
+          title: editingBooking ? t('bookingWizard.updated.title') : t('bookingWizard.created.title'),
           description: editingBooking 
-            ? "La réservation a été mise à jour avec succès."
-            : "La nouvelle réservation a été créée avec succès.",
+            ? t('bookingWizard.updated.desc')
+            : t('bookingWizard.created.desc'),
         });
       }
 
@@ -1104,8 +1106,8 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
     } catch (error) {
       console.error('❌ Error saving booking:', error);
       toast({
-        title: "Erreur",
-        description: "Une erreur est survenue lors de l'enregistrement.",
+        title: t('bookingWizard.saveError.title'),
+        description: t('bookingWizard.saveError.desc'),
         variant: "destructive",
       });
     } finally {

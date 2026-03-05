@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Home, Plus, Edit, MapPin, Users, MoreVertical, Calendar, Trash2, Loader2 } from 'lucide-react';
+import { Home, Plus, Edit, MapPin, Users, MoreVertical, Calendar, Trash2, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -23,7 +23,9 @@ export const PropertyList = ({
     properties,
     isLoading,
     deleteProperty,
-    refreshProperties
+    refreshProperties,
+    networkError,
+    retryLoad
   } = useProperties();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
@@ -96,6 +98,37 @@ export const PropertyList = ({
           </Card>)}
       </div>;
   }
+  // ✅ NOUVEAU : Afficher un message d'erreur réseau avec bouton de retry
+  if (properties.length === 0 && networkError) {
+    return <>
+        <div className="flex flex-col items-center gap-8 p-12 text-center">
+          <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center">
+            <WifiOff className="h-10 w-10 text-orange-500" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl sm:text-2xl font-semibold text-orange-600">
+              {t('properties.connectionError') || 'Problème de connexion'}
+            </h2>
+            <p className="text-muted-foreground max-w-md">
+              {networkError}
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button onClick={retryLoad} size="lg" className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              {t('properties.retry') || 'Réessayer'}
+            </Button>
+            <Button onClick={() => setShowCreateDialog(true)} size="lg" variant="outline" className="gap-2">
+              <Plus className="h-4 w-4" />
+              {t('properties.addProperty')}
+            </Button>
+          </div>
+        </div>
+        
+        <CreatePropertyDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} onSuccess={refreshProperties} />
+      </>;
+  }
+
   if (properties.length === 0) {
     return <>
         <div className="flex flex-col items-center gap-8 p-12 text-center">

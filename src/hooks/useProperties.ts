@@ -1,170 +1,181 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Property } from '@/types/booking';
 import { useAuth } from './useAuth';
 import { toast } from 'sonner';
+import { multiLevelCache } from '@/services/multiLevelCache';
 
-// ✅ OPTIMISATION : Cache pour éviter les requêtes répétées
-interface CacheEntry {
-  data: Property[];
-  timestamp: number;
-}
+const CACHE_KEY_PREFIX = 'properties-v3-';
+const CACHE_TTL_INDEXEDDB = 24 * 60 * 60 * 1000;
+const NETWORK_TIMEOUT = 10000; // 10s - assez pour un réseau lent
 
-const propertiesCache = new Map<string, CacheEntry>();
-const PROPERTIES_CACHE_DURATION = 30000; // 30 secondes
-const loadingRef = { current: false };
+const PROPERTIES_SELECT = `
+  id, name, address, property_type, max_occupancy,
+  house_rules, contract_template, user_id, created_at, updated_at,
+  airbnb_ics_url, photo_url, description, contact_info
+`;
 
 export const useProperties = () => {
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
+  const [networkError, setNetworkError] = useState<string | null>(null);
   const { user } = useAuth();
+  const mountedRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
+  const retryCountRef = useRef(0);
 
-  const loadProperties = async (retryCount = 0) => {
+  const getCacheKey = useCallback(() => {
+    return user ? `${CACHE_KEY_PREFIX}${user.id}` : null;
+  }, [user]);
+
+  const transformProperties = useCallback((data: any[]): Property[] => {
+    return (data || []).map(property => ({
+      ...property,
+      house_rules: Array.isArray(property.house_rules)
+        ? property.house_rules.filter((rule: any) => typeof rule === 'string') as string[]
+        : [],
+      contract_template: typeof property.contract_template === 'object' && property.contract_template !== null
+        ? property.contract_template
+        : {},
+    }));
+  }, []);
+
+  const loadFromNetwork = useCallback(async (signal?: AbortSignal): Promise<Property[] | null> => {
+    if (!user) return null;
+    const cacheKey = getCacheKey();
+    if (!cacheKey) return null;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), NETWORK_TIMEOUT);
+
+      const { data, error } = await supabase
+        .from('properties')
+        .select(PROPERTIES_SELECT)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+        .abortSignal(controller.signal);
+
+      clearTimeout(timeoutId);
+
+      if (signal?.aborted) return null;
+
+      if (error) {
+        console.warn('[PROPERTIES] Erreur réseau:', error.message);
+        return null;
+      }
+
+      const transformed = transformProperties(data || []);
+      await multiLevelCache.set(cacheKey, transformed, CACHE_TTL_INDEXEDDB);
+      return transformed;
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || signal?.aborted) {
+        return null;
+      }
+      console.warn('[PROPERTIES] Erreur:', err?.message);
+      if (mountedRef.current) {
+        setNetworkError('Connexion lente au serveur. Veuillez réessayer.');
+      }
+      return null;
+    }
+  }, [user, getCacheKey, transformProperties]);
+
+  const loadProperties = useCallback(async (forceRefresh = false) => {
     if (!user) {
       setProperties([]);
       setIsLoading(false);
       return;
     }
 
-    // ✅ OPTIMISATION : Vérifier le cache d'abord
-    const cacheKey = `properties-${user.id}`;
-    const cached = propertiesCache.get(cacheKey);
-    const now = Date.now();
-    
-    if (cached && (now - cached.timestamp) < PROPERTIES_CACHE_DURATION) {
-      console.log('✅ [PROPERTIES] Utilisation du cache', { count: cached.data.length });
-      setProperties(cached.data);
-      setIsLoading(false);
-      return;
+    const cacheKey = getCacheKey();
+    if (!cacheKey) return;
+
+    // Cancel any in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    if (forceRefresh) {
+      await multiLevelCache.invalidate(cacheKey);
     }
 
-    // ✅ PROTECTION : Si un chargement est déjà en cours, utiliser le cache pour ne pas bloquer cet appelant
-    if (loadingRef.current) {
-      const cachedNow = propertiesCache.get(cacheKey);
-      if (cachedNow && (Date.now() - cachedNow.timestamp) < PROPERTIES_CACHE_DURATION * 2) {
-        setProperties(cachedNow.data);
-      }
-      setIsLoading(false);
-      return;
-    }
-
-    loadingRef.current = true;
-    setIsLoading(true);
-
-    try {
-      // ✅ OPTIMISATION : Timeout augmenté à 30 secondes pour les connexions lentes
-      const TIMEOUT_MS = 30000;
-      const timeoutId = setTimeout(() => {
-        // Le timeout sera géré par Promise.race
-      }, TIMEOUT_MS);
-
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Properties query timeout after 30s')), TIMEOUT_MS)
-      );
-
-      const queryPromise = supabase
-        .from('properties')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      let result: any;
+    // STEP 1: Show cached data immediately
+    if (!forceRefresh) {
       try {
-        result = await Promise.race([queryPromise, timeoutPromise]);
-      } catch (raceError: any) {
-        // Si c'est le timeout, nettoyer et relancer
-        clearTimeout(timeoutId);
-        throw raceError;
-      }
-      
-      clearTimeout(timeoutId);
-      const { data, error } = result;
+        const cached = await multiLevelCache.get<Property[]>(cacheKey);
+        if (cached && cached.length > 0 && !controller.signal.aborted) {
+          setProperties(cached);
+          setIsLoading(false);
 
-      // ✅ OPTIMISATION : Détecter les erreurs réseau et de connexion
-      if (error) {
-        const errorMessage = error.message || String(error) || '';
-        const errorStatus = (error as any).status || (error as any).statusCode || (error as any).code;
-        
-        // Détecter les erreurs de connexion réseau
-        const isNetworkError = 
-          errorMessage.includes('ERR_CONNECTION_CLOSED') ||
-          errorMessage.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-          errorMessage.includes('Failed to fetch') ||
-          errorMessage.includes('NetworkError') ||
-          errorMessage.includes('Network request failed') ||
-          (error.name === 'TypeError' && errorMessage.includes('fetch'));
-        
-        const is500Error = errorStatus === 500 || errorStatus === '500' || 
-                          errorMessage.includes('Internal Server Error') ||
-                          errorMessage.includes('500');
-        
-        const isTimeoutError = 
-          errorMessage.includes('timeout') ||
-          errorMessage.includes('Timeout') ||
-          errorStatus === 408 ||
-          errorStatus === '408';
-        
-        // ✅ RETRY : Réessayer pour les erreurs réseau, 500, ou timeout (jusqu'à 3 fois)
-        const maxRetries = 3;
-        const shouldRetry = (isNetworkError || is500Error || isTimeoutError) && retryCount < maxRetries;
-        
-        if (shouldRetry) {
-          const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 5000); // Backoff exponentiel, max 5s
-          console.warn(`⚠️ [PROPERTIES] Erreur détectée (${isNetworkError ? 'réseau' : is500Error ? '500' : 'timeout'}), retry ${retryCount + 1}/${maxRetries} dans ${retryDelay}ms`);
-          loadingRef.current = false;
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
-          return loadProperties(retryCount + 1);
+          // STEP 2: Refresh in background (non-blocking)
+          setIsBackgroundRefreshing(true);
+          loadFromNetwork(controller.signal).then(fresh => {
+            if (!fresh || controller.signal.aborted || !mountedRef.current) {
+              setIsBackgroundRefreshing(false);
+              return;
+            }
+            // Only update if data actually changed (compare IDs + updated_at timestamps)
+            const hasChanges = fresh.length !== cached.length ||
+              fresh.some((p, i) => p.id !== cached[i]?.id || p.updated_at !== cached[i]?.updated_at);
+            if (hasChanges) {
+              setProperties(fresh);
+            }
+            setIsBackgroundRefreshing(false);
+          });
+          return;
         }
-        
-        throw error;
+      } catch {
+        // Cache miss - continue to network
       }
+    }
 
-      const transformedProperties: Property[] = (data || []).map(property => ({
-        ...property,
-        house_rules: Array.isArray(property.house_rules) 
-          ? property.house_rules.filter(rule => typeof rule === 'string') as string[]
-          : [],
-        contract_template: typeof property.contract_template === 'object' && property.contract_template !== null 
-          ? property.contract_template 
-          : {},
-      }));
+    // No cache available - load from network (blocking)
+    setIsLoading(true);
+    setNetworkError(null);
 
-      // ✅ OPTIMISATION : Mettre en cache
-      propertiesCache.set(cacheKey, { data: transformedProperties, timestamp: now });
-      console.log('✅ [PROPERTIES] Propriétés chargées et mises en cache', { count: transformedProperties.length });
+    const networkData = await loadFromNetwork(controller.signal);
 
-      setProperties(transformedProperties);
-    } catch (error: any) {
-      console.error('❌ [PROPERTIES] Erreur lors du chargement:', error);
-      
-      const errorMessage = error?.message || String(error) || '';
-      const isNetworkError = 
-        errorMessage.includes('ERR_CONNECTION_CLOSED') ||
-        errorMessage.includes('ERR_QUIC_PROTOCOL_ERROR') ||
-        errorMessage.includes('Failed to fetch') ||
-        errorMessage.includes('timeout');
-      
-      // ✅ OPTIMISATION : Utiliser le cache même s'il est expiré en cas d'erreur
-      if (cached) {
-        console.warn('⚠️ [PROPERTIES] Utilisation du cache expiré en raison d\'une erreur');
-        setProperties(cached.data);
-        toast.error(
-          isNetworkError 
-            ? 'Problème de connexion, affichage des données en cache' 
-            : 'Erreur de chargement, affichage des données en cache'
-        );
-      } else {
-        toast.error(
-          isNetworkError 
-            ? 'Échec de connexion au serveur. Veuillez vérifier votre connexion internet.' 
-            : 'Échec du chargement des propriétés'
-        );
+    if (controller.signal.aborted || !mountedRef.current) return;
+
+    if (networkData && networkData.length > 0) {
+      setProperties(networkData);
+    } else {
+      // Last resort: try expired cache
+      try {
+        const expiredCache = await multiLevelCache.getExpired<Property[]>(cacheKey);
+        if (expiredCache && expiredCache.length > 0) {
+          setProperties(expiredCache);
+          toast.info('Affichage des données en cache (connexion lente)');
+        } else {
+          setProperties([]);
+        }
+      } catch {
+        setProperties([]);
       }
-    } finally {
-      loadingRef.current = false;
+    }
+    setIsLoading(false);
+  }, [user, getCacheKey, loadFromNetwork]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadProperties();
+    } else {
+      setProperties([]);
       setIsLoading(false);
     }
-  };
+  }, [user, loadProperties]);
+
+  // CRUD Operations
 
   const addProperty = async (property: Omit<Property, 'id' | 'created_at' | 'updated_at' | 'user_id'>) => {
     if (!user) {
@@ -175,44 +186,31 @@ export const useProperties = () => {
     try {
       const { data, error } = await supabase
         .from('properties')
-        .insert([
-          {
-            ...property,
-            user_id: user.id,
-          }
-        ])
+        .insert([{ ...property, user_id: user.id }])
         .select()
         .single();
 
       if (error) throw error;
 
-      const newProperty: Property = {
-        ...data,
-        house_rules: Array.isArray(data.house_rules) 
-          ? data.house_rules.filter(rule => typeof rule === 'string') as string[]
-          : [],
-        contract_template: typeof data.contract_template === 'object' && data.contract_template !== null 
-          ? data.contract_template 
-          : {},
-      };
-
-      // Update local state immediately
+      const newProperty = transformProperties([data])[0];
       setProperties(prev => [newProperty, ...prev]);
-      
-      // Also refresh from database to ensure consistency
-      await loadProperties();
-      
-      toast.success('Property added successfully');
+
+      const cacheKey = getCacheKey();
+      if (cacheKey) await multiLevelCache.invalidate(cacheKey);
+
+      toast.success('Propriété ajoutée avec succès');
       return newProperty;
     } catch (error) {
       console.error('Error adding property:', error);
-      toast.error('Failed to add property');
+      toast.error("Échec de l'ajout de la propriété");
       return null;
     }
   };
 
   const updateProperty = async (id: string, updates: Partial<Property>) => {
     try {
+      setProperties(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+
       const { error } = await supabase
         .from('properties')
         .update(updates)
@@ -220,13 +218,14 @@ export const useProperties = () => {
 
       if (error) throw error;
 
-      // Reload properties from database to get fresh data
-      await loadProperties();
-      
-      toast.success('Property updated successfully');
+      const cacheKey = getCacheKey();
+      if (cacheKey) await multiLevelCache.invalidate(cacheKey);
+
+      toast.success('Propriété mise à jour');
     } catch (error) {
       console.error('Error updating property:', error);
-      toast.error('Failed to update property');
+      loadProperties();
+      toast.error('Échec de la mise à jour');
     }
   };
 
@@ -237,8 +236,9 @@ export const useProperties = () => {
     }
 
     try {
-      console.log('🗑️ [PROPERTIES] Début de la suppression de la propriété:', id);
-      
+      const previousProperties = [...properties];
+      setProperties(prev => prev.filter(p => p.id !== id));
+
       const { data, error } = await supabase.rpc('delete_property_with_reservations', {
         p_property_id: id,
         p_user_id: user.id
@@ -247,28 +247,21 @@ export const useProperties = () => {
       if (error) throw error;
 
       if (data) {
-        console.log('✅ [PROPERTIES] Propriété supprimée avec succès');
-        
-        // ✅ CORRECTION : Invalider le cache des propriétés
-        const cacheKey = `properties-${user.id}`;
-        propertiesCache.delete(cacheKey);
-        console.log('🧹 [PROPERTIES] Cache invalidé:', cacheKey);
-        
-        // ✅ CORRECTION : Mettre à jour l'état local immédiatement
-        setProperties(prev => prev.filter(property => property.id !== id));
-        
-        // ✅ CORRECTION : Émettre un événement global pour que useBookings puisse nettoyer son cache
+        const cacheKey = getCacheKey();
+        if (cacheKey) await multiLevelCache.invalidate(cacheKey);
+
         window.dispatchEvent(new CustomEvent('property-deleted', { detail: { propertyId: id } }));
-        
-        toast.success('Propriété et toutes ses réservations supprimées avec succès');
+        toast.success('Propriété supprimée avec succès');
         return true;
       } else {
-        toast.error('Propriété non trouvée ou non autorisée');
+        setProperties(previousProperties);
+        toast.error('Propriété non trouvée');
         return false;
       }
     } catch (error) {
-      console.error('❌ [PROPERTIES] Erreur lors de la suppression:', error);
-      toast.error('Failed to delete property');
+      console.error('Error deleting property:', error);
+      loadProperties();
+      toast.error('Échec de la suppression');
       return false;
     }
   };
@@ -277,26 +270,30 @@ export const useProperties = () => {
     return properties.find(property => property.id === id);
   };
 
-  useEffect(() => {
-    loadProperties();
-  }, [user]);
+  const refreshProperties = useCallback(() => {
+    setNetworkError(null);
+    retryCountRef.current = 0;
+    loadProperties(true);
+  }, [loadProperties]);
 
-  const refreshProperties = () => {
-    // ✅ OPTIMISATION : Invalider le cache avant de recharger
-    if (user) {
-      const cacheKey = `properties-${user.id}`;
-      propertiesCache.delete(cacheKey);
-    }
-    loadProperties();
-  };
+  const retryLoad = useCallback(async () => {
+    setNetworkError(null);
+    retryCountRef.current += 1;
+    const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 8000);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    loadProperties(true);
+  }, [loadProperties]);
 
   return {
     properties,
     isLoading,
+    isBackgroundRefreshing,
+    networkError,
     addProperty,
     updateProperty,
     deleteProperty,
     getPropertyById,
     refreshProperties,
+    retryLoad,
   };
 };
