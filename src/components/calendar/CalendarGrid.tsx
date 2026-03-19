@@ -1,5 +1,5 @@
 import { memo, useState, useMemo } from 'react';
-import { CalendarDay, BookingLayout } from './CalendarUtils';
+import { CalendarDay, BookingLayout, BAR_GAP_PERCENT } from './CalendarUtils';
 import { CalendarBookingBar } from './CalendarBookingBar';
 import { ConflictCadran } from './ConflictCadran';
 import { Booking } from '@/types/booking';
@@ -190,7 +190,7 @@ export const CalendarGrid = memo(({
                             style={{
                               top: `${topOffset}px`,
                               height: `${isMobile ? 40 : 32}px`,
-                              left: normalBarEndsHere ? '12px' : '2px',
+                              left: normalBarEndsHere ? `${BAR_GAP_PERCENT}%` : '2px',
                               right: '2px',
                               width: normalBarEndsHere ? undefined : 'calc(100% - 4px)',
                               backgroundColor: BOOKING_COLORS.conflict.hex,
@@ -332,8 +332,8 @@ export const CalendarGrid = memo(({
                                 top: `${topOffset}px`,
                                 height: `${baseHeight}px`,
                                 zIndex: 100 + layer,
-                                left: bookingData.startOffsetPercent ? '12px' : '2px',
-                                right: bookingData.endOffsetPercent ? '12px' : '2px',
+                                left: bookingData.startOffsetPercent ? `${bookingData.startOffsetPercent}%` : '2px',
+                                right: bookingData.endOffsetPercent ? `${bookingData.endOffsetPercent}%` : '2px',
                                 width: (bookingData.startOffsetPercent || bookingData.endOffsetPercent)
                                   ? undefined
                                   : 'calc(100% - 4px)',

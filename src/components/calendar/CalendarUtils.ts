@@ -28,6 +28,9 @@ export interface BookingLayout {
   endOffsetPercent?: number;
 }
 
+/** Espace en % de la largeur de cellule entre barres adjacentes (fin 06 / début 07) */
+export const BAR_GAP_PERCENT = 22;
+
 // ✅ CORRIGÉ : Palette bleu turquoise pour les réservations (rouge réservé aux conflits)
 export const BOOKING_COLORS = [
   'bg-cyan-400', 'bg-cyan-500', 'bg-teal-500', 'bg-teal-600',
@@ -412,7 +415,7 @@ export const calculateBookingLayout = (
     });
 
     // Léger espace entre barres qui se touchent (ex. 06-08 et 08-10) : une se termine, l’autre commence le même jour.
-    const GAP_PERCENT = 18; // Espace visible entre barres adjacentes (pas collées)
+    const GAP_PERCENT = BAR_GAP_PERCENT;
     sortedBookings.forEach((layout) => {
       const myStart = layout.startDayIndex;
       const myEnd = layout.startDayIndex + layout.span - 1;
@@ -438,7 +441,7 @@ export const calculateBookingLayout = (
         if (otherStartsHere) layout.endOffsetPercent = GAP_PERCENT;
       }
     });
-    
+
     // ✅ DEBUG : Log pour vérifier les réservations dans chaque semaine (uniquement en développement)
     if (process.env.NODE_ENV === 'development' && sortedBookings.length > 0) {
       const bookingsInWeekByStatus = {
