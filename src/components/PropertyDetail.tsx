@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Building2, MapPin, Users, Link as LinkIcon, ArrowLeft, HelpCircle, CalendarDays, ArrowRight } from 'lucide-react';
+import { Building2, MapPin, Users, Link as LinkIcon, ArrowLeft, HelpCircle, CalendarDays, ArrowRight, Pencil } from 'lucide-react';
 import { Property, Booking } from '@/types/booking';
 import { useProperties } from '@/hooks/useProperties';
 import { useBookings } from '@/hooks/useBookings';
@@ -462,8 +462,17 @@ export const PropertyDetail = () => {
                   <h2 className="text-lg md:text-xl font-bold text-black truncate">
                     {property.name}
                   </h2>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                    onClick={() => setShowEditProperty(true)}
+                    aria-label={t('property.dialog.editTitle')}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
                   {property.property_type && (
-                    <span className="px-2 py-0.5 rounded-full bg-[#0BD9D0]/10 text-[#0BD9D0] text-xs font-medium">
+                    <span className="px-2 py-0.5 rounded-full bg-[#55BA9F]/10 text-[#55BA9F] text-xs font-medium">
                       {property.property_type}
                     </span>
                   )}

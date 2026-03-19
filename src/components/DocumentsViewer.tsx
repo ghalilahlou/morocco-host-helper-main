@@ -19,6 +19,8 @@ interface DocumentsViewerProps {
   booking: Booking;
   onClose: () => void;
   documentType?: 'all' | 'id-documents' | 'contract' | 'police-form' | 'id-cards';
+  /** Masquer les documents si l'utilisateur a dépassé la limite de son plan */
+  isOverLimit?: boolean;
 }
 interface DocumentUrls {
   guestDocuments: DisplayDocument[];
@@ -40,7 +42,8 @@ interface DisplayDocument {
 export const DocumentsViewer = ({
   booking,
   onClose,
-  documentType = 'all'
+  documentType = 'all',
+  isOverLimit = false
 }: DocumentsViewerProps) => {
   const isMobile = useIsMobile();
   const [documents, setDocuments] = useState<DocumentUrls>({
@@ -64,8 +67,9 @@ export const DocumentsViewer = ({
     toast
   } = useToast();
   useEffect(() => {
+    if (isOverLimit) return;
     loadDocuments(false); // false = utiliser le cache si disponible
-  }, [booking.id]);
+  }, [booking.id, isOverLimit]);
   const handleGenerateIDDocuments = async () => {
     try {
       console.log('🔍 Récupération documents d\'identité pour:', booking.id);
@@ -346,6 +350,28 @@ export const DocumentsViewer = ({
       }
     }
   };
+  if (isOverLimit) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-700">
+              <Shield className="h-5 w-5" />
+              Limite du plan dépassée
+            </CardTitle>
+            <CardDescription>
+              Vous avez atteint la limite de vérifications de votre plan. Passez à un plan supérieur pour accéder aux documents de check-in (pièces d'identité, contrat, fiche de police).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={onClose} className="w-full">
+              Fermer
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   if (isLoading) {
     return <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <Card className="w-full max-w-2xl mx-4">

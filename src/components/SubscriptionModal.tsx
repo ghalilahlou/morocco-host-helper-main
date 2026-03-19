@@ -4,19 +4,30 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CheckCircle, Crown, Zap, Star } from 'lucide-react';
+import { useSubscription } from '@/hooks/useSubscription';
 
 interface SubscriptionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+const PLAN_LABELS: Record<string, string> = {
+  pay_per_check: 'Pay per Check',
+  basic: 'Basic',
+  premium: 'Premium',
+};
+
 export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   open,
   onOpenChange
 }) => {
-  // Mock current plan - will be replaced with real data later
-  const currentPlan: string = "Pay per Check";
-  const currentFeatures = ["15 DHS par vérification", "Support par email"];
+  const { plan, planLimit, checkInCount, isOverLimit, isLoading } = useSubscription();
+  const currentPlan = PLAN_LABELS[plan] ?? 'Pay per Check';
+  const currentFeatures = plan === 'pay_per_check'
+    ? ['15 DHS par vérification', 'Support par email']
+    : plan === 'basic'
+      ? ['15 vérifications incluses', '1 propriété', 'Génération automatique des documents']
+      : ['50 vérifications incluses', 'Propriétés illimitées', 'Gestion multi-propriétés'];
 
   const plans = [
     {
@@ -87,17 +98,22 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
         <div className="space-y-6">
           {/* Current Plan Status */}
-          <div className="bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg p-6 border border-primary/20">
+          <div className={`rounded-lg p-6 border ${isOverLimit ? 'bg-amber-50 border-amber-200' : 'bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20'}`}>
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-primary">Plan actuel</h3>
-                <div className="flex items-center space-x-2 mt-2">
+                <div className="flex items-center space-x-2 mt-2 flex-wrap gap-2">
                   <Badge variant="secondary" className="text-primary bg-primary/10">
-                    {currentPlan}
+                    {isLoading ? '...' : currentPlan}
                   </Badge>
-                  <span className="text-sm text-muted-foreground">
-                    Actif jusqu'au 31 janvier 2025
-                  </span>
+                  {planLimit != null && (
+                    <span className="text-sm text-muted-foreground">
+                      {checkInCount} / {planLimit} vérifications utilisées
+                    </span>
+                  )}
+                  {isOverLimit && (
+                    <Badge variant="destructive">Limite dépassée</Badge>
+                  )}
                 </div>
               </div>
               {currentPlan !== "Pay per Check" && (

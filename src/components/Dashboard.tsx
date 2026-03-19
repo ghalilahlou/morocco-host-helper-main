@@ -96,28 +96,29 @@ export const Dashboard = memo(({
         </p>
       </div>
 
-      {/* Navigation Tabs selon modèle Figma */}
-      <div className="flex items-center gap-2">
-            <Button
-          variant={viewMode === 'calendar' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('calendar')}
-              data-tutorial="calendar"
-          className={viewMode === 'calendar' ? 'bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white' : 'hover:bg-gray-100 border-gray-300'}
-            >
-          <CalendarDays className="w-4 h-4 mr-2" />
-          {t('dashboard.calendar')}
-            </Button>
-            <Button
-          variant={viewMode === 'cards' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('cards')}
-          className={viewMode === 'cards' ? 'bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white' : 'hover:bg-gray-100 border-gray-300'}
-            >
-          <Grid className="w-4 h-4 mr-2" />
-          {t('dashboard.cards')}
-            </Button>
-      </div>
+      {/* Navigation Tabs - masqués en vue calendrier (icônes dans CalendarHeader à droite de la date) */}
+      {viewMode === 'cards' && (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setViewMode('calendar')}
+            data-tutorial="calendar"
+            className="hover:bg-gray-100 border-gray-300"
+          >
+            <CalendarDays className="w-4 h-4 mr-2" />
+            {t('dashboard.calendar')}
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            className="bg-[#55BA9F] hover:bg-[#55BA9F]/90 text-white"
+          >
+            <Grid className="w-4 h-4 mr-2" />
+            {t('dashboard.cards')}
+          </Button>
+        </div>
+      )}
 
       {/* Filters - Only show in cards view */}
       {viewMode === 'cards' && (
@@ -195,6 +196,8 @@ export const Dashboard = memo(({
               propertyId={propertyId}
               onRefreshBookings={handleRefreshBookings}
               airbnbIcsUrl={airbnbIcsUrl}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
             />
           </Suspense>
         </div>

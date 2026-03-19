@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubscription } from '@/hooks/useSubscription';
 import { Crown, MessageCircle } from 'lucide-react';
 import { UserMenu } from '@/components/UserMenu';
 import { SubscriptionModal } from '@/components/SubscriptionModal';
 import { ContactModal } from '@/components/ContactModal';
+import { SubscriptionBlockScreen } from '@/components/SubscriptionBlockScreen';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
@@ -21,13 +23,33 @@ export const Layout: React.FC<LayoutProps> = ({
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const t = useT();
+  const { isPaused, isOverLimit, isLoading } = useSubscription();
   const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false);
   const [contactModalOpen, setContactModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setSubscriptionModalOpen(true);
+    window.addEventListener('open-subscription-modal', handler);
+    return () => window.removeEventListener('open-subscription-modal', handler);
+  }, []);
   
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
   };
+
+  // Écran de blocage si compte en pause (sauf chargement)
+  if (!isLoading && isPaused) {
+    return (
+      <>
+        <SubscriptionBlockScreen
+          reason={isOverLimit ? 'consumption_exhausted' : 'admin_blocked'}
+          onContactSupport={() => setContactModalOpen(true)}
+        />
+        <ContactModal open={contactModalOpen} onOpenChange={setContactModalOpen} />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F9F7F2]">

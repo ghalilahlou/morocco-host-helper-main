@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -57,8 +57,10 @@ import {
   Shield, 
   Building, 
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  UserCheck
 } from 'lucide-react';
+import { AdminHostAccounts } from './AdminHostAccounts';
 
 export const AdminTokens = () => {
   const { tokenAllocations, users, allocateTokens, loadUsers, loadDashboardData } = useAdmin();
@@ -418,9 +420,9 @@ export const AdminTokens = () => {
         </Dialog>
       </div>
 
-      {/* ✅ NOUVEAU : Onglets pour séparer les fonctionnalités */}
+      {/* Onglets : Allocation, Contrôle propriété, Comptes hosts */}
       <Tabs defaultValue="allocation" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="allocation" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             Allocation Utilisateurs
@@ -428,6 +430,10 @@ export const AdminTokens = () => {
           <TabsTrigger value="control" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
             Contrôle par Propriété
+          </TabsTrigger>
+          <TabsTrigger value="hosts" className="flex items-center gap-2">
+            <UserCheck className="h-4 w-4" />
+            Comptes & Consommation
           </TabsTrigger>
         </TabsList>
 
@@ -777,6 +783,11 @@ export const AdminTokens = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Comptes hosts : activation + consommation */}
+        <TabsContent value="hosts" className="space-y-6">
+          <AdminHostAccounts />
         </TabsContent>
       </Tabs>
     </div>

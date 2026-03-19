@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ChevronUp } from 'lucide-react';
+import { ChevronUp, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Booking } from '@/types/booking';
@@ -82,6 +82,7 @@ interface BookingBarData {
   color: string;
   textColor: string;
   isConflict: boolean;
+  circleBg: string;
   photoUrl?: string;
 }
 
@@ -204,24 +205,23 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
           
           const isConflict = conflicts.includes(booking.id);
           
-          // Unified 2-state: docs present → gris (terminé), otherwise → noir (en attente)
           const bTyped = 'status' in booking ? (booking as Booking) : null;
           const hasDocs = bTyped?.documentsGenerated?.contract && bTyped?.documentsGenerated?.policeForm;
 
           let color: string;
           let textColor: string;
+          let circleBg: string;
 
           if (isConflict) {
             color = BOOKING_COLORS.conflict.hex;
             textColor = 'text-white';
-          } else if (hasDocs) {
-            color = BOOKING_COLORS.completed.hex;
-            textColor = 'text-gray-900';
+            circleBg = '#000000';
           } else {
             color = '#222222';
             textColor = 'text-white';
+            circleBg = hasDocs ? '#000000' : '#B3B3B3';
           }
-          
+
           bookingsMap.set(booking.id, {
             booking,
             startDate,
@@ -232,6 +232,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             color,
             textColor,
             isConflict,
+            circleBg,
             photoUrl: undefined
           });
         }
@@ -260,18 +261,23 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             : (bookingData.booking as Booking).numberOfGuests || 1;
           
           const isConflict = conflicts.includes(bookingData.booking.id);
+          const bTyped = 'status' in bookingData.booking ? (bookingData.booking as Booking) : null;
+          const hasDocs = bTyped?.documentsGenerated?.contract && bTyped?.documentsGenerated?.policeForm;
+
           let color: string;
           let textColor: string;
+          let circleBg: string;
 
           if (isConflict) {
             color = BOOKING_COLORS.conflict.hex;
             textColor = 'text-white';
+            circleBg = '#000000';
           } else {
-            // Airbnb-only entries have no docs → always noir (en attente)
             color = '#222222';
             textColor = 'text-white';
+            circleBg = hasDocs ? '#000000' : '#B3B3B3';
           }
-          
+
           bookingsMap.set(bookingData.booking.id, {
             booking: bookingData.booking,
             startDate,
@@ -282,6 +288,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             color,
             textColor,
             isConflict,
+            circleBg,
             photoUrl: undefined
           });
         }
@@ -459,8 +466,9 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             // ✅ AIRBNB : Hauteur fixe pour chaque ligne (réservations en ligne, pas en cascade)
             const baseHeight = 28; // Hauteur pour les numéros de jour (mobile)
             const bookingHeight = 28; // Hauteur par ligne de réservation (mobile)
-            // ✅ AIRBNB : Chaque réservation sur sa propre ligne horizontale
-            const totalHeight = baseHeight + (bookingsInWeek.length * bookingHeight) + 4;
+            const barGap = 8; // Léger espace entre réservations successives
+            // ✅ AIRBNB : Chaque réservation sur sa propre ligne horizontale + espace entre elles
+            const totalHeight = baseHeight + (bookingsInWeek.length * (bookingHeight + barGap)) - barGap + 4;
             
             return (
               <div key={`${monthDate.getTime()}-week-${weekIndex}`} className="relative border-b border-gray-100" style={{ minHeight: `${totalHeight}px` }}>
@@ -469,6 +477,8 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                   {week.map((day, dayIndex) => {
                     const isCurrentMonthDay = isSameMonth(day, monthDate);
                     const isTodayDay = isToday(day);
+                    const isPast = day < new Date(new Date().setHours(0, 0, 0, 0));
+                    const dayBg = !isCurrentMonthDay ? '' : isPast ? 'bg-[#FDFDF9]' : '';
                     
                     return (
                       <div
@@ -476,14 +486,15 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                         className={cn(
                           "relative flex items-start justify-center pt-1.5",
                           "border-r border-gray-100 last:border-r-0",
-                          !isCurrentMonthDay && "bg-gray-50/50"
+                          !isCurrentMonthDay && "bg-gray-50/50",
+                          dayBg
                         )}
                         style={{ minHeight: `${totalHeight}px` }}
                       >
                         <span
                           className={cn(
                             "text-sm font-medium z-20 relative",
-                            isTodayDay && "bg-black text-white rounded-full w-6 h-6 flex items-center justify-center text-xs",
+                            isTodayDay && "bg-[#55BA9F] text-white rounded-full w-6 h-6 flex items-center justify-center text-xs",
                             !isTodayDay && isCurrentMonthDay && "text-gray-900",
                             !isCurrentMonthDay && "text-gray-300"
                           )}
@@ -541,33 +552,21 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                         borderRadius = '0 14px 14px 0';
                       }
                       
-                      // ✅ AIRBNB : Déterminer la couleur selon le statut (comme dans Figma)
-                      let backgroundColor = bookingData.color;
-                      let textColor = bookingData.textColor;
-                      
-                      // Si c'est un conflit, utiliser rouge Airbnb
-                      if (bookingData.isConflict) {
-                        backgroundColor = '#FF5A5F';
-                        textColor = 'text-white';
-                      } else if (bookingData.isValidName) {
-                        // Réservation complétée : gris clair avec checkmark vert
-                        backgroundColor = '#E5E5E5';
-                        textColor = 'text-gray-900';
-                      } else {
-                        // Réservation en attente : gris foncé/noir
-                        backgroundColor = '#1A1A1A';
-                        textColor = 'text-white';
-                      }
+                      // Figma: barre #222222, conflit rouge; cercle #000000 (done) ou #B3B3B3 (not done)
+                      const backgroundColor = bookingData.isConflict ? '#FF5A5F' : '#222222';
+                      const textColor = 'text-white';
+                      const circleBg = bookingData.circleBg ?? '#B3B3B3';
+                      const isCheckinDone = circleBg === '#000000' && !bookingData.isConflict;
                       
                       return (
                         <div
                           key={`${bookingData.booking.id}-${weekIndex}-${idx}`}
                           className="absolute h-7 sm:h-8 pointer-events-auto cursor-pointer"
-                          style={{
+                            style={{
                             left: `calc(${leftPercent}% + 1px)`,
                             width: `calc(${widthPercent}% - 2px)`,
-                            // ✅ AIRBNB : Chaque réservation sur sa propre ligne (pas en cascade)
-                            top: `${idx * bookingHeight}px`,
+                            // ✅ AIRBNB : Chaque réservation sur sa propre ligne avec espace entre elles
+                            top: `${idx * (bookingHeight + barGap)}px`,
                           }}
                           onClick={() => onBookingClick(bookingData.booking)}
                         >
@@ -583,19 +582,19 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                               borderRadius,
                             }}
                           >
-                            {/* ✅ AIRBNB : Checkmark vert pour réservations complétées, X blanc pour codes Airbnb */}
+                            {/* Figma: cercle #000000 (done) ou #B3B3B3 (not done), icône Check ou X stylisée */}
                             {isStartOfBooking && (
-                              <div className="flex items-center gap-1 flex-shrink-0">
+                              <div
+                                className="flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6"
+                                style={{ backgroundColor: circleBg }}
+                              >
                                 {bookingData.isConflict ? (
-                                  // ❌ ROUGE : Croix rouge pour conflits
-                                  <span className="text-white text-sm font-bold leading-none">✕</span>
-                                ) : backgroundColor === '#222222' ? (
-                                  // ❌ BLANC : Croix blanche pour codes Airbnb en attente (barres noires)
-                                  <span className="text-white text-sm font-bold leading-none">✕</span>
-                                ) : bookingData.isValidName ? (
-                                  // ✅ VERT : Checkmark vert pour réservations validées (barres grises)
-                                  <span className="text-green-600 text-sm font-bold leading-none">✓</span>
-                                ) : null}
+                                  <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+                                ) : isCheckinDone ? (
+                                  <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+                                ) : (
+                                  <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+                                )}
                               </div>
                             )}
                             

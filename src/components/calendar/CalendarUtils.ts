@@ -24,6 +24,8 @@ export interface BookingLayout {
   layer?: number;
   /** Quand une autre réservation se termine ce jour-là (même ligne), décaler le début de la barre pour un léger espace */
   startOffsetPercent?: number;
+  /** Quand une autre réservation commence ce jour-là (même ligne), raccourcir la barre à droite pour un léger espace */
+  endOffsetPercent?: number;
 }
 
 // ✅ CORRIGÉ : Palette bleu turquoise pour les réservations (rouge réservé aux conflits)
@@ -77,13 +79,16 @@ export const generateCalendarDays = (currentDate: Date): CalendarDay[] => {
   return days;
 };
 
-// Chevauchement strict : deux périodes se chevauchent seulement si elles partagent des jours (pas juste se toucher).
-// Ainsi 06-08 et 08-10 sont sur la même ligne avec un léger espace le jour 8.
+// Chevauchement : deux périodes se chevauchent si elles partagent des jours.
+// Exception : quand une se termine exactement le jour où l'autre commence (ex. fin 11 / début 11),
+// on les met sur la MÊME ligne avec un espace pour garder la distinction visuelle.
 const doBookingPeriodsOverlap = (booking1: BookingLayout, booking2: BookingLayout): boolean => {
   const start1 = booking1.startDayIndex;
   const end1 = booking1.startDayIndex + booking1.span - 1;
   const start2 = booking2.startDayIndex;
   const end2 = booking2.startDayIndex + booking2.span - 1;
+  // Même jour de transition : une finit, l'autre commence → pas de chevauchement pour le layering
+  if (end1 === start2 || end2 === start1) return false;
   return start1 < end2 && end1 > start2;
 };
 
@@ -407,19 +412,30 @@ export const calculateBookingLayout = (
     });
 
     // Léger espace entre barres qui se touchent (ex. 06-08 et 08-10) : une se termine, l’autre commence le même jour.
-    const GAP_PERCENT = 12;
+    const GAP_PERCENT = 18; // Espace visible entre barres adjacentes (pas collées)
     sortedBookings.forEach((layout) => {
-      if (!layout.isStart) return;
       const myStart = layout.startDayIndex;
+      const myEnd = layout.startDayIndex + layout.span - 1;
       const myLayer = layout.layer ?? 0;
-      const otherEndsHere = sortedBookings.some(
-        (other) =>
-          (other.layer ?? 0) === myLayer &&
-          other.booking.id !== layout.booking.id &&
-          other.startDayIndex + other.span - 1 === myStart
-      );
-      if (otherEndsHere) {
-        layout.startOffsetPercent = GAP_PERCENT;
+      // Barre qui COMMENCE : une autre se termine ce jour-là → décaler le début
+      if (layout.isStart) {
+        const otherEndsHere = sortedBookings.some(
+          (other) =>
+            (other.layer ?? 0) === myLayer &&
+            other.booking.id !== layout.booking.id &&
+            other.startDayIndex + other.span - 1 === myStart
+        );
+        if (otherEndsHere) layout.startOffsetPercent = GAP_PERCENT;
+      }
+      // Barre qui SE TERMINE : une autre commence ce jour-là → raccourcir la fin
+      if (layout.isEnd) {
+        const otherStartsHere = sortedBookings.some(
+          (other) =>
+            (other.layer ?? 0) === myLayer &&
+            other.booking.id !== layout.booking.id &&
+            other.startDayIndex === myEnd
+        );
+        if (otherStartsHere) layout.endOffsetPercent = GAP_PERCENT;
       }
     });
     

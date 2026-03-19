@@ -14,7 +14,6 @@ import {
 import { 
   Calendar, 
   Search, 
-  Filter, 
   RefreshCw,
   Eye,
   Edit,
@@ -26,21 +25,28 @@ import {
   Users
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { AdminBookingDetailModal } from './AdminBookingDetailModal';
 
 interface Booking {
   id: string;
-  bookingReference: string;
+  booking_reference?: string;
+  bookingReference?: string;
   status: string;
-  checkIn: string;
-  checkOut: string;
-  numberOfGuests: number;
-  totalPrice: number;
+  check_in_date?: string;
+  check_out_date?: string;
+  checkIn?: string;
+  checkOut?: string;
+  number_of_guests?: number;
+  numberOfGuests?: number;
+  total_price?: number;
+  totalPrice?: number;
   created_at: string;
-  properties: {
+  properties?: {
     name: string;
   };
-  guests: Array<{
-    fullName: string;
+  guests?: Array<{
+    full_name?: string;
+    fullName?: string;
   }>;
 }
 
@@ -50,6 +56,8 @@ export const AdminBookings = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [detailBooking, setDetailBooking] = useState<Booking | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
 
   useEffect(() => {
     loadBookings();
@@ -60,11 +68,12 @@ export const AdminBookings = () => {
 
     // Filtre par recherche
     if (searchTerm) {
+      const term = searchTerm.toLowerCase();
       filtered = filtered.filter(booking =>
-        booking.bookingReference.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        booking.properties?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        booking.guests.some(guest => 
-          guest.fullName.toLowerCase().includes(searchTerm.toLowerCase())
+        (booking.booking_reference || booking.bookingReference || '').toLowerCase().includes(term) ||
+        (booking.properties?.name || '').toLowerCase().includes(term) ||
+        (booking.guests || []).some(guest => 
+          ((guest.full_name || guest.fullName) || '').toLowerCase().includes(term)
         )
       );
     }
@@ -85,7 +94,7 @@ export const AdminBookings = () => {
         .select(`
           *,
           properties(name),
-          guests(fullName)
+          guests(full_name)
         `)
         .order('created_at', { ascending: false });
 
@@ -266,7 +275,7 @@ export const AdminBookings = () => {
               {filteredBookings.map((booking) => (
                 <TableRow key={booking.id}>
                   <TableCell className="font-medium">
-                    {booking.bookingReference}
+                    {booking.booking_reference || booking.bookingReference || '—'}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center space-x-2">
@@ -279,18 +288,18 @@ export const AdminBookings = () => {
                       <Users className="h-4 w-4 text-gray-400" />
                       <div>
                         <div className="text-sm font-medium">
-                          {booking.guests?.[0]?.fullName || 'Client inconnu'}
+                          {booking.guests?.[0]?.full_name || booking.guests?.[0]?.fullName || 'Client inconnu'}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {booking.numberOfGuests} personne(s)
+                          {(booking.number_of_guests ?? booking.numberOfGuests ?? 0)} personne(s)
                         </div>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">
-                      <div>Du {new Date(booking.checkIn).toLocaleDateString('fr-FR')}</div>
-                      <div>Au {new Date(booking.checkOut).toLocaleDateString('fr-FR')}</div>
+                      <div>Du {(booking.check_in_date || booking.checkIn || '').toString() ? new Date(booking.check_in_date || booking.checkIn!).toLocaleDateString('fr-FR') : '—'}</div>
+                      <div>Au {(booking.check_out_date || booking.checkOut || '').toString() ? new Date(booking.check_out_date || booking.checkOut!).toLocaleDateString('fr-FR') : '—'}</div>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -298,7 +307,7 @@ export const AdminBookings = () => {
                       {new Intl.NumberFormat('fr-FR', { 
                         style: 'currency', 
                         currency: 'MAD' 
-                      }).format(booking.totalPrice || 0)}
+                      }).format(booking.total_price ?? booking.totalPrice ?? 0)}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -316,7 +325,15 @@ export const AdminBookings = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setDetailBooking(booking);
+                          setDetailModalOpen(true);
+                        }}
+                        title="Voir détails et documents"
+                      >
                         <Eye className="h-4 w-4" />
                       </Button>
                       <Button variant="outline" size="sm">
@@ -344,6 +361,20 @@ export const AdminBookings = () => {
           </Table>
         </CardContent>
       </Card>
+
+      <AdminBookingDetailModal
+        bookingId={detailBooking?.id ?? null}
+        open={detailModalOpen}
+        onOpenChange={setDetailModalOpen}
+        booking={detailBooking ? {
+          id: detailBooking.id,
+          booking_reference: detailBooking.booking_reference || detailBooking.bookingReference,
+          check_in_date: detailBooking.check_in_date || detailBooking.checkIn,
+          check_out_date: detailBooking.check_out_date || detailBooking.checkOut,
+          guest_name: detailBooking.guests?.[0]?.full_name || detailBooking.guests?.[0]?.fullName,
+          properties: detailBooking.properties,
+        } : undefined}
+      />
 
       {/* Informations */}
       <Card>

@@ -38,6 +38,8 @@ interface CalendarViewProps {
   propertyId?: string;
   onRefreshBookings?: () => void;
   airbnbIcsUrl?: string | null;
+  viewMode?: 'cards' | 'calendar';
+  onViewModeChange?: (mode: 'cards' | 'calendar') => void;
 }
 
 // 🚀 OPTIMISATION: Cache intelligent avec TTL et limite de taille
@@ -97,7 +99,7 @@ class AirbnbCache {
 
 const airbnbCache = new AirbnbCache();
 
-export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefreshBookings, airbnbIcsUrl }: CalendarViewProps) => {
+export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefreshBookings, airbnbIcsUrl, viewMode = 'calendar', onViewModeChange }: CalendarViewProps) => {
   const navigate = useNavigate();
   const t = useT();
   
@@ -1063,7 +1065,6 @@ const handleOpenConfig = useCallback(() => {
           hasIcs={hasIcs}
           onOpenConfig={handleOpenConfig}
           onCreateBooking={() => {
-            // Émettre un événement pour créer une réservation
             const event = new CustomEvent('create-booking-request');
             window.dispatchEvent(event);
           }}
@@ -1071,6 +1072,8 @@ const handleOpenConfig = useCallback(() => {
           conflictDetails={conflictDetails}
           allReservations={allReservations}
           onBookingClick={handleBookingClick}
+          viewMode={viewMode}
+          onViewModeChange={onViewModeChange}
         />
       </ErrorBoundary>
 

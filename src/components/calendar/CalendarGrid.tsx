@@ -118,31 +118,33 @@ export const CalendarGrid = memo(({
               <div className="grid grid-cols-7 gap-4 relative" style={{ minHeight: `${cellHeight}px` }}>
                 {week.map((day, dayIndex) => {
                   const isToday = day.date.toDateString() === new Date().toDateString();
-                  
+                  const isPast = day.date < new Date(new Date().setHours(0, 0, 0, 0));
+                  const dayBg = !day.isCurrentMonth
+                    ? 'bg-transparent'
+                    : isPast
+                    ? 'bg-[#FDFDF9]'
+                    : 'bg-white';
                   return (
                     <div
                       key={dayIndex}
                       className={`
-                        relative
-                        ${day.isCurrentMonth
-                          ? 'bg-white border border-slate-200/80 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
-                          : 'bg-transparent border-transparent shadow-none'}
+                        relative border rounded-2xl
+                        ${day.isCurrentMonth ? 'border-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.03)]' : 'border-transparent shadow-none'}
+                        ${dayBg}
                         ${isMobile ? 'p-2' : 'p-3 sm:p-4'}
-                        ${isToday ? 'ring-2 ring-[#0BD9D0] ring-offset-0 z-10' : ''}
+                        ${isToday ? 'ring-2 ring-[#55BA9F] ring-offset-0 z-10' : ''}
                       `}
                       style={{
                         minHeight: `${cellHeight}px`,
                         height: `${cellHeight}px`,
                       }}
                     >
-                      <div
-                        className={`flex items-start`}
-                      >
+                      <div className="flex items-start">
                         <div
                           className={`
                             inline-flex items-center justify-center font-semibold
                             ${isMobile ? 'text-sm' : 'text-sm sm:text-base'}
-                            ${isToday ? 'text-[#0BD9D0]' : 'text-slate-700'}
+                            ${isToday ? 'text-[#55BA9F]' : 'text-slate-700'}
                             ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
                           `}
                         >
@@ -165,6 +167,10 @@ export const CalendarGrid = memo(({
                     const spaceAfterNumber = dayNumberHeight + 8;
                     const topOffset = cellPadding + spaceAfterNumber;
                     const isOpen = openConflict?.groupKey === group.groupKey && openConflict?.weekIndex === weekIndex;
+                    // Une barre normale se termine ce jour-là ? → décaler la barre conflit pour éviter qu'elles se collent
+                    const normalBarEndsHere = weekBookingsWithoutConflicts.some(
+                      (b) => b.startDayIndex + b.span - 1 === seg.startDayIndex
+                    );
                     return (
                       <div
                         key={`conflict-${group.groupKey}-${weekIndex}-${segIdx}`}
@@ -184,9 +190,9 @@ export const CalendarGrid = memo(({
                             style={{
                               top: `${topOffset}px`,
                               height: `${isMobile ? 40 : 32}px`,
-                              left: '2px',
+                              left: normalBarEndsHere ? '12px' : '2px',
                               right: '2px',
-                              width: 'calc(100% - 4px)',
+                              width: normalBarEndsHere ? undefined : 'calc(100% - 4px)',
                               backgroundColor: BOOKING_COLORS.conflict.hex,
                               boxShadow: '0 4px 12px rgba(220,38,38,0.25)',
                             }}
@@ -260,9 +266,9 @@ export const CalendarGrid = memo(({
                     const dayNumberMargin = isMobile ? 8 : 8; // Augmenté de 4 à 8 pour mobile
                     const spaceAfterNumber = dayNumberHeight + dayNumberMargin;
                     
-                    // ✅ ESPACEMENT AMÉLIORÉ : Augmenté significativement pour mobile
-                    const minSpacing = isMobile ? 18 : 18; // ✅ FIGMA : Augmenté pour correspondre au design (était 12:12)
-                    const idealSpacing = isMobile ? 24 : 24; // ✅ FIGMA : Augmenté pour correspondre au design (était 18:18)
+                    // ✅ Léger espace entre réservations successives (ne pas les coller)
+                    const minSpacing = isMobile ? 10 : 10; // Espace minimum garanti entre barres
+                    const idealSpacing = isMobile ? 24 : 24; // Espace entre réservations successives
                     const availableSpace = cellHeight - cellPadding - spaceAfterNumber - cellPadding;
                     const totalRequiredSpace = maxLayers * baseHeight + (maxLayers > 1 ? (maxLayers - 1) * idealSpacing : 0);
                     
@@ -326,12 +332,10 @@ export const CalendarGrid = memo(({
                                 top: `${topOffset}px`,
                                 height: `${baseHeight}px`,
                                 zIndex: 100 + layer,
-                                left: bookingData.startOffsetPercent
-                                  ? `calc(2px + ${(bookingData.startOffsetPercent / bookingData.span)}%)`
-                                  : '2px',
-                                right: '2px',
-                                width: bookingData.startOffsetPercent
-                                  ? `calc(100% - 4px - ${(bookingData.startOffsetPercent / bookingData.span)}%)`
+                                left: bookingData.startOffsetPercent ? '12px' : '2px',
+                                right: bookingData.endOffsetPercent ? '12px' : '2px',
+                                width: (bookingData.startOffsetPercent || bookingData.endOffsetPercent)
+                                  ? undefined
                                   : 'calc(100% - 4px)',
                                 opacity: 1,
                                 pointerEvents: 'auto',

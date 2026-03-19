@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { Check, X } from 'lucide-react';
 import { Booking } from '@/types/booking';
 import { BookingLayout } from './CalendarUtils';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
@@ -71,22 +72,23 @@ export const CalendarBookingBar = memo(({
   // Si c'est un code → réservation EN ATTENTE (noir)
   const isValidName = isValidGuestName(displayLabel);
   
-  // Unified 2-state: documents present → gris (terminé), otherwise → noir (en attente)
+  // Figma: bar #222222, circle #000000 (checkin done) or #B3B3B3 (not done)
   const bookingTyped = 'status' in booking ? (booking as Booking) : null;
   const hasDocs = bookingTyped?.documentsGenerated?.contract && bookingTyped?.documentsGenerated?.policeForm;
+  const isCheckinDone = hasDocs;
 
   let barColor: string;
   let textColor: string;
+  let circleBg: string;
 
   if (isConflict) {
     barColor = BOOKING_COLORS.conflict.hex;
     textColor = 'text-white';
-  } else if (hasDocs) {
-    barColor = BOOKING_COLORS.completed.hex; // Gris clair
-    textColor = 'text-gray-900';
+    circleBg = '#000000';
   } else {
-    barColor = '#222222'; // Noir
+    barColor = '#222222';
     textColor = 'text-white';
+    circleBg = isCheckinDone ? '#000000' : '#B3B3B3';
   }
   
   // ✅ CRITIQUE : Vérifier que booking existe
@@ -107,8 +109,8 @@ export const CalendarBookingBar = memo(({
         backgroundColor: barColor,
         // ✅ PAS DE DÉGRADÉ : Utiliser la couleur unie (noir pour ICS, gris pour validées, etc.)
         background: barColor,
-        // Jour de départ : réduire la largeur pour laisser un léger espace avant la réservation suivante (ex. 06-08 et 08-10).
-        width: bookingData.isEnd ? '88%' : '100%',
+        // Largeur : le grid gère startOffsetPercent/endOffsetPercent. Sinon, isEnd → 92% pour léger espace.
+        width: bookingData.endOffsetPercent ? '100%' : (bookingData.isEnd ? '92%' : '100%'),
         zIndex: 1000 + (bookingData.layer || 0),
         boxShadow: isConflict 
           ? '0 4px 12px rgba(220,38,38,0.25)' 
@@ -125,21 +127,20 @@ export const CalendarBookingBar = memo(({
       }}
       title={displayLabel}
     >
-      {/* ✅ COPIÉ EXACTEMENT DE CalendarMobile.tsx (lignes 608-658) */}
       {bookingData.isStart && (
         <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
-          {/* ✅ Icône de statut : ✓ vert ou ✕ blanc/rouge */}
-          <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Figma: cercle #000000 (done) ou #B3B3B3 (not done), icône Check ou X stylisée */}
+          <div
+            className="flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6"
+            style={{ backgroundColor: circleBg }}
+          >
             {isConflict ? (
-              // ❌ Croix blanche pour conflits (fond rouge)
-              <span className="text-white text-sm font-bold leading-none">✕</span>
-            ) : barColor === '#222222' ? (
-              // ❌ Croix blanche pour codes Airbnb en attente (barres noires)
-              <span className="text-white text-sm font-bold leading-none">✕</span>
-            ) : isValidName ? (
-              // ✅ Checkmark vert pour réservations validées (barres grises)
-              <span className="text-green-600 text-sm font-bold leading-none">✓</span>
-            ) : null}
+              <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+            ) : isCheckinDone ? (
+              <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+            ) : (
+              <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+            )}
           </div>
           
           {/* ✅ Avatar avec initiales (seulement pour noms valides) */}

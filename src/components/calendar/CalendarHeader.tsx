@@ -40,6 +40,8 @@ interface CalendarHeaderProps {
   }>;
   allReservations?: (Booking | AirbnbReservation)[];
   onBookingClick?: (booking: Booking | AirbnbReservation) => void;
+  viewMode?: 'cards' | 'calendar';
+  onViewModeChange?: (mode: 'cards' | 'calendar') => void;
 }
 
 const monthKeys = ['calendar.monthJan', 'calendar.monthFeb', 'calendar.monthMar', 'calendar.monthApr', 'calendar.monthMay', 'calendar.monthJun', 'calendar.monthJul', 'calendar.monthAug', 'calendar.monthSep', 'calendar.monthOct', 'calendar.monthNov', 'calendar.monthDec'] as const;
@@ -58,7 +60,9 @@ export const CalendarHeader = ({
   stats,
   conflictDetails = [],
   allReservations = [],
-  onBookingClick
+  onBookingClick,
+  viewMode = 'calendar',
+  onViewModeChange
 }: CalendarHeaderProps) => {
   const t = useT();
   const isMobile = useIsMobile();
@@ -94,7 +98,7 @@ export const CalendarHeader = ({
           {onCreateBooking && (
             <Button 
               onClick={onCreateBooking}
-              className="w-full h-12 bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-gray-900 font-semibold rounded-xl flex items-center justify-center gap-2"
+              className="w-full h-12 bg-[#55BA9F] hover:bg-[#55BA9F]/90 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
             >
               <Plus className="h-5 w-5" />
               <span>{t('dashboard.add')}</span>
@@ -118,7 +122,7 @@ export const CalendarHeader = ({
             >
               <Wifi className={cn(
                 "h-5 w-5",
-                hasIcs ? "text-[#0BD9D0]" : "text-gray-400"
+                hasIcs ? "text-[#55BA9F]" : "text-gray-400"
               )} />
             </button>
             
@@ -250,25 +254,35 @@ export const CalendarHeader = ({
             </SelectContent>
           </Select>
           
-          {/* Icônes de vue (Calendrier et Grille) */}
-          <div className="flex items-center gap-1 ml-2">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 text-gray-700 hover:bg-gray-100"
-              title={t('dashboard.viewCalendar')}
-            >
-              <Calendar className="h-4 w-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-8 w-8 text-gray-500 hover:bg-gray-100"
-              title={t('dashboard.viewGrid')}
-            >
-              <Grid3X3 className="h-4 w-4" />
-            </Button>
-          </div>
+          {/* Icônes de vue (Calendrier et Cartes) - cliquables */}
+          {onViewModeChange && (
+            <div className="flex items-center gap-1 ml-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => onViewModeChange('calendar')}
+                className={cn(
+                  "h-8 w-8",
+                  viewMode === 'calendar' ? "bg-[#55BA9F] text-white hover:bg-[#55BA9F]/90" : "text-gray-700 hover:bg-gray-100"
+                )}
+                title={t('dashboard.viewCalendar')}
+              >
+                <Calendar className="h-4 w-4" />
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={() => onViewModeChange('cards')}
+                className={cn(
+                  "h-8 w-8",
+                  viewMode === 'cards' ? "bg-[#55BA9F] text-white hover:bg-[#55BA9F]/90" : "text-gray-500 hover:bg-gray-100"
+                )}
+                title={t('dashboard.viewGrid')}
+              >
+                <Grid3X3 className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
         
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -295,7 +309,7 @@ export const CalendarHeader = ({
               variant="default" 
               size="sm"
               onClick={onCreateBooking}
-              className="flex items-center gap-1 sm:gap-2 bg-[#0BD9D0] hover:bg-[#0BD9D0]/90 text-white px-2 sm:px-3"
+              className="flex items-center gap-1 sm:gap-2 bg-[#55BA9F] hover:bg-[#55BA9F]/90 text-white px-2 sm:px-3"
               data-tutorial="add-booking"
             >
               <Plus className="h-4 w-4 flex-shrink-0" />

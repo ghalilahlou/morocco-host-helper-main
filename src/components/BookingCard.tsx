@@ -9,6 +9,7 @@ import { BookingVerificationService } from '@/services/bookingVerificationServic
 import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useSubscription } from '@/hooks/useSubscription';
 
 import { DocumentsViewer } from './DocumentsViewer';
 import { TestDocumentUpload } from './TestDocumentUpload';
@@ -28,6 +29,7 @@ interface BookingCardProps {
 export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocuments }: BookingCardProps) => {
   const { updateBooking } = useBookings();
   const { toast } = useToast();
+  const { isOverLimit } = useSubscription();
   
   // Documents status check
   const hasPoliceForm = booking.documentsGenerated?.policeForm === true;
@@ -410,6 +412,7 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
             booking={booking}
             documentType={showDocuments}
             onClose={() => setShowDocuments(null)}
+            isOverLimit={isOverLimit}
           />
         )}
       </CardFooter>
