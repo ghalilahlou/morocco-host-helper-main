@@ -29,6 +29,7 @@ interface EnhancedUser {
   id: string;
   email: string;
   full_name: string;
+  user_name?: string;
   created_at: string;
   last_login?: string;
   is_active: boolean;
@@ -54,7 +55,7 @@ export const AdminUsers = () => {
       console.log('🔄 [AdminUsers] Chargement des utilisateurs enrichis...');
       
       // Utiliser la fonction SQL get_users_for_admin qui fonctionne
-      const { data: authUsers, error: authError } = await supabase.rpc('get_users_for_admin');
+      const { data: authUsers, error: authError } = await supabase.rpc('get_all_users_for_admin');
       
       if (authError) {
         console.error('❌ Erreur récupération utilisateurs:', authError);
@@ -73,14 +74,16 @@ export const AdminUsers = () => {
       const enrichedUsers: EnhancedUser[] = authUsers.map((user: any) => ({
         id: user.id,
         email: user.email || '',
-        full_name: user.full_name || user.email || 'Utilisateur',
+        full_name: user.full_name || user.user_name || user.email || 'Utilisateur',
+        user_name: user.user_name || user.email?.split('@')[0],
         created_at: user.created_at,
-        last_login: user.last_login,
-        is_active: user.is_active !== false, // true par défaut
-        role: user.role || 'user',
-        properties_count: user.properties_count || 0,
+        last_login: user.last_sign_in_at || user.last_login,
+        is_active: user.is_admin_active !== false,
+        role: user.admin_role || (user.properties_count > 0 ? 'propriétaire' : 'user'),
+        properties_count: Number(user.properties_count) || 0,
+        is_property_owner: (user.properties_count || 0) > 0,
         last_booking_date: user.last_booking_date,
-        total_bookings: user.total_bookings || 0
+        total_bookings: Number(user.total_bookings) || 0
       }));
       
       setUsers(enrichedUsers);
@@ -98,9 +101,11 @@ export const AdminUsers = () => {
   }, [isAdmin]);
 
   useEffect(() => {
+    const term = searchTerm.toLowerCase();
     const filtered = users.filter(user =>
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+      user.email.toLowerCase().includes(term) ||
+      user.full_name.toLowerCase().includes(term) ||
+      (user.user_name || '').toLowerCase().includes(term)
     );
     setFilteredUsers(filtered);
   }, [users, searchTerm]);
@@ -236,7 +241,7 @@ export const AdminUsers = () => {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="Rechercher par email ou nom..."
+                  placeholder="Rechercher par email, nom ou nom d'utilisateur..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -262,9 +267,9 @@ export const AdminUsers = () => {
         <CardContent>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Utilisateur</TableHead>
-                <TableHead>Rôle</TableHead>
+                <TableRow>
+                  <TableHead>Utilisateur (Email / Nom)</TableHead>
+                  <TableHead>Rôle</TableHead>
                 <TableHead>Propriétés</TableHead>
                 <TableHead>Réservations</TableHead>
                 <TableHead>Date d'inscription</TableHead>
@@ -276,9 +281,9 @@ export const AdminUsers = () => {
               {filteredUsers.map((user) => (
                 <TableRow key={user.id}>
                   <TableCell>
-                    <div>
-                      <div className="font-medium">{user.full_name}</div>
-                      <div className="text-sm text-gray-500">{user.email}</div>
+                    <div className="flex flex-col">
+                      <span className="font-medium">{user.user_name || user.full_name}</span>
+                      <span className="text-sm text-gray-500">{user.email}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -317,10 +322,10 @@ export const AdminUsers = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" title="Voir détails">
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" title="Modifier">
                         Modifier
                       </Button>
                     </div>

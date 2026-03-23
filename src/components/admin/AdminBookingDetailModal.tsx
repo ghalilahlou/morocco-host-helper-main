@@ -28,6 +28,7 @@ interface AdminBookingDetailModalProps {
     check_in_date?: string;
     check_out_date?: string;
     guest_name?: string;
+    guest_email?: string;
     properties?: { name: string };
   };
 }
@@ -120,6 +121,9 @@ export const AdminBookingDetailModal: React.FC<AdminBookingDetailModalProps> = (
             <div>
               <p className="font-medium text-gray-500">Client</p>
               <p>{booking.guest_name || '—'}</p>
+              {booking.guest_email && (
+                <p className="text-sm text-muted-foreground">{booking.guest_email}</p>
+              )}
             </div>
             <div>
               <p className="font-medium text-gray-500">Dates</p>

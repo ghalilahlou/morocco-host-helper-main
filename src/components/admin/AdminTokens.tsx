@@ -100,6 +100,9 @@ export const AdminTokens = () => {
         await loadUsers();
         if (cancelled) return;
         
+        await loadDashboardData();
+        if (cancelled) return;
+        
         await loadTokenControlSettings();
         if (cancelled) return;
         
@@ -333,7 +336,10 @@ export const AdminTokens = () => {
     }
   };
 
-  const getStatusBadge = (allocation: TokenAllocation) => {
+  const getStatusBadge = (allocation: TokenAllocation & { is_active?: boolean }) => {
+    if (allocation.is_active === false) {
+      return <Badge variant="destructive">Révoqué</Badge>;
+    }
     if (allocation.tokens_remaining > 0) {
       return <Badge className="bg-green-100 text-green-800">Actif</Badge>;
     }
@@ -380,7 +386,10 @@ export const AdminTokens = () => {
                   <SelectContent>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
-                        {user.email}
+                        <div className="flex flex-col">
+                          <span className="font-medium">{(user as any).user_name || user.full_name}</span>
+                          <span className="text-xs text-muted-foreground">{user.email}</span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -500,20 +509,24 @@ export const AdminTokens = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Utilisateur</TableHead>
+                <TableHead>Utilisateur (Email / Nom)</TableHead>
                 <TableHead>Tokens alloués</TableHead>
                 <TableHead>Tokens utilisés</TableHead>
                 <TableHead>Tokens restants</TableHead>
                 <TableHead>Utilisation</TableHead>
                 <TableHead>Statut</TableHead>
                 <TableHead>Date d'allocation</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {tokenAllocations.map((allocation) => (
                 <TableRow key={allocation.id}>
-                  <TableCell className="font-medium">
-                    {allocation.user_email}
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-medium">{(allocation as any).user_name || allocation.user_email}</span>
+                      <span className="text-xs text-muted-foreground">{allocation.user_email}</span>
+                    </div>
                   </TableCell>
                   <TableCell>{allocation.tokens_allocated}</TableCell>
                   <TableCell>{allocation.tokens_used}</TableCell>
@@ -537,11 +550,40 @@ export const AdminTokens = () => {
                   <TableCell>
                     {new Date(allocation.created_at).toLocaleDateString('fr-FR')}
                   </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const newActive = !(allocation as any).is_active;
+                          const { error } = await supabase.rpc('admin_toggle_token_allocation', {
+                            p_allocation_id: allocation.id,
+                            p_is_active: newActive
+                          });
+                          if (error) throw error;
+                          toast({
+                            title: newActive ? 'Allocation activée' : 'Allocation révoquée',
+                            description: newActive ? 'L\'utilisateur peut à nouveau utiliser ses tokens.' : 'L\'accès aux tokens a été révoqué.'
+                          });
+                          loadDashboardData();
+                        } catch (e) {
+                          toast({ title: 'Erreur', description: 'Impossible de modifier l\'allocation', variant: 'destructive' });
+                        }
+                      }}
+                    >
+                      {(allocation as any).is_active ? (
+                        <><XCircle className="h-4 w-4 mr-1" /> Révoquer</>
+                      ) : (
+                        <><CheckCircle className="h-4 w-4 mr-1" /> Réactiver</>
+                      )}
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
               {tokenAllocations.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                     <AlertCircle className="h-8 w-8 mx-auto mb-2 text-gray-400" />
                     Aucune allocation de tokens trouvée
                   </TableCell>
@@ -696,6 +738,34 @@ export const AdminTokens = () => {
                 )}
                 Sauvegarder les Paramètres
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Pilotage des droits d'accès */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Pilotage des droits d'accès
+              </CardTitle>
+              <CardDescription>
+                Contrôlez l'accès aux liens de réservation et à la génération de tokens par propriété
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <strong>Liens de réservation :</strong> Les paramètres ci-dessus déterminent si un propriétaire peut générer des liens pour chaque propriété. 
+                  <ul className="mt-2 list-disc list-inside text-muted-foreground">
+                    <li><strong>Illimité</strong> : génération sans limite</li>
+                    <li><strong>Limité</strong> : plafond de tokens par propriété</li>
+                    <li><strong>Bloqué</strong> : aucune génération autorisée</li>
+                  </ul>
+                </div>
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <strong>Allocation utilisateurs :</strong> Dans l'onglet &quot;Allocation Utilisateurs&quot;, vous pouvez révoquer ou réactiver les tokens alloués à un utilisateur pour couper ou rétablir son accès aux liens.
+                </div>
+              </div>
             </CardContent>
           </Card>
 

@@ -113,6 +113,7 @@ export const useAdmin = () => {
       const recentUsers = await loadRecentUsers();
       const tokenAllocations = await loadTokenAllocations();
 
+      setTokenAllocations(tokenAllocations);
       setDashboardData({
         stats,
         bookingAnalytics,
@@ -267,14 +268,42 @@ export const useAdmin = () => {
     }
   };
 
-  // Charger les allocations de tokens
+  // Charger les allocations de tokens (enrichies avec email/username)
   const loadTokenAllocations = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_token_allocations_for_admin');
+      if (error) {
+        logger.error('Erreur loadTokenAllocations RPC:', error);
+        return await loadTokenAllocationsFallback();
+      }
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        user_id: row.user_id,
+        user_email: row.user_email || '—',
+        user_name: row.user_name || row.user_email?.split('@')[0] || '—',
+        tokens_allocated: row.tokens_allocated,
+        tokens_used: row.tokens_used,
+        tokens_remaining: row.tokens_remaining,
+        is_active: row.is_active,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      }));
+    } catch (e) {
+      logger.error('Erreur loadTokenAllocations:', e);
+      return await loadTokenAllocationsFallback();
+    }
+  };
+
+  const loadTokenAllocationsFallback = async () => {
     const { data } = await supabase
       .from('token_allocations')
       .select('*')
       .order('created_at', { ascending: false });
-
-    return data || [];
+    return (data || []).map((row: any) => ({
+      ...row,
+      user_email: row.user_email || '—',
+      user_name: row.user_email?.split('@')[0] || '—'
+    }));
   };
 
   // Allouer des tokens à un utilisateur
@@ -304,44 +333,62 @@ export const useAdmin = () => {
     }
   };
 
-  // Charger tous les utilisateurs via fonction SQL
+  // Charger tous les utilisateurs (auth.users enrichis) pour allocation tokens
   const loadUsers = async () => {
     try {
-      console.log('🔍 Chargement des utilisateurs via fonction SQL...');
+      logger.log('🔍 Chargement des utilisateurs via get_all_users_for_admin...');
       
-      // ✅ CORRECTION : Utiliser la fonction SQL qui fonctionne
-      const { data, error } = await supabase.rpc('get_users_for_admin');
+      const { data, error } = await supabase.rpc('get_all_users_for_admin');
 
       if (error) {
-        console.error('❌ Erreur fonction SQL:', error);
-        // Fallback : Charger depuis admin_users existants
-        return await loadAdminUsersOnly();
+        logger.error('❌ Erreur get_all_users_for_admin:', error);
+        return await loadUsersFallback();
       }
 
       if (!data || !Array.isArray(data)) {
-        console.warn('⚠️ Aucun utilisateur retourné');
-        return await loadAdminUsersOnly();
+        logger.warn('⚠️ Aucun utilisateur retourné');
+        return await loadUsersFallback();
       }
 
-      // Les données sont déjà enrichies par get_users_for_admin
       const adminUsers = data.map((user: any) => ({
-        id: user.user_id || user.id,
+        id: user.id,
         email: user.email || 'unknown@example.com',
-        full_name: user.full_name || user.email?.split('@')[0] || 'Unknown',
-        role: user.role || 'user' as const,
+        full_name: user.full_name || user.user_name || user.email?.split('@')[0] || 'Unknown',
+        user_name: user.user_name || user.email?.split('@')[0],
+        role: (user.admin_role || 'user') as 'admin' | 'super_admin',
         created_at: user.created_at,
-        last_login: user.last_login,
-        is_active: user.is_active !== false
+        last_login: user.last_sign_in_at,
+        is_active: user.is_admin_active !== false
       }));
 
       setUsers(adminUsers);
-      console.log('✅ Utilisateurs chargés:', adminUsers.length);
+      logger.log('✅ Utilisateurs chargés:', adminUsers.length);
       return adminUsers;
     } catch (error) {
-      console.error('❌ Erreur chargement utilisateurs:', error);
-      // Fallback en cas d'erreur
-      return await loadAdminUsersOnly();
+      logger.error('❌ Erreur chargement utilisateurs:', error);
+      return await loadUsersFallback();
     }
+  };
+
+  const loadUsersFallback = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_users_for_admin');
+      if (!error && data && Array.isArray(data)) {
+        const users = data.map((u: any) => ({
+          id: u.user_id || u.id,
+          email: u.email || '',
+          full_name: u.full_name || u.email?.split('@')[0] || 'Unknown',
+          user_name: u.full_name || u.email?.split('@')[0],
+          role: (u.role || 'user') as 'admin' | 'super_admin',
+          created_at: u.created_at,
+          last_login: u.last_login,
+          is_active: u.is_active !== false
+        }));
+        setUsers(users);
+        return users;
+      }
+    } catch (_) {}
+    return await loadAdminUsersOnly();
   };
 
   // Fallback : Charger uniquement les admins connus

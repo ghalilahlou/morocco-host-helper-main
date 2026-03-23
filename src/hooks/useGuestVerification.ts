@@ -257,7 +257,6 @@ export const useGuestVerification = () => {
       }
 
       if (!data.token) {
-        // Erreur masquée en production
         toast({
           title: "Erreur",
           description: "Aucun token généré",
@@ -265,133 +264,38 @@ export const useGuestVerification = () => {
         });
         return null;
       }
-      // ✅ MODIFIÉ : Ne créer reservationData que si des dates réelles sont fournies
-      // Pour les réservations indépendantes (sans dates), le guest choisira ses dates
-      const reservationData = options?.reservationData;
-      
-      // ✅ DIAGNOSTIC : Logger les données reçues
-      console.log('🔍 [GENERATE LINK] Données reçues:', {
-        hasReservationData: !!reservationData,
-        reservationData: reservationData,
-        airbnbBookingId: airbnbBookingId
-      });
-      
-      // ✅ NOUVEAU : Vérifier si c'est une réservation indépendante (sans dates pré-définies)
-      const isIndependentBooking = !reservationData || 
-        reservationData.airbnbCode === 'INDEPENDENT_BOOKING' ||
-        !reservationData.startDate ||
-        !reservationData.endDate;
-      
-      // ✅ DIAGNOSTIC : Logger la détection
-      console.log('🔍 [GENERATE LINK] Détection type de réservation:', {
-        isIndependentBooking,
-        hasReservationData: !!reservationData,
-        airbnbCode: reservationData?.airbnbCode,
-        hasStartDate: !!reservationData?.startDate,
-        hasEndDate: !!reservationData?.endDate,
-        startDate: reservationData?.startDate,
-        endDate: reservationData?.endDate
-      });
-      
-      if (reservationData && !isIndependentBooking) {
-        // ✅ RÉSERVATION ICS/AIRBNB : Inclure les dates dans l'URL
-        console.log('✅ [GENERATE LINK] Génération lien ICS/AIRBNB avec dates');
-        
-        // ⚠️ IMPORTANT : DTEND dans ICS est exclusif, donc endDate est déjà la date de départ réelle
-        const startDateObj = reservationData.startDate instanceof Date 
-          ? reservationData.startDate 
-          : new Date(reservationData.startDate);
-        const endDateObj = reservationData.endDate instanceof Date 
-          ? reservationData.endDate 
-          : new Date(reservationData.endDate);
-        
-        // Utiliser formatLocalDate pour éviter le décalage timezone (format YYYY-MM-DD en heure locale)
-        const startDate = formatLocalDate(startDateObj);
-        const endDate = formatLocalDate(endDateObj);
-        
-        // ✅ NOUVEAU : Nettoyer le nom du guest avant de l'inclure dans l'URL
-        // ⚠️ IMPORTANT : Ne pas inclure guestName dans l'URL si vide pour éviter le double formulaire
-        const cleanGuestName = cleanGuestNameForUrl(reservationData.guestName || '');
-        const numberOfGuests = reservationData.numberOfGuests || 1;
-        const airbnbCode = reservationData.airbnbCode || airbnbBookingId || 'INDEPENDENT_BOOKING';
-        
-        // Construire l'URL avec ou sans guestName selon s'il est valide
-        let urlParams = `startDate=${startDate}\u0026endDate=${endDate}\u0026guests=${numberOfGuests}\u0026airbnbCode=${airbnbCode}`;
-        
-        // ✅ CORRIGÉ : Ne pas ajouter guestName si vide pour éviter les problèmes de double formulaire
-        if (cleanGuestName && cleanGuestName.trim() !== '') {
-          const guestName = encodeURIComponent(cleanGuestName);
-          urlParams += `\u0026guestName=${guestName}`;
-        }
-        
-        // ✅ URL COMPLÈTE : Utiliser l'URL avec paramètres pour les réservations ICS/Airbnb
-        const fullUrl = `${runtime.urls.app.base}/guest-verification/${propertyId}/${data.token}?${urlParams}`;
-        
-        // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation
-        console.log('🔗 [LIEN DE RÉSERVATION ICS/AIRBNB]:', fullUrl);
-        
-        // ✅ Copie uniquement si skipCopy est false (sinon le modal fera une copie synchrone au clic)
-        if (!options?.skipCopy) {
-          try {
-            const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
-            const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
-            const result = await copyToClipboardSimple(fullUrl, userEvent);
-            if (result.success) {
-              toast({
-                title: t('toast.linkCopied'),
-                description: t('toast.linkCopiedDesc'),
-              });
-            } else {
-              toast({
-                title: t('toast.linkGenerated'),
-                description: result.error || t('toast.linkGeneratedDesc'),
-                duration: 10000,
-              });
-            }
-          } catch (copyError: any) {
-            console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
+
+      // ✅ Utiliser l'URL retournée par l'API (format court /v/token ou /v/token/code pour synced)
+      const guestUrl = data.url || `${runtime.urls.app.base}/v/${data.token}`;
+      console.log('🔗 [LIEN DE RÉSERVATION]:', guestUrl, data.isSynced ? '(synchronisé)' : '(non synchronisé)');
+
+      if (!options?.skipCopy) {
+        try {
+          const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
+          const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
+          const result = await copyToClipboardSimple(guestUrl, userEvent);
+          if (result.success) {
+            toast({
+              title: t('toast.linkCopied'),
+              description: t('toast.linkCopiedDesc'),
+            });
+          } else {
             toast({
               title: t('toast.linkGenerated'),
-              description: copyError?.message || t('toast.linkGeneratedDesc'),
+              description: result.error || t('toast.linkGeneratedDesc'),
               duration: 10000,
             });
           }
+        } catch (copyError: any) {
+          console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
+          toast({
+            title: t('toast.linkGenerated'),
+            description: (copyError as Error)?.message || t('toast.linkGeneratedDesc'),
+            duration: 10000,
+          });
         }
-        return fullUrl; // ✅ Retourner l'URL complète avec dates
-      } else {
-        // Fallback : Si pas de dates, utiliser l'URL courte
-        const shortUrl = `${runtime.urls.app.base}/v/${data.token}`;
-        // ✅ SEUL LOG VISIBLE EN PRODUCTION : Le lien de réservation (fallback)
-        console.log('🔗 [LIEN DE RÉSERVATION]:', shortUrl);
-        
-        if (!options?.skipCopy) {
-          try {
-            const { copyToClipboardSimple } = await import('@/lib/clipboardSimple');
-            const userEvent = options?.userEvent as Event | React.SyntheticEvent | undefined;
-            const result = await copyToClipboardSimple(shortUrl, userEvent);
-            if (result.success) {
-              toast({
-                title: t('toast.linkCopied'),
-                description: t('toast.linkCopiedDesc'),
-              });
-            } else {
-              toast({
-                title: t('toast.linkGenerated'),
-                description: result.error || t('toast.linkGeneratedDesc'),
-                duration: 10000,
-              });
-            }
-          } catch (copyError: any) {
-            console.error('❌ [GUEST VERIFICATION] Erreur copie:', copyError);
-            toast({
-              title: t('toast.linkGenerated'),
-              description: copyError?.message || t('toast.linkGeneratedDesc'),
-              duration: 10000,
-            });
-          }
-        }
-        return shortUrl; // ✅ Retourner l'URL courte
       }
+      return guestUrl;
     } catch (error) {
       // Erreur masquée en production (utiliser le toast pour l'utilisateur)
       toast({

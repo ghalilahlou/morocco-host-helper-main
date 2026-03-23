@@ -16,8 +16,6 @@ import {
   Search, 
   RefreshCw,
   Eye,
-  Edit,
-  Trash2,
   CheckCircle,
   Clock,
   XCircle,
@@ -25,7 +23,15 @@ import {
   Users
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 import { AdminBookingDetailModal } from './AdminBookingDetailModal';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface Booking {
   id: string;
@@ -40,17 +46,30 @@ interface Booking {
   numberOfGuests?: number;
   total_price?: number;
   totalPrice?: number;
+  guest_name?: string;
+  guest_email?: string;
+  guest_phone?: string;
   created_at: string;
   properties?: {
     name: string;
+    user_id?: string;
   };
   guests?: Array<{
     full_name?: string;
     fullName?: string;
+    email?: string;
   }>;
 }
 
+const BOOKING_STATUSES = [
+  { value: 'pending', label: 'En attente' },
+  { value: 'confirmed', label: 'Confirmée' },
+  { value: 'completed', label: 'Complétée' },
+  { value: 'cancelled', label: 'Annulée' },
+] as const;
+
 export const AdminBookings = () => {
+  const { toast } = useToast();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -58,6 +77,7 @@ export const AdminBookings = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [detailBooking, setDetailBooking] = useState<Booking | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   useEffect(() => {
     loadBookings();
@@ -72,8 +92,11 @@ export const AdminBookings = () => {
       filtered = filtered.filter(booking =>
         (booking.booking_reference || booking.bookingReference || '').toLowerCase().includes(term) ||
         (booking.properties?.name || '').toLowerCase().includes(term) ||
+        (booking.guest_name || '').toLowerCase().includes(term) ||
+        (booking.guest_email || '').toLowerCase().includes(term) ||
         (booking.guests || []).some(guest => 
-          ((guest.full_name || guest.fullName) || '').toLowerCase().includes(term)
+          ((guest.full_name || guest.fullName) || '').toLowerCase().includes(term) ||
+          ((guest.email || '') || '').toLowerCase().includes(term)
         )
       );
     }
@@ -93,8 +116,8 @@ export const AdminBookings = () => {
         .from('bookings')
         .select(`
           *,
-          properties(name),
-          guests(full_name)
+          properties(name, user_id),
+          guests(full_name, email)
         `)
         .order('created_at', { ascending: false });
 
@@ -119,6 +142,30 @@ export const AdminBookings = () => {
         return <Badge variant="secondary">Archivée</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  const handleUpdateStatus = async (bookingId: string, newStatus: string) => {
+    setUpdatingStatusId(bookingId);
+    try {
+      const { error } = await supabase.rpc('admin_update_booking_status', {
+        p_booking_id: bookingId,
+        p_status: newStatus,
+      });
+      if (error) throw error;
+      toast({
+        title: 'Statut mis à jour',
+        description: `La réservation a été marquée comme ${BOOKING_STATUSES.find(s => s.value === newStatus)?.label || newStatus}.`,
+      });
+      loadBookings();
+    } catch (e) {
+      toast({
+        title: 'Erreur',
+        description: 'Impossible de modifier le statut de la réservation.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdatingStatusId(null);
     }
   };
 
@@ -263,7 +310,7 @@ export const AdminBookings = () => {
               <TableRow>
                 <TableHead>Référence</TableHead>
                 <TableHead>Propriété</TableHead>
-                <TableHead>Clients</TableHead>
+                <TableHead>Clients (Email)</TableHead>
                 <TableHead>Dates</TableHead>
                 <TableHead>Prix</TableHead>
                 <TableHead>Statut</TableHead>
@@ -286,13 +333,16 @@ export const AdminBookings = () => {
                   <TableCell>
                     <div className="flex items-center space-x-2">
                       <Users className="h-4 w-4 text-gray-400" />
-                      <div>
-                        <div className="text-sm font-medium">
-                          {booking.guests?.[0]?.full_name || booking.guests?.[0]?.fullName || 'Client inconnu'}
-                        </div>
-                        <div className="text-xs text-gray-500">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">
+                          {booking.guest_name || booking.guests?.[0]?.full_name || booking.guests?.[0]?.fullName || 'Client inconnu'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {booking.guest_email || booking.guests?.[0]?.email || '—'}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
                           {(booking.number_of_guests ?? booking.numberOfGuests ?? 0)} personne(s)
-                        </div>
+                        </span>
                       </div>
                     </div>
                   </TableCell>
@@ -324,24 +374,39 @@ export const AdminBookings = () => {
                     })}
                   </TableCell>
                   <TableCell>
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setDetailBooking(booking);
-                          setDetailModalOpen(true);
-                        }}
-                        title="Voir détails et documents"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setDetailBooking(booking);
+                            setDetailModalOpen(true);
+                          }}
+                          title="Voir détails et documents"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Select
+                          value={booking.status}
+                          onValueChange={(v) => handleUpdateStatus(booking.id, v)}
+                          disabled={updatingStatusId === booking.id}
+                        >
+                          <SelectTrigger className="w-[130px] h-8">
+                            <SelectValue placeholder="Statut" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {BOOKING_STATUSES.map((s) => (
+                              <SelectItem key={s.value} value={s.value}>
+                                {s.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {updatingStatusId === booking.id && (
+                        <span className="text-xs text-muted-foreground">Mise à jour...</span>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -371,7 +436,8 @@ export const AdminBookings = () => {
           booking_reference: detailBooking.booking_reference || detailBooking.bookingReference,
           check_in_date: detailBooking.check_in_date || detailBooking.checkIn,
           check_out_date: detailBooking.check_out_date || detailBooking.checkOut,
-          guest_name: detailBooking.guests?.[0]?.full_name || detailBooking.guests?.[0]?.fullName,
+          guest_name: detailBooking.guest_name || detailBooking.guests?.[0]?.full_name || detailBooking.guests?.[0]?.fullName,
+          guest_email: detailBooking.guest_email || detailBooking.guests?.[0]?.email,
           properties: detailBooking.properties,
         } : undefined}
       />

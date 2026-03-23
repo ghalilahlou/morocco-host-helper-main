@@ -357,7 +357,11 @@ serve(async (req) => {
         if (tokenAge < 5000) { // 5 secondes
           console.log('✅ Token actif récent trouvé (idempotence), réutilisation:', existingActiveToken.id);
           const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'https://checky.ma';
-          const guestLink = `${baseUrl}/v/${existingActiveToken.token}`;
+          const rdEarly = (requestBody as IssueReq).reservationData;
+          const codeEarly = rdEarly?.airbnbCode && rdEarly.airbnbCode !== 'INDEPENDENT_BOOKING' ? rdEarly.airbnbCode : null;
+          const guestLink = codeEarly
+            ? `${baseUrl}/v/${existingActiveToken.token}/${encodeURIComponent(codeEarly)}`
+            : `${baseUrl}/v/${existingActiveToken.token}`;
           
           return new Response(JSON.stringify({
             success: true,
@@ -865,17 +869,27 @@ serve(async (req) => {
       // Don't fail token creation for this error
     }
 
-    // ✅ CORRECTION : Construire l'URL du lien invité (route courte /v/ pour mobile)
+    // ✅ URLs : format lien unique selon type (synchronisé vs non synchronisé)
+    // - Non synchronisé : https://checky.ma/v/{token}
+    // - Synchronisé : https://checky.ma/v/{token}/{reservationCode} → dates pré-remplies
     const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'https://checky.ma';
-    const guestLink = `${baseUrl}/v/${newToken.token}`;
+    const rd = (requestBody as IssueReq).reservationData;
+    const reservationCode = rd?.airbnbCode && rd.airbnbCode !== 'INDEPENDENT_BOOKING'
+      ? rd.airbnbCode
+      : null;
+    const guestLink = reservationCode
+      ? `${baseUrl}/v/${newToken.token}/${encodeURIComponent(reservationCode)}`
+      : `${baseUrl}/v/${newToken.token}`;
 
-    console.log('🔗 Lien invité généré:', guestLink);
+    console.log('🔗 Lien invité généré:', guestLink, reservationCode ? `(synced: ${reservationCode})` : '(non-synced)');
     console.log('📅 Token expires at:', newToken.expires_at);
 
     return new Response(JSON.stringify({
       success: true,
       token: newToken.token,
       url: guestLink,
+      reservationCode: reservationCode || undefined,
+      isSynced: !!reservationCode,
       expiresAt: newToken.expires_at,
       propertyId,
       bookingId: finalBookingId,

@@ -23,6 +23,7 @@ export interface TokenAllocation {
   id: string;
   user_id: string;
   user_email: string;
+  user_name?: string;
   tokens_allocated: number;
   tokens_used: number;
   tokens_remaining: number;

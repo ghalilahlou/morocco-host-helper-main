@@ -26,6 +26,7 @@ interface HostAccount {
   user_id: string;
   email: string;
   full_name: string;
+  user_name?: string;
   plan: string;
   check_in_count: number;
   plan_limit: number | null;
@@ -173,9 +174,9 @@ export const AdminHostAccounts = () => {
               {accounts.map((acc) => (
                 <TableRow key={acc.user_id}>
                   <TableCell>
-                    <div>
-                      <div className="font-medium">{acc.full_name || acc.email}</div>
-                      <div className="text-sm text-gray-500">{acc.email}</div>
+                    <div className="flex flex-col">
+                      <span className="font-medium">{acc.user_name || acc.full_name || acc.email}</span>
+                      <span className="text-sm text-gray-500">{acc.email}</span>
                     </div>
                   </TableCell>
                   <TableCell>

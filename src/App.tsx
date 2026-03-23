@@ -225,8 +225,14 @@ const App = () => (
               <VerifyToken />
             </GuestLayout>
           } />
-          {/* ✅ URL COURTE : Route courte pour les liens de réservation */}
+          {/* ✅ URL COURTE : Liens non synchronisés : /v/{token} */}
           <Route path="/v/:token" element={
+            <GuestLayout>
+              <VerifyToken />
+            </GuestLayout>
+          } />
+          {/* ✅ URL SYNCHRONISÉE : /v/{token}/{reservationCode} → dates pré-remplies */}
+          <Route path="/v/:token/:reservationCode" element={
             <GuestLayout>
               <VerifyToken />
             </GuestLayout>
