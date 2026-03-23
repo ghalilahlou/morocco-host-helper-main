@@ -194,7 +194,8 @@ export const CalendarGrid = memo(({
                               right: '2px',
                               width: normalBarEndsHere ? undefined : 'calc(100% - 4px)',
                               backgroundColor: BOOKING_COLORS.conflict.hex,
-                              boxShadow: '0 4px 12px rgba(220,38,38,0.25)', 
+                              boxShadow: '0 4px 12px rgba(220,38,38,0.25)',
+                            }}
                             onClick={(e) => {
                               e.stopPropagation();
                               setOpenConflict(isOpen ? null : { groupKey: group.groupKey, weekIndex });
