@@ -21,6 +21,9 @@ const ALLOWED_ORIGINS = [
   'https://morocco-host-helper.vercel.app',
 ];
 
+// ✅ Base URL des liens invités - TOUJOURS checky.ma (évite cheki typo / mauvaise config env)
+const GUEST_LINK_BASE_URL = 'https://checky.ma';
+
 // Headers CORS dynamiques basés sur l'origine
 function getCorsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get('origin');
@@ -356,7 +359,7 @@ serve(async (req) => {
         const tokenAge = Date.now() - new Date(existingActiveToken.created_at).getTime();
         if (tokenAge < 5000) { // 5 secondes
           console.log('✅ Token actif récent trouvé (idempotence), réutilisation:', existingActiveToken.id);
-          const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'https://checky.ma';
+          const baseUrl = GUEST_LINK_BASE_URL;
           const rdEarly = (requestBody as IssueReq).reservationData;
           const codeEarly = rdEarly?.airbnbCode && rdEarly.airbnbCode !== 'INDEPENDENT_BOOKING' ? rdEarly.airbnbCode : null;
           const guestLink = codeEarly
@@ -872,7 +875,7 @@ serve(async (req) => {
     // ✅ URLs : format lien unique selon type (synchronisé vs non synchronisé)
     // - Non synchronisé : https://checky.ma/v/{token}
     // - Synchronisé : https://checky.ma/v/{token}/{reservationCode} → dates pré-remplies
-    const baseUrl = Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('SITE_URL') || 'https://checky.ma';
+    const baseUrl = GUEST_LINK_BASE_URL;
     const rd = (requestBody as IssueReq).reservationData;
     const reservationCode = rd?.airbnbCode && rd.airbnbCode !== 'INDEPENDENT_BOOKING'
       ? rd.airbnbCode

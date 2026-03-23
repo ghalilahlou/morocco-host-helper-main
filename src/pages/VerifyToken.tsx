@@ -7,7 +7,7 @@
  * où les dates sont déjà pré-remplies dans le lien (logique ICS direct)
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { EnhancedLoader } from '@/components/ui/enhanced-loader';
@@ -24,6 +24,12 @@ export function VerifyToken() {
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [debugInfo, setDebugInfo] = useState<string>('');
+  const fatalErrorRef = useRef(false); // évite de relancer la RPC si token inexistant
+
+  // ✅ Reset fatalError quand l'URL change (autre token/code)
+  useEffect(() => {
+    fatalErrorRef.current = false;
+  }, [token, reservationCode]);
 
   // ✅ Debug : Log au chargement
   useEffect(() => {
@@ -33,6 +39,7 @@ export function VerifyToken() {
 
   // ✅ Redirection automatique vers GuestVerification avec dates pré-remplies
   useEffect(() => {
+    if (fatalErrorRef.current) return; // token inexistant, ne pas relancer
     console.log('🔄 [VerifyToken] useEffect déclenché', { token, retryCount });
     
     if (!token) {
@@ -67,6 +74,7 @@ export function VerifyToken() {
 
         if (!tokenData) {
           console.error('❌ [VerifyToken] Token non trouvé dans la base de données');
+          fatalErrorRef.current = true;
           setError("Ce lien de vérification n'existe pas ou a été supprimé.");
           setIsRedirecting(false);
           return;
@@ -75,6 +83,7 @@ export function VerifyToken() {
         // Vérifier si le token est actif
         if (!tokenData.is_active) {
           console.error('❌ [VerifyToken] Token désactivé');
+          fatalErrorRef.current = true;
           setError("Ce lien a été désactivé. Demandez un nouveau lien à votre hôte.");
           setIsRedirecting(false);
           return;
@@ -83,6 +92,7 @@ export function VerifyToken() {
         // Vérifier si le token n'est pas expiré
         if (tokenData.expires_at && new Date(tokenData.expires_at) < new Date()) {
           console.error('❌ [VerifyToken] Token expiré');
+          fatalErrorRef.current = true;
           setError("Ce lien a expiré. Demandez un nouveau lien à votre hôte.");
           setIsRedirecting(false);
           return;

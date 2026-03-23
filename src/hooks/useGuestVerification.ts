@@ -1,6 +1,5 @@
 
 import { useState, useEffect } from 'react';
-import runtime from '@/config/runtime';
 import { supabase } from '@/integrations/supabase/client';
 import { PropertyVerificationToken, GuestSubmission } from '@/types/guestVerification';
 import { useAuth } from './useAuth';
@@ -50,6 +49,25 @@ function cleanGuestNameForUrl(guestName: string): string {
   
   // Log masqué en production
   return cleanedName;
+}
+
+/** Lien copié : toujours `https://checky.ma/v/{token}` ou `.../v/{token}/{code}` — jamais `/guest-verification/...?...` ni domaine erroné. */
+function buildCanonicalGuestVerificationUrl(
+  token: string,
+  reservationCode?: string | null
+): string {
+  const base = 'https://checky.ma';
+  const code =
+    reservationCode &&
+    typeof reservationCode === 'string' &&
+    reservationCode.trim() !== '' &&
+    reservationCode.trim() !== 'INDEPENDENT_BOOKING'
+      ? reservationCode.trim()
+      : '';
+  if (code) {
+    return `${base}/v/${token}/${encodeURIComponent(code)}`;
+  }
+  return `${base}/v/${token}`;
 }
 
 export const useGuestVerification = () => {
@@ -265,8 +283,8 @@ export const useGuestVerification = () => {
         return null;
       }
 
-      // ✅ Utiliser l'URL retournée par l'API (format court /v/token ou /v/token/code pour synced)
-      const guestUrl = data.url || `${runtime.urls.app.base}/v/${data.token}`;
+      // Toujours reconstruire depuis token + code : l’API peut encore renvoyer une ancienne URL longue (guest-verification?…)
+      const guestUrl = buildCanonicalGuestVerificationUrl(data.token, data.reservationCode);
       console.log('🔗 [LIEN DE RÉSERVATION]:', guestUrl, data.isSynced ? '(synchronisé)' : '(non synchronisé)');
 
       if (!options?.skipCopy) {
