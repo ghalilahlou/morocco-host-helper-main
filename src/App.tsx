@@ -39,6 +39,24 @@ const LoadingSpinner = () => (
   </div>
 );
 
+// ✅ Fallback spécifique pour les routes /v/* (liens invités)
+const VerifyTokenErrorFallback = ({ error, resetError }: { error: Error; resetError?: () => void }) => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+    <div className="max-w-md bg-white rounded-xl shadow-lg p-6 text-center">
+      <h2 className="text-lg font-semibold text-red-800 mb-2">Erreur de chargement</h2>
+      <p className="text-sm text-slate-600 mb-4">{error?.message || 'Une erreur est survenue.'}</p>
+      <div className="flex gap-2 justify-center">
+        <button onClick={() => window.location.reload()} className="px-4 py-2 bg-teal-600 text-white rounded-lg">
+          Rafraîchir
+        </button>
+        {resetError && (
+          <button onClick={resetError} className="px-4 py-2 bg-slate-200 rounded-lg">Réessayer</button>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
 // ✅ Composant de fallback global pour ErrorBoundary
 const GlobalErrorFallback = ({ error, resetError }: { error: Error; resetError: () => void }) => {
   console.error('🔴 [GlobalErrorBoundary] Erreur capturée:', error);
@@ -225,16 +243,20 @@ const App = () => (
               <VerifyToken />
             </GuestLayout>
           } />
+          {/* ✅ URL SYNCHRONISÉE : /v/{token}/{reservationCode} → dates pré-remplies (route plus spécifique en premier) */}
+          <Route path="/v/:token/:reservationCode" element={
+            <GuestLayout>
+              <ErrorBoundary fallback={(err, reset) => <VerifyTokenErrorFallback error={err} resetError={reset} />}>
+                <VerifyToken />
+              </ErrorBoundary>
+            </GuestLayout>
+          } />
           {/* ✅ URL COURTE : Liens non synchronisés : /v/{token} */}
           <Route path="/v/:token" element={
             <GuestLayout>
-              <VerifyToken />
-            </GuestLayout>
-          } />
-          {/* ✅ URL SYNCHRONISÉE : /v/{token}/{reservationCode} → dates pré-remplies */}
-          <Route path="/v/:token/:reservationCode" element={
-            <GuestLayout>
-              <VerifyToken />
+              <ErrorBoundary fallback={(err, reset) => <VerifyTokenErrorFallback error={err} resetError={reset} />}>
+                <VerifyToken />
+              </ErrorBoundary>
             </GuestLayout>
           } />
           <Route path="/guest-verification/:propertyId/:token/:airbnbBookingId" element={<GuestVerificationPage />} />

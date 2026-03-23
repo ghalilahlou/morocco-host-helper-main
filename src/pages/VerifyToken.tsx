@@ -51,12 +51,10 @@ export function VerifyToken() {
         console.log('🔄 [VerifyToken] Résolution automatique du token et redirection vers GuestVerification...');
         console.log('🔗 [VerifyToken] Token reçu:', token);
         
-        // ✅ Récupérer le propertyId et les métadonnées directement depuis la base de données
-        const { data: tokenData, error: tokenError } = await supabase
-          .from('property_verification_tokens')
-          .select('property_id, is_active, expires_at')
-          .eq('token', token)
-          .maybeSingle();
+        // ✅ Récupérer property_id via RPC (anon n'a pas accès direct à property_verification_tokens)
+        const { data: tokenRows, error: tokenError } = await (supabase as any)
+          .rpc('resolve_guest_token', { p_token: token });
+        const tokenData = Array.isArray(tokenRows) && tokenRows.length > 0 ? tokenRows[0] : null;
 
         console.log('📦 [VerifyToken] Résultat requête token:', { tokenData, tokenError });
 
@@ -98,14 +96,12 @@ export function VerifyToken() {
           // Si code de réservation dans l'URL → chercher la réservation pour pré-remplir les dates
           if (reservationCode && reservationCode.trim()) {
             const decodedCode = decodeURIComponent(reservationCode.trim());
-            const { data: bookingData, error: bookingError } = await supabase
-              .from('bookings')
-              .select('check_in_date, check_out_date, number_of_guests, guest_name, booking_reference')
-              .eq('property_id', propertyId)
-              .eq('booking_reference', decodedCode)
-              .order('updated_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
+            const { data: bookingRows, error: bookingError } = await (supabase as any)
+              .rpc('get_booking_dates_for_guest', {
+                p_property_id: propertyId,
+                p_booking_reference: decodedCode,
+              });
+            const bookingData = Array.isArray(bookingRows) && bookingRows.length > 0 ? bookingRows[0] : null;
 
             if (!bookingError && bookingData) {
               const startDate = extractDateOnly(bookingData.check_in_date);
@@ -121,34 +117,25 @@ export function VerifyToken() {
             }
           }
 
-          // Fallback : métadonnées du token si pas de dates trouvées via booking
-          if (!urlParams) {
-            const { data: metadataResult, error: metadataError } = await supabase
-              .from('property_verification_tokens')
-              .select('metadata')
-              .eq('token', token)
-              .eq('is_active', true)
-              .maybeSingle();
+          // Fallback : métadonnées du token (déjà incluses dans tokenData via RPC)
+          if (!urlParams && tokenData?.metadata) {
+            const metadata = tokenData.metadata as any;
+            console.log('📦 [VerifyToken] Métadonnées récupérées:', metadata);
 
-            if (!metadataError && metadataResult?.metadata) {
-              const metadata = metadataResult.metadata as any;
-              console.log('📦 [VerifyToken] Métadonnées récupérées:', metadata);
+            const reservationData = metadata.reservationData || metadata;
 
-              const reservationData = metadata.reservationData || metadata;
-              
-              if (reservationData?.startDate && reservationData?.endDate) {
-                const startDate = extractDateOnly(reservationData.startDate);
-                const endDate = extractDateOnly(reservationData.endDate);
-                const guests = reservationData.numberOfGuests || 1;
-                const airbnbCode = reservationData.airbnbCode || 'INDEPENDENT_BOOKING';
-                const guestName = reservationData.guestName || '';
+            if (reservationData?.startDate && reservationData?.endDate) {
+              const startDate = extractDateOnly(reservationData.startDate);
+              const endDate = extractDateOnly(reservationData.endDate);
+              const guests = reservationData.numberOfGuests || 1;
+              const airbnbCode = reservationData.airbnbCode || 'INDEPENDENT_BOOKING';
+              const guestName = reservationData.guestName || '';
 
-                urlParams = `?startDate=${startDate}&endDate=${endDate}&guests=${guests}&airbnbCode=${airbnbCode}`;
-                if (guestName && guestName.trim() !== '') {
-                  urlParams += `&guestName=${encodeURIComponent(guestName)}`;
-                }
-                console.log('✅ [VerifyToken] Dates extraites des métadonnées:', { startDate, endDate, guests });
+              urlParams = `?startDate=${startDate}&endDate=${endDate}&guests=${guests}&airbnbCode=${airbnbCode}`;
+              if (guestName && guestName.trim() !== '') {
+                urlParams += `&guestName=${encodeURIComponent(guestName)}`;
               }
+              console.log('✅ [VerifyToken] Dates extraites des métadonnées:', { startDate, endDate, guests });
             }
           }
         } catch (e) {
@@ -168,7 +155,7 @@ export function VerifyToken() {
     };
 
     resolveAndRedirect();
-  }, [token, navigate, retryCount]);
+  }, [token, reservationCode, navigate, retryCount]);
 
   // ✅ Fonction de réessai
   const handleRetry = () => {
