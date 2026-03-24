@@ -385,29 +385,8 @@ serve(async (req) => {
       // Continue avec la création d'un nouveau token
     }
 
-    // ✅ CORRECTION : Désactiver tous les tokens actifs existants pour cette propriété
-    // (sauf si on vient de trouver un token récent à réutiliser)
-    console.log('🔄 Désactivation des tokens existants pour cette propriété...');
-    try {
-      const { error: deactivateError } = await server
-        .from('property_verification_tokens')
-        .update({
-          is_active: false,
-          updated_at: new Date().toISOString()
-        })
-        .eq('property_id', propertyId)
-        .eq('is_active', true);
-
-      if (deactivateError) {
-        console.error('❌ Erreur lors de la désactivation des tokens existants:', deactivateError);
-        // Don't fail for this error, just log
-      } else {
-        console.log('✅ Tokens existants désactivés avec succès');
-      }
-    } catch (deactivateError) {
-      console.error('❌ Unexpected error during token deactivation:', deactivateError);
-      // Don't fail for this error, just log
-    }
+    // Ne pas désactiver les anciens tokens : le lien /v/{token} doit rester valide pour plusieurs
+    // check-ins / réservations jusqu’à expires_at. La limite métier (crédits) est appliquée ailleurs.
 
     // ✅ CORRECTION : Générer un nouveau token unique
     console.log('🆕 Génération d\'un nouveau token...');
