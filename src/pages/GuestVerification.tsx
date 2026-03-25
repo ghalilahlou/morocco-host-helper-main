@@ -1797,69 +1797,55 @@ export const GuestVerification = () => {
         return;
       }
 
-      // ✅ CRITIQUE : Lire les valeurs directement depuis les inputs pour les champs non-contrôlés
-      const emailInput = document.querySelector('input[name="email-0"]') as HTMLInputElement;
-      const professionInput = document.querySelector('input[name="profession-0"]') as HTMLInputElement;
-      const adresseInput = document.querySelector('input[name="adresse-0"]') as HTMLInputElement;
-      const motifSelect = document.querySelector('select[name="motifSejour-0"]') as HTMLSelectElement;
+      // ✅ CRITIQUE : Lire les valeurs depuis les inputs pour chaque voyageur (email, profession, adresse, motif)
+      const guestsPayload = deduplicatedGuests.map((guest, index) => {
+        const emailInput = document.querySelector(`input[name="email-${index}"]`) as HTMLInputElement;
+        const professionInput = document.querySelector(`input[name="profession-${index}"]`) as HTMLInputElement;
+        const adresseInput = document.querySelector(`input[name="adresse-${index}"]`) as HTMLInputElement;
+        const motifSelectEl = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
+        const motifSejour = motifSelectEl?.value || guest.motifSejour || '';
+        return {
+          firstName: guest.fullName?.split(' ')[0] || '',
+          lastName: guest.fullName?.split(' ').slice(1).join(' ') || '',
+          email: emailInput?.value || guest.email || '',
+          nationality: guest.nationality || '',
+          idType: guest.documentType || 'passport',
+          idNumber: guest.documentNumber || '',
+          dateOfBirth: guest.dateOfBirth ? format(guest.dateOfBirth, 'yyyy-MM-dd') : undefined,
+          documentIssueDate: guest.documentIssueDate ? format(guest.documentIssueDate, 'yyyy-MM-dd') : undefined,
+          profession: professionInput?.value || guest.profession || '',
+          motifSejour,
+          adressePersonnelle: adresseInput?.value || guest.adressePersonnelle || ''
+        };
+      });
 
-      // ✅ VALIDATION STRICTE : Vérifier que le motif de séjour du premier invité est valide
-      const firstGuestMotif = motifSelect?.value || firstGuest?.motifSejour || '';
-      if (!firstGuestMotif || firstGuestMotif.trim() === '') {
-        console.error('❌ Motif de séjour manquant pour le premier invité');
-        toast({
-          title: "Motif de séjour requis",
-          description: "Veuillez sélectionner un motif de séjour pour le premier invité.",
-          variant: "destructive",
-        });
-        isSubmittingRef.current = false;
-        isProcessingRef.current = false;
-        return;
-      }
+      const guestInfo = guestsPayload[0];
+      console.log('🔍 DEBUG - guestsPayload final:', guestsPayload);
 
-      const guestInfo = {
-        firstName: firstGuest?.fullName?.split(' ')[0] || '',
-        lastName: firstGuest?.fullName?.split(' ').slice(1).join(' ') || '',
-        email: emailInput?.value || firstGuest?.email || '',
-        // phone: firstGuest?.phone || '', // ✅ CORRIGÉ : Retiré car non présent dans le type Guest
-        nationality: firstGuest?.nationality || '',
-        idType: firstGuest?.documentType || 'passport',
-        idNumber: firstGuest?.documentNumber || '',
-        dateOfBirth: firstGuest?.dateOfBirth ? format(firstGuest.dateOfBirth, 'yyyy-MM-dd') : undefined,
-        documentIssueDate: firstGuest?.documentIssueDate ? format(firstGuest.documentIssueDate, 'yyyy-MM-dd') : undefined, // ✅ Date d'expiration (fiche de police)
-        profession: professionInput?.value || firstGuest?.profession || '',
-        motifSejour: firstGuestMotif, // ✅ VALIDATION STRICTE : Utiliser la valeur validée
-        adressePersonnelle: adresseInput?.value || firstGuest?.adressePersonnelle || ''
-      };
-
-      // ✅ DEBUG: Log des données finales
-      console.log('🔍 DEBUG - guestInfo final:', guestInfo);
-
-      // ✅ VALIDATION CRITIQUE : Vérifier que l'email est renseigné AVANT d'envoyer
-      if (!guestInfo.email || !guestInfo.email.trim()) {
-        console.error('❌ Email manquant');
-        toast({
-          title: "Email requis",
-          description: "Veuillez renseigner votre adresse email avant de continuer.",
-          variant: "destructive",
-        });
-        isSubmittingRef.current = false;
-        isProcessingRef.current = false;
-        return;
-      }
-
-      // ✅ VALIDATION : Vérifier le format de l'email
       const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
-      if (!emailRegex.test(guestInfo.email)) {
-        console.error('❌ Format email invalide:', guestInfo.email);
-        toast({
-          title: "Email invalide",
-          description: "Veuillez saisir une adresse email valide (ex: nom@exemple.com).",
-          variant: "destructive",
-        });
-        isSubmittingRef.current = false;
-        isProcessingRef.current = false;
-        return;
+      for (let i = 0; i < guestsPayload.length; i++) {
+        if (!guestsPayload[i].email || !guestsPayload[i].email.trim()) {
+          console.error('❌ Email manquant pour le voyageur', i + 1);
+          toast({
+            title: "Email requis",
+            description: `Veuillez renseigner l'adresse email pour le voyageur ${i + 1}.`,
+            variant: "destructive",
+          });
+          isSubmittingRef.current = false;
+          isProcessingRef.current = false;
+          return;
+        }
+        if (!emailRegex.test(guestsPayload[i].email)) {
+          console.error('❌ Format email invalide:', guestsPayload[i].email);
+          toast({
+            title: "Email invalide",
+            description: `Veuillez saisir une adresse email valide pour le voyageur ${i + 1}.`,
+            variant: "destructive",
+          });
+          isSubmittingRef.current = false;
+          isProcessingRef.current = false;
+          return;
+        }
       }
 
       // ✅ CORRECTION : Convertir les fichiers en base64 au lieu d'envoyer des blob URLs
@@ -2013,6 +1999,7 @@ export const GuestVerification = () => {
         token: token!,
         airbnbCode: finalAirbnbCode,
         guestInfo,
+        guests: guestsPayload,
         idDocuments,
         bookingData: {
           checkIn: bookingData.checkInDate,
@@ -2047,7 +2034,7 @@ export const GuestVerification = () => {
       try {
         localStorage.setItem('currentBookingId', bookingId);
         localStorage.setItem('currentBookingData', JSON.stringify(bookingData));
-        localStorage.setItem('currentGuestData', JSON.stringify(guestInfo));
+        localStorage.setItem('currentGuestData', JSON.stringify({ ...guestInfo, guests: guestsPayload }));
         localStorage.setItem('contractUrl', result.contractUrl);
         // ✅ NOUVEAU: Sauvegarder le nom de propriété pour la page de confirmation
         if (propertyName) {
@@ -2084,12 +2071,7 @@ export const GuestVerification = () => {
         }, 
         guestData: {
           ...guestInfo,
-          // ✅ AJOUT : Inclure le tableau guests pour le récapitulatif de confirmation
-          guests: deduplicatedGuests.map(g => ({
-            fullName: g.fullName,
-            nationality: g.nationality,
-            documentNumber: g.documentNumber
-          }))
+          guests: guestsPayload,
         },
         contractUrl: result.contractUrl,
         policeUrl: result.policeUrl,

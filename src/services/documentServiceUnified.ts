@@ -16,6 +16,7 @@ export interface GuestInfo {
   idType?: string;
   idNumber?: string;
   dateOfBirth?: string;
+  documentIssueDate?: string;
   profession?: string;
   motifSejour?: string;
   adressePersonnelle?: string;
@@ -32,6 +33,8 @@ export interface DocumentGenerationRequest {
   token: string;
   airbnbCode: string;
   guestInfo: GuestInfo;
+  /** Tous les voyageurs (même ordre que les pièces d’identité). Si absent, seul guestInfo est utilisé. */
+  guests?: GuestInfo[];
   idDocuments: IdDocument[];
   bookingData?: {
     checkIn: string;
@@ -100,13 +103,22 @@ export async function submitDocumentsUnified(
     airbnbCode: request.airbnbCode
   });
 
+  const allGuests =
+    request.guests && request.guests.length > 0 ? request.guests : [request.guestInfo];
+
   // Validation côté client
   if (!request.token || !request.airbnbCode || !request.guestInfo) {
     throw new Error('Token, code Airbnb et informations invité sont requis');
   }
 
-  if (!request.guestInfo.firstName || !request.guestInfo.lastName) {
-    throw new Error('Le prénom et nom sont obligatoires');
+  for (let i = 0; i < allGuests.length; i++) {
+    const g = allGuests[i];
+    if (!g.firstName || !g.lastName) {
+      throw new Error(`Le prénom et nom sont obligatoires (voyageur ${i + 1})`);
+    }
+    if (!g.email?.trim()) {
+      throw new Error(`Email requis pour le voyageur ${i + 1}`);
+    }
   }
 
   if (!request.idDocuments || request.idDocuments.length === 0) {
@@ -127,6 +139,7 @@ export async function submitDocumentsUnified(
       token: request.token,
       airbnbCode: request.airbnbCode,
       guestInfo: request.guestInfo,
+      guests: allGuests,
       idDocuments: request.idDocuments,
       bookingData: request.bookingData,
       signature: request.signature

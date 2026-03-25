@@ -33,7 +33,8 @@ interface GuestInfo {
   idType?: string;
   idNumber?: string;
   dateOfBirth?: string;
-  documentIssueDate?: string; // ✅ Date d'expiration du document (stockée sous ce nom pour compatibilité DB)
+  /** Date d'expiration du document (stockée sous ce nom pour compatibilité DB) */
+  documentIssueDate?: string;
   profession?: string;
   motifSejour?: string;
   adressePersonnelle?: string;
@@ -57,6 +58,8 @@ interface UnifiedRequest {
   token: string;
   airbnbCode: string;
   guestInfo: GuestInfo;
+  /** Si présent (check-in multi-voyageurs), toutes les fiches sont persistées en base. */
+  guests?: GuestInfo[];
   idDocuments: IdDocument[];
   signature?: SignatureData;
   // Options supplémentaires
@@ -195,35 +198,38 @@ function validateRequest(request: UnifiedRequest): ValidationResult {
     errors.push('Code Airbnb invalide ou manquant');
   }
 
-  // Validation informations invité
-  if (!request.guestInfo) {
-    errors.push('Informations invité manquantes');
-  } else {
-    const { firstName, lastName, email } = request.guestInfo;
-    
+  // Validation informations invité (une fiche ou tableau guests)
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+  const validateOneGuest = (g: GuestInfo, label: string) => {
+    const { firstName, lastName, email } = g;
     if (!firstName || firstName.trim().length < 2) {
-      errors.push('Prénom invalide (minimum 2 caractères)');
+      errors.push(`${label}: prénom invalide (minimum 2 caractères)`);
     }
-    
     if (!lastName || lastName.trim().length < 2) {
-      errors.push('Nom invalide (minimum 2 caractères)');
+      errors.push(`${label}: nom invalide (minimum 2 caractères)`);
     }
-    
-    // Validation email OBLIGATOIRE avec support caractères internationaux
     if (!email || !email.trim()) {
-      errors.push('Email requis');
-    } else {
-      const emailRegex = /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-      if (!emailRegex.test(email.trim())) {
-        errors.push('Email invalide (format incorrect)');
-      }
+      errors.push(`${label}: email requis`);
+    } else if (!emailRegex.test(email.trim())) {
+      errors.push(`${label}: email invalide (format incorrect)`);
     }
-    
-    if (!request.guestInfo.phone) {
+  };
+
+  const primaryGuestForValidation = (request.guests && request.guests.length > 0)
+    ? request.guests[0]
+    : request.guestInfo;
+
+  if (!primaryGuestForValidation) {
+    errors.push('Informations invité manquantes');
+  } else if (request.guests && Array.isArray(request.guests) && request.guests.length > 0) {
+    request.guests.forEach((g, i) => validateOneGuest(g, `Invité ${i + 1}`));
+  } else {
+    validateOneGuest(primaryGuestForValidation, 'Invité');
+    if (!request.guestInfo?.phone) {
       warnings.push('Numéro de téléphone non fourni');
     }
-    
-    if (!request.guestInfo.nationality) {
+    if (!request.guestInfo?.nationality) {
       warnings.push('Nationalité non fournie');
     }
   }
@@ -268,6 +274,7 @@ function sanitizeGuestInfo(guestInfo: GuestInfo): GuestInfo {
     idType: guestInfo.idType?.trim() || 'passport',
     idNumber: guestInfo.idNumber?.trim() || '',
     dateOfBirth: guestInfo.dateOfBirth?.trim() || undefined,
+    documentIssueDate: guestInfo.documentIssueDate?.trim() || undefined,
     // ✅ CRITIQUE : Préserver les champs supplémentaires pour la variabilisation complète
     profession: guestInfo.profession?.trim() || undefined,
     motifSejour: guestInfo.motifSejour?.trim() || undefined,
@@ -756,18 +763,22 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
 // ÉTAPE 2: Sauvegarde exhaustive des données
 async function saveGuestDataInternal(
   booking: ResolvedBooking, 
-  guestInfo: GuestInfo, 
+  guestInfos: GuestInfo[], 
   idDocuments: IdDocument[]
 ): Promise<string> {
   log('info', 'ÉTAPE 2: Démarrage de la sauvegarde des données', {
-    guest: `${guestInfo.firstName} ${guestInfo.lastName}`,
+    guestsCount: guestInfos.length,
+    firstGuest: guestInfos[0] ? `${guestInfos[0].firstName} ${guestInfos[0].lastName}` : 'N/A',
     documentsCount: idDocuments.length,
     propertyId: booking.propertyId
   });
 
   return await withRetry(async () => {
     const supabase = await getServerClient();
-    const sanitizedGuest = sanitizeGuestInfo(guestInfo);
+    if (!guestInfos?.length) {
+      throw new Error('Au moins une fiche invité est requise');
+    }
+    const primaryGuest = sanitizeGuestInfo(guestInfos[0]);
 
     // 1. Création/mise à jour de la réservation avec toutes les données (approche robuste)
     log('info', 'Sauvegarde de la réservation');
@@ -792,7 +803,7 @@ async function saveGuestDataInternal(
     if (!existingBooking) {
       if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
         // Pour les réservations indépendantes, chercher par property_id + guest_name + check_in_date
-        const fullGuestName = `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`;
+        const fullGuestName = `${primaryGuest.firstName} ${primaryGuest.lastName}`;
         const { data } = await supabase
           .from('bookings')
           .select('id')
@@ -851,12 +862,12 @@ async function saveGuestDataInternal(
       user_id: propertyData.user_id, // ✅ AJOUTÉ : user_id récupéré depuis properties
       check_in_date: booking.checkIn,
       check_out_date: booking.checkOut,
-      guest_name: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`,
+      guest_name: `${primaryGuest.firstName} ${primaryGuest.lastName}`,
       number_of_guests: booking.numberOfGuests || 1,
       total_price: booking.totalPrice || null,
       booking_reference: booking.airbnbCode,
-      guest_email: sanitizedGuest.email,
-      guest_phone: sanitizedGuest.phone || null,
+      guest_email: primaryGuest.email,
+      guest_phone: primaryGuest.phone || null,
       status: 'pending',
       updated_at: new Date().toISOString()
     };
@@ -868,7 +879,7 @@ async function saveGuestDataInternal(
         log('info', 'Mise à jour réservation existante avec nom du guest', { 
           bookingId: existingBooking.id,
           oldGuestName: 'Réservation existante',
-          newGuestName: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`,
+          newGuestName: `${primaryGuest.firstName} ${primaryGuest.lastName}`,
           source: booking.bookingId ? 'bookingId' : 'booking_reference'
         });
         const { data, error: updateError } = await supabase
@@ -1171,7 +1182,12 @@ async function saveGuestDataInternal(
     log('info', 'Réservation sauvegardée', { bookingId });
 
     // 2. Sauvegarde des informations invité avec données complètes
-    log('info', 'Sauvegarde des informations invité');
+    log('info', 'Sauvegarde des informations invité', { count: guestInfos.length });
+    const effectiveMaxGuests = Math.max(booking.numberOfGuests || 1, guestInfos.length);
+
+    for (let gi = 0; gi < guestInfos.length; gi++) {
+      await (async () => {
+        const sanitizedGuest = sanitizeGuestInfo(guestInfos[gi]);
     // ✅ Validation et conversion de dateOfBirth
     let processedDateOfBirth = null;
     if (sanitizedGuest.dateOfBirth) {
@@ -1243,7 +1259,7 @@ async function saveGuestDataInternal(
       .select('id')
       .eq('booking_id', bookingId);
 
-    const maxGuests = booking.numberOfGuests || 1;
+    const maxGuests = effectiveMaxGuests;
 
     // ✅ CORRECTION MAJEURE : Logique améliorée pour éviter l'écrasement
     // L'identification d'un guest se fait par: booking_id + (full_name OU document_number)
@@ -1422,6 +1438,9 @@ async function saveGuestDataInternal(
           }
         }
       }
+    }
+
+      })();
     }
 
     // 3. Sauvegarde des documents d'identité avec métadonnées
@@ -1653,15 +1672,22 @@ async function saveGuestDataInternal(
       .limit(1)
       .single();
 
-    const fullName = `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`.trim().toUpperCase();
-    const documentNumber = (sanitizedGuest.idNumber || '').trim().toUpperCase();
-    
-    // ✅ NOUVEAU : Vérifier si une soumission existe déjà pour ce booking + guest
+    const guestsPayload = guestInfos.map((g) => {
+      const s = sanitizeGuestInfo(g);
+      const fn = `${s.firstName} ${s.lastName}`.trim().toUpperCase();
+      const dn = (s.idNumber || '').trim().toUpperCase();
+      return { ...s, fullName: fn, documentNumber: dn };
+    });
+    const submissionPrimary = guestsPayload[0];
+    const fullName = submissionPrimary.fullName;
+    const documentNumber = submissionPrimary.documentNumber;
+
     const { data: existingSubmission } = await supabase
       .from('guest_submissions')
       .select('id')
       .eq('booking_id', bookingId)
-      .filter('guest_data->>fullName', 'ilike', fullName)
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     const submissionData = {
@@ -1676,7 +1702,8 @@ async function saveGuestDataInternal(
         nightsCount: Math.ceil((new Date(booking.checkOut).getTime() - new Date(booking.checkIn).getTime()) / (1000 * 60 * 60 * 24))
       },
       guest_data: {
-        ...sanitizedGuest,
+        guests: guestsPayload,
+        ...submissionPrimary,
         fullName: fullName,
         documentNumber: documentNumber
       },
@@ -3614,6 +3641,12 @@ serve(async (req) => {
     let emailSent: boolean = false;
 
     try {
+      const guestInfosForSave: GuestInfo[] =
+        Array.isArray(requestBody.guests) && requestBody.guests.length > 0
+          ? requestBody.guests
+          : [requestBody.guestInfo];
+      const primaryGuestInfo = guestInfosForSave[0];
+
       // ÉTAPE 1: Résolution de la réservation
       log('info', '🎯 ÉTAPE 1/5: Résolution de la réservation');
       
@@ -3795,7 +3828,7 @@ serve(async (req) => {
           bookingId: existingBookingIdFromToken,
           linkType 
         });
-        booking = await getExistingICSBooking(requestBody.token, requestBody.guestInfo);
+        booking = await getExistingICSBooking(requestBody.token, primaryGuestInfo);
         log('info', 'Réservation ICS existante récupérée avec succès', {
           bookingId: booking.bookingId,
           airbnbCode: booking.airbnbCode,
@@ -3803,7 +3836,7 @@ serve(async (req) => {
         });
       } else if (requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode) {
         log('info', 'Réservation indépendante détectée (formulaire), création directe');
-        booking = await createIndependentBooking(requestBody.token, requestBody.guestInfo, requestBody.bookingData);
+        booking = await createIndependentBooking(requestBody.token, primaryGuestInfo, requestBody.bookingData);
       } else {
         log('info', 'Réservation via lien ICS avec code détectée, résolution avec dates prédéfinies');
         booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
@@ -3824,6 +3857,13 @@ serve(async (req) => {
           propertyName: booking.propertyName
         });
       }
+
+      const nFromReq = requestBody.bookingData?.numberOfGuests;
+      booking.numberOfGuests = Math.max(
+        booking.numberOfGuests ?? 1,
+        guestInfosForSave.length,
+        typeof nFromReq === 'number' && !Number.isNaN(nFromReq) ? nFromReq : 0
+      );
       
       // ✅ CORRIGÉ : Vérifier si le booking a déjà été traité (incluant 'pending')
       // Note: supabaseClient a déjà été déclaré ci-dessus
@@ -3846,7 +3886,7 @@ serve(async (req) => {
           .select('id, status')
           .eq('property_id', booking.propertyId)
           .eq('booking_reference', 'INDEPENDENT_BOOKING')
-          .eq('guest_name', `${requestBody.guestInfo.firstName} ${requestBody.guestInfo.lastName}`)
+          .eq('guest_name', `${primaryGuestInfo.firstName} ${primaryGuestInfo.lastName}`)
           .eq('check_in_date', booking.checkIn)
           .maybeSingle();
         existingBooking = data;
@@ -3961,7 +4001,7 @@ serve(async (req) => {
         log('info', 'Booking ID existant passé à saveGuestDataInternal', { bookingId: existingBooking.id });
       }
       
-      bookingId = await saveGuestDataInternal(booking, requestBody.guestInfo, requestBody.idDocuments);
+      bookingId = await saveGuestDataInternal(booking, guestInfosForSave, requestBody.idDocuments);
       
       log('info', 'Booking ID sauvegardé avec succès', { bookingId });
       }
@@ -4025,11 +4065,11 @@ serve(async (req) => {
         log('info', '🎯 ÉTAPE 5/5: Vérification envoi email');
         
         // Vérifier si l'email est fourni
-        if (requestBody.guestInfo?.email && requestBody.guestInfo.email.trim()) {
+        if (primaryGuestInfo?.email && primaryGuestInfo.email.trim()) {
           log('info', 'Email fourni, envoi du contrat...');
           try {
             emailSent = await sendGuestContractInternal(
-              requestBody.guestInfo, 
+              primaryGuestInfo, 
               booking, 
               contractUrl, 
               policeUrl
