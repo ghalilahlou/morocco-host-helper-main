@@ -88,6 +88,21 @@ const NATIONALITIES = [
   'Taiwan', 'Hong Kong', 'Macao', 'Myanmar', 'Laos', 'Cambodia', 'Brunei', 'Timor-Leste', 'Other'
 ];
 
+function createEmptyGuestForm(): Guest {
+  return {
+    fullName: '',
+    dateOfBirth: undefined,
+    nationality: '',
+    documentNumber: '',
+    documentType: 'passport',
+    documentIssueDate: undefined,
+    profession: '',
+    motifSejour: 'TOURISME',
+    adressePersonnelle: '',
+    email: ''
+  };
+}
+
 // ✅ Interface Guest supprimée - utilisation du type centralisé de @/types/booking
 
 interface UploadedDocument {
@@ -223,13 +238,9 @@ export const GuestVerification = () => {
     
     // ✅ ALGORITHME DE DÉDUPLICATION ROBUSTE
     const uniqueGuests = guests.reduce((acc: Guest[], guest, currentIndex) => {
-      // Si le guest est complètement vide, le garder tel quel
+      // Fiches vides : une par voyageur (étape Documents). Ne pas fusionner plusieurs slots vides.
       if (!guest.fullName && !guest.documentNumber && !guest.nationality) {
-        // Seulement si on n'a pas déjà un guest vide
-        const hasEmptyGuest = acc.some(g => !g.fullName && !g.documentNumber && !g.nationality);
-        if (!hasEmptyGuest) {
-          acc.push(guest);
-        }
+        acc.push(guest);
         return acc;
       }
       
@@ -458,8 +469,10 @@ export const GuestVerification = () => {
             
             setCheckInDate(startDate);
             setCheckOutDate(endDate);
-            const guestsCount = parseInt(guestsParam || '1');
+            const guestsCount = Math.max(1, Math.min(10, parseInt(guestsParam || '1', 10) || 1));
             setNumberOfGuests(guestsCount);
+            setNumberOfAdults(Math.max(1, guestsCount));
+            setNumberOfChildren(0);
             
             // ✅ CORRIGÉ CRITIQUE : NE PAS recréer le tableau guests si déjà initialisé
             // Cela évite de créer des doublons lors des re-renders
@@ -523,10 +536,12 @@ export const GuestVerification = () => {
               const startDate = new Date(startDateParam);
               const endDate = new Date(endDateParam);
               if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-                const guestsCount = parseInt(guestsParam || '1');
+                const guestsCount = Math.max(1, Math.min(10, parseInt(guestsParam || '1', 10) || 1));
                 setCheckInDate(startDate);
                 setCheckOutDate(endDate);
                 setNumberOfGuests(guestsCount);
+                setNumberOfAdults(Math.max(1, guestsCount));
+                setNumberOfChildren(0);
                 console.warn('⚠️ Utilisation fallback new Date() pour les dates');
               }
             } catch (fallbackError) {
@@ -612,33 +627,52 @@ export const GuestVerification = () => {
               
               setCheckInDate(parseLocalDate(startDateStr));
               setCheckOutDate(parseLocalDate(endDateStr));
-              setNumberOfGuests(reservationData.numberOfGuests || 1);
+              {
+                const ng = Math.max(1, Math.min(10, reservationData.numberOfGuests || 1));
+                setNumberOfGuests(ng);
+                setNumberOfAdults(Math.max(1, ng));
+                setNumberOfChildren(0);
+              }
             } catch (dateError) {
               console.error('❌ Erreur lors du parsing des dates depuis les métadonnées:', dateError);
               // Fallback
               try {
                 setCheckInDate(new Date(reservationData.startDate));
                 setCheckOutDate(new Date(reservationData.endDate));
-                setNumberOfGuests(reservationData.numberOfGuests || 1);
+                {
+                  const ng = Math.max(1, Math.min(10, reservationData.numberOfGuests || 1));
+                  setNumberOfGuests(ng);
+                  setNumberOfAdults(Math.max(1, ng));
+                  setNumberOfChildren(0);
+                }
               } catch (fallbackError) {
                 console.error('❌ Erreur même avec fallback:', fallbackError);
               }
             }
             
-            // Pré-remplir le nom du guest si disponible
+            // Pré-remplir le 1er voyageur ; garder autant de fiches que numberOfGuests (pas un seul élément)
             if (reservationData.guestName) {
-              setGuests([{
-                fullName: reservationData.guestName,
-                dateOfBirth: undefined,
-                nationality: '',
-                documentNumber: '',
-                documentType: 'passport',
-                documentIssueDate: undefined,
-                profession: '',
-                motifSejour: 'TOURISME',
-                adressePersonnelle: '',
-                email: ''
-              }]);
+              const n = Math.max(1, Math.min(10, reservationData.numberOfGuests || 1));
+              const next: Guest[] = [];
+              for (let i = 0; i < n; i++) {
+                next.push(
+                  i === 0
+                    ? {
+                        fullName: reservationData.guestName,
+                        dateOfBirth: undefined,
+                        nationality: '',
+                        documentNumber: '',
+                        documentType: 'passport',
+                        documentIssueDate: undefined,
+                        profession: '',
+                        motifSejour: 'TOURISME',
+                        adressePersonnelle: '',
+                        email: ''
+                      }
+                    : createEmptyGuestForm()
+                );
+              }
+              setGuests(next);
             }
 
             toast({
@@ -671,6 +705,22 @@ export const GuestVerification = () => {
   const [numberOfGuests, setNumberOfGuests] = useState(1);
   const [numberOfAdults, setNumberOfAdults] = useState(1);
   const [numberOfChildren, setNumberOfChildren] = useState(0);
+
+  // Aligner guests sur numberOfGuests. Dépend aussi de guests.length pour corriger les setGuests async
+  // (ex. ICS qui remplace par [un seul voyageur] alors que numberOfGuests vaut 3).
+  useEffect(() => {
+    const target = Math.max(1, Math.min(10, numberOfGuests));
+    setGuests(prev => {
+      if (prev.length === target) return prev;
+      if (prev.length < target) {
+        const next = [...prev];
+        while (next.length < target) next.push(createEmptyGuestForm());
+        return next;
+      }
+      return prev.slice(0, target);
+    });
+  }, [numberOfGuests, guests.length]);
+
   const [showCalendarPanel, setShowCalendarPanel] = useState(false);
   const [showGuestsPanel, setShowGuestsPanel] = useState(false);
   const calendarPanelRef = useRef<HTMLDivElement>(null);
@@ -1162,24 +1212,16 @@ export const GuestVerification = () => {
   };
 
   const removeGuest = (index: number) => {
-    // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour trouver le bon guest
-    const targetGuest = deduplicatedGuests[index];
-    if (!targetGuest) return;
-    
-    if (deduplicatedGuests.length > 1) {
-      // Trouver l'index dans guests en utilisant documentNumber ou fullName comme identifiant
-      const guestId = targetGuest.documentNumber || targetGuest.fullName;
-      const actualIndex = guests.findIndex(g => 
-        (g.documentNumber && g.documentNumber === guestId) || 
-        (g.fullName && g.fullName === guestId && !g.documentNumber)
-      );
-      
-      if (actualIndex !== -1) {
-        setGuests(guests.filter((_, i) => i !== actualIndex));
-      } else {
-        // Fallback : utiliser l'index directement
-      setGuests(guests.filter((_, i) => i !== index));
-      }
+    if (deduplicatedGuests.length <= 1) return;
+    setGuests(prev => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((_, i) => i !== index);
+    });
+    setNumberOfGuests(t => Math.max(1, t - 1));
+    if (numberOfChildren > 0) {
+      setNumberOfChildren(c => c - 1);
+    } else {
+      setNumberOfAdults(a => Math.max(1, a - 1));
     }
   };
 
