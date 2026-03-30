@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ChevronUp, Check, X } from 'lucide-react';
+import { ChevronUp } from 'lucide-react';
+import { CheckinNotDoneCrossIcon, FigmaConflictIcon } from './ReservationStatusIcons';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Booking } from '@/types/booking';
@@ -19,7 +20,9 @@ import {
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import type { BookingLayout } from './CalendarUtils';
+import { isBookingStayPast, type BookingLayout } from './CalendarUtils';
+
+const CHECKIN_DONE_ICON_SRC = '/lovable-uploads/imagecheckcalendar.png';
 
 interface CalendarMobileProps {
   calendarDays: Array<{
@@ -83,6 +86,7 @@ interface BookingBarData {
   textColor: string;
   isConflict: boolean;
   circleBg: string;
+  isPastStay: boolean;
   photoUrl?: string;
 }
 
@@ -207,6 +211,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
           
           const bTyped = 'status' in booking ? (booking as Booking) : null;
           const hasDocs = bTyped?.documentsGenerated?.contract && bTyped?.documentsGenerated?.policeForm;
+          const isPastStay = isBookingStayPast(booking);
 
           let color: string;
           let textColor: string;
@@ -216,6 +221,10 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             color = BOOKING_COLORS.conflict.hex;
             textColor = 'text-white';
             circleBg = '#000000';
+          } else if (isPastStay) {
+            color = '#D1D5DB';
+            textColor = 'text-neutral-900';
+            circleBg = hasDocs ? '#000000' : '#B3B3B3';
           } else {
             color = '#222222';
             textColor = 'text-white';
@@ -233,6 +242,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             textColor,
             isConflict,
             circleBg,
+            isPastStay,
             photoUrl: undefined
           });
         }
@@ -263,6 +273,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
           const isConflict = conflicts.includes(bookingData.booking.id);
           const bTyped = 'status' in bookingData.booking ? (bookingData.booking as Booking) : null;
           const hasDocs = bTyped?.documentsGenerated?.contract && bTyped?.documentsGenerated?.policeForm;
+          const isPastStay = isBookingStayPast(bookingData.booking);
 
           let color: string;
           let textColor: string;
@@ -272,6 +283,10 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             color = BOOKING_COLORS.conflict.hex;
             textColor = 'text-white';
             circleBg = '#000000';
+          } else if (isPastStay) {
+            color = '#D1D5DB';
+            textColor = 'text-neutral-900';
+            circleBg = hasDocs ? '#000000' : '#B3B3B3';
           } else {
             color = '#222222';
             textColor = 'text-white';
@@ -289,6 +304,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             textColor,
             isConflict,
             circleBg,
+            isPastStay,
             photoUrl: undefined
           });
         }
@@ -552,9 +568,8 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                         borderRadius = '0 14px 14px 0';
                       }
                       
-                      // Figma: barre #222222, conflit rouge; cercle #000000 (done) ou #B3B3B3 (not done)
-                      const backgroundColor = bookingData.isConflict ? '#FF5A5F' : '#222222';
-                      const textColor = 'text-white';
+                      const backgroundColor = bookingData.color;
+                      const textColor = bookingData.textColor;
                       const circleBg = bookingData.circleBg ?? '#B3B3B3';
                       const isCheckinDone = circleBg === '#000000' && !bookingData.isConflict;
                       
@@ -580,6 +595,9 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                             style={{ 
                               backgroundColor,
                               borderRadius,
+                              boxShadow: bookingData.isPastStay && !bookingData.isConflict
+                                ? '0 2px 6px rgba(15,23,42,0.08)'
+                                : undefined,
                             }}
                           >
                             {/* Figma: cercle #000000 (done) ou #B3B3B3 (not done), icône Check ou X stylisée */}
@@ -589,11 +607,15 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                                 style={{ backgroundColor: circleBg }}
                               >
                                 {bookingData.isConflict ? (
-                                  <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+                                  <FigmaConflictIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                 ) : isCheckinDone ? (
-                                  <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+                                  <img
+                                    src={CHECKIN_DONE_ICON_SRC}
+                                    alt=""
+                                    className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain pointer-events-none"
+                                  />
                                 ) : (
-                                  <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+                                  <CheckinNotDoneCrossIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                 )}
                               </div>
                             )}
@@ -601,7 +623,12 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                             {/* ✅ Avatar avec initiales ou photo (seulement au début si nom valide) */}
                             {isStartOfBooking && bookingData.isValidName && (
                               <div
-                                className="w-4 h-4 sm:w-5 sm:h-5 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden bg-white/20"
+                                className={cn(
+                                  'w-4 h-4 sm:w-5 sm:h-5 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden',
+                                  bookingData.isPastStay && !bookingData.isConflict
+                                    ? 'bg-neutral-200/90'
+                                    : 'bg-white/20'
+                                )}
                               >
                                 {bookingData.photoUrl ? (
                                   <img 

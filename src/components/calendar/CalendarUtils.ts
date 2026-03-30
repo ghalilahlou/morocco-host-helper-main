@@ -1,3 +1,4 @@
+import { isBefore, startOfDay } from 'date-fns';
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
@@ -621,3 +622,16 @@ export const getBookingDisplayText = (booking: Booking | AirbnbReservation, isSt
 export const getGuestInitials = (booking: Booking | AirbnbReservation): string => {
   return getUnifiedGuestInitials(booking);
 };
+
+/** Date de départ (check-out) pour comparaisons calendrier */
+export function getBookingCheckoutDate(booking: Booking | AirbnbReservation): Date {
+  const isAirbnb = 'source' in booking && booking.source === 'airbnb';
+  return isAirbnb
+    ? new Date((booking as AirbnbReservation).endDate)
+    : new Date((booking as Booking).checkOutDate);
+}
+
+/** Séjour terminé : jour de check-out strictement avant aujourd'hui */
+export function isBookingStayPast(booking: Booking | AirbnbReservation): boolean {
+  return isBefore(startOfDay(getBookingCheckoutDate(booking)), startOfDay(new Date()));
+}

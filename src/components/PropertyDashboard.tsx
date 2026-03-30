@@ -5,11 +5,9 @@ import { useBookings } from '@/hooks/useBookings';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
 import { PropertySelector } from './PropertySelector';
 import { Dashboard } from './Dashboard';
-import { CalendarView } from './CalendarView';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Building2, Calendar, Users, FileCheck, Grid, CalendarDays } from 'lucide-react';
-import { BOOKING_COLORS } from '@/constants/bookingColors';
+import { Building2, Calendar, Users, FileCheck } from 'lucide-react';
 import { SimpleUploadTest } from './SimpleUploadTest';
 import { DocumentAccessTest } from './DocumentAccessTest';
 import { SecureUploadTest } from './SecureUploadTest';
@@ -26,7 +24,6 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
   const { bookings, refreshBookings, isLoading: bookingsLoading } = useBookings({ 
     propertyId: selectedProperty?.id 
   });
-  const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('cards');
   const [airbnbReservationsCount, setAirbnbReservationsCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -150,22 +147,6 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
                 )}
                 <span className="ml-2">Refresh</span>
               </Button>
-              <Button
-                variant={viewMode === 'cards' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setViewMode('cards')}
-              >
-                <Grid className="w-4 h-4 sm:mr-2" />
-                <span className="hidden sm:inline">Cards</span>
-              </Button>
-              <Button
-                variant={viewMode === 'calendar' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setViewMode('calendar')}
-              >
-                <CalendarDays className="w-4 h-4 sm:mr-2" />
-                <span className="hidden sm:inline">Calendrier</span>
-              </Button>
             </div>
           )}
         </div>
@@ -288,26 +269,14 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
 
       {/* Bookings Dashboard */}
       {selectedProperty && (
-        <>
-          {viewMode === 'cards' ? (
-            <Dashboard
-              onNewBooking={onNewBooking}
-              onEditBooking={onEditBooking}
-              bookings={filteredBookings}
-              onRefreshBookings={refreshBookings}
-              propertyId={selectedProperty.id}
-              airbnbIcsUrl={selectedProperty.airbnb_ics_url}
-            />
-          ) : (
-            <CalendarView
-              bookings={filteredBookings}
-              onEditBooking={onEditBooking}
-              propertyId={selectedProperty.id}
-              onRefreshBookings={refreshBookings}
-              airbnbIcsUrl={selectedProperty.airbnb_ics_url}
-            />
-          )}
-        </>
+        <Dashboard
+          onNewBooking={onNewBooking}
+          onEditBooking={onEditBooking}
+          bookings={filteredBookings}
+          onRefreshBookings={refreshBookings}
+          propertyId={selectedProperty.id}
+          airbnbIcsUrl={selectedProperty.airbnb_ics_url}
+        />
       )}
     </div>
   );

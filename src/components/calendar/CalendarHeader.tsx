@@ -256,30 +256,36 @@ export const CalendarHeader = ({
           
           {/* Icônes de vue (Calendrier et Cartes) - cliquables */}
           {onViewModeChange && (
-            <div className="flex items-center gap-1 ml-2">
+            <div className="flex items-center gap-1 ml-2" role="toolbar" aria-label={t('dashboard.title')}>
               <Button 
                 variant="ghost" 
                 size="icon" 
+                type="button"
                 onClick={() => onViewModeChange('calendar')}
                 className={cn(
-                  "h-8 w-8",
-                  viewMode === 'calendar' ? "bg-[#55BA9F] text-white hover:bg-[#55BA9F]/90" : "text-gray-700 hover:bg-gray-100"
+                  'h-8 w-8 rounded-lg border',
+                  viewMode === 'calendar'
+                    ? 'border-[#55BA9F] bg-[#55BA9F]/10 text-[#55BA9F] hover:bg-[#55BA9F]/15'
+                    : 'border-transparent text-gray-600 hover:bg-gray-100 hover:border-gray-200'
                 )}
                 title={t('dashboard.viewCalendar')}
               >
-                <Calendar className="h-4 w-4" />
+                <Calendar className="h-4 w-4" strokeWidth={1.75} />
               </Button>
               <Button 
                 variant="ghost" 
                 size="icon" 
+                type="button"
                 onClick={() => onViewModeChange('cards')}
                 className={cn(
-                  "h-8 w-8",
-                  viewMode === 'cards' ? "bg-[#55BA9F] text-white hover:bg-[#55BA9F]/90" : "text-gray-500 hover:bg-gray-100"
+                  'h-8 w-8 rounded-lg border',
+                  viewMode === 'cards'
+                    ? 'border-[#55BA9F] bg-[#55BA9F]/10 text-[#55BA9F] hover:bg-[#55BA9F]/15'
+                    : 'border-transparent text-gray-600 hover:bg-gray-100 hover:border-gray-200'
                 )}
                 title={t('dashboard.viewGrid')}
               >
-                <Grid3X3 className="h-4 w-4" />
+                <Grid3X3 className="h-4 w-4" strokeWidth={1.75} />
               </Button>
             </div>
           )}

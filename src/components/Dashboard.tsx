@@ -164,7 +164,10 @@ export const Dashboard = memo(({
               }
             </p>
             {bookings.length === 0 && (
-              <Button onClick={onNewBooking} variant="professional">
+              <Button
+                onClick={onNewBooking}
+                className="bg-[#55BA9F] hover:bg-[#55BA9F]/90 text-white"
+              >
                 <Plus className="w-4 h-4 mr-2" />
                 {t('dashboard.createBooking')}
               </Button>

@@ -7,6 +7,7 @@ import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
+import { cn } from '@/lib/utils';
 
 export interface ConflictGroupForCalendar {
   groupKey: string;
@@ -132,7 +133,7 @@ export const CalendarGrid = memo(({
                         ${day.isCurrentMonth ? 'border-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.03)]' : 'border-transparent shadow-none'}
                         ${dayBg}
                         ${isMobile ? 'p-2' : 'p-3 sm:p-4'}
-                        ${isToday ? 'ring-2 ring-[#55BA9F] ring-offset-0 z-10' : ''}
+                        ${isToday ? 'z-10' : ''}
                       `}
                       style={{
                         minHeight: `${cellHeight}px`,
@@ -141,12 +142,13 @@ export const CalendarGrid = memo(({
                     >
                       <div className="flex items-start">
                         <div
-                          className={`
-                            inline-flex items-center justify-center font-semibold
-                            ${isMobile ? 'text-sm' : 'text-sm sm:text-base'}
-                            ${isToday ? 'text-[#55BA9F]' : 'text-slate-700'}
-                            ${!day.isCurrentMonth ? 'text-slate-400 font-normal' : ''}
-                          `}
+                          className={cn(
+                            'inline-flex items-center justify-center font-semibold min-w-[1.75rem] min-h-[1.75rem] sm:min-w-[2rem] sm:min-h-[2rem]',
+                            isMobile ? 'text-sm' : 'text-sm sm:text-base',
+                            !day.isCurrentMonth && 'text-slate-400 font-normal',
+                            day.isCurrentMonth && isToday && 'rounded-full bg-[#55BA9F] text-white',
+                            day.isCurrentMonth && !isToday && 'text-slate-700'
+                          )}
                         >
                           {/* N'afficher un numéro que pour les jours du mois courant */}
                           {day.isCurrentMonth ? day.dayNumber.toString().padStart(2, '0') : ''}

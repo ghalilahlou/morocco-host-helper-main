@@ -1,10 +1,12 @@
 import { memo } from 'react';
-import { Check, X } from 'lucide-react';
 import { Booking } from '@/types/booking';
-import { BookingLayout } from './CalendarUtils';
+import { CheckinNotDoneCrossIcon, FigmaConflictIcon } from './ReservationStatusIcons';
+import { BookingLayout, isBookingStayPast } from './CalendarUtils';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
+
+const CHECKIN_DONE_ICON_SRC = '/lovable-uploads/imagecheckcalendar.png';
 
 interface CalendarBookingBarProps {
   bookingData: BookingLayout;
@@ -76,6 +78,7 @@ export const CalendarBookingBar = memo(({
   const bookingTyped = 'status' in booking ? (booking as Booking) : null;
   const hasDocs = bookingTyped?.documentsGenerated?.contract && bookingTyped?.documentsGenerated?.policeForm;
   const isCheckinDone = hasDocs;
+  const isPastStay = isBookingStayPast(booking);
 
   let barColor: string;
   let textColor: string;
@@ -85,6 +88,10 @@ export const CalendarBookingBar = memo(({
     barColor = BOOKING_COLORS.conflict.hex;
     textColor = 'text-white';
     circleBg = '#000000';
+  } else if (isPastStay) {
+    barColor = '#D1D5DB';
+    textColor = 'text-neutral-900';
+    circleBg = isCheckinDone ? '#000000' : '#B3B3B3';
   } else {
     barColor = '#222222';
     textColor = 'text-white';
@@ -114,7 +121,9 @@ export const CalendarBookingBar = memo(({
         zIndex: 1000 + (bookingData.layer || 0),
         boxShadow: isConflict 
           ? '0 4px 12px rgba(220,38,38,0.25)' 
-          : '0 2px 6px rgba(15,23,42,0.20)',
+          : isPastStay && !isConflict
+            ? '0 2px 6px rgba(15,23,42,0.08)'
+            : '0 2px 6px rgba(15,23,42,0.20)',
         border: 'none',
         pointerEvents: 'auto', // ✅ CRITIQUE : S'assurer que les événements sont activés
       }}
@@ -135,18 +144,24 @@ export const CalendarBookingBar = memo(({
             style={{ backgroundColor: circleBg }}
           >
             {isConflict ? (
-              <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+              <FigmaConflictIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             ) : isCheckinDone ? (
-              <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+              <img
+                src={CHECKIN_DONE_ICON_SRC}
+                alt=""
+                className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain pointer-events-none"
+              />
             ) : (
-              <X className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white stroke-[2.5]" />
+              <CheckinNotDoneCrossIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             )}
           </div>
           
           {/* ✅ Avatar avec initiales (seulement pour noms valides) */}
           {isValidName && (
             <div
-              className="w-5 h-5 sm:w-6 sm:h-6 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden bg-white/20"
+              className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden ${
+                isPastStay && !isConflict ? 'bg-neutral-200/90' : 'bg-white/20'
+              }`}
             >
               <span className={`text-[9px] sm:text-[10px] font-bold ${textColor}`}>
                 {displayLabel.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').toUpperCase().slice(0, 2) || 'CL'}
