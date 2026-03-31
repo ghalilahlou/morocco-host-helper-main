@@ -20,6 +20,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useProperties } from '@/hooks/useProperties';
 import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
+import checkyLogo from '@/assets/logo.png';
 import { PropertyList } from '@/components/PropertyList';
 import { CreatePropertyDialog } from '@/components/CreatePropertyDialog';
 import { useT } from '@/i18n/GuestLocaleProvider';
@@ -70,7 +71,7 @@ export const MainDashboard = () => {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <img
-                src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png"
+                src={checkyLogo}
                 alt="Checky Logo"
                 className="w-8 h-8 object-contain"
               />

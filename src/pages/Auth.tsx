@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import authImage from '@/assets/hero-laptop.jpg';
+import checkyLogo from '@/assets/logo.png';
 import { urls } from '@/config/runtime';
 
 export default function Auth() {
@@ -212,7 +213,7 @@ export default function Auth() {
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <img
-            src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png"
+            src={checkyLogo}
             alt="Checky Logo"
             className="w-20 h-20 object-contain animate-pulse"
           />
@@ -228,7 +229,7 @@ export default function Auth() {
         <div className="bg-white border rounded-xl shadow-sm p-5 sm:p-6 md:p-8 lg:p-10 flex flex-col w-full max-w-full min-w-0">
           <Link to="/" className="mb-4 sm:mb-6 w-fit">
             <img
-              src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png"
+              src={checkyLogo}
               alt="Checky Logo"
               className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 object-contain hover:opacity-80 transition-opacity cursor-pointer"
             />

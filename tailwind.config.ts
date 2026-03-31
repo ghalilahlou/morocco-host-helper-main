@@ -21,8 +21,19 @@ const config: Config = {
       fontFamily: {
         sans: ['Fira Sans Condensed', 'system-ui', 'sans-serif'],
         inter: ['Inter', 'system-ui', 'sans-serif'],
+        /** Charte Checky — landing & marketing */
+        checky: ['"DM Sans"', 'system-ui', 'sans-serif'],
+        'checky-serif': ['"Instrument Serif"', 'Georgia', 'serif'],
       },
       colors: {
+        checky: {
+          teal: '#2DBFB8',
+          'teal-hover': '#22A8A2',
+          'teal-active': '#1A9690',
+          dark: '#1A1A2E',
+          sand: '#D7D9CE',
+          'hero-fallback': '#1a2038',
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

@@ -6,7 +6,7 @@ import { Shield, CheckCircle, Lock, Clock, ArrowRight, IdCard, FileText, Sparkle
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { AirbnbSyncService } from '@/services/airbnbSyncService';
-import checkyLogo from '/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png';
+import checkyLogo from '@/assets/logo.png';
 import { useT } from '@/i18n/GuestLocaleProvider';
 
 // Animation variants

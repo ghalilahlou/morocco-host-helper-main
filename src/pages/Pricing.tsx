@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Check, Building2, Users, Shield } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import checkyLogo from '@/assets/logo.png';
 
 export const Pricing = () => {
   const navigate = useNavigate();
@@ -86,7 +87,7 @@ export const Pricing = () => {
                 aria-label="Retour à l'accueil"
               >
                 <img 
-                  src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png" 
+                  src={checkyLogo} 
                   alt="Checky Logo" 
                   className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 lg:w-48 lg:h-48 object-contain cursor-pointer" 
                 />
@@ -270,7 +271,7 @@ export const Pricing = () => {
               className="flex items-center space-x-3 mb-4 md:mb-0 focus:outline-none transition-transform hover:scale-105"
               aria-label="Retour à l'accueil"
             >
-              <img src="/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png" alt="Checky Logo" className="w-12 h-12 object-contain cursor-pointer" />
+              <img src={checkyLogo} alt="Checky Logo" className="w-12 h-12 object-contain cursor-pointer" />
               <span className="text-xl font-bold">Checky</span>
             </button>
             <div className="text-gray-400 text-sm">

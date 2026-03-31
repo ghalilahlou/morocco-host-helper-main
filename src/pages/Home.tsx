@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { CheckCircle, FileText, Shield, Mail, User, MessageSquare, Send, ArrowRight, MapPin, Calendar, Users } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import checkyLogo from '/lovable-uploads/350a73a3-7335-4676-9ce0-4f747b7c0a93.png';
+import checkyLogo from '@/assets/logo.png';
 import heroLaptop from '@/assets/hero-laptop.jpg';
 
 export const Home = () => {
