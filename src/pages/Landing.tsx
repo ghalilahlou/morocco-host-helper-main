@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -10,7 +10,17 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { CheckCircle, FileText, Shield, Mail, User, MessageSquare, Send, Menu, X } from 'lucide-react';
+import {
+  Check,
+  FileText,
+  Menu,
+  ScanLine,
+  Send,
+  ShieldCheck,
+  Star,
+  X,
+  Zap,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useT, useGuestLocale } from '@/i18n/GuestLocaleProvider';
@@ -26,7 +36,7 @@ const LANGUAGES: { code: Locale; label: string }[] = [
 ];
 
 const navLinkClass =
-  'text-[#6B7280] hover:text-checky-teal transition-colors duration-200 font-medium text-sm';
+  'text-sm font-medium text-gray-500 hover:text-checky-teal transition-colors duration-200';
 
 export const Landing = () => {
   const navigate = useNavigate();
@@ -35,6 +45,7 @@ export const Landing = () => {
   const t = useT();
   const { locale, setLocale } = useGuestLocale();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [contactSuccess, setContactSuccess] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -42,6 +53,8 @@ export const Landing = () => {
     subject: '',
     message: '',
   });
+
+  const year = new Date().getFullYear();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,37 +66,43 @@ export const Landing = () => {
     });
     setFormData({ name: '', email: '', subject: '', message: '' });
     setIsSubmitting(false);
+    setContactSuccess(true);
   };
 
   const handleGetStarted = () => {
     if (isAuthenticated) navigate('/dashboard');
-    else navigate('/auth');
+    else navigate('/auth?tab=signup');
   };
 
   const closeMobileNav = () => setMobileNavOpen(false);
 
-  const faqItems = [1, 2, 3, 4, 5, 6] as const;
+  const faqIds = [1, 2, 3, 4] as const;
+  const testimonialIds = [1, 2, 3, 4, 5] as const;
+
+  const freeFeatures = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6'] as const;
+  const proFeatures = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9'] as const;
+  const agencyFeatures = ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'] as const;
 
   return (
-    <div className="min-h-screen font-checky antialiased bg-white text-checky-dark">
-      <header className="fixed top-0 z-50 w-full border-b border-gray-100 bg-white/95 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur-sm">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-white font-checky antialiased text-checky-dark">
+      <header className="fixed top-0 z-50 h-16 w-full border-b border-gray-100 bg-white shadow-sm">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
           <button
             type="button"
             onClick={() => navigate('/')}
-            className="flex shrink-0 items-center transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-checky-teal focus-visible:ring-offset-2 rounded-lg"
+            className="flex shrink-0 items-center rounded-lg transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-checky-teal focus-visible:ring-offset-2"
             aria-label={t('landing.aria.home')}
           >
-            <img src={checkyLogo} alt="Checky" className="h-9 w-auto object-contain sm:h-10 md:h-11" />
+            <img src={checkyLogo} alt="Checky" className="h-8 w-auto object-contain" />
           </button>
 
           <nav className="hidden items-center gap-8 md:flex" aria-label="Principal">
             <a href="#services" className={navLinkClass}>
               {t('landing.nav.services')}
             </a>
-            <button type="button" onClick={() => navigate('/pricing')} className={navLinkClass}>
+            <a href="#pricing" className={navLinkClass}>
               {t('landing.nav.pricing')}
-            </button>
+            </a>
             <a href="#faq" className={navLinkClass}>
               {t('landing.nav.faq')}
             </a>
@@ -114,7 +133,7 @@ export const Landing = () => {
             {isAuthenticated ? (
               <Button
                 onClick={() => navigate('/dashboard')}
-                className="rounded-full bg-checky-teal px-4 text-white shadow-sm hover:bg-checky-teal-hover"
+                className="rounded-full bg-checky-teal px-5 text-white shadow-sm hover:bg-checky-teal-hover active:bg-[#1A9690]"
               >
                 {t('landing.nav.dashboard')}
               </Button>
@@ -124,14 +143,14 @@ export const Landing = () => {
                   type="button"
                   variant="outline"
                   onClick={() => navigate('/auth')}
-                  className="rounded-full border-checky-teal bg-transparent text-checky-teal hover:bg-checky-teal hover:text-white"
+                  className="rounded-full border-checky-teal bg-transparent px-5 text-checky-teal hover:bg-checky-teal hover:text-white active:bg-[#1FA09A]"
                 >
                   {t('landing.nav.login')}
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => navigate('/auth')}
-                  className="rounded-full bg-checky-teal px-4 text-white shadow-sm hover:bg-checky-teal-hover"
+                  onClick={() => navigate('/auth?tab=signup')}
+                  className="rounded-full bg-checky-teal px-5 text-white shadow-sm hover:bg-checky-teal-hover active:bg-[#1A9690]"
                 >
                   {t('landing.nav.signup')}
                 </Button>
@@ -141,35 +160,44 @@ export const Landing = () => {
 
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-lg p-2 text-checky-dark md:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-checky-dark hover:bg-gray-100 md:hidden"
             onClick={() => setMobileNavOpen((o) => !o)}
             aria-expanded={mobileNavOpen}
             aria-label={mobileNavOpen ? t('landing.aria.menuClose') : t('landing.aria.menuOpen')}
           >
-            {mobileNavOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {mobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
 
         {mobileNavOpen && (
           <div className="border-t border-gray-100 bg-white px-4 py-4 shadow-inner md:hidden">
             <nav className="flex flex-col gap-1" aria-label="Mobile">
-              <a href="#services" className="rounded-lg px-3 py-2.5 text-[#6B7280] hover:bg-gray-50 hover:text-checky-teal" onClick={closeMobileNav}>
+              <a
+                href="#services"
+                className="rounded-lg px-3 py-2.5 text-gray-500 hover:bg-gray-50 hover:text-checky-teal"
+                onClick={closeMobileNav}
+              >
                 {t('landing.nav.services')}
               </a>
-              <button
-                type="button"
-                className="rounded-lg px-3 py-2.5 text-left text-[#6B7280] hover:bg-gray-50 hover:text-checky-teal"
-                onClick={() => {
-                  navigate('/pricing');
-                  closeMobileNav();
-                }}
+              <a
+                href="#pricing"
+                className="rounded-lg px-3 py-2.5 text-gray-500 hover:bg-gray-50 hover:text-checky-teal"
+                onClick={closeMobileNav}
               >
                 {t('landing.nav.pricing')}
-              </button>
-              <a href="#faq" className="rounded-lg px-3 py-2.5 text-[#6B7280] hover:bg-gray-50 hover:text-checky-teal" onClick={closeMobileNav}>
+              </a>
+              <a
+                href="#faq"
+                className="rounded-lg px-3 py-2.5 text-gray-500 hover:bg-gray-50 hover:text-checky-teal"
+                onClick={closeMobileNav}
+              >
                 {t('landing.nav.faq')}
               </a>
-              <a href="#contact" className="rounded-lg px-3 py-2.5 text-[#6B7280] hover:bg-gray-50 hover:text-checky-teal" onClick={closeMobileNav}>
+              <a
+                href="#contact"
+                className="rounded-lg px-3 py-2.5 text-gray-500 hover:bg-gray-50 hover:text-checky-teal"
+                onClick={closeMobileNav}
+              >
                 {t('landing.nav.contact')}
               </a>
             </nav>
@@ -188,17 +216,36 @@ export const Landing = () => {
                 </button>
               ))}
             </div>
-            <div className="mt-4 flex flex-col gap-2">
+            <div className="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4">
               {isAuthenticated ? (
-                <Button className="w-full rounded-full bg-checky-teal text-white" onClick={() => { navigate('/dashboard'); closeMobileNav(); }}>
+                <Button
+                  className="w-full rounded-full bg-checky-teal text-white"
+                  onClick={() => {
+                    navigate('/dashboard');
+                    closeMobileNav();
+                  }}
+                >
                   {t('landing.nav.dashboard')}
                 </Button>
               ) : (
                 <>
-                  <Button variant="outline" className="w-full rounded-full border-checky-teal text-checky-teal" onClick={() => { navigate('/auth'); closeMobileNav(); }}>
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-full border-checky-teal text-checky-teal"
+                    onClick={() => {
+                      navigate('/auth');
+                      closeMobileNav();
+                    }}
+                  >
                     {t('landing.nav.login')}
                   </Button>
-                  <Button className="w-full rounded-full bg-checky-teal text-white" onClick={() => { navigate('/auth'); closeMobileNav(); }}>
+                  <Button
+                    className="w-full rounded-full bg-checky-teal text-white"
+                    onClick={() => {
+                      navigate('/auth?tab=signup');
+                      closeMobileNav();
+                    }}
+                  >
                     {t('landing.nav.signup')}
                   </Button>
                 </>
@@ -209,8 +256,8 @@ export const Landing = () => {
       </header>
 
       <main>
-        {/* Hero — image cover + dégradé horizontal, texte blanc */}
-        <section className="relative flex min-h-[min(88vh,920px)] items-center overflow-hidden pt-16">
+        {/* Hero */}
+        <section className="relative flex min-h-[520px] items-center overflow-hidden pt-16">
           <div className="absolute inset-0 z-0 bg-checky-hero-fallback" aria-hidden />
           <img
             src={heroBg}
@@ -219,245 +266,423 @@ export const Landing = () => {
             fetchPriority="high"
           />
           <div
-            className="absolute inset-0 z-[2] bg-gradient-to-r from-[#1a2038]/95 via-[#1a2038]/65 to-transparent"
+            className="absolute inset-0 z-[2] bg-gradient-to-r from-black/[0.42] to-black/10"
             aria-hidden
           />
 
-          <div className="relative z-10 mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 sm:py-20 md:px-8 lg:py-28">
-            <div className="max-w-2xl text-left">
-              <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl md:text-6xl lg:text-[3.2rem] lg:leading-tight">
+          <div className="relative z-10 mx-auto w-full max-w-7xl px-4 py-20 sm:px-6 md:px-8 lg:py-28">
+            <div className="max-w-lg text-left">
+              <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl md:text-6xl">
                 {t('landing.hero.title')}
-                <span className="mt-1 block text-checky-teal sm:mt-2">{t('landing.hero.titleHighlight')}</span>
               </h1>
-              <p className="mt-5 max-w-xl text-base leading-relaxed text-white/85 sm:text-lg md:text-xl">
+              <p className="mt-5 max-w-md text-lg leading-relaxed text-white/85 sm:text-xl">
                 {t('landing.hero.subtitle')}
               </p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={handleGetStarted}
-                  className="h-12 rounded-full bg-checky-teal px-8 text-base font-semibold text-white shadow-[0_8px_24px_rgba(45,191,184,0.35)] transition hover:bg-checky-teal-hover active:bg-checky-teal-active"
-                >
-                  {t('landing.hero.cta')}
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="outline"
-                  onClick={() => navigate('/pricing')}
-                  className="h-12 rounded-full border-2 border-white/90 bg-transparent px-8 text-base font-semibold text-white hover:bg-white hover:text-checky-dark"
-                >
-                  {t('landing.hero.ctaSecondary')}
-                </Button>
-              </div>
+              <Button
+                type="button"
+                size="lg"
+                onClick={handleGetStarted}
+                className="mt-8 h-auto rounded-full bg-checky-teal px-8 py-3 text-base font-semibold text-white shadow-lg hover:bg-checky-teal/90 active:bg-[#1A9690]"
+              >
+                {t('landing.hero.cta')}
+              </Button>
             </div>
           </div>
         </section>
 
-        {/* Services — fond blanc */}
-        <section id="services" className="scroll-mt-24 py-16 md:py-24 lg:py-28">
+        {/* Services */}
+        <section id="services" className="scroll-mt-24 bg-white py-20">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-12 text-center md:mb-16">
-              <h2 className="text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">
+            <div className="mx-auto mb-14 max-w-2xl text-center">
+              <h2 className="mb-3 text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">
                 {t('landing.services.heading')}
               </h2>
-              <p className="mx-auto mt-4 max-w-2xl text-base text-[#6B7280] md:text-lg">{t('landing.services.subtitle')}</p>
+              <p className="text-base text-gray-500">{t('landing.services.subtitle')}</p>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-8">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
               {[
                 {
-                  icon: CheckCircle,
+                  Icon: ShieldCheck,
                   title: t('landing.services.checkin.title'),
                   desc: t('landing.services.checkin.desc'),
                 },
                 {
-                  icon: Shield,
+                  Icon: ScanLine,
                   title: t('landing.services.id.title'),
                   desc: t('landing.services.id.desc'),
                 },
                 {
-                  icon: FileText,
+                  Icon: FileText,
                   title: t('landing.services.legal.title'),
                   desc: t('landing.services.legal.desc'),
                 },
-              ].map(({ icon: Icon, title, desc }) => (
+              ].map(({ Icon, title, desc }) => (
                 <Card
                   key={title}
-                  className="group border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:shadow-md rounded-2xl"
+                  className="group cursor-default rounded-xl border border-gray-100 bg-white p-8 text-center shadow-sm transition-shadow duration-200 hover:shadow-md"
                 >
-                  <CardHeader className="pb-2 text-center">
-                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 transition-colors group-hover:bg-checky-teal/10">
-                      <Icon className="h-7 w-7 text-gray-500 transition-colors group-hover:text-checky-teal" strokeWidth={1.5} />
-                    </div>
-                    <CardTitle className="text-lg font-semibold text-checky-dark">{title}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <CardDescription className="text-center text-sm leading-relaxed text-[#6B7280]">{desc}</CardDescription>
-                  </CardContent>
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-gray-100 transition-colors duration-200 group-hover:bg-checky-teal/10">
+                    <Icon
+                      className="h-[26px] w-[26px] text-gray-400 transition-colors duration-200 group-hover:text-checky-teal"
+                      strokeWidth={1.5}
+                    />
+                  </div>
+                  <h3 className="text-base font-semibold tracking-tight text-checky-dark">{title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-gray-500">{desc}</p>
                 </Card>
               ))}
             </div>
           </div>
         </section>
 
-        {/* Témoignages — fond gris bleuté */}
-        <section className="bg-[#F4F6F8] py-16 md:py-24">
+        {/* Témoignages — scroll horizontal */}
+        <section className="bg-[#F4F6F8] py-20">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-10 text-center md:mb-14">
-              <h2 className="text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">{t('landing.testimonials.heading')}</h2>
-              <p className="mx-auto mt-3 max-w-2xl text-[#6B7280]">{t('landing.testimonials.subtitle')}</p>
-            </div>
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              {([1, 2, 3] as const).map((i) => (
-                <Card key={i} className="border border-gray-100/80 bg-white shadow-sm rounded-2xl">
-                  <CardContent className="pt-6">
-                    <div className="mb-3 text-amber-400" aria-hidden>
-                      ★★★★★
-                    </div>
-                    <p className="text-sm font-semibold leading-relaxed text-checky-dark">{t(`landing.testimonials.${i}.quote`)}</p>
-                    <p className="mt-4 text-xs font-semibold text-checky-dark">{t(`landing.testimonials.${i}.author`)}</p>
-                    <p className="mt-0.5 text-xs italic text-[#6B7280]">{t(`landing.testimonials.${i}.role`)}</p>
-                  </CardContent>
+            <h2 className="mb-12 text-center text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">
+              {t('landing.testimonials.heading')}
+            </h2>
+            <div
+              className="-mx-4 flex gap-5 overflow-x-auto scroll-smooth px-4 pb-4 [-ms-overflow-style:none] [scrollbar-width:none] snap-x snap-mandatory md:mx-0 md:px-0 [&::-webkit-scrollbar]:hidden"
+            >
+              {testimonialIds.map((i) => (
+                <Card
+                  key={i}
+                  className="w-[220px] shrink-0 snap-start rounded-xl border border-gray-100/80 bg-white p-5 shadow-sm"
+                >
+                  <div className="mb-2 flex gap-0.5" aria-hidden>
+                    {Array.from({ length: 5 }).map((_, j) => (
+                      <Star key={j} className="h-[13px] w-[13px] fill-amber-400 text-amber-400" />
+                    ))}
+                  </div>
+                  <p className="mb-2 text-sm font-semibold text-checky-dark">{t(`landing.testimonials.${i}.hook`)}</p>
+                  <p className="mb-4 text-xs italic leading-relaxed text-[#6B7280]">
+                    « {t(`landing.testimonials.${i}.quote`)} »
+                  </p>
+                  <p className="text-xs font-semibold text-checky-dark">{t(`landing.testimonials.${i}.name`)}</p>
                 </Card>
               ))}
             </div>
           </div>
         </section>
 
-        {/* Teaser tarifs */}
-        <section className="border-y border-gray-100 bg-[#F8F9FA] py-14 md:py-20">
-          <div className="mx-auto max-w-4xl px-4 text-center sm:px-6">
-            <h2 className="text-2xl font-bold tracking-tight text-checky-dark md:text-3xl">{t('landing.pricingTeaser.heading')}</h2>
-            <p className="mt-3 text-[#6B7280]">{t('landing.pricingTeaser.subtitle')}</p>
-            <Button
-              type="button"
-              onClick={() => navigate('/pricing')}
-              className="mt-8 rounded-full bg-checky-teal px-8 text-white shadow-md hover:bg-checky-teal-hover"
-            >
-              {t('landing.pricingTeaser.cta')}
-            </Button>
+        {/* Tarifs */}
+        <section id="pricing" className="scroll-mt-24 bg-[#F8F9FA] py-20">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto mb-16 max-w-2xl text-center">
+              <span className="mb-3 inline-block text-sm font-medium text-checky-teal">{t('landing.pricing.badge')}</span>
+              <h2 className="mb-4 text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">
+                {t('landing.pricing.heading')}
+              </h2>
+              <p className="text-lg text-gray-500">{t('landing.pricing.subtitle')}</p>
+            </div>
+
+            <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-3">
+              {/* Gratuit */}
+              <Card className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md">
+                <h3 className="text-lg font-semibold text-checky-dark">{t('landing.pricing.free.name')}</h3>
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="text-4xl font-bold text-checky-dark">{t('landing.pricing.free.price')}</span>
+                  <span className="text-sm text-gray-400">{t('landing.pricing.free.period')}</span>
+                </div>
+                <p className="mt-2 text-sm text-gray-500">{t('landing.pricing.free.desc')}</p>
+                <Button
+                  className="mb-8 mt-6 w-full rounded-full border border-checky-teal bg-transparent text-checky-teal hover:bg-checky-teal hover:text-white"
+                  variant="outline"
+                  onClick={handleGetStarted}
+                >
+                  {t('landing.pricing.free.cta')}
+                </Button>
+                <ul className="space-y-3">
+                  {freeFeatures.map((fk) => (
+                    <li key={fk} className="flex gap-2 text-sm text-gray-600">
+                      <Check className="h-[15px] w-[15px] shrink-0 text-checky-teal" strokeWidth={2.5} />
+                      {t(`landing.pricing.free.${fk}`)}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              {/* Pro — vedette */}
+              <Card className="relative z-10 scale-[1.02] rounded-2xl border border-checky-dark bg-checky-dark p-8 shadow-xl">
+                <div className="absolute -top-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-checky-teal px-3 py-1 text-xs font-medium text-white">
+                  <Zap className="h-2.5 w-2.5" aria-hidden />
+                  {t('landing.pricing.pro.popular')}
+                </div>
+                <h3 className="mt-2 text-lg font-semibold text-white">{t('landing.pricing.pro.name')}</h3>
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="text-4xl font-bold text-white">{t('landing.pricing.pro.price')}</span>
+                  <span className="text-sm text-white/60">{t('landing.pricing.pro.period')}</span>
+                </div>
+                <p className="mt-2 text-sm text-white/70">{t('landing.pricing.pro.desc')}</p>
+                <Button
+                  className="mb-8 mt-6 w-full rounded-full bg-checky-teal text-white hover:bg-checky-teal-hover"
+                  onClick={handleGetStarted}
+                >
+                  {t('landing.pricing.pro.cta')}
+                </Button>
+                <ul className="space-y-3">
+                  {proFeatures.map((fk) => (
+                    <li key={fk} className="flex gap-2 text-sm text-white/80">
+                      <Check className="h-[15px] w-[15px] shrink-0 text-checky-teal" strokeWidth={2.5} />
+                      {t(`landing.pricing.pro.${fk}`)}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              {/* Agence */}
+              <Card className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm transition-shadow hover:shadow-md">
+                <h3 className="text-lg font-semibold text-checky-dark">{t('landing.pricing.agency.name')}</h3>
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="text-4xl font-bold text-checky-dark">{t('landing.pricing.agency.price')}</span>
+                  <span className="text-sm text-gray-400">{t('landing.pricing.agency.period')}</span>
+                </div>
+                <p className="mt-2 text-sm text-gray-500">{t('landing.pricing.agency.desc')}</p>
+                <Button
+                  className="mb-8 mt-6 w-full rounded-full border border-checky-teal bg-transparent text-checky-teal hover:bg-checky-teal hover:text-white"
+                  variant="outline"
+                  onClick={() => {
+                    document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                >
+                  {t('landing.pricing.agency.cta')}
+                </Button>
+                <ul className="space-y-3">
+                  {agencyFeatures.map((fk) => (
+                    <li key={fk} className="flex gap-2 text-sm text-gray-600">
+                      <Check className="h-[15px] w-[15px] shrink-0 text-checky-teal" strokeWidth={2.5} />
+                      {t(`landing.pricing.agency.${fk}`)}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+
+            <p className="mt-8 text-center text-sm text-gray-400">{t('landing.pricing.legal')}</p>
           </div>
         </section>
 
-        {/* FAQ — blanc, accordéon */}
-        <section id="faq" className="scroll-mt-24 py-16 md:py-24">
+        {/* FAQ */}
+        <section id="faq" className="scroll-mt-24 bg-white py-20">
           <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-10 text-center md:mb-14">
-              <h2 className="text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">{t('landing.faq.heading')}</h2>
-              <p className="mt-3 text-[#6B7280]">{t('landing.faq.subtitle')}</p>
+            <div className="mb-12 text-center">
+              <h2 className="mb-3 text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">
+                {t('landing.faq.heading')}
+              </h2>
+              <p className="text-lg text-[#6B7280]">{t('landing.faq.subtitle')}</p>
             </div>
-            <Accordion type="single" collapsible className="w-full rounded-2xl border border-gray-200 bg-white px-2 shadow-sm">
-              {faqItems.map((i) => (
-                <AccordionItem key={i} value={`item-${i}`} className="border-gray-200 px-2">
-                  <AccordionTrigger className="text-left text-base font-medium text-checky-dark hover:bg-gray-50/80 hover:no-underline rounded-lg px-2 py-1 -mx-2">
-                    {t(`landing.faq.q${i}`)}
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-4 pl-2 text-sm leading-relaxed text-[#6B7280]">
-                    {t(`landing.faq.a${i}`)}
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
+
+            <div className="mb-10 space-y-3">
+              <Accordion type="single" defaultValue="item-1" collapsible className="w-full">
+                {faqIds.map((i) => (
+                  <AccordionItem
+                    key={i}
+                    value={`item-${i}`}
+                    className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+                  >
+                    <AccordionTrigger className="px-5 py-4 text-left text-sm font-medium text-checky-dark hover:bg-gray-50 hover:no-underline [&[data-state=open]>svg]:rotate-180 [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:text-[#6B7280]">
+                      {t(`landing.faq.q${i}`)}
+                    </AccordionTrigger>
+                    <AccordionContent className="px-5 pb-5 text-sm leading-relaxed text-[#6B7280]">
+                      {t(`landing.faq.a${i}`)}
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </div>
+
+            <div className="flex justify-center">
+              <Button
+                asChild
+                className="rounded-full bg-checky-teal px-8 text-white hover:bg-[#22A8A2] active:bg-[#1A9690]"
+              >
+                <a href="#contact">{t('landing.faq.discoverCta')}</a>
+              </Button>
+            </div>
           </div>
         </section>
 
-        {/* Contact — fond gris */}
-        <section id="contact" className="scroll-mt-24 bg-[#F4F6F8] py-16 md:py-24">
-          <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-10 text-center md:mb-14">
-              <h2 className="text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">{t('landing.contact.heading')}</h2>
-              <p className="mt-3 text-[#6B7280]">{t('landing.contact.subtitle')}</p>
+        {/* Contact */}
+        <section id="contact" className="scroll-mt-24 bg-[#F8F9FA] py-20">
+          <div className="mx-auto max-w-2xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-12 text-center">
+              <h2 className="mb-3 text-3xl font-bold tracking-tight text-checky-dark md:text-4xl">
+                {t('landing.contact.heading')}
+              </h2>
+              <p className="text-lg text-[#6B7280]">{t('landing.contact.subtitle')}</p>
             </div>
-            <Card className="rounded-2xl border border-gray-200/80 bg-white shadow-md">
+
+            <Card className="rounded-2xl border border-gray-200 bg-white shadow-md">
               <CardContent className="p-6 sm:p-8">
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {contactSuccess ? (
+                  <div className="flex flex-col items-center py-12 text-center">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                      <Check className="h-7 w-7 text-gray-500" strokeWidth={2.5} />
+                    </div>
+                    <h3 className="text-xl font-bold text-checky-dark">{t('landing.contact.successTitle')}</h3>
+                    <p className="mt-2 text-[#6B7280]">{t('landing.contact.successDesc')}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="mt-6 rounded-full"
+                      onClick={() => setContactSuccess(false)}
+                    >
+                      {t('landing.contact.successDismiss')}
+                    </Button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-5">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-checky-dark">{t('landing.contact.name')}</label>
+                        <Input
+                          required
+                          placeholder={t('landing.contact.ph.name')}
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          className="rounded-lg border-gray-200 focus-visible:border-checky-teal focus-visible:ring-2 focus-visible:ring-checky-teal/40"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-checky-dark">{t('landing.contact.email')}</label>
+                        <Input
+                          type="email"
+                          required
+                          placeholder={t('landing.contact.ph.email')}
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          className="rounded-lg border-gray-200 focus-visible:border-checky-teal focus-visible:ring-2 focus-visible:ring-checky-teal/40"
+                        />
+                      </div>
+                    </div>
                     <div className="space-y-2">
-                      <label className="flex items-center text-sm font-semibold text-checky-dark">
-                        <User className="mr-2 h-4 w-4 text-checky-teal" />
-                        {t('landing.contact.name')}
-                      </label>
+                      <label className="text-sm font-medium text-checky-dark">{t('landing.contact.subject')}</label>
                       <Input
                         required
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        className="rounded-[10px] border-gray-200 bg-white focus-visible:border-checky-teal focus-visible:ring-2 focus-visible:ring-checky-teal/40"
+                        placeholder={t('landing.contact.ph.subject')}
+                        value={formData.subject}
+                        onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                        className="rounded-lg border-gray-200 focus-visible:border-checky-teal focus-visible:ring-2 focus-visible:ring-checky-teal/40"
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="flex items-center text-sm font-semibold text-checky-dark">
-                        <Mail className="mr-2 h-4 w-4 text-checky-teal" />
-                        {t('landing.contact.email')}
-                      </label>
-                      <Input
-                        type="email"
+                      <label className="text-sm font-medium text-checky-dark">{t('landing.contact.message')}</label>
+                      <Textarea
                         required
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="rounded-[10px] border-gray-200 bg-white focus-visible:border-checky-teal focus-visible:ring-2 focus-visible:ring-checky-teal/40"
+                        rows={5}
+                        placeholder={t('landing.contact.ph.message')}
+                        value={formData.message}
+                        onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                        className="resize-none rounded-lg border-gray-200 focus-visible:border-checky-teal focus-visible:ring-2 focus-visible:ring-checky-teal/40"
                       />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="flex items-center text-sm font-semibold text-checky-dark">
-                      <MessageSquare className="mr-2 h-4 w-4 text-checky-teal" />
-                      {t('landing.contact.subject')}
-                    </label>
-                    <Input
-                      required
-                      value={formData.subject}
-                      onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                      className="rounded-[10px] border-gray-200 bg-white focus-visible:border-checky-teal focus-visible:ring-2 focus-visible:ring-checky-teal/40"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-checky-dark">{t('landing.contact.message')}</label>
-                    <Textarea
-                      required
-                      rows={5}
-                      value={formData.message}
-                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                      className="resize-none rounded-[10px] border-gray-200 bg-white focus-visible:border-checky-teal focus-visible:ring-2 focus-visible:ring-checky-teal/40"
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full rounded-full bg-checky-teal py-6 text-base font-semibold text-white hover:bg-checky-teal-hover md:w-auto md:px-10"
-                  >
-                    {isSubmitting ? (
-                      t('landing.contact.sending')
-                    ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        {t('landing.contact.send')}
-                      </>
-                    )}
-                  </Button>
-                </form>
+                    <Button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full rounded-full bg-checky-teal py-3 text-base font-semibold text-white hover:bg-[#22A8A2] active:bg-[#1A9690]"
+                    >
+                      {isSubmitting ? (
+                        t('landing.contact.sending')
+                      ) : (
+                        <>
+                          <Send className="mr-2 h-4 w-4" />
+                          {t('landing.contact.send')}
+                        </>
+                      )}
+                    </Button>
+                  </form>
+                )}
               </CardContent>
             </Card>
           </div>
         </section>
       </main>
 
-      <footer className="bg-checky-dark text-white">
-        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-          <div className="flex flex-col items-center justify-between gap-6 border-b border-white/10 pb-8 md:flex-row md:items-start">
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              className="flex items-center gap-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-checky-teal focus-visible:ring-offset-2 focus-visible:ring-offset-checky-dark rounded-lg"
-              aria-label={t('landing.aria.home')}
-            >
-              <img src={checkyLogo} alt="" className="h-10 w-10 object-contain" />
-              <span className="text-lg font-bold">Checky</span>
-            </button>
-            <p className="text-center text-sm text-white/50 md:text-right">{t('landing.footer.copyright')}</p>
+      <footer className="bg-checky-dark py-16 text-white">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-12 grid grid-cols-1 gap-8 md:grid-cols-4">
+            <div className="md:col-span-2">
+              <button
+                type="button"
+                onClick={() => navigate('/')}
+                className="mb-4 block rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-checky-teal focus-visible:ring-offset-2 focus-visible:ring-offset-checky-dark"
+                aria-label={t('landing.aria.home')}
+              >
+                <img
+                  src={checkyLogo}
+                  alt="Checky"
+                  className="h-7 w-auto max-w-[200px] object-contain object-left"
+                />
+              </button>
+              <p className="max-w-xs text-sm leading-relaxed text-white/60">{t('landing.footer.about')}</p>
+              <div className="mt-4 flex flex-wrap gap-4 text-sm text-white/40">
+                <a href="#" className="transition-colors hover:text-checky-teal">
+                  {t('landing.footer.social.twitter')}
+                </a>
+                <a href="#" className="transition-colors hover:text-checky-teal">
+                  {t('landing.footer.social.linkedin')}
+                </a>
+                <a href="#" className="transition-colors hover:text-checky-teal">
+                  {t('landing.footer.social.instagram')}
+                </a>
+              </div>
+            </div>
+            <div>
+              <h4 className="mb-4 text-sm font-semibold">{t('landing.footer.col.product')}</h4>
+              <ul className="space-y-2 text-sm text-white/60">
+                <li>
+                  <a href="#services" className="transition-colors hover:text-white">
+                    {t('landing.footer.link.services')}
+                  </a>
+                </li>
+                <li>
+                  <a href="#pricing" className="transition-colors hover:text-white">
+                    {t('landing.footer.link.pricing')}
+                  </a>
+                </li>
+                <li>
+                  <a href="#faq" className="transition-colors hover:text-white">
+                    {t('landing.footer.link.faq')}
+                  </a>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/dashboard')}
+                    className="text-left transition-colors hover:text-white"
+                  >
+                    {t('landing.footer.link.dashboard')}
+                  </button>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="mb-4 text-sm font-semibold">{t('landing.footer.col.legal')}</h4>
+              <ul className="space-y-2 text-sm text-white/60">
+                <li>
+                  <a href="#" className="transition-colors hover:text-white">
+                    {t('landing.footer.link.privacy')}
+                  </a>
+                </li>
+                <li>
+                  <a href="#" className="transition-colors hover:text-white">
+                    {t('landing.footer.link.terms')}
+                  </a>
+                </li>
+                <li>
+                  <a href="#contact" className="transition-colors hover:text-white">
+                    {t('landing.footer.link.contact')}
+                  </a>
+                </li>
+              </ul>
+            </div>
           </div>
-          <p className="pt-6 text-center text-xs text-white/40">{t('landing.footer.tagline')}</p>
+
+          <div className="flex flex-col gap-4 border-t border-white/10 pt-8 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-white/40">{t('landing.footer.copyright', { year })}</p>
+            <p className="text-xs text-white/40">{t('landing.footer.legalLine')}</p>
+          </div>
         </div>
       </footer>
     </div>

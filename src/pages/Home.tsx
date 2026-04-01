@@ -275,9 +275,12 @@ export const Home = () => {
       <footer className="bg-gray-900 text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between">
-            <button onClick={() => navigate('/')} className="flex items-center space-x-3 mb-4 md:mb-0 focus:outline-none transition-transform hover:scale-105" aria-label="Retour à l'accueil">
-              <img src={checkyLogo} alt="Checky Logo" className="w-12 h-12 object-contain cursor-pointer" />
-              <span className="text-xl font-bold">Checky</span>
+            <button onClick={() => navigate('/')} className="mb-4 md:mb-0 focus:outline-none transition-transform hover:scale-[1.02]" aria-label="Retour à l'accueil">
+              <img
+                src={checkyLogo}
+                alt="Checky"
+                className="h-10 w-auto max-w-[min(100%,280px)] object-contain cursor-pointer md:h-12"
+              />
             </button>
             <div className="text-gray-400 text-sm">
               © 2025 Checky. Conformité Airbnb Maroc simplifiée.
