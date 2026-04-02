@@ -5323,12 +5323,16 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     ctx.property.name || 
     'Propriétaire';
 
-  // Configuration PDF
+  // Configuration PDF (mise en page alignée sur l’aperçu HTML : marges, barres d’article, aération)
   const pageWidth = 612, pageHeight = 792;
   const margin = 50;
   const maxWidth = pageWidth - margin * 2;
   const titleSize = 16, sectionSize = 12, bodySize = 11;
-  const lineGap = 14;
+  const lineGap = 16;
+  const articleBarWidth = 3;
+  const articleBarGap = 10;
+  const accentArticle = rgb(0.29, 0.33, 0.41);
+  const ruleGray = rgb(0.2, 0.2, 0.2);
 
   // Créer le document PDF
   const pdfDoc = await PDFDocument.create();
@@ -5422,36 +5426,86 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     }
   }
 
-  function drawSectionTitle(text: string) {
-    ensureSpace(sectionSize + 6);
+  /** Paragraphe avec retrait (puces / listes) */
+  function drawParagraphIndented(text: string, indent: number, size: number = bodySize) {
+    const lines = wrapText(text, maxWidth - indent, size, fontRegular);
+    for (const l of lines) {
+      ensureSpace(size + 2);
+      currentPage.drawText(l, {
+        x: margin + indent,
+        y,
+        size,
+        font: fontRegular
+      });
+      y -= lineGap;
+    }
+  }
+
+  function drawIntroSectionTitle(text: string) {
+    ensureSpace(sectionSize + 10);
     currentPage.drawText(text, {
       x: margin,
       y,
       size: sectionSize,
       font: fontBold
     });
-    y -= lineGap + 5;
+    y -= lineGap + 12;
+  }
+
+  /** Titre d’article avec barre verticale (comme l’aperçu HTML) */
+  function drawArticleTitle(text: string) {
+    const titleX = margin + articleBarWidth + articleBarGap;
+    const barHeight = sectionSize + 6;
+    ensureSpace(barHeight + 20);
+    currentPage.drawRectangle({
+      x: margin,
+      y: y - 4,
+      width: articleBarWidth,
+      height: barHeight,
+      color: accentArticle,
+      borderWidth: 0
+    });
+    currentPage.drawText(text, {
+      x: titleX,
+      y,
+      size: sectionSize,
+      font: fontBold
+    });
+    y -= lineGap + 18;
+  }
+
+  function drawHorizontalRule(thickness = 0.75) {
+    ensureSpace(10);
+    currentPage.drawLine({
+      start: { x: margin, y },
+      end: { x: pageWidth - margin, y },
+      color: ruleGray,
+      thickness
+    });
+    y -= 20;
   }
 
   // Première page
   addPage();
 
-  // Titre principal (traduit)
+  // Titre principal (traduit), centré comme l’aperçu HTML
   ensureSpace(titleSize + 10);
+  const tw1 = fontBold.widthOfTextAtSize(L.titleLine1, titleSize);
   currentPage.drawText(L.titleLine1, {
-    x: margin,
+    x: (pageWidth - tw1) / 2,
     y,
     size: titleSize,
     font: fontBold
   });
-  y -= titleSize + 2;
+  y -= titleSize + 4;
+  const tw2 = fontBold.widthOfTextAtSize(L.titleLine2, titleSize);
   currentPage.drawText(L.titleLine2, {
-    x: margin,
+    x: (pageWidth - tw2) / 2,
     y,
     size: titleSize,
     font: fontBold
   });
-  y -= titleSize + 15;
+  y -= titleSize + 18;
 
   currentPage.drawLine({
     start: { x: margin, y },
@@ -5459,9 +5513,9 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     color: rgb(0, 0, 0),
     thickness: 0.5
   });
-  y -= 20;
+  y -= 22;
 
-  drawSectionTitle(L.betweenParties);
+  drawIntroSectionTitle(L.betweenParties);
   drawParagraph(L.landlordSection);
   
   let bailleurInfo = `${hostName}, `;
@@ -5470,7 +5524,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   }
   bailleurInfo += L.landlordDescription;
   drawParagraph(bailleurInfo);
-  y -= 10;
+  y -= 14;
   
   drawParagraph(L.tenantSection);
   
@@ -5482,7 +5536,8 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   const tenantDenomination = locale === 'fr' ? 'ci-après dénommé(e) "' + L.tenantLabel + '"' : locale === 'en' ? 'hereinafter referred to as "' + L.tenantLabel + '"' : 'en adelante denominado(a) "' + L.tenantLabel + '"';
   locataireInfo += `, ${tenantDenomination}`;
   drawParagraph(locataireInfo);
-  y -= 20;
+  y -= 16;
+  drawHorizontalRule(0.6);
 
   // Articles du contrat avec variabilisation et traduction (L)
   const typeLabels: Record<string, Record<string, string>> = {
@@ -5492,7 +5547,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   };
   const typeL = typeLabels[locale] || typeLabels.fr;
 
-  drawSectionTitle(L.article1);
+  drawArticleTitle(L.article1);
   const objIntro = locale === 'fr' ? 'Le présent contrat a pour objet la location meublée de courte durée du bien immobilier suivant : ' : locale === 'en' ? 'This agreement is for the furnished short-term rental of the following property: ' : 'El presente contrato tiene por objeto el alquiler amueblado de corta duración del siguiente inmueble: ';
   let propertyDescription = objIntro;
   if (property.property_type) {
@@ -5512,12 +5567,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   propertyDescription += '.';
   if (property.description) propertyDescription += (locale === 'fr' ? ' Description : ' : locale === 'en' ? ' Description: ' : ' Descripción: ') + property.description;
   drawParagraph(propertyDescription);
+  y -= 6;
 
-  drawSectionTitle(L.article2);
+  drawArticleTitle(L.article2);
   let durationText = `${L.durationIntro} ${fmtFR(booking.check_in)} ${L.durationTo} ${fmtFR(booking.check_out)} ${L.durationEnd}`;
   drawParagraph(durationText);
+  y -= 6;
 
-  drawSectionTitle(L.article3);
+  drawArticleTitle(L.article3);
   const bornLabel = locale === 'fr' ? 'Né(e) le' : locale === 'en' ? 'Born on' : 'Nacido/a el';
   const docLabel = locale === 'fr' ? 'Document n°' : locale === 'en' ? 'Document no.' : 'Documento n°';
   let occupantsText = `${L.occupantsIntro} ${booking.guests_count} ${L.occupantsPersons}\n\n`;
@@ -5532,9 +5589,11 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   }
   occupantsText += L.occupantsForbidden;
   drawParagraph(occupantsText);
+  y -= 6;
 
-  drawSectionTitle(L.article4);
+  drawArticleTitle(L.article4);
   drawParagraph(L.rulesIntro);
+  y -= 4;
   
   const defaultRules = Array.isArray(L.defaultRules) ? L.defaultRules : [];
   const rulesToDisplay = property.house_rules && property.house_rules.length > 0 
@@ -5549,26 +5608,30 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   
   rulesToDisplay.forEach((rule: string) => {
     if (rule && rule.trim()) {
-      drawParagraph(`• ${rule.trim()}`);
+      drawParagraphIndented(`• ${rule.trim()}`, 6);
+      y -= 4;
     }
   });
   
   if (property.contact?.phone || host.phone) {
     const contactPhone = property.contact?.phone || host.phone;
-    drawParagraph(`• ${L.emergencyContact} ${contactPhone}`);
+    drawParagraphIndented(`• ${L.emergencyContact} ${contactPhone}`, 6);
+    y -= 4;
   }
 
-  drawSectionTitle(L.article5);
+  drawArticleTitle(L.article5);
   drawParagraph(L.article5Text);
+  y -= 6;
 
-  drawSectionTitle(L.article6);
+  drawArticleTitle(L.article6);
   drawParagraph(L.article6Text);
+  y -= 6;
 
-  drawSectionTitle(L.article7);
+  drawArticleTitle(L.article7);
   drawParagraph(L.article7Text);
 
   const city = property.city || property.address?.split(',')[0] || 'Casablanca';
-  y -= 20;
+  y -= 22;
   drawParagraph(`${L.doneAt} ${city}, ${L.onDate} ${fmtFR(new Date().toISOString())}`);
   
   if (host.company_name || host.ice || host.registration) {

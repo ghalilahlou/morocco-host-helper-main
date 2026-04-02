@@ -3580,15 +3580,19 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-900">
+                                    <Label htmlFor={`guest-dob-${index}`} className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.dateOfBirth')} <span className="text-red-500">*</span>
                                     </Label>
                                     <GuestHybridDateField
                                       id={`guest-dob-${index}`}
                                       variant="birth"
-                                      value={guest.dateOfBirth}
+                                      value={
+                                        guest.dateOfBirth
+                                          ? new Date(guest.dateOfBirth)
+                                          : undefined
+                                      }
                                       onChange={(date) => updateGuest(index, 'dateOfBirth', date)}
-                                      placeholder={t('guest.clients.documentExpiryPlaceholder')}
+                                      ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
                                     />
                                   </div>
                                   
@@ -3649,7 +3653,7 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label className="text-sm font-semibold text-gray-900">
+                                    <Label htmlFor={`guest-doc-expiry-${index}`} className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.documentExpiryDate')}
                                     </Label>
                                     <GuestHybridDateField
@@ -3661,7 +3665,7 @@ export const GuestVerification = () => {
                                           : undefined
                                       }
                                       onChange={(date) => updateGuest(index, 'documentIssueDate', date)}
-                                      placeholder={t('guest.clients.documentExpiryPlaceholder')}
+                                      ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
                                     />
                                   </div>
                                   
