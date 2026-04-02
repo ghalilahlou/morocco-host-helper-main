@@ -127,6 +127,7 @@ export default {
   'guest.clients.documentNumberPlaceholder': 'Número de pasaporte/cédula',
   'guest.clients.documentExpiryDate': 'Fecha de caducidad',
   'guest.clients.documentExpiryPlaceholder': 'Seleccionar una fecha',
+  'guest.clients.dateDirectHint': 'O introduzca la fecha directamente:',
 
   // Navigation
   'guest.navigation.previous': 'Anterior',

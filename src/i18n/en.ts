@@ -127,6 +127,7 @@ export default {
   'guest.clients.documentNumberPlaceholder': 'Passport/ID number',
   'guest.clients.documentExpiryDate': 'Date of expiry',
   'guest.clients.documentExpiryPlaceholder': 'Select a date',
+  'guest.clients.dateDirectHint': 'Or enter the date directly:',
 
   // Navigation
   'guest.navigation.previous': 'Previous',

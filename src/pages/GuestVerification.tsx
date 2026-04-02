@@ -53,9 +53,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Upload, FileText, X, CheckCircle, Users, Calendar as CalendarLucide, ArrowRight, ArrowLeft, Sparkles, RefreshCw, RotateCcw, Check, PenTool, Home, CloudUpload } from 'lucide-react';
+import { Upload, FileText, X, CheckCircle, Users, Calendar as CalendarLucide, ArrowRight, ArrowLeft, Sparkles, RefreshCw, RotateCcw, Check, PenTool, Home, CloudUpload } from 'lucide-react';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -70,24 +68,10 @@ import { validateToken, isTestToken, logTestTokenUsage, TEST_TOKENS_CONFIG } fro
 import { validateTokenDirect } from '@/utils/tokenValidation';
 import { Guest } from '@/types/booking'; // ✅ Importer le type centralisé
 import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
+import { GuestHybridDateField } from '@/components/guest/GuestHybridDateField';
+import { NATIONALITIES } from '@/data/nationalities';
 import { AnimatePresence } from 'framer-motion';
 import { useIsMobile } from '@/hooks/use-mobile';
-// Liste complète des nationalités
-const NATIONALITIES = [
-  'Morocco', '---', 'France', 'Spain', 'Italy', 'Germany', 'United Kingdom', 'Belgium', 'Netherlands', 'Portugal',
-  'Algeria', 'Tunisia', 'Turkey', 'United States', 'Canada', 'Brazil', 'Argentina', 'Russia', 'China', 
-  'Japan', 'South Korea', 'India', 'Australia', 'New Zealand', 'South Africa', 'Egypt', 'Nigeria',
-  'Saudi Arabia', 'United Arab Emirates', 'Qatar', 'Kuwait', 'Lebanon', 'Jordan', 'Syria', 'Iraq', 'Iran',
-  'Pakistan', 'Bangladesh', 'Afghanistan', 'Thailand', 'Vietnam', 'Malaysia', 'Singapore',
-  'Indonesia', 'Philippines', 'Mexico', 'Colombia', 'Venezuela', 'Peru', 'Chile', 'Ukraine',
-  'Poland', 'Czech Republic', 'Hungary', 'Romania', 'Bulgaria', 'Croatia', 'Serbia', 'Bosnia and Herzegovina', 'Albania',
-  'Greece', 'Cyprus', 'Malta', 'Norway', 'Sweden', 'Denmark', 'Finland', 'Iceland', 'Ireland',
-  'Switzerland', 'Austria', 'Luxembourg', 'Monaco', 'Andorra', 'San Marino', 'Vatican City',
-  'Slovenia', 'Slovakia', 'Estonia', 'Latvia', 'Lithuania', 'Belarus', 'Moldova', 'Georgia',
-  'Armenia', 'Azerbaijan', 'Kazakhstan', 'Kyrgyzstan', 'Uzbekistan', 'Tajikistan', 'Turkmenistan', 'Mongolia', 'North Korea',
-  'Taiwan', 'Hong Kong', 'Macao', 'Myanmar', 'Laos', 'Cambodia', 'Brunei', 'Timor-Leste', 'Other'
-];
-
 function createEmptyGuestForm(): Guest {
   return {
     fullName: '',
@@ -3599,34 +3583,13 @@ export const GuestVerification = () => {
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.dateOfBirth')} <span className="text-red-500">*</span>
                                     </Label>
-                                    <Popover>
-                                      <PopoverTrigger asChild>
-                                        <Button 
-                                          variant="outline" 
-                                          className={`w-full justify-start text-left h-12 border-2 transition-all duration-200 ${
-                                            guest.dateOfBirth 
-                                              ? 'border-brand-teal/50 bg-brand-teal/5 hover:bg-brand-teal/10 hover:border-brand-teal shadow-sm' 
-                                              : 'border-gray-300 hover:border-primary/50 hover:bg-gray-50'
-                                          } focus-visible:ring-2 focus-visible:ring-brand-teal/20 focus-visible:ring-offset-2`}
-                                        >
-                                          <CalendarIcon className={`mr-3 h-5 w-5 ${guest.dateOfBirth ? 'text-brand-teal' : 'text-gray-400'}`} />
-                                          <span className={guest.dateOfBirth ? 'text-gray-900 font-medium' : 'text-gray-500'}>
-                                            {guest.dateOfBirth 
-                                              ? format(guest.dateOfBirth, 'dd/MM/yyyy') 
-                                              : 'Sélectionner une date'}
-                                          </span>
-                                        </Button>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-0 border-2 border-brand-teal/20 shadow-xl bg-[#FDFDF9]">
-                                        <Calendar
-                                          mode="single"
-                                          selected={guest.dateOfBirth}
-                                          onSelect={(date) => updateGuest(index, 'dateOfBirth', date)}
-                                          initialFocus
-                                          className="rounded-md"
-                                        />
-                                      </PopoverContent>
-                                    </Popover>
+                                    <GuestHybridDateField
+                                      id={`guest-dob-${index}`}
+                                      variant="birth"
+                                      value={guest.dateOfBirth}
+                                      onChange={(date) => updateGuest(index, 'dateOfBirth', date)}
+                                      placeholder={t('guest.clients.documentExpiryPlaceholder')}
+                                    />
                                   </div>
                                   
                                   <div className="space-y-2">
@@ -3689,34 +3652,17 @@ export const GuestVerification = () => {
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.documentExpiryDate')}
                                     </Label>
-                                    <Popover>
-                                      <PopoverTrigger asChild>
-                                        <Button 
-                                          variant="outline" 
-                                          className={`w-full justify-start text-left h-12 border-2 transition-all duration-200 ${
-                                            guest.documentIssueDate 
-                                              ? 'border-brand-teal/50 bg-brand-teal/5 hover:bg-brand-teal/10 hover:border-brand-teal shadow-sm' 
-                                              : 'border-gray-300 hover:border-primary/50 hover:bg-gray-50'
-                                          } focus-visible:ring-2 focus-visible:ring-brand-teal/20 focus-visible:ring-offset-2`}
-                                        >
-                                          <CalendarIcon className={`mr-3 h-5 w-5 ${guest.documentIssueDate ? 'text-brand-teal' : 'text-gray-400'}`} />
-                                          <span className={guest.documentIssueDate ? 'text-gray-900 font-medium' : 'text-gray-500'}>
-                                            {guest.documentIssueDate 
-                                              ? format(guest.documentIssueDate, 'dd/MM/yyyy') 
-                                              : t('guest.clients.documentExpiryPlaceholder')}
-                                          </span>
-                                        </Button>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-0 border-2 border-brand-teal/20 shadow-xl bg-[#FDFDF9]">
-                                        <Calendar
-                                          mode="single"
-                                          selected={guest.documentIssueDate ? new Date(guest.documentIssueDate) : undefined}
-                                          onSelect={(date) => updateGuest(index, 'documentIssueDate', date)}
-                                          initialFocus
-                                          className="rounded-md"
-                                        />
-                                      </PopoverContent>
-                                    </Popover>
+                                    <GuestHybridDateField
+                                      id={`guest-doc-expiry-${index}`}
+                                      variant="expiry"
+                                      value={
+                                        guest.documentIssueDate
+                                          ? new Date(guest.documentIssueDate)
+                                          : undefined
+                                      }
+                                      onChange={(date) => updateGuest(index, 'documentIssueDate', date)}
+                                      placeholder={t('guest.clients.documentExpiryPlaceholder')}
+                                    />
                                   </div>
                                   
                                   <div className="space-y-2">

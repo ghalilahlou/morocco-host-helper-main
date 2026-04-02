@@ -127,6 +127,7 @@ export default {
   'guest.clients.documentNumberPlaceholder': 'Numéro de passeport/CIN',
   'guest.clients.documentExpiryDate': "Date d'expiration",
   'guest.clients.documentExpiryPlaceholder': 'Sélectionner une date',
+  'guest.clients.dateDirectHint': 'Ou saisissez la date directement :',
 
   // Navigation
   'guest.navigation.previous': 'Précédent',
