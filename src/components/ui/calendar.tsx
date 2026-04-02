@@ -20,13 +20,24 @@ function Calendar({
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         month: "space-y-4",
-        caption: "flex justify-center pt-1 relative items-center",
-        caption_label: "text-sm font-medium",
-        caption_dropdowns: "flex justify-center gap-2 items-center",
-        dropdown: "h-8 rounded-md border border-input bg-background px-2 text-sm",
-        dropdown_month: "h-8 rounded-md border border-input bg-background px-2 text-sm",
-        dropdown_year: "h-8 rounded-md border border-input bg-background px-2 text-sm",
-        dropdown_icon: "ml-1 h-4 w-4 opacity-70",
+        /**
+         * react-day-picker Dropdown : le <select> doit rester invisible (overlay plein
+         * parent) ; le texte visible est le div caption_label en dessous. Ne pas appliquer
+         * bordure/fond au select — seulement aux wrappers dropdown_month / dropdown_year.
+         * vhidden : sr-only car le CSS officiel rdp-vhidden n'est pas importé globalement.
+         */
+        vhidden: "sr-only",
+        caption: "flex justify-center pt-1 relative items-center min-h-9",
+        caption_label:
+          "relative z-[1] inline-flex items-center gap-1 whitespace-nowrap text-sm font-medium pointer-events-none",
+        caption_dropdowns: "flex flex-wrap justify-center gap-2 items-center",
+        dropdown:
+          "absolute inset-0 z-[2] h-full w-full min-h-8 cursor-pointer opacity-0 appearance-none border-0 bg-transparent p-0 font-inherit",
+        dropdown_month:
+          "relative inline-flex h-8 min-w-[7.5rem] shrink-0 items-center rounded-md border border-input bg-background px-2 text-sm",
+        dropdown_year:
+          "relative inline-flex h-8 min-w-[5.5rem] shrink-0 items-center rounded-md border border-input bg-background px-2 text-sm",
+        dropdown_icon: "ml-0.5 h-4 w-4 shrink-0 opacity-70",
         nav: "space-x-1 flex items-center",
         nav_button: cn(
           buttonVariants({ variant: "outline" }),
