@@ -35,6 +35,20 @@ function buildCacheKey(propertyId?: string, userId?: string, dateRange?: { start
     : `bookings-v3-all-${userId || 'anon'}${dateKey}`;
 }
 
+/** Après suppression : invalider toutes les clés susceptibles de réinjecter la ligne (hook courant vs dashboard par bien). */
+async function invalidateBookingCachesAfterMutation(
+  propertyIdOfBooking: string | undefined,
+  userId: string,
+  hookPropertyId: string | undefined,
+  dateRange: { start: Date; end: Date } | undefined
+): Promise<void> {
+  await multiLevelCache.invalidate(buildCacheKey(hookPropertyId, userId, dateRange)).catch(() => {});
+  await multiLevelCache.invalidate(buildCacheKey(undefined, userId, dateRange)).catch(() => {});
+  if (propertyIdOfBooking) {
+    await multiLevelCache.invalidatePattern(propertyIdOfBooking).catch(() => {});
+  }
+}
+
 function transformBooking(raw: any): Booking | null {
   if (!raw.property_id) {
     warn('Booking sans property_id exclu', { bookingId: raw.id });
@@ -613,9 +627,12 @@ export const useBookings = (options?: UseBookingsOptions) => {
         return [{ ...newBooking, realGuestNames: [], realGuestCount: 0, hasRealSubmissions: false, submissionStatus: { hasDocuments: false, hasSignature: false, documentsCount: 0 } } as EnrichedBooking, ...prev];
       });
 
-      // Invalidate cache + background refresh
-      const key = buildCacheKey(propertyId, user.id, dateRange);
-      await multiLevelCache.invalidate(key).catch(() => {});
+      await invalidateBookingCachesAfterMutation(
+        bookingData.property_id,
+        user.id,
+        propertyId,
+        dateRange
+      );
       loadBookings().catch(() => {});
     } catch (error) {
       logError('Error adding booking', error as Error);
@@ -673,8 +690,12 @@ export const useBookings = (options?: UseBookingsOptions) => {
         b.id === id ? { ...b, ...updates, updated_at: new Date().toISOString() } : b
       ));
 
-      const key = buildCacheKey(propertyId, user?.id, dateRange);
-      await multiLevelCache.invalidate(key).catch(() => {});
+      await invalidateBookingCachesAfterMutation(
+        currentBooking.property_id as string | undefined,
+        user.id,
+        propertyId,
+        dateRange
+      );
       await loadBookings();
     } catch (error) {
       logError('Error updating booking', error as Error);
@@ -714,8 +735,13 @@ export const useBookings = (options?: UseBookingsOptions) => {
       // Emit event for other components
       window.dispatchEvent(new CustomEvent('booking-deleted', { detail: { bookingId: id } }));
 
-      const key = buildCacheKey(propertyId, user?.id, dateRange);
-      await multiLevelCache.invalidate(key).catch(() => {});
+      invalidateSubmissionsCache();
+      await invalidateBookingCachesAfterMutation(
+        bookingData?.property_id,
+        user!.id,
+        propertyId,
+        dateRange
+      );
       await loadBookings();
     } catch (error) {
       logError('Error in deleteBooking', error as Error);
