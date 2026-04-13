@@ -727,6 +727,16 @@ export const GuestVerification = () => {
     }
   }, [showCalendarPanel, showGuestsPanel]);
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
+
+  /** Pièce d'identité importée et OCR terminé pour ce voyageur (index aligné documents ↔ guests). */
+  const identityUnlockedForGuest = useCallback(
+    (guestIndex: number) => {
+      const doc = uploadedDocuments[guestIndex];
+      return Boolean(doc && !doc.processing);
+    },
+    [uploadedDocuments]
+  );
+
   const [currentStep, setCurrentStep] = useState<'booking' | 'documents' | 'signature'>('booking');
   
   // ✅ NOUVEAU : Suivi des étapes visitées pour permettre la navigation bidirectionnelle
@@ -1181,6 +1191,11 @@ export const GuestVerification = () => {
   };
 
   const updateGuest = (index: number, field: keyof Guest, value: any) => {
+    const doc = uploadedDocuments[index];
+    if (!doc || doc.processing) {
+      return;
+    }
+
     console.log('🔄 updateGuest appelé:', { index, field, value });
     
     // ✅ SIMPLIFIÉ : Utiliser directement l'index dans guests
@@ -1619,6 +1634,30 @@ export const GuestVerification = () => {
     // ✅ CORRIGÉ : Utiliser deduplicatedGuests.length au lieu de numberOfGuests pour la validation
     // car deduplicatedGuests est la source de vérité pour le rendu (évite les doubles formulaires)
     const actualGuestCount = deduplicatedGuests.length;
+
+    if (uploadedDocuments.some(d => d.processing)) {
+      isSubmittingRef.current = false;
+      isProcessingRef.current = false;
+      toast({
+        title: t('validation.error.title'),
+        description: t('guestVerification.formLockedProcessing'),
+        variant: 'default'
+      });
+      return;
+    }
+
+    for (let gi = 0; gi < actualGuestCount; gi++) {
+      if (!uploadedDocuments[gi]) {
+        isSubmittingRef.current = false;
+        isProcessingRef.current = false;
+        toast({
+          title: t('validation.error.title'),
+          description: t(isMobile ? 'guestVerification.formLockedHintMobile' : 'guestVerification.formLockedHintDesktop', { n: gi + 1 }),
+          variant: 'destructive'
+        });
+        return;
+      }
+    }
     
     // ✅ VALIDATION : Vérifier que le nombre de documents correspond au nombre de guests dédupliqués
     if (uploadedDocuments.length !== actualGuestCount) {
@@ -3521,13 +3560,17 @@ export const GuestVerification = () => {
                       color: '#4B5563',
                       marginBottom: '24px'
                     }}>
-                      Certains champs seront pré-remplis automatiquement lorsque vous aurez importé vos documents.
+                      {t('guestVerification.travelerInfoSubline')}
                     </p>
                     
                     <div className="space-y-6">
 
                         <div className="space-y-6">
-                          {deduplicatedGuests.map((guest, index) => (
+                          {deduplicatedGuests.map((guest, index) => {
+                            const fieldsLocked = !identityUnlockedForGuest(index);
+                            const docAt = uploadedDocuments[index];
+                            const showProcessingBanner = Boolean(docAt?.processing);
+                            return (
                             <div
                               key={`guest-form-${index}`}
                             >
@@ -3561,6 +3604,26 @@ export const GuestVerification = () => {
                                     </button>
                                   )}
                                 </div>
+
+                                {(fieldsLocked || showProcessingBanner) && (
+                                  <div
+                                    role="status"
+                                    className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+                                      showProcessingBanner
+                                        ? 'border-blue-200 bg-blue-50 text-blue-900'
+                                        : 'border-amber-200 bg-amber-50 text-amber-950'
+                                    }`}
+                                  >
+                                    {showProcessingBanner
+                                      ? t('guestVerification.formLockedProcessing')
+                                      : t(
+                                          isMobile
+                                            ? 'guestVerification.formLockedHintMobile'
+                                            : 'guestVerification.formLockedHintDesktop',
+                                          { n: index + 1 }
+                                        )}
+                                  </div>
+                                )}
                                 
                                 {/* Form Grid - 2 columns desktop, 1 column mobile */}
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
@@ -3575,7 +3638,8 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(index, 'fullName', e.target.value)}
                                       placeholder=""
                                       required
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      disabled={fieldsLocked}
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -3593,6 +3657,7 @@ export const GuestVerification = () => {
                                       }
                                       onChange={(date) => updateGuest(index, 'dateOfBirth', date)}
                                       ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
+                                      disabled={fieldsLocked}
                                     />
                                   </div>
                                   
@@ -3607,8 +3672,9 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
                                       placeholder=""
                                       required
+                                      disabled={fieldsLocked}
                                       list={`nationalities-list-${index}`}
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                     <datalist id={`nationalities-list-${index}`}>
                                       {NATIONALITIES.filter(n => n !== '---').map((nationality) => (
@@ -3626,7 +3692,8 @@ export const GuestVerification = () => {
                                         id={`documentType-${index}`}
                                         value={guest.documentType} 
                                         onChange={(e) => updateGuest(index, 'documentType', e.target.value)}
-                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
+                                        disabled={fieldsLocked}
+                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                                       >
                                         <option value="passport">{t('guest.clients.passport')}</option>
                                         <option value="national_id">{t('guest.clients.nationalId')}</option>
@@ -3648,7 +3715,8 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
                                       placeholder=""
                                       required
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      disabled={fieldsLocked}
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -3666,6 +3734,7 @@ export const GuestVerification = () => {
                                       }
                                       onChange={(date) => updateGuest(index, 'documentIssueDate', date)}
                                       ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
+                                      disabled={fieldsLocked}
                                     />
                                   </div>
                                   
@@ -3683,7 +3752,8 @@ export const GuestVerification = () => {
                                         updateGuest(index, 'profession', target.value);
                                       }}
                                       placeholder=""
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      disabled={fieldsLocked}
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -3699,7 +3769,8 @@ export const GuestVerification = () => {
                                         onChange={(e) => {
                                           updateGuest(index, 'motifSejour', e.target.value);
                                         }}
-                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
+                                        disabled={fieldsLocked}
+                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                                         required
                                       >
                                         <option value="">Sélectionnez un motif</option>
@@ -3730,7 +3801,8 @@ export const GuestVerification = () => {
                                         updateGuest(index, 'adressePersonnelle', target.value);
                                       }}
                                       placeholder=""
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      disabled={fieldsLocked}
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -3749,13 +3821,15 @@ export const GuestVerification = () => {
                                       }}
                                       placeholder=""
                                       required
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      disabled={fieldsLocked}
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                 </div>
                               </div>
                             </div>
-                          ))}
+                          );
+                          })}
                         </div>
                     </div>
                     

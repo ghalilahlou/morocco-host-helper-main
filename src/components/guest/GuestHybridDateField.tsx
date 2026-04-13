@@ -9,6 +9,7 @@ type Props = {
   id: string;
   /** Libellé accessibilité (champ vide), ex. « Sélectionner une date » */
   ariaLabel?: string;
+  disabled?: boolean;
 };
 
 function safeParseYmd(s: string): Date | undefined {
@@ -29,7 +30,7 @@ function toSafeDate(v: Date | undefined): Date | undefined {
  * Une seule barre date (native) : saisie directe, sélecteur du navigateur,
  * préremplissage OCR inchangé via `value` / `onChange` → même modèle que avant.
  */
-export function GuestHybridDateField({ value, onChange, variant, id, ariaLabel }: Props) {
+export function GuestHybridDateField({ value, onChange, variant, id, ariaLabel, disabled }: Props) {
   const safeValue = toSafeDate(value);
 
   const yNow = new Date().getFullYear();
@@ -61,6 +62,7 @@ export function GuestHybridDateField({ value, onChange, variant, id, ariaLabel }
       max={maxYmd}
       value={inputValue}
       aria-label={ariaLabel}
+      disabled={disabled}
       onChange={(e) => {
         const v = e.target.value;
         if (!v) {
@@ -73,7 +75,7 @@ export function GuestHybridDateField({ value, onChange, variant, id, ariaLabel }
           onChange(parsed);
         }
       }}
-      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white text-gray-900 [color-scheme:light]"
+      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white text-gray-900 [color-scheme:light] disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
     />
   );
 }
