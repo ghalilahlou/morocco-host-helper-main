@@ -2,9 +2,10 @@ import { isBefore, startOfDay } from 'date-fns';
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
-import { getUnifiedBookingDisplayText, getGuestInitials as getUnifiedGuestInitials } from '@/utils/bookingDisplay';
+import { getBookingDisplayTitle, getGuestInitials as getUnifiedGuestInitials } from '@/utils/bookingDisplay';
 import { getBookingDocumentStatus } from '@/utils/bookingDocuments';
 import { BOOKING_COLORS as CONSTANT_BOOKING_COLORS } from '@/constants/bookingColors';
+import { isMatchingReservation, isSameReservationByRef } from '@/utils/bookingAirbnbMatch';
 
 export interface CalendarDay {
   date: Date;
@@ -292,16 +293,6 @@ export const calculateBookingLayout = (
           if (day.isCurrentMonth) {
           if (startIndex === -1) {
             startIndex = dayIndex;
-            // ✅ DIAGNOSTIC : Vérifier que startIndex correspond bien à la date d'arrivée
-              if (process.env.NODE_ENV === 'development' && bookingIndex === 0 && weekIndex === 0) {
-              console.log('✅ [ANALYSE POSITION] startIndex trouvé:', {
-                dayIndex,
-                dayNumber: day.dayNumber,
-                dayDate: dayDate.toLocaleDateString('fr-FR'),
-                checkIn: normalizedCheckIn.toLocaleDateString('fr-FR'),
-                match: dayDate.getTime() === normalizedCheckIn.getTime()
-              });
-            }
           }
           endIndex = dayIndex;
         }
@@ -377,27 +368,16 @@ export const calculateBookingLayout = (
       }
     });
     
-    // Filter out Airbnb bookings that have corresponding manual bookings
     const filteredAirbnbBookings = airbnbBookings.filter(airbnbBooking => {
-      const airbnbStart = (airbnbBooking.booking as AirbnbReservation).startDate;
-      const airbnbEnd = (airbnbBooking.booking as AirbnbReservation).endDate;
-      const airbnbId = (airbnbBooking.booking as AirbnbReservation).airbnbBookingId;
-      
+      const airbnb = airbnbBooking.booking as AirbnbReservation;
       const hasMatch = manualBookings.some(manualBooking => {
-        const manualStart = new Date((manualBooking.booking as Booking).checkInDate);
-        const manualEnd = new Date((manualBooking.booking as Booking).checkOutDate);
-        const manualRef = (manualBooking.booking as Booking).bookingReference;
-        
-        // Check if dates match exactly OR if booking references match
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
-                          manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = manualRef && airbnbId && 
-                         (manualRef.includes(airbnbId) || airbnbId.includes(manualRef));
-        
-        return datesMatch || refsMatch;
+        const manual = manualBooking.booking as Booking;
+        return isMatchingReservation(
+          manual.checkInDate, manual.checkOutDate, manual.bookingReference,
+          airbnb.startDate, airbnb.endDate, airbnb.airbnbBookingId,
+        );
       });
-      
-      return !hasMatch; // Keep only Airbnb bookings that don't have manual matches
+      return !hasMatch;
     });
     
     // Assign layers to all bookings together (not separately by type)
@@ -537,17 +517,8 @@ export const detectBookingConflicts = (
       // ✅ Ne jamais marquer une réservation en conflit avec elle-même (évite doublons dans la liste)
       if (res1.id === res2.id) continue;
       
-      // ✅ CORRIGÉ : Ignorer les conflits entre réservations avec le même booking_reference
-      // C'est la même réservation ICS (une dans airbnb_reservations, une dans bookings)
-      const sameReference = res1.bookingReference && 
-                            res2.bookingReference && 
-                            res1.bookingReference === res2.bookingReference &&
-                            res1.bookingReference !== 'INDEPENDENT_BOOKING';
-      
-      if (sameReference) {
-        // ✅ C'est la même réservation ICS : une dans airbnb_reservations (pending) et une dans bookings (validée)
-        // Ignorer ce conflit car c'est la même réservation à différents stades
-        continue; // Ignorer ce conflit, c'est la même réservation
+      if (isSameReservationByRef(res1.bookingReference, res2.bookingReference)) {
+        continue;
       }
       
       // Normaliser les dates (midnight local pour éviter les problèmes de timezone)
@@ -612,8 +583,8 @@ export const detectBookingConflicts = (
  * ✅ CORRIGÉ : Utilise la logique unifiée pour éviter les doubles logiques
  * et les préfixes/suffixes aberrants
  */
-export const getBookingDisplayText = (booking: Booking | AirbnbReservation, isStart: boolean): string => {
-  return getUnifiedBookingDisplayText(booking, isStart);
+export const getBookingDisplayText = (booking: Booking | AirbnbReservation, _isStart: boolean): string => {
+  return getBookingDisplayTitle(booking);
 };
 
 /**

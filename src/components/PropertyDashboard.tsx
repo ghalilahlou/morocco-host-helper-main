@@ -276,6 +276,7 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
           onRefreshBookings={refreshBookings}
           propertyId={selectedProperty.id}
           airbnbIcsUrl={selectedProperty.airbnb_ics_url}
+          bookingsLoading={bookingsLoading}
         />
       )}
     </div>

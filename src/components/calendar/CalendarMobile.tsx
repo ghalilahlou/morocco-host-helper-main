@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
-import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
+import { getBookingDisplayTitle, isValidGuestName } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { 
   format, 
@@ -51,28 +51,6 @@ const getInitials = (name: string): string => {
     return (words[0][0] + words[1][0]).toUpperCase();
   }
   return name.substring(0, 2).toUpperCase();
-};
-
-// Vérifier si un nom est valide (pas un code)
-const isValidGuestName = (value: string): boolean => {
-  if (!value || value.trim().length === 0) return false;
-  
-  const trimmed = value.trim();
-  const lower = trimmed.toLowerCase();
-  
-  if (lower === 'réservation' || lower === 'airbnb') return false;
-  if (/^(UID|HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9\-:]+/i.test(trimmed)) return false;
-  
-  const condensed = trimmed.replace(/\s+/g, '');
-  if (/^[A-Z0-9\-]{5,}$/.test(condensed) && !/[a-z]/.test(trimmed)) return false;
-  if (!/[a-z]/.test(trimmed) && !trimmed.includes(' ') && /^[A-Z0-9]+$/.test(condensed) && condensed.length >= 4) return false;
-  if (!/[a-zA-ZÀ-ÿ]/.test(trimmed)) return false;
-  if (trimmed.length < 2 || trimmed.length > 50) return false;
-  
-  const forbiddenWords = ['phone', 'airbnb', 'reservation', 'guest', 'client', 'booking'];
-  if (forbiddenWords.some(word => lower.includes(word))) return false;
-  
-  return true;
 };
 
 interface BookingBarData {
@@ -198,7 +176,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             ? new Date((booking as AirbnbReservation).endDate)
             : new Date((booking as Booking).checkOutDate);
           
-          const displayText = getUnifiedBookingDisplayText(booking, true);
+          const displayText = getBookingDisplayTitle(booking);
           // ✅ CLEF : Vérifier si le displayText est un NOM VALIDE (Mouhcine, Zaineb)
           // ou un CODE (HM8548HWET, CLXYZ123)
           const isValidName = isValidGuestName(displayText);
@@ -263,7 +241,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             ? new Date((bookingData.booking as AirbnbReservation).endDate)
             : new Date((bookingData.booking as Booking).checkOutDate);
           
-          const displayText = getUnifiedBookingDisplayText(bookingData.booking, true);
+          const displayText = getBookingDisplayTitle(bookingData.booking);
           const isValidName = isValidGuestName(displayText);
           
           const guestCount = isAirbnb
@@ -600,7 +578,6 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                                 : undefined,
                             }}
                           >
-                            {/* Figma: cercle #000000 (done) ou #B3B3B3 (not done), icône Check ou X stylisée */}
                             {isStartOfBooking && (
                               <div
                                 className="flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6"
@@ -619,8 +596,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                                 )}
                               </div>
                             )}
-                            
-                            {/* ✅ Avatar avec initiales ou photo (seulement au début si nom valide) */}
+
                             {isStartOfBooking && bookingData.isValidName && (
                               <div
                                 className={cn(
@@ -643,23 +619,20 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                                 )}
                               </div>
                             )}
-                            
-                            {/* ✅ Nom OU Code de réservation - Responsive */}
-                            {isStartOfBooking && (
-                              <div className={cn("flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1", textColor)}>
-                                <span className="text-[10px] sm:text-[11px] font-semibold truncate leading-tight">
-                                  {bookingData.isValidName 
-                                    ? bookingData.guestName.split(' ')[0]
-                                    : bookingData.guestName.substring(0, 10) + (bookingData.guestName.length > 10 ? '...' : '')
-                                  }
+
+                            <div className={cn("flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1", textColor)}>
+                              <span className="text-[10px] sm:text-[11px] font-semibold truncate leading-tight">
+                                {bookingData.isValidName
+                                  ? bookingData.guestName.split(' ')[0]
+                                  : bookingData.guestName.substring(0, isStartOfBooking ? 10 : 12) +
+                                    (bookingData.guestName.length > (isStartOfBooking ? 10 : 12) ? '…' : '')}
+                              </span>
+                              {isStartOfBooking && bookingData.guestCount > 1 && (
+                                <span className="text-[9px] sm:text-[10px] font-medium opacity-80 flex-shrink-0 leading-tight">
+                                  +{bookingData.guestCount - 1}
                                 </span>
-                                {bookingData.guestCount > 1 && (
-                                  <span className="text-[9px] sm:text-[10px] font-medium opacity-80 flex-shrink-0 leading-tight">
-                                    +{bookingData.guestCount - 1}
-                                  </span>
-                                )}
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
                         </div>
                       );

@@ -67,54 +67,55 @@ export const isAirbnbCode = (name: string | null | undefined): boolean => {
 
 
 /**
- * Valide si un nom de guest est réel (pas un code ou placeholder)
- * ✅ AMÉLIORÉ : Validation plus stricte pour éviter les blocages
+ * Valide si un nom de guest est réel (pas un code ou placeholder).
+ * Accepte les noms à 1 mot (ex. "Mouhcine") tant qu'ils contiennent
+ * au moins une voyelle et ne ressemblent pas à un code Airbnb.
  */
 export const isValidGuestName = (name: string): boolean => {
   if (!name || name.length < 2) return false;
-  
+
   const cleaned = cleanGuestName(name);
-  
-  // Doit avoir au moins 2 caractères après nettoyage
-  if (cleaned.length < 2) return false;
-  
-  // ✅ AMÉLIORÉ : Supprimer aussi les préfixes comme "CL" au début
+  if (cleaned.length < 2 || cleaned.length > 50) return false;
+
   const cleanedWithoutPrefixes = cleaned.replace(/^(CL|PN|ZN|JN|UN|FN|HN|KN|SN)\s+/i, '').trim();
-  
-  // Doit contenir au moins 2 mots (prénom + nom) après nettoyage
-  const words = cleanedWithoutPrefixes.split(' ').filter(w => w.length > 0);
-  if (words.length < 2) return false;
-  
-  // Ne doit pas contenir de mots interdits
-  const lowerName = cleanedWithoutPrefixes.toLowerCase();
+  if (cleanedWithoutPrefixes.length < 2) return false;
+
+  const lower = cleanedWithoutPrefixes.toLowerCase();
+
+  if (lower === 'réservation' || lower === 'airbnb') return false;
+
   const forbiddenWords = ['phone', 'airbnb', 'reservation', 'guest', 'client', 'booking', 'réservation'];
-  if (forbiddenWords.some(word => lowerName.includes(word))) return false;
-  
-  // Ne doit pas être un code (que des lettres majuscules + chiffres)
+  if (forbiddenWords.some(word => lower.includes(word))) return false;
+
+  if (/^(UID|HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9\-:]+/i.test(cleanedWithoutPrefixes)) return false;
+
   if (cleanedWithoutPrefixes.match(/^[A-Z0-9]{4,}$/)) return false;
-  
-  // ✅ AMÉLIORÉ : Patterns plus stricts pour éviter les codes
+
+  const condensed = cleanedWithoutPrefixes.replace(/\s+/g, '');
+  if (/^[A-Z0-9\-]{5,}$/.test(condensed) && !/[a-z]/.test(cleanedWithoutPrefixes)) return false;
+  if (!/[a-z]/.test(cleanedWithoutPrefixes) && !cleanedWithoutPrefixes.includes(' ') && /^[A-Z0-9]+$/.test(condensed) && condensed.length >= 4) return false;
+
   const invalidPatterns = [
-    /^[A-Z]{2,}\d+$/, // Codes comme "JBFD123", "HMCDQTMBP2"
-    /^[A-Z]{1,3}\s*Phone$/i, // "J Phone", "M Phone"
-    /^[A-Z]{6,}\s*Phone$/i, // "HMEZAZYYJB Phone"
-    /^[A-Z]{2,}\s*Phone$/i, // "PN Phone", "ZE Phone"
-    /^[A-Z]{2}\s*Réservation/i, // "PN Réservation", "CL Réservation"
-    /^CL\s+/i, // "CL " au début
-    /Réservation\s+[A-Z0-9]/i, // "Réservation HMCDQTMBP2"
-    /\s*@\s*\d+$/i, // "@ 0", "@ 2" à la fin (devrait être nettoyé mais on vérifie)
+    /^[A-Z]{2,}\d+$/,
+    /^[A-Z]{1,3}\s*Phone$/i,
+    /^[A-Z]{6,}\s*Phone$/i,
+    /^[A-Z]{2,}\s*Phone$/i,
+    /^[A-Z]{2}\s*Réservation/i,
+    /^CL\s+/i,
+    /Réservation\s+[A-Z0-9]/i,
+    /\s*@\s*\d+$/i,
   ];
-  
   if (invalidPatterns.some(pattern => pattern.test(cleanedWithoutPrefixes))) return false;
-  
-  // ✅ AMÉLIORÉ : Vérifier que chaque mot contient au moins une voyelle (vrai nom)
+
+  if (!/[a-zA-ZÀ-ÿ]/.test(cleanedWithoutPrefixes)) return false;
+
+  const words = cleanedWithoutPrefixes.split(' ').filter(w => w.length > 0);
   const hasVowels = words.every(word => /[aeiouyAEIOUYÀ-ÿ]/.test(word));
   if (!hasVowels && words.length > 0) return false;
-  
-  // Doit contenir principalement des lettres (avec accents) - minimum 70%
-  const letterRatio = cleanedWithoutPrefixes.match(/[A-Za-zÀ-ÿ]/g)?.length || 0;
-  if (letterRatio / cleanedWithoutPrefixes.length < 0.7) return false;
-  
+
+  const letterCount = cleanedWithoutPrefixes.match(/[A-Za-zÀ-ÿ]/g)?.length || 0;
+  if (letterCount / cleanedWithoutPrefixes.length < 0.7) return false;
+
   return true;
 };
 
@@ -169,14 +170,29 @@ export const getBookingCode = (booking: Booking | AirbnbReservation): string => 
  */
 export const getUnifiedBookingDisplayText = (
   booking: Booking | AirbnbReservation,
-  isStart: boolean = true
+  _isStart: boolean = true
 ): string => {
-  if (!isStart) return '';
-  
   const isAirbnb = 'source' in booking && booking.source === 'airbnb';
   const enrichedBooking = booking as EnrichedBooking;
   const airbnbReservation = isAirbnb ? (booking as unknown as AirbnbReservation) : null;
   const regularBooking = !isAirbnb ? (booking as Booking) : null;
+
+  const PLACEHOLDER_NAMES = [
+    'guest',
+    'client',
+    'invité',
+    'invite',
+    'voyageur',
+    'traveler',
+    'traveller',
+    'réservation',
+    'reservation',
+    'unknown',
+    'inconnu',
+    'n/a',
+    'na',
+    'test',
+  ];
   
   // PRIORITÉ 1: Vérifier les soumissions réelles (noms validés par les guests)
   if (enrichedBooking.hasRealSubmissions && 
@@ -186,21 +202,50 @@ export const getUnifiedBookingDisplayText = (
     const totalGuests = enrichedBooking.realGuestCount || enrichedBooking.realGuestNames.length;
     return formatGuestDisplayName(firstName, totalGuests);
   }
+
+  // Séjour terminé / dossier complet : afficher le premier guest enregistré (table guests)
+  // avant guest_name (souvent code ICS / placeholder). Même règle calendrier & cartes.
+  const documentsGenerated =
+    regularBooking?.documentsGenerated ??
+    (booking as Booking & { documentsGenerated?: Booking['documentsGenerated'] }).documentsGenerated;
+  const bookingStatus =
+    regularBooking?.status ??
+    (booking as Booking & { status?: Booking['status'] }).status;
+  const isValidatedDone =
+    bookingStatus === 'completed' ||
+    (documentsGenerated?.contract === true && documentsGenerated?.policeForm === true);
+
+  if (isValidatedDone) {
+    const guestRowsEarly =
+      regularBooking?.guests ??
+      (enrichedBooking as EnrichedBooking & { guests?: Booking['guests'] }).guests;
+    if (guestRowsEarly && guestRowsEarly.length > 0 && guestRowsEarly[0]?.fullName) {
+      const cleanedFn = cleanGuestName(guestRowsEarly[0].fullName);
+      const lowerFn = cleanedFn.toLowerCase();
+      if (
+        cleanedFn &&
+        !PLACEHOLDER_NAMES.includes(lowerFn) &&
+        !isAirbnbCode(cleanedFn) &&
+        !/^phone/i.test(cleanedFn)
+      ) {
+        const firstName = getFirstName(cleanedFn);
+        return formatGuestDisplayName(firstName, guestRowsEarly.length);
+      }
+    }
+  }
   
-  // PRIORITÉ 2: Vérifier le guest_name (peut être validé via ICS ou mise à jour)
-  // ✅ AMÉLIORÉ : Afficher TOUJOURS le guestName s'il contient des lettres (assouplissement de la validation)
-  const guestName = isAirbnb 
-    ? airbnbReservation?.guestName 
+  // PRIORITÉ 2: guest_name / guestName (booking ou Airbnb enrichi avec la même clé)
+  const guestName = isAirbnb
+    ? (airbnbReservation?.guestName ?? (booking as EnrichedBooking & { guest_name?: string }).guest_name)
     : regularBooking?.guest_name;
-  
-  // Placeholder names that should not be displayed as real guest names
-  const PLACEHOLDER_NAMES = ['guest', 'client', 'invité', 'invite', 'voyageur', 'traveler', 'traveller', 'réservation', 'reservation', 'unknown', 'inconnu', 'n/a', 'na', 'test'];
 
   if (guestName) {
     const cleanedGuestName = cleanGuestName(guestName);
 
     if (PLACEHOLDER_NAMES.includes(cleanedGuestName.toLowerCase())) {
       // Skip – fall through to next priorities
+    } else if (/phone/i.test(cleanedGuestName) && cleanedGuestName.length < 28) {
+      // Titres ICS parasites type "Phone number…"
     } else if (isAirbnbCode(cleanedGuestName)) {
       // C'est un code Airbnb, on ne l'affiche pas - on passe au fallback "Réservation"
       // Continue vers PRIORITÉ 4
@@ -214,17 +259,25 @@ export const getUnifiedBookingDisplayText = (
         // Si c'est un nom "parfait" (2+ mots avec voyelles), utiliser formatGuestDisplayName
         if (isValidGuestName(cleanedGuestName)) {
           const firstName = getFirstName(cleanedGuestName);
-          const totalGuests = isAirbnb 
-            ? (airbnbReservation?.numberOfGuests || 1)
-            : (regularBooking?.guests?.length || 1);
+          const guestLen =
+            regularBooking?.guests?.length ??
+            (booking as EnrichedBooking & { guests?: { fullName?: string }[] }).guests?.length ??
+            1;
+          const totalGuests = isAirbnb
+            ? (airbnbReservation?.numberOfGuests ?? (booking as { numberOfGuests?: number }).numberOfGuests ?? guestLen)
+            : guestLen;
           return formatGuestDisplayName(firstName, totalGuests);
         } else {
           // Sinon, afficher le nom nettoyé tel quel (même s'il n'a qu'un mot)
           // ✅ NOUVEAU : Capitaliser et afficher le nom même s'il ne passe pas la validation stricte
           const capitalized = cleanedGuestName.charAt(0).toUpperCase() + cleanedGuestName.slice(1).toLowerCase();
-          const totalGuests = isAirbnb 
-            ? (airbnbReservation?.numberOfGuests || 1)
-            : (regularBooking?.guests?.length || 1);
+          const guestLen2 =
+            regularBooking?.guests?.length ??
+            (booking as EnrichedBooking & { guests?: { fullName?: string }[] }).guests?.length ??
+            1;
+          const totalGuests = isAirbnb
+            ? (airbnbReservation?.numberOfGuests ?? (booking as { numberOfGuests?: number }).numberOfGuests ?? guestLen2)
+            : guestLen2;
           
           if (totalGuests > 1) {
             return `${capitalized} +${totalGuests - 1}`;
@@ -235,42 +288,95 @@ export const getUnifiedBookingDisplayText = (
     }
   }
   
-  // PRIORITÉ 3: Données manuelles des guests (pour les réservations manuelles)
-  if (!isAirbnb && regularBooking?.guests && regularBooking.guests.length > 0) {
-    const guest = regularBooking.guests[0];
-    if (guest?.fullName && isValidGuestName(guest.fullName)) {
-      const firstName = getFirstName(guest.fullName);
-      return formatGuestDisplayName(firstName, regularBooking.guests.length);
+  // PRIORITÉ 3: guests[] (bookings manuels ou Airbnb enrichi avec les guests du booking lié)
+  const guestRows =
+    regularBooking?.guests ??
+    (booking as EnrichedBooking & { guests?: Booking['guests'] }).guests;
+  if (guestRows && guestRows.length > 0) {
+    const guest = guestRows[0];
+    if (guest?.fullName) {
+      const cleanedFn = cleanGuestName(guest.fullName);
+      const lowerFn = cleanedFn.toLowerCase();
+      if (
+        cleanedFn &&
+        !PLACEHOLDER_NAMES.includes(lowerFn) &&
+        !isAirbnbCode(cleanedFn) &&
+        !/^phone/i.test(cleanedFn)
+      ) {
+        if (isValidGuestName(cleanedFn)) {
+          return formatGuestDisplayName(getFirstName(guest.fullName), guestRows.length);
+        }
+        const cap =
+          cleanedFn.charAt(0).toUpperCase() + cleanedFn.slice(1).toLowerCase();
+        const firstWord = cap.split(/\s+/)[0] || cap;
+        if (guestRows.length > 1) {
+          return `${firstWord} +${guestRows.length - 1}`;
+        }
+        return firstWord;
+      }
     }
   }
   
-  // PRIORITÉ 4: Code de réservation (fallback - format propre)
-  const bookingCode = getBookingCode(booking);
-  if (bookingCode && bookingCode.length > 0) {
-    // ✅ AMÉLIORÉ : Nettoyage plus agressif du code
-    let cleanedCode = bookingCode
-      .replace(/\s*@\s*\d+\s*$/g, '') // Supprimer "@ 0", "@ 1", etc.
-      .replace(/\s*@\s*\d+\s*/g, '') // Supprimer "@ 0" n'importe où
-      .replace(/^(CL|PN|ZN|JN|UN|FN|HN|KN|SN|HM|CD|QT|MB|P|ZE|JBFD|AIRBNB|RESERVATION)\s+/i, '') // Supprimer tous les préfixes
-      .replace(/\s+Phone\s*$/i, '') // Supprimer "Phone" à la fin
-      .replace(/^Airbnb\s*–\s*/i, '') // Supprimer "Airbnb – " au début
-      .replace(/^Airbnb\s*/i, '') // Supprimer "Airbnb" seul au début
-      .replace(/^Réservation\s+/i, '') // Supprimer "Réservation " au début
-      .trim();
-    
-    // Si après nettoyage il reste quelque chose, l'afficher
-    if (cleanedCode && cleanedCode.length > 0 && cleanedCode.length > 2 && cleanedCode.length < 20) {
-      // Vérifier que ce n'est pas juste un code aléatoire (moins de 3 caractères) ni trop long
-      const displayCode = cleanedCode.length > 10 
-        ? `${cleanedCode.substring(0, 10)}...`
-        : cleanedCode;
-      return displayCode;
+  // PRIORITÉ 4: Code de réservation (fallback)
+  // RÈGLE : ne JAMAIS afficher un code ICS pour une réservation terminée / validée.
+  if (!isValidatedDone) {
+    const bookingCode = getBookingCode(booking);
+    if (bookingCode && bookingCode.length > 2 && bookingCode.length < 20) {
+      let cleanedCode = bookingCode
+        .replace(/\s*@\s*\d+\s*/g, '')
+        .replace(/^(CL|PN|ZN|JN|UN|FN|HN|KN|SN|HM|CD|QT|MB|P|ZE|JBFD|AIRBNB|RESERVATION)\s+/i, '')
+        .replace(/\s+Phone\s*$/i, '')
+        .replace(/^Airbnb\s*–?\s*/i, '')
+        .replace(/^Réservation\s+/i, '')
+        .trim();
+      if (cleanedCode.length > 2) {
+        return cleanedCode.length > 10 ? `${cleanedCode.substring(0, 10)}...` : cleanedCode;
+      }
     }
   }
   
-  // ✅ AMÉLIORÉ : Dernier fallback - nom simple sans préfixe
   return 'Réservation';
 };
+
+export type BookingDisplayTitleOptions = {
+  /** Même repli que BookingCard (contract_signatures.signer_name chargé en async). */
+  signerNameFallback?: string | null;
+};
+
+/**
+ * Titre affiché calendrier / cartes : aligné sur BookingCard
+ * (`getUnified` puis signataire si le libellé générique « Réservation »).
+ */
+export function getBookingDisplayTitle(
+  booking: Booking | AirbnbReservation,
+  options?: BookingDisplayTitleOptions
+): string {
+  const primary = getUnifiedBookingDisplayText(booking, true);
+  if (primary !== 'Réservation') {
+    return primary;
+  }
+
+  const eb = booking as EnrichedBooking;
+  if (eb.realGuestNames?.length) {
+    return formatGuestDisplayName(
+      eb.realGuestNames[0],
+      eb.realGuestCount || eb.realGuestNames.length
+    );
+  }
+
+  const raw = options?.signerNameFallback?.trim();
+  if (raw) {
+    const low = raw.toLowerCase();
+    if (
+      !['guest', 'client', 'invité', 'invite', 'réservation', 'reservation', 'unknown', 'inconnu', ''].includes(low) &&
+      !isAirbnbCode(raw)
+    ) {
+      return formatGuestDisplayName(getFirstName(raw), eb.realGuestCount || 1);
+    }
+  }
+
+  return primary;
+}
 
 /**
  * Génère les initiales d'un guest pour l'avatar

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
-import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
+import { getBookingDisplayTitle } from '@/utils/bookingDisplay';
 import { formatLocalDate } from '@/utils/dateUtils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -137,7 +137,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
 
         <div className="space-y-3 mt-4">
           {conflictReservations.map(({ booking, conflicts }) => {
-            const displayName = getUnifiedBookingDisplayText(booking, true);
+            const displayName = getBookingDisplayTitle(booking);
             const isAirbnb = 'source' in booking && booking.source === 'airbnb';
             
             const startDate = isAirbnb

@@ -9,7 +9,7 @@ import { multiLevelCache } from '@/services/multiLevelCache';
 
 const BOOKINGS_QUERY_TIMEOUT = 8000;
 const CACHE_TTL = 60000; // 1 minute
-const DEBOUNCE_MS = 300;
+const DEBOUNCE_MS = 2000; // 2 s — laisser les événements realtime se regrouper avant de recharger
 
 const BOOKINGS_SELECT = `
   id, property_id, user_id,
@@ -58,6 +58,7 @@ function transformBooking(raw: any): Booking | null {
     updated_at: raw.updated_at || raw.created_at,
     documentsGenerated: raw.documents_generated || { policeForm: false, contract: false, identity: false },
     guests: guests.map((g: any) => ({
+      id: g.id,
       fullName: g.full_name || '',
       dateOfBirth: g.date_of_birth || '',
       documentNumber: g.document_number || '',
@@ -79,6 +80,78 @@ function transformBooking(raw: any): Booking | null {
   };
 }
 
+/** Évite le flash code Airbnb : le réseau renvoie des lignes "base" sans soumissions avant l'enrichissement async. */
+function preserveSubmissionEnrichment(
+  prev: EnrichedBooking[],
+  incoming: EnrichedBooking[],
+): EnrichedBooking[] {
+  const prevById = new Map(prev.map((b) => [b.id, b]));
+  return incoming.map((b) => {
+    const p = prevById.get(b.id);
+    if (!p) return b;
+
+    const prevHasNames = (p.realGuestNames?.length ?? 0) > 0;
+    const incomingHasNames = (b.realGuestNames?.length ?? 0) > 0;
+
+    // Après F5 : cache / ancien enrich avait des noms ; la nouvelle passe peut avoir
+    // hasRealSubmissions mais realGuestNames [] (guest_data = "Guest", filtré, etc.).
+    // Sans ce garde-fou, setBookings(enriched) écrase les noms persistés.
+    if (prevHasNames && !incomingHasNames) {
+      return {
+        ...b,
+        realGuestNames: [...(p.realGuestNames || [])],
+        realGuestCount: p.realGuestCount || p.realGuestNames?.length || b.realGuestCount,
+        hasRealSubmissions: b.hasRealSubmissions || p.hasRealSubmissions,
+        submissionStatus: { ...p.submissionStatus, ...b.submissionStatus },
+      };
+    }
+
+    const hadSubs =
+      (p.realGuestNames && p.realGuestNames.length > 0) || p.hasRealSubmissions;
+    const incomingEmpty =
+      (!b.realGuestNames || b.realGuestNames.length === 0) && !b.hasRealSubmissions;
+    if (hadSubs && incomingEmpty) {
+      return {
+        ...b,
+        realGuestNames: p.realGuestNames,
+        realGuestCount: p.realGuestCount,
+        hasRealSubmissions: p.hasRealSubmissions,
+        submissionStatus: p.submissionStatus,
+      };
+    }
+    return b;
+  });
+}
+
+/** Réinjecte noms / soumissions depuis le cache (IndexedDB) pour éviter un flash « vide » au rechargement. */
+function mergeEnrichmentFromCache(
+  base: EnrichedBooking[],
+  cached: EnrichedBooking[] | null | undefined
+): EnrichedBooking[] {
+  if (!cached?.length) return base;
+  const byId = new Map(cached.map((b) => [b.id, b]));
+  return base.map((b) => {
+    const c = byId.get(b.id);
+    if (!c) return b;
+    const hadEnrichment =
+      (c.realGuestNames && c.realGuestNames.length > 0) || c.hasRealSubmissions;
+    if (!hadEnrichment) return b;
+    return {
+      ...b,
+      realGuestNames: c.realGuestNames?.length ? [...c.realGuestNames] : b.realGuestNames,
+      realGuestCount: c.realGuestNames?.length ? c.realGuestCount : b.realGuestCount,
+      hasRealSubmissions: c.hasRealSubmissions,
+      submissionStatus: {
+        ...b.submissionStatus,
+        ...c.submissionStatus,
+      },
+      documentsLoading: false,
+      documentsTimeout: c.documentsTimeout,
+      enrichmentError: c.enrichmentError,
+    };
+  });
+}
+
 export const useBookings = (options?: UseBookingsOptions) => {
   const { propertyId, dateRange, limit = 50 } = options || {};
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
@@ -88,6 +161,9 @@ export const useBookings = (options?: UseBookingsOptions) => {
   const loadIdRef = useRef(0);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const previousPropertyIdRef = useRef<string | undefined>(propertyId);
+  const bookingIdsRef = useRef(new Set<string>());
+  const realtimeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastRealtimeReloadRef = useRef(0);
 
   const filteredBookings = useMemo(() => {
     if (!propertyId) return bookings;
@@ -119,15 +195,15 @@ export const useBookings = (options?: UseBookingsOptions) => {
     const cacheKey = buildCacheKey(propertyId, user.id, dateRange);
     const isStale = () => loadIdRef.current !== currentLoadId;
 
-    // STEP 1: Try cache first (instant display)
+    // STEP 1: Try cache first (instant display) — only if we have NO bookings yet
+    // Avoids overwriting enriched data with stale cache during realtime reloads.
     try {
       const cached = await multiLevelCache.get<EnrichedBooking[]>(cacheKey);
       if (cached && cached.length > 0 && !isStale()) {
         const relevant = propertyId ? cached.filter(b => b.propertyId === propertyId) : cached;
         if (relevant.length > 0) {
-          setBookings(relevant);
+          setBookings((prev) => prev.length > 0 ? preserveSubmissionEnrichment(prev, relevant) : relevant);
           setIsLoading(false);
-          // Continue to network refresh below (non-blocking)
         }
       }
     } catch {
@@ -193,7 +269,14 @@ export const useBookings = (options?: UseBookingsOptions) => {
 
       if (isStale()) return;
 
-      // Set base bookings immediately (fast display)
+      let cachedForMerge: EnrichedBooking[] | null = null;
+      try {
+        cachedForMerge = await multiLevelCache.getExpired<EnrichedBooking[]>(cacheKey);
+      } catch {
+        cachedForMerge = null;
+      }
+
+      // Set base bookings immediately (fast display) — merge noms enrichis du cache pour persistance au refresh
       const baseEnriched: EnrichedBooking[] = uniqueBookings.map(b => ({
         ...b,
         realGuestNames: [],
@@ -203,12 +286,14 @@ export const useBookings = (options?: UseBookingsOptions) => {
         submissionStatus: { hasDocuments: false, hasSignature: false, documentsCount: 0 }
       }));
 
-      setBookings(baseEnriched);
+      const mergedBase = mergeEnrichmentFromCache(baseEnriched, cachedForMerge);
+
+      setBookings((prev) => preserveSubmissionEnrichment(prev, mergedBase));
       setIsLoading(false);
 
-      // Cache the base data
+      // Ne pas écraser le cache avec des lignes « vides » si le merge a conservé des noms
       try {
-        await multiLevelCache.set(cacheKey, baseEnriched, CACHE_TTL);
+        await multiLevelCache.set(cacheKey, mergedBase, CACHE_TTL);
       } catch {
         // Non-blocking
       }
@@ -219,36 +304,54 @@ export const useBookings = (options?: UseBookingsOptions) => {
           const enriched = await enrichBookingsWithGuestSubmissions(uniqueBookings);
           if (isStale()) return;
 
-          // STEP 3.5: Batch-fetch signer names from contract_signatures
-          // for bookings whose guest_name is a placeholder
-          const placeholders = ['guest', 'client', 'invité', 'invite', 'voyageur', 'reservation', 'réservation', 'unknown', 'inconnu', ''];
-          const needsName = enriched.filter(b =>
-            (!b.realGuestNames || b.realGuestNames.length === 0) &&
-            placeholders.includes((b.guest_name || '').trim().toLowerCase())
+          // STEP 3.5: Batch-fetch signer names from contract_signatures when we still
+          // have no displayable name. Submissions often lack parseable guest_data while
+          // guest_name is an ICS code (not a "placeholder") — the old filter skipped those.
+          const signerPlaceholder = new Set([
+            'guest', 'client', 'invité', 'invite', 'voyageur', 'traveler', 'traveller',
+            'reservation', 'réservation', 'unknown', 'inconnu', 'n/a', 'na', 'test', '',
+          ]);
+          const looksLikeIcsCode = (s: string) =>
+            /^[A-Z]{2}[A-Z0-9]{4,}$/i.test(s.trim()) || /^UID:/i.test(s.trim());
+
+          const needsSignerName = enriched.filter(
+            b => !b.realGuestNames || b.realGuestNames.length === 0
           );
 
-          if (needsName.length > 0) {
+          if (needsSignerName.length > 0) {
             const { data: sigs } = await supabase
               .from('contract_signatures')
-              .select('booking_id, signer_name')
-              .in('booking_id', needsName.map(b => b.id))
-              .not('signer_name', 'is', null);
+              .select('booking_id, signer_name, created_at')
+              .in('booking_id', needsSignerName.map(b => b.id))
+              .not('signer_name', 'is', null)
+              .order('created_at', { ascending: false });
 
-            if (sigs && sigs.length > 0) {
-              const sigMap = new Map(sigs.map(s => [s.booking_id, s.signer_name]));
-              enriched.forEach(b => {
-                const name = sigMap.get(b.id);
-                if (name && (!b.realGuestNames || b.realGuestNames.length === 0)) {
-                  b.realGuestNames = [name];
-                  b.realGuestCount = 1;
-                  b.hasRealSubmissions = true;
-                }
-              });
+            const sigMap = new Map<string, string>();
+            for (const row of sigs || []) {
+              if (!row.booking_id || !row.signer_name) continue;
+              if (sigMap.has(row.booking_id)) continue;
+              const raw = row.signer_name.trim();
+              const lower = raw.toLowerCase();
+              if (!raw || signerPlaceholder.has(lower)) continue;
+              if (looksLikeIcsCode(raw)) continue;
+              sigMap.set(row.booking_id, raw);
             }
+
+            enriched.forEach(b => {
+              const name = sigMap.get(b.id);
+              if (name && (!b.realGuestNames || b.realGuestNames.length === 0)) {
+                b.realGuestNames = [name];
+                b.realGuestCount = Math.max(1, b.realGuestCount || 1);
+                b.hasRealSubmissions = true;
+              }
+            });
           }
 
-          setBookings(enriched);
-          await multiLevelCache.set(cacheKey, enriched, CACHE_TTL).catch(() => {});
+          setBookings((prev) => {
+            const next = preserveSubmissionEnrichment(prev, enriched);
+            void multiLevelCache.set(cacheKey, next, CACHE_TTL).catch(() => {});
+            return next;
+          });
         } catch (enrichErr: any) {
           debug('Enrichment failed (non-blocking)', { error: enrichErr?.message });
           if (!isStale()) {
@@ -262,11 +365,16 @@ export const useBookings = (options?: UseBookingsOptions) => {
       }
 
       // STEP 4: Self-heal – downgrade bookings that are 'completed' but lack documents
-      const toDowngrade = uniqueBookings.filter(b =>
+      // Only run once per session (not on every reload) to avoid realtime feedback loop:
+      // UPDATE bookings → realtime fires → loadBookings → UPDATE again → ...
+      const selfHealKey = `selfheal-${propertyId}`;
+      const alreadyHealed = (window as any)[selfHealKey];
+      const toDowngrade = alreadyHealed ? [] : uniqueBookings.filter(b =>
         b.status === 'completed' &&
         !(b.documentsGenerated?.contract && b.documentsGenerated?.policeForm)
       );
       if (toDowngrade.length > 0) {
+        (window as any)[selfHealKey] = true;
         debug('Self-heal: downgrading completed bookings without documents', { count: toDowngrade.length });
         for (const b of toDowngrade) {
           supabase.from('bookings')
@@ -312,15 +420,32 @@ export const useBookings = (options?: UseBookingsOptions) => {
     await loadBookings();
   }, [propertyId, user?.id, dateRange, loadBookings]);
 
-  // Real-time subscription (single channel, scoped to property)
+  // Keep bookingIdsRef up to date for scoped realtime filtering
+  useEffect(() => {
+    bookingIdsRef.current = new Set(bookings.map(b => b.id));
+  }, [bookings]);
+
+  // Real-time subscription — scoped to property to avoid cross-property noise.
   useEffect(() => {
     if (!user || propertyId === undefined) return;
 
-    let debounceTimeout: NodeJS.Timeout | null = null;
+    const scheduleReload = () => {
+      if (realtimeTimerRef.current) return; // already scheduled
+      const elapsed = Date.now() - lastRealtimeReloadRef.current;
+      const delay = Math.max(DEBOUNCE_MS - elapsed, 200);
+      realtimeTimerRef.current = setTimeout(() => {
+        realtimeTimerRef.current = null;
+        lastRealtimeReloadRef.current = Date.now();
+        invalidateAndReload();
+      }, delay);
+    };
 
-    const debouncedRealtimeReload = () => {
-      if (debounceTimeout) clearTimeout(debounceTimeout);
-      debounceTimeout = setTimeout(() => invalidateAndReload(), DEBOUNCE_MS);
+    const isOurBooking = (payload: any): boolean => {
+      const id =
+        payload?.new?.id ?? payload?.old?.id ??
+        payload?.new?.booking_id ?? payload?.old?.booking_id;
+      if (!id) return true; // conservative: reload if we can't tell
+      return bookingIdsRef.current.has(id);
     };
 
     const channelName = `bookings-rt-${user.id}-${propertyId || 'all'}`;
@@ -364,7 +489,7 @@ export const useBookings = (options?: UseBookingsOptions) => {
           setBookings(prev => prev.filter(b => b.id !== payload.old.id));
         }
 
-        // Optimistic UPDATE – include documents_generated for accurate status display
+        // Optimistic UPDATE
         if (payload.eventType === 'UPDATE' && payload.new) {
           const upd = payload.new;
           setBookings(prev => prev.map(b =>
@@ -382,16 +507,21 @@ export const useBookings = (options?: UseBookingsOptions) => {
           ));
         }
 
-        // Full reload with cache invalidation
-        debouncedRealtimeReload();
+        scheduleReload();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, () => debouncedRealtimeReload())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_submissions' }, () => debouncedRealtimeReload())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'contract_signatures' }, () => debouncedRealtimeReload())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'guests' }, (p) => {
+        if (isOurBooking(p)) scheduleReload();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'guest_submissions' }, (p) => {
+        if (isOurBooking(p)) scheduleReload();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contract_signatures' }, (p) => {
+        if (isOurBooking(p)) scheduleReload();
+      })
       .subscribe();
 
     return () => {
-      if (debounceTimeout) clearTimeout(debounceTimeout);
+      if (realtimeTimerRef.current) clearTimeout(realtimeTimerRef.current);
       supabase.removeChannel(channel);
     };
   }, [user?.id, propertyId, invalidateAndReload]);

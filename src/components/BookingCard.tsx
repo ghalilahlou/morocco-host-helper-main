@@ -15,8 +15,7 @@ import { DocumentsViewer } from './DocumentsViewer';
 import { TestDocumentUpload } from './TestDocumentUpload';
 import { useState, useEffect, memo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
-import { EnrichedBooking } from '@/services/guestSubmissionService';
+import { getBookingDisplayTitle, isAirbnbCode } from '@/utils/bookingDisplay';
 
 interface BookingCardProps {
   booking: Booking;
@@ -117,19 +116,23 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
           hasDocsInGenerated || 
           uploadedDocs.length > 0 || 
           generatedDocs.length > 0 ||
-          summary.guestSubmissionsCount > 0 ||
-          summary.uploadedDocumentsCount > 0
+          (summary?.guestSubmissionsCount ?? 0) > 0 ||
+          (summary?.uploadedDocumentsCount ?? 0) > 0
         );
 
-        // Fetch signer name from contract_signatures if guest_name is a placeholder
-        const needsName = !booking.guest_name || 
-          ['guest', 'réservation', 'reservation'].includes(booking.guest_name.trim().toLowerCase());
+        // Même logique que useBookings / calendrier : code ICS ou placeholder → nom signataire
+        const gn = booking.guest_name?.trim() || '';
+        const needsName =
+          !gn ||
+          ['guest', 'réservation', 'reservation'].includes(gn.toLowerCase()) ||
+          isAirbnbCode(gn);
         if (needsName) {
           const { data: sig } = await supabase
             .from('contract_signatures')
             .select('signer_name')
             .eq('booking_id', booking.id)
             .not('signer_name', 'is', null)
+            .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
           if (sig?.signer_name) {
@@ -238,16 +241,7 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
           <div className="space-y-1">
               <div className="flex items-center space-x-2">
                 <h3 className="font-semibold text-foreground">
-                  {(() => {
-                    const enriched = booking as unknown as EnrichedBooking;
-                    if (enriched.realGuestNames?.length > 0) {
-                      return enriched.realGuestNames[0];
-                    }
-                    if (signerName) return signerName;
-                    const display = getUnifiedBookingDisplayText(booking, true);
-                    if (display && display !== 'Réservation') return display;
-                    return booking.guests?.[0]?.fullName || booking.guest_name || 'Réservation sans nom';
-                  })()}
+                  {getBookingDisplayTitle(booking, { signerNameFallback: signerName })}
                 </h3>
                 {getStatusBadge()}
                 {/* ✅ NOUVEAU : Indicateur d'alerte si completed sans documents */}
@@ -298,7 +292,11 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
           <div className="flex items-center space-x-2">
             <Users className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-medium">{booking.numberOfGuests} client(s)</span>
+            <span className="text-sm font-medium">
+              {booking.guests.length > 0 && booking.guests.length < booking.numberOfGuests
+                ? `${booking.guests.length}/${booking.numberOfGuests} client(s)`
+                : `${booking.numberOfGuests} client(s)`}
+            </span>
           </div>
           <div className="flex items-center space-x-2">
             <Clock className="w-4 h-4 text-muted-foreground" />
@@ -311,7 +309,7 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
             <p className="text-sm font-medium">Clients enregistrés:</p>
             <div className="space-y-1">
               {booking.guests.map((guest, index) => (
-                <div key={guest.id} className="text-sm text-muted-foreground bg-muted/50 px-2 py-1 rounded">
+                <div key={guest.id ?? index} className="text-sm text-muted-foreground bg-muted/50 px-2 py-1 rounded">
                   {guest.fullName} ({guest.nationality})
                 </div>
               ))}

@@ -3,7 +3,7 @@ import { Booking } from '@/types/booking';
 import { CheckinNotDoneCrossIcon, FigmaConflictIcon } from './ReservationStatusIcons';
 import { BookingLayout, isBookingStayPast } from './CalendarUtils';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
-import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
+import { getBookingDisplayTitle, isValidGuestName } from '@/utils/bookingDisplay';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 
 const CHECKIN_DONE_ICON_SRC = '/lovable-uploads/imagecheckcalendar.png';
@@ -14,45 +14,6 @@ interface CalendarBookingBarProps {
   conflicts: string[];
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
 }
-
-/**
- * ✅ CORRIGÉ : Fonction simplifiée pour détecter si un nom est valide
- * On ne vérifie plus le nombre de mots, juste si ce n'est pas un code Airbnb
- * Les noms à un seul mot comme "Mouhcine" sont maintenant acceptés
- */
-// ✅ UNIFIÉ AVEC MOBILE : Fonction pour vérifier si un nom est valide
-// Copié exactement de CalendarMobile.tsx (lignes 58-77)
-const isValidGuestName = (value: string): boolean => {
-  if (!value || value.trim().length === 0) return false;
-  
-  const trimmed = value.trim();
-  const lower = trimmed.toLowerCase();
-  
-  // Rejeter les mots-clés génériques
-  if (lower === 'réservation' || lower === 'airbnb') return false;
-  
-  // Rejeter les codes ICS/Airbnb (UID:, HM, CL, etc.)
-  if (/^(UID|HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9\-:]+/i.test(trimmed)) return false;
-  
-  // Rejeter les codes alphanumériques en majuscules (5+ caractères sans minuscules)
-  const condensed = trimmed.replace(/\s+/g, '');
-  if (/^[A-Z0-9\-]{5,}$/.test(condensed) && !/[a-z]/.test(trimmed)) return false;
-  
-  // Rejeter les codes courts (4+ caractères majuscules/chiffres sans espaces ni minuscules)
-  if (!/[a-z]/.test(trimmed) && !trimmed.includes(' ') && /^[A-Z0-9]+$/.test(condensed) && condensed.length >= 4) return false;
-  
-  // Doit contenir au moins une lettre
-  if (!/[a-zA-ZÀ-ÿ]/.test(trimmed)) return false;
-  
-  // Doit avoir entre 2 et 50 caractères
-  if (trimmed.length < 2 || trimmed.length > 50) return false;
-  
-  // Rejeter les mots interdits
-  const forbiddenWords = ['phone', 'airbnb', 'reservation', 'guest', 'client', 'booking'];
-  if (forbiddenWords.some(word => lower.includes(word))) return false;
-  
-  return true;
-};
 
 export const CalendarBookingBar = memo(({ 
   bookingData, 
@@ -66,7 +27,7 @@ export const CalendarBookingBar = memo(({
   const isConflict = conflicts.includes(booking.id);
   
   // 2. Obtenir le label à afficher
-  const displayLabel = getUnifiedBookingDisplayText(booking, bookingData.isStart);
+  const displayLabel = getBookingDisplayTitle(booking);
   
   // 3. ✅ CLEF : Déterminer si le displayLabel est un NOM VALIDE (comme "Mouhcine", "Zaineb")
   // ou un CODE (comme "HM8548HWET", "CLXYZ123")
@@ -136,9 +97,8 @@ export const CalendarBookingBar = memo(({
       }}
       title={displayLabel}
     >
-      {bookingData.isStart && (
+      {bookingData.isStart ? (
         <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
-          {/* Figma: cercle #000000 (done) ou #B3B3B3 (not done), icône Check ou X stylisée */}
           <div
             className="flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6"
             style={{ backgroundColor: circleBg }}
@@ -155,8 +115,7 @@ export const CalendarBookingBar = memo(({
               <CheckinNotDoneCrossIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             )}
           </div>
-          
-          {/* ✅ Avatar avec initiales (seulement pour noms valides) */}
+
           {isValidName && (
             <div
               className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden ${
@@ -168,18 +127,15 @@ export const CalendarBookingBar = memo(({
               </span>
             </div>
           )}
-          
-          {/* ✅ Nom OU Code de réservation */}
+
           <div className={`flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1 ${textColor}`}>
             <span className="text-xs sm:text-sm font-semibold truncate leading-tight">
-              {isValidName 
+              {isValidName
                 ? displayLabel.split(' ')[0]
-                : displayLabel.substring(0, 10) + (displayLabel.length > 10 ? '...' : '')
-              }
+                : displayLabel.substring(0, 10) + (displayLabel.length > 10 ? '...' : '')}
             </span>
-            {/* ✅ Compteur de guests (+1, +2, etc.) */}
             {(() => {
-              const guestCount = 'numberOfGuests' in booking 
+              const guestCount = 'numberOfGuests' in booking
                 ? (booking as any).numberOfGuests || 1
                 : (booking as any).guests?.length || 1;
               return guestCount > 1 ? (
@@ -189,6 +145,14 @@ export const CalendarBookingBar = memo(({
               ) : null;
             })()}
           </div>
+        </div>
+      ) : (
+        <div className={`flex items-center min-w-0 w-full pl-1 ${textColor}`}>
+          <span className="text-xs sm:text-sm font-semibold truncate leading-tight">
+            {isValidName
+              ? displayLabel.split(' ')[0]
+              : displayLabel.substring(0, 12) + (displayLabel.length > 12 ? '…' : '')}
+          </span>
         </div>
       )}
     </div>

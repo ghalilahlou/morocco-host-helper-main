@@ -104,7 +104,7 @@ export const PropertyDetail = () => {
   const t = useT();
   const { getPropertyById, isLoading: propertiesLoading, properties } = useProperties();
   // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
-  const { bookings, deleteBooking, refreshBookings } = useBookings({ propertyId: propertyId || undefined });
+  const { bookings, deleteBooking, refreshBookings, isLoading: bookingsLoading } = useBookings({ propertyId: propertyId || undefined });
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { generatePropertyVerificationUrl, isLoading: isGeneratingLink } = useGuestVerification();
   const { toast } = useToast();
@@ -560,6 +560,7 @@ export const PropertyDetail = () => {
           onRefreshBookings={refreshBookings}
           propertyId={property.id}
           airbnbIcsUrl={property.airbnb_ics_url}
+          bookingsLoading={bookingsLoading}
         />
       </div>
 

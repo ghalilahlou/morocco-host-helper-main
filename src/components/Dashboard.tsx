@@ -10,7 +10,6 @@ import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { debug } from '@/lib/logger';
 
 import { useT } from '@/i18n/GuestLocaleProvider';
-import { isAirbnbCode } from '@/utils/airbnbCodeFilter';
 
 // ✅ OPTIMISATION : Lazy loading pour CalendarView (composant lourd)
 const CalendarView = lazy(() => import('./CalendarView'));
@@ -24,6 +23,7 @@ interface DashboardProps {
   onRefreshBookings?: () => void;
   propertyId?: string;
   airbnbIcsUrl?: string | null;
+  bookingsLoading?: boolean;
 }
 
 export const Dashboard = memo(({ 
@@ -33,7 +33,8 @@ export const Dashboard = memo(({
   onDeleteBooking,
   onRefreshBookings,
   propertyId,
-  airbnbIcsUrl
+  airbnbIcsUrl,
+  bookingsLoading: bookingsLoadingProp
 }: DashboardProps) => {
   const t = useT();
   
@@ -44,6 +45,7 @@ export const Dashboard = memo(({
   const bookings = propBookings || fallback.bookings;
   const handleDeleteBooking = onDeleteBooking || fallback.deleteBooking;
   const handleRefreshBookings = onRefreshBookings || fallback.refreshBookings;
+  const bookingsLoading = bookingsLoadingProp ?? fallback.isLoading;
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('calendar');
@@ -51,18 +53,11 @@ export const Dashboard = memo(({
   // Bookings are already loaded by useBookings in the parent (PropertyDetail).
   // No need to trigger a redundant refresh here.
 
-  // 🚀 OPTIMISATION: Memoize filtered bookings pour éviter les re-calculs
   const filteredBookings = useMemo(() => {
-    const filtered = bookings.filter(booking => {
-      // ✅ CORRIGÉ : Exclure les réservations ICS (codes Airbnb HM..., UID:...) de la vue Cards
-      // Ces réservations sont gérées par le calendrier via calendarData.ts
-      if (isAirbnbCode(booking.bookingReference)) {
-        return false;
-      }
-      
-      // ✅ FILTRE 3 : Recherche par terme
+    return bookings.filter(booking => {
       const matchesSearch = !searchTerm || 
                            booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           booking.guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            (booking.guests || []).some(guest => guest?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()));
       
       const hasDocs = booking.documentsGenerated?.contract && booking.documentsGenerated?.policeForm;
@@ -71,8 +66,6 @@ export const Dashboard = memo(({
       
       return matchesSearch && matchesStatus;
     });
-    
-    return filtered;
   }, [bookings, searchTerm, statusFilter]);
 
   // Écouter l'événement de création de réservation depuis CalendarHeader
@@ -201,6 +194,7 @@ export const Dashboard = memo(({
               airbnbIcsUrl={airbnbIcsUrl}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
+              bookingsLoading={bookingsLoading}
             />
           </Suspense>
         </div>

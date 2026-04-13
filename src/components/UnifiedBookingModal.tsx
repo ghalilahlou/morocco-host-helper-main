@@ -495,14 +495,17 @@ export const UnifiedBookingModal = ({
         return;
       }
 
-      console.log('📄 [UNIFIED MODAL] Chargement des documents pour booking:', booking.id);
-      console.log('📄 [UNIFIED MODAL] Booking complet:', {
-        id: booking.id,
-        status: (booking as any).status,
-        hasContractUrl: !!(booking as any).contractUrl || !!(booking as any).contract_url,
-        hasPoliceUrl: !!(booking as any).policeUrl || !!(booking as any).police_url,
-        hasDocumentsGenerated: !!(booking as any).documents_generated
-      });
+      if (import.meta.env.DEV) {
+        const b = booking as Booking & { documents_generated?: unknown };
+        console.log('📄 [UNIFIED MODAL] Chargement des documents pour booking:', booking.id);
+        console.log('📄 [UNIFIED MODAL] Booking complet:', {
+          id: booking.id,
+          status: (booking as any).status,
+          hasContractUrl: !!(booking as any).contractUrl || !!(booking as any).contract_url,
+          hasPoliceUrl: !!(booking as any).policeUrl || !!(booking as any).police_url,
+          hasDocumentsGenerated: !!(booking as Booking).documentsGenerated || !!b.documents_generated,
+        });
+      }
       setShowManualCheck(false);
       
       // ✅ ÉTAPE 1 : LECTURE DIRECTE depuis les props du booking (INSTANTANÉ)
@@ -511,22 +514,25 @@ export const UnifiedBookingModal = ({
       const directPoliceUrl = bookingAny?.policeUrl || bookingAny?.police_url || null;
       const directIdentityUrl = bookingAny?.identityUrl || bookingAny?.identity_url || null;
       
-      // ✅ ÉTAPE 2 : Fallback avec documents_generated depuis le booking (INSTANTANÉ)
-      const docsGenerated = bookingAny?.documents_generated;
+      // ✅ ÉTAPE 2 : Fallback — props useBookings utilisent documentsGenerated (camelCase)
+      const docsGenerated =
+        bookingAny?.documentsGenerated ?? bookingAny?.documents_generated;
       const fallbackContractUrl = docsGenerated?.contractUrl || docsGenerated?.contract?.url || null;
       const fallbackPoliceUrl = docsGenerated?.policeUrl || docsGenerated?.police?.url || null;
       
       // ✅ STOCKER : Sauvegarder dans l'état pour l'affichage
       setDocsGeneratedState(docsGenerated);
       
-      console.log('📄 [UNIFIED MODAL] Étape 1-2 - URLs directes:', {
-        directContractUrl: !!directContractUrl,
-        directPoliceUrl: !!directPoliceUrl,
-        fallbackContractUrl: !!fallbackContractUrl,
-        fallbackPoliceUrl: !!fallbackPoliceUrl,
-        docsGeneratedType: typeof docsGenerated,
-        docsGeneratedValue: docsGenerated
-      });
+      if (import.meta.env.DEV) {
+        console.log('📄 [UNIFIED MODAL] Étape 1-2 - URLs directes:', {
+          directContractUrl: !!directContractUrl,
+          directPoliceUrl: !!directPoliceUrl,
+          fallbackContractUrl: !!fallbackContractUrl,
+          fallbackPoliceUrl: !!fallbackPoliceUrl,
+          docsGeneratedType: typeof docsGenerated,
+          docsGeneratedValue: docsGenerated
+        });
+      }
       
       // ✅ PRIORITÉ : Utiliser les URLs directes, sinon fallback
       const initialContractUrl = directContractUrl || fallbackContractUrl;
@@ -534,12 +540,14 @@ export const UnifiedBookingModal = ({
       
       // ✅ AFFICHAGE INSTANTANÉ : Si on a des URLs, les afficher immédiatement
       if (initialContractUrl || initialPoliceUrl || docsGenerated?.contract || docsGenerated?.police) {
-        console.log('✅ [UNIFIED MODAL] Documents trouvés directement dans booking:', {
-          contract: !!initialContractUrl,
-          police: !!initialPoliceUrl,
-          hasDocsGenerated: !!(docsGenerated?.contract || docsGenerated?.police)
-        });
-        
+        if (import.meta.env.DEV) {
+          console.log('✅ [UNIFIED MODAL] Documents trouvés directement dans booking:', {
+            contract: !!initialContractUrl,
+            police: !!initialPoliceUrl,
+            hasDocsGenerated: !!(docsGenerated?.contract || docsGenerated?.police)
+          });
+        }
+
         setDocuments({
           contractUrl: initialContractUrl,
           contractId: null,
@@ -550,11 +558,13 @@ export const UnifiedBookingModal = ({
         });
         
         // ✅ Afficher les icônes même si documents_generated indique juste true
-        if (!initialContractUrl && docsGenerated?.contract === true) {
-          console.log('📄 [UNIFIED MODAL] Contrat marqué comme généré dans documents_generated');
-        }
-        if (!initialPoliceUrl && docsGenerated?.police === true) {
-          console.log('📄 [UNIFIED MODAL] Police marquée comme générée dans documents_generated');
+        if (import.meta.env.DEV) {
+          if (!initialContractUrl && docsGenerated?.contract === true) {
+            console.log('📄 [UNIFIED MODAL] Contrat marqué comme généré dans documents_generated');
+          }
+          if (!initialPoliceUrl && docsGenerated?.police === true) {
+            console.log('📄 [UNIFIED MODAL] Police marquée comme générée dans documents_generated');
+          }
         }
       } else {
         // Pas d'URLs directes, on initialise avec loading
@@ -610,7 +620,7 @@ export const UnifiedBookingModal = ({
           const bookingData = bookingDataResult.value.data;
           bookingDocsGenerated = bookingData?.documents_generated || null;
           
-          if (bookingDocsGenerated) {
+          if (bookingDocsGenerated && import.meta.env.DEV) {
             console.log('📄 [UNIFIED MODAL] documents_generated depuis DB:', bookingDocsGenerated);
           }
         }

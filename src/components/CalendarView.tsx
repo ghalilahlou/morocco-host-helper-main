@@ -7,8 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 // ✅ CORRIGÉ : Imports supprimés - on n'utilise plus cleanGuestName/isValidGuestName ici
-// getUnifiedBookingDisplayText() gère toute la logique de nettoyage et validation
-import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
+import { getBookingDisplayTitle } from '@/utils/bookingDisplay';
 import { UnifiedBookingModal } from './UnifiedBookingModal';
 import { ConflictModal } from './ConflictModal';
 import { CalendarHeader } from './calendar/CalendarHeader';
@@ -29,7 +28,8 @@ import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { formatLocalDate } from '@/utils/dateUtils';
-import { hasAllRequiredDocumentsForCalendar, getBookingDocumentStatus } from '@/utils/bookingDocuments';
+import { getBookingDocumentStatus } from '@/utils/bookingDocuments';
+import { doBookingAndAirbnbMatch, isSameReservationByRef } from '@/utils/bookingAirbnbMatch';
 import { useT } from '@/i18n/GuestLocaleProvider';
 
 interface CalendarViewProps {
@@ -40,6 +40,8 @@ interface CalendarViewProps {
   airbnbIcsUrl?: string | null;
   viewMode?: 'cards' | 'calendar';
   onViewModeChange?: (mode: 'cards' | 'calendar') => void;
+  /** Si true, ne charge pas l’ICS tant que les bookings ne sont pas prêts (évite barres seules = codes Airbnb). */
+  bookingsLoading?: boolean;
 }
 
 // 🚀 OPTIMISATION: Cache intelligent avec TTL et limite de taille
@@ -99,17 +101,10 @@ class AirbnbCache {
 
 const airbnbCache = new AirbnbCache();
 
-export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefreshBookings, airbnbIcsUrl, viewMode = 'calendar', onViewModeChange }: CalendarViewProps) => {
+export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefreshBookings, airbnbIcsUrl, viewMode = 'calendar', onViewModeChange, bookingsLoading = false }: CalendarViewProps) => {
   const navigate = useNavigate();
   const t = useT();
   
-  // ✅ CORRIGÉ : Utiliser useRef pour capturer bookings sans causer de re-renders
-  const bookingsRef = useRef(bookings);
-  
-  // Mettre à jour la référence à chaque fois que bookings change
-  useEffect(() => {
-    bookingsRef.current = bookings;
-  }, [bookings]);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedBooking, setSelectedBooking] = useState<Booking | EnrichedBooking | AirbnbReservation | null>(null);
   const [airbnbReservations, setAirbnbReservations] = useState<AirbnbReservation[]>([]);
@@ -230,43 +225,10 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
         };
       });
       
-      // ✅ OPTIMISATION : Enrichissement synchrone (pas besoin de Promise.all car pas d'async)
-      const currentBookings = bookingsRef.current;
-      const finalReservations = formattedReservations.map(reservation => {
-        // Chercher une réservation correspondante dans bookings enrichis
-        const matchingBooking = currentBookings.find(b => {
-          const bookingStart = new Date(b.checkInDate);
-          const bookingEnd = new Date(b.checkOutDate);
-          const airbnbStart = reservation.startDate;
-          const airbnbEnd = reservation.endDate;
-          
-          const datesMatch = bookingStart.getTime() === airbnbStart.getTime() && 
-                            bookingEnd.getTime() === airbnbEnd.getTime();
-          
-          const refMatch = b.bookingReference && reservation.airbnbBookingId && 
-                          (b.bookingReference.includes(reservation.airbnbBookingId) || 
-                           reservation.airbnbBookingId.includes(b.bookingReference));
-          
-          return datesMatch || refMatch;
-        });
-        
-        if (matchingBooking) {
-          const enrichedBooking = matchingBooking as EnrichedBooking;
-          return {
-            ...reservation,
-            hasRealSubmissions: enrichedBooking.hasRealSubmissions,
-            realGuestNames: enrichedBooking.realGuestNames || [],
-            realGuestCount: enrichedBooking.realGuestCount || 0,
-            guest_name: (enrichedBooking as any).guest_name || reservation.guestName,
-            guestName: reservation.guestName
-          } as any;
-        }
-        
-        return reservation;
-      });
-      
-      airbnbCache.set(cacheKey, finalReservations);
-      setAirbnbReservations(finalReservations);
+      // Plus d'enrichissement ici : allReservations filtre les Airbnb matchés
+      // et ne garde que le booking manuel (source de vérité unique).
+      airbnbCache.set(cacheKey, formattedReservations);
+      setAirbnbReservations(formattedReservations);
 
       // If we got results, mark sync as success without an extra network call
       if (formattedReservations.length > 0) {
@@ -286,12 +248,12 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
     setHasIcs(!!airbnbIcsUrl);
   }, [airbnbIcsUrl]);
 
-  // ✅ OPTIMISATION : Charger les réservations Airbnb seulement quand hasIcs est défini
+  // ✅ Charger l’ICS seulement quand les bookings sont prêts : sinon allReservations = ICS seul → codes Airbnb.
   useEffect(() => {
-    if (hasIcs) {
+    if (hasIcs && !bookingsLoading) {
       loadAirbnbReservations();
     }
-  }, [hasIcs, loadAirbnbReservations]);
+  }, [hasIcs, loadAirbnbReservations, bookingsLoading]);
 
 const handleManualRefresh = useCallback(async () => {
   if (isRefreshing) return;
@@ -379,26 +341,25 @@ const handleManualRefresh = useCallback(async () => {
     };
   }, [propertyId, debouncedReload]);
 
-  // ✅ UNIFIÉ : Un seul handler pour tous les types de réservations
-  const handleBookingClick = useCallback((booking: Booking | AirbnbReservation) => {
-    console.log('🖱️ [CalendarView] handleBookingClick appelé:', {
-      bookingId: booking.id,
-      bookingType: 'source' in booking ? 'airbnb' : 'manual',
-      hasBooking: !!booking
-    });
-    
-    if (!booking) {
-      console.error('❌ [CalendarView] handleBookingClick: booking is null/undefined');
-      return;
+  /**
+   * Clic barre : si la ligne est une réservation Airbnb mais qu'un booking manuel
+   * enrichi correspond (mêmes dates / ref), ouvrir la modale sur ce booking (UUID)
+   * pour une seule source de vérité (documents, liens invité).
+   */
+  const handleBookingClick = useCallback((clicked: Booking | AirbnbReservation) => {
+    if (!clicked) return;
+
+    const isAirbnbRow = 'source' in clicked && (clicked as AirbnbReservation).source === 'airbnb';
+    if (isAirbnbRow) {
+      const manual = bookings.find((b) => doBookingAndAirbnbMatch(b, clicked as AirbnbReservation));
+      if (manual) {
+        setSelectedBooking(manual as EnrichedBooking);
+        return;
+      }
     }
-    
-    try {
-      setSelectedBooking(booking);
-      console.log('✅ [CalendarView] selectedBooking mis à jour');
-    } catch (error) {
-      console.error('❌ [CalendarView] Erreur lors de setSelectedBooking:', error);
-    }
-  }, []);
+
+    setSelectedBooking(clicked);
+  }, [bookings]);
 
   const handleSyncFromCalendar = useCallback(async () => {
     if (!propertyId) return;
@@ -514,24 +475,10 @@ const handleOpenConfig = useCallback(() => {
     const overrides: { [key: string]: string } = {};
     const updatedMatchedBookings: string[] = [];
     
-    // ÉTAPE 1: Détecter les matchs entre réservations manuelles et Airbnb
     bookings.forEach(booking => {
-      const manualStart = new Date(booking.checkInDate);
-      const manualEnd = new Date(booking.checkOutDate);
-      
-      const matchingAirbnb = airbnbReservations.find(airbnb => {
-        const airbnbStart = airbnb.startDate;
-        const airbnbEnd = airbnb.endDate;
-        
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
-                          manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = booking.bookingReference && airbnb.airbnbBookingId && 
-                         (booking.bookingReference.includes(airbnb.airbnbBookingId) || 
-                          airbnb.airbnbBookingId.includes(booking.bookingReference));
-        
-        return datesMatch || refsMatch;
-      });
-      
+      const matchingAirbnb = airbnbReservations.find(airbnb =>
+        doBookingAndAirbnbMatch(booking, airbnb)
+      );
       if (matchingAirbnb) {
         updatedMatchedBookings.push(booking.id);
       }
@@ -554,22 +501,10 @@ const handleOpenConfig = useCallback(() => {
       }
     });
 
-    // ÉTAPE 3: Couleurs pour les réservations Airbnb non matchées avec conflits
     airbnbReservations.forEach(reservation => {
-      const hasManualMatch = bookings.some(booking => {
-        const manualStart = new Date(booking.checkInDate);
-        const manualEnd = new Date(booking.checkOutDate);
-        const airbnbStart = reservation.startDate;
-        const airbnbEnd = reservation.endDate;
-        
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
-                          manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = booking.bookingReference && reservation.airbnbBookingId && 
-                         (booking.bookingReference.includes(reservation.airbnbBookingId) || 
-                          reservation.airbnbBookingId.includes(booking.bookingReference));
-        
-        return datesMatch || refsMatch;
-      });
+      const hasManualMatch = bookings.some(booking =>
+        doBookingAndAirbnbMatch(booking, reservation)
+      );
       
       if (!hasManualMatch) {
         if (conflicts.includes(reservation.id)) {
@@ -594,119 +529,25 @@ const handleOpenConfig = useCallback(() => {
     setMatchedBookings(matchedBookingsIds);
   }, [matchedBookingsIds]);
 
-  // ✅ CORRIGÉ : Combine bookings and Airbnb reservations avec enrichissement automatique
+  // Combine bookings et Airbnb.
+  // Principe : quand une ligne Airbnb (ICS) correspond à un booking manuel,
+  // on ne garde QUE le booking manuel (source de vérité : status, guests, docs).
+  // Les Airbnb sans match sont conservées telles quelles.
   const allReservations = useMemo(() => {
-    // Filtrer les réservations Airbnb qui ont un match avec une réservation manuelle
-    const filteredAirbnb = airbnbReservations.map(reservation => {
-      // Chercher une réservation correspondante dans bookings enrichis
-      const matchingBooking = bookings.find(booking => {
-        const manualStart = new Date(booking.checkInDate);
-        const manualEnd = new Date(booking.checkOutDate);
-        const airbnbStart = reservation.startDate;
-        const airbnbEnd = reservation.endDate;
-        
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() && 
-                          manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = booking.bookingReference && reservation.airbnbBookingId && 
-                         (booking.bookingReference.includes(reservation.airbnbBookingId) || 
-                          reservation.airbnbBookingId.includes(booking.bookingReference));
-        
-        return datesMatch || refsMatch;
-      });
-      
-      // Si on trouve un match, enrichir la réservation Airbnb avec les données du booking
-      // Laisser getUnifiedBookingDisplayText() choisir quel nom afficher selon sa logique de priorité
-      if (matchingBooking) {
-        const enrichedBooking = matchingBooking as EnrichedBooking;
-        // ✅ CORRIGÉ : Propager TOUTES les propriétés enrichies sans choisir/nettoyer manuellement le guestName
-        // getUnifiedBookingDisplayText() fera le nettoyage et le choix selon sa logique de priorité
-        return {
-          ...reservation,
-          // Propager toutes les propriétés enrichies pour que getUnifiedBookingDisplayText fonctionne
-          hasRealSubmissions: enrichedBooking.hasRealSubmissions,
-          realGuestNames: enrichedBooking.realGuestNames || [],
-          realGuestCount: enrichedBooking.realGuestCount || 0,
-          // Ne PAS nettoyer ou choisir manuellement - laisser getUnifiedBookingDisplayText() le faire
-          guest_name: (enrichedBooking as any).guest_name || reservation.guestName,
-          // Garder le guestName original de la réservation
-          guestName: reservation.guestName
-        } as any;
-      }
-      
-      return reservation;
-    });
+    // Set des ids bookings qui ont un match Airbnb (pour la couleur uniquement)
+    const matchedAirbnbIds = new Set<string>();
 
-    // ✅ CORRIGÉ : Filtrer séparément les réservations Airbnb sans doublons
-    const uniqueAirbnbReservations = filteredAirbnb.filter(reservation => {
-      // Vérifier que ce n'est pas un boolean (erreur de logique précédente)
+    // Airbnb sans booking correspondant = les seules lignes ICS affichées
+    const uniqueAirbnbReservations = airbnbReservations.filter(reservation => {
       if (typeof reservation === 'boolean') return false;
-
-      // Garder seulement celles qui n'ont PAS de match exact avec un booking
-      const hasManualMatch = bookings.some(booking => {
-        const manualStart = new Date(booking.checkInDate);
-        const manualEnd = new Date(booking.checkOutDate);
-        const airbnbStart = reservation.startDate;
-        const airbnbEnd = reservation.endDate;
-
-        const datesMatch = manualStart.getTime() === airbnbStart.getTime() &&
-                          manualEnd.getTime() === airbnbEnd.getTime();
-        const refsMatch = booking.bookingReference && reservation.airbnbBookingId &&
-                         (booking.bookingReference.includes(reservation.airbnbBookingId) ||
-                          reservation.airbnbBookingId.includes(booking.bookingReference));
-
-        return datesMatch || refsMatch;
-      });
-
+      const hasManualMatch = bookings.some(booking =>
+        doBookingAndAirbnbMatch(booking, reservation)
+      );
+      if (hasManualMatch) matchedAirbnbIds.add(reservation.id);
       return !hasManualMatch;
     });
-    
-    // ✅ CORRECTION : Filtrer les réservations pour n'afficher que celles avec tous les documents requis
-    // Une réservation doit avoir : contrat + police + identité pour apparaître
-    const SHOW_ALL_BOOKINGS = true; // ✅ TEMPORAIRE: Afficher toutes les réservations même sans police (en attendant le fix de génération)
-    
-    // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
-    // Ce log était dans un useMemo et s'exécutait à chaque re-render
-    // if (process.env.NODE_ENV === 'development') {
-    //   console.log('📊 [CalendarView] Réservations reçues:', ...);
-    // }
-    
-    // ✅ CORRECTION CRITIQUE : Filtrer les réservations pour n'afficher que celles 'completed' avec tous les documents
-    // Une réservation doit avoir : status='completed' + contrat + police + identité
-    // Filtrer les bookings pour ne garder que ceux qui sont 'completed' avec tous les documents
-    const filteredBookings = bookings.filter(booking => {
-      // ✅ TEMPORAIRE : Si SHOW_ALL_BOOKINGS est true, afficher toutes les réservations
-      if (SHOW_ALL_BOOKINGS) {
-        return true; // Afficher toutes les réservations pour diagnostiquer
-      }
-      
-      // Pour les réservations manuelles (bookings), vérifier qu'elles ont tous les documents
-      if (booking.status === 'completed') {
-        const hasAllDocs = hasAllRequiredDocumentsForCalendar(booking);
-        // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
-        // Ce log était dans un filter() et s'exécutait pour chaque réservation à chaque re-render
-        // if (process.env.NODE_ENV === 'development') {
-        //   console.log('🔍 [CalendarView] Réservation completed analysée:', ...);
-        // }
-        return hasAllDocs;
-      }
-      // Garder les autres statuts (pending, confirmed, etc.) pour l'instant
-      // L'utilisateur peut vouloir voir les réservations en cours aussi
-      return true;
-    });
-    
-    const allReservationsResult = [...filteredBookings, ...uniqueAirbnbReservations];
-    
-    // ✅ DEBUG CRITIQUE : Log détaillé pour diagnostiquer pourquoi aucune réservation n'apparaît
-    const completedBookings = filteredBookings.filter(b => b.status === 'completed');
-    const completedWithAllDocs = completedBookings.filter(b => hasAllRequiredDocumentsForCalendar(b));
-    const confirmedBookings = filteredBookings.filter(b => b.status === 'confirmed');
-    const pendingBookings = filteredBookings.filter(b => b.status === 'pending');
-    
-    // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies et le crash du navigateur
-    // Ce log était dans un useMemo et s'exécutait à chaque re-render
-    // console.log('📊 [CalendarView] Réservations finales pour affichage:', ...);
-    
-    return allReservationsResult;
+
+    return [...bookings, ...uniqueAirbnbReservations];
   }, [bookings, airbnbReservations]);
 
   // Generate calendar days
@@ -773,8 +614,7 @@ const handleOpenConfig = useCallback(() => {
   // ✅ CORRIGÉ : Utiliser les conflits déjà calculés plus haut (pas besoin de les recalculer)
   // Les conflits sont utilisés dans colorOverrides et passés au CalendarGrid
 
-  // ✅ NOUVEAU : Calculer les détails des conflits (paires de réservations en conflit avec dates)
-  // Utiliser les conflits déjà détectés pour construire les détails
+  // Conflict details: same filters as detectBookingConflicts (isValidated + sameRef skip)
   const conflictDetails = useMemo(() => {
     const conflictsList: Array<{
       id1: string;
@@ -787,16 +627,28 @@ const handleOpenConfig = useCallback(() => {
       end2: string;
     }> = [];
 
-    // Trouver toutes les paires de réservations qui se chevauchent
+    const formatDate = (date: Date) =>
+      date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
     for (let i = 0; i < allReservations.length; i++) {
       for (let j = i + 1; j < allReservations.length; j++) {
         const res1 = allReservations[i];
         const res2 = allReservations[j];
-        
+        if (res1.id === res2.id) continue;
+
         const isAirbnb1 = 'source' in res1 && res1.source === 'airbnb';
         const isAirbnb2 = 'source' in res2 && res2.source === 'airbnb';
-        
-        const start1 = isAirbnb1 
+
+        const ref1 = isAirbnb1
+          ? (res1 as unknown as AirbnbReservation).airbnbBookingId
+          : (res1 as Booking).bookingReference;
+        const ref2 = isAirbnb2
+          ? (res2 as unknown as AirbnbReservation).airbnbBookingId
+          : (res2 as Booking).bookingReference;
+
+        if (isSameReservationByRef(ref1, ref2)) continue;
+
+        const start1 = isAirbnb1
           ? new Date((res1 as any).startDate)
           : new Date((res1 as Booking).checkInDate);
         const end1 = isAirbnb1
@@ -808,44 +660,39 @@ const handleOpenConfig = useCallback(() => {
         const end2 = isAirbnb2
           ? new Date((res2 as any).endDate)
           : new Date((res2 as Booking).checkOutDate);
-        
-        // Normaliser les dates (midnight local)
+
         const normStart1 = new Date(start1.getFullYear(), start1.getMonth(), start1.getDate());
         const normEnd1 = new Date(end1.getFullYear(), end1.getMonth(), end1.getDate());
         const normStart2 = new Date(start2.getFullYear(), start2.getMonth(), start2.getDate());
         const normEnd2 = new Date(end2.getFullYear(), end2.getMonth(), end2.getDate());
-        
-        // Vérifier si les dates se chevauchent
+
         const overlaps = normStart1 < normEnd2 && normStart2 < normEnd1;
-        
-        if (overlaps) {
-          // Formater les dates pour l'affichage
-          const formatDate = (date: Date) => {
-            return date.toLocaleDateString('fr-FR', { 
-              day: '2-digit', 
-              month: '2-digit', 
-              year: 'numeric' 
-            });
-          };
-          
-          // Utiliser getUnifiedBookingDisplayText pour obtenir le nom d'affichage
-          const name1 = getUnifiedBookingDisplayText(res1, true);
-          const name2 = getUnifiedBookingDisplayText(res2, true);
-          
-          conflictsList.push({
-            id1: res1.id,
-            id2: res2.id,
-            name1: name1 || 'Réservation',
-            name2: name2 || 'Réservation',
-            start1: formatDate(normStart1),
-            end1: formatDate(normEnd1),
-            start2: formatDate(normStart2),
-            end2: formatDate(normEnd2)
-          });
-        }
+        if (!overlaps) continue;
+
+        if (normEnd1.getTime() <= normStart2.getTime() || normEnd2.getTime() <= normStart1.getTime()) continue;
+
+        const docStatus1 = !isAirbnb1 ? getBookingDocumentStatus(res1) : null;
+        const docStatus2 = !isAirbnb2 ? getBookingDocumentStatus(res2) : null;
+        const validated1 = docStatus1?.isValidated === true;
+        const validated2 = docStatus2?.isValidated === true;
+        if (!validated1 || !validated2) continue;
+
+        const name1 = getBookingDisplayTitle(res1);
+        const name2 = getBookingDisplayTitle(res2);
+
+        conflictsList.push({
+          id1: res1.id,
+          id2: res2.id,
+          name1: name1 || 'Réservation',
+          name2: name2 || 'Réservation',
+          start1: formatDate(normStart1),
+          end1: formatDate(normEnd1),
+          start2: formatDate(normStart2),
+          end2: formatDate(normEnd2)
+        });
       }
     }
-    
+
     return conflictsList;
   }, [allReservations]);
 
@@ -915,7 +762,7 @@ const handleOpenConfig = useCallback(() => {
         const end = 'source' in r && r.source === 'airbnb' ? (r as AirbnbReservation).endDate : new Date((r as Booking).checkOutDate);
         return {
           id: r.id,
-          displayName: getUnifiedBookingDisplayText(r, true) || 'Réservation',
+          displayName: getBookingDisplayTitle(r) || 'Réservation',
           startFormatted: formatDDMM(toLocalMidnight(start)),
           endFormatted: formatDDMM(toLocalMidnight(end)),
         };

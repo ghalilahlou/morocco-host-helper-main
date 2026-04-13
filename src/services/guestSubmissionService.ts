@@ -65,7 +65,9 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
     let submissions;
     
     if (submissionsCache && (now - submissionsCache.timestamp) < CACHE_DURATION) {
-      console.log('📋 Using cached guest submissions');
+      if (import.meta.env.DEV) {
+        console.log('📋 Using cached guest submissions');
+      }
       submissions = submissionsCache.data;
     } else {
       // ✅ OPTIMISATION TIMEOUT : Augmenter le délai à 15s pour les requêtes complexes
@@ -211,7 +213,9 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       // ✅ CACHE : Mettre en cache les résultats
       submissions = submissionsData;
       submissionsCache = { data: submissions, timestamp: now };
-      console.log('✅ Fetched guest submissions:', submissions);
+      if (import.meta.env.DEV) {
+        console.log('✅ Fetched guest submissions:', submissions);
+      }
     }
 
     const submissionsByBooking = (submissions || []).reduce((acc, submission) => {
@@ -235,24 +239,51 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       let hasSignature = false;
 
       bookingSubmissions.forEach(submission => {
-        if (submission.guest_data) {
-          // Handle different possible structures in guest_data
-          if (Array.isArray(submission.guest_data)) {
-            submission.guest_data.forEach((guest: any) => {
-              if (guest.fullName || guest.full_name) {
-                realGuestNames.push(guest.fullName || guest.full_name);
+        let guestData: any = submission.guest_data;
+        if (typeof guestData === 'string') {
+          try {
+            guestData = JSON.parse(guestData);
+          } catch {
+            guestData = null;
+          }
+        }
+
+        if (guestData) {
+          const extractName = (g: any): string | null => {
+            if (!g || typeof g !== 'object') return null;
+            if (g.fullName) return g.fullName;
+            if (g.full_name) return g.full_name;
+            if (g.name) return g.name;
+            if (g.firstName || g.lastName) {
+              return [g.firstName, g.lastName].filter(Boolean).join(' ');
+            }
+            if (g.first_name || g.last_name) {
+              return [g.first_name, g.last_name].filter(Boolean).join(' ');
+            }
+            const pi = g.personalInfo;
+            if (pi && typeof pi === 'object') {
+              if (pi.fullName) return pi.fullName;
+              if (pi.firstName || pi.lastName) {
+                return [pi.firstName, pi.lastName].filter(Boolean).join(' ');
               }
+            }
+            return null;
+          };
+
+          if (Array.isArray(guestData)) {
+            guestData.forEach((guest: any) => {
+              const n = extractName(guest);
+              if (n) realGuestNames.push(n);
             });
-          } else if (typeof submission.guest_data === 'object') {
-            // Handle single guest or guests array in object
-            if (submission.guest_data.guests && Array.isArray(submission.guest_data.guests)) {
-              submission.guest_data.guests.forEach((guest: any) => {
-                if (guest.fullName || guest.full_name) {
-                  realGuestNames.push(guest.fullName || guest.full_name);
-                }
+          } else if (typeof guestData === 'object') {
+            if (guestData.guests && Array.isArray(guestData.guests)) {
+              guestData.guests.forEach((guest: any) => {
+                const n = extractName(guest);
+                if (n) realGuestNames.push(n);
               });
-            } else if (submission.guest_data.fullName || submission.guest_data.full_name) {
-              realGuestNames.push(submission.guest_data.fullName || submission.guest_data.full_name);
+            } else {
+              const n = extractName(guestData);
+              if (n) realGuestNames.push(n);
             }
           }
         }
@@ -280,15 +311,51 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
         }
       });
 
-      // Remove duplicates and clean names
-      let uniqueNames = [...new Set(realGuestNames)]
-        .filter(name => name && name.trim().length > 0)
-        .map(name => name.trim().toUpperCase());
+      const toTitleCase = (s: string) =>
+        s.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 
-      // ✅ NOUVEAU : Si pas de noms trouvés dans les soumissions, utiliser le guest_name de la réservation
+      const placeholderLower = new Set([
+        'guest', 'client', 'invité', 'invite', 'voyageur', 'traveler',
+        'traveller', 'réservation', 'reservation', 'unknown', 'inconnu',
+        'n/a', 'na', 'test', '',
+      ]);
+
+      let uniqueNames = [...new Set(realGuestNames)]
+        .filter(name => {
+          if (!name || !name.trim()) return false;
+          if (placeholderLower.has(name.trim().toLowerCase())) return false;
+          // Reject ICS codes (e.g. HMBSQ4K8Z9)
+          if (/^[A-Z]{2}[A-Z0-9]{4,}$/i.test(name.trim())) return false;
+          if (/^UID:/i.test(name.trim())) return false;
+          return true;
+        })
+        .map(name => toTitleCase(name));
+
+      // Fallback to guests[].fullName before using guest_name (which is often a placeholder)
+      if (uniqueNames.length === 0 && booking.guests && booking.guests.length > 0) {
+        const firstValid = booking.guests.find(g =>
+          g.fullName &&
+          g.fullName.trim().length > 1 &&
+          !placeholderLower.has(g.fullName.trim().toLowerCase()) &&
+          !/^[A-Z]{2}[A-Z0-9]{4,}$/i.test(g.fullName.trim()) &&
+          !/^UID:/i.test(g.fullName.trim())
+        );
+        if (firstValid) {
+          uniqueNames = [toTitleCase(firstValid.fullName)];
+        }
+      }
+
+      // Last resort: guest_name, but only if it's a real name (not placeholder / ICS code)
       if (uniqueNames.length === 0 && booking.guest_name) {
-        uniqueNames = [booking.guest_name.trim().toUpperCase()];
-        console.log('🔍 Utilisation du guest_name de la réservation comme fallback:', booking.guest_name);
+        const gn = booking.guest_name.trim();
+        if (
+          gn.length > 1 &&
+          !placeholderLower.has(gn.toLowerCase()) &&
+          !/^[A-Z]{2}[A-Z0-9]{4,}$/i.test(gn) &&
+          !/^UID:/i.test(gn)
+        ) {
+          uniqueNames = [toTitleCase(gn)];
+        }
       }
 
       return {
@@ -325,18 +392,23 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       });
     }
     
-    console.log('✅ Enriched bookings with guest submissions:', {
-      total: enrichedBookings.length,
-      unique: uniqueIds.size,
-      duplicates: duplicates.length > 0 ? duplicates : 'none',
-      bookingIds: enrichedBookings.map(b => b.id.substring(0, 8)).join(', ')
-    });
-    console.log('✅ [ENRICH] Détails des réservations enrichies:', enrichedBookings.map(b => ({
-      id: b.id.substring(0, 8),
-      propertyId: b.propertyId?.substring(0, 8) || 'N/A',
-      status: b.status,
-      guestName: b.guest_name
-    })));
+    if (import.meta.env.DEV) {
+      console.log('✅ Enriched bookings with guest submissions:', {
+        total: enrichedBookings.length,
+        unique: uniqueIds.size,
+        duplicates: duplicates.length > 0 ? duplicates : 'none',
+        bookingIds: enrichedBookings.map(b => b.id.substring(0, 8)).join(', ')
+      });
+      console.log('✅ [ENRICH] Détails des réservations enrichies:', enrichedBookings.map(b => ({
+        id: b.id.substring(0, 8),
+        status: b.status,
+        guest_name: b.guest_name,
+        realGuestNames: b.realGuestNames,
+        hasRealSubs: b.hasRealSubmissions,
+        guestsCount: b.guests?.length ?? 0,
+        firstGuestFullName: b.guests?.[0]?.fullName ?? '(none)',
+      })));
+    }
     
     // ✅ PROTECTION : Retourner seulement les réservations uniques
     if (duplicates.length > 0) {

@@ -1,6 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
-import { AirbnbReservation } from '@/services/airbnbSyncService';
+import { getBookingDisplayTitle } from '@/utils/bookingDisplay';
 import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
 
 export interface CalendarEvent {
@@ -65,34 +64,18 @@ export async function fetchAirbnbCalendarEvents(
       return [];
     }
 
-    // Map each row to the calendar event shape
     const events: CalendarEvent[] = (airbnbData || []).map(row => {
       const startDateObj = parseLocalDate(row.start_date);
       const endDateObj = parseLocalDate(row.end_date);
-      
-      // +1 jour pour FullCalendar (dates exclusives)
+
       const endDateForCalendar = new Date(endDateObj);
       endDateForCalendar.setDate(endDateForCalendar.getDate() + 1);
       const endStr = formatLocalDate(endDateForCalendar);
-      
-      const tempReservation: AirbnbReservation = {
-        id: row.airbnb_booking_id,
-        summary: '',
-        startDate: startDateObj,
-        endDate: endDateObj,
-        description: '',
-        guestName: row.guest_name || undefined,
-        numberOfGuests: undefined,
-        airbnbBookingId: row.airbnb_booking_id,
-        rawEvent: ''
-      };
-      
-      const displayTitle = getUnifiedBookingDisplayText(tempReservation, true);
       const startStr = formatLocalDate(startDateObj);
-      
+
       return {
         id: row.airbnb_booking_id,
-        title: displayTitle,
+        title: row.guest_name || row.summary || 'Réservation',
         start: `${startStr}T00:00:00`,
         end: `${endStr}T00:00:00`,
         allDay: true,
@@ -142,7 +125,7 @@ export async function fetchAllCalendarEvents(
     // Fetch Airbnb events
     const airbnbEvents = await fetchAirbnbCalendarEvents(propertyId, start, end);
     
-    // ✅ CORRECTION : Filtrer les bookings par date range et utiliser getUnifiedBookingDisplayText
+    // ✅ CORRECTION : Filtrer les bookings par date range et utiliser getBookingDisplayTitle (aligné cartes)
     const rangeStart = parseLocalDate(start);
     const rangeEnd = parseLocalDate(end);
     
@@ -156,9 +139,7 @@ export async function fetchAllCalendarEvents(
         return checkIn <= rangeEnd && checkOut >= rangeStart;
       })
       .map(booking => {
-        // ✅ CORRECTION : Utiliser getUnifiedBookingDisplayText pour obtenir le titre approprié
-        // Cela gère automatiquement la logique de priorité (guest_name, realGuestNames, code Airbnb, etc.)
-        const title = getUnifiedBookingDisplayText(booking, true);
+        const title = getBookingDisplayTitle(booking);
         
         // ✅ CORRECTION : Calculer la date de fin pour FullCalendar (+1 jour car date exclusive)
         const checkOutDate = parseLocalDate(booking.checkOutDate);
