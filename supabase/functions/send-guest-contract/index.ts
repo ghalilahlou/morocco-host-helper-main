@@ -1,3 +1,13 @@
+/**
+ * Envoie l’email de confirmation au guest via Resend uniquement.
+ *
+ * - Aucune requête PostgREST : pas besoin de service role ici (contrairement aux fonctions
+ *   qui lisent/écrivent la DB pour un guest non authentifié).
+ * - config.toml : [functions.send-guest-contract] verify_jwt = false — le client ne doit pas
+ *   dépendre d’une session Supabase valide ; en cas de JWT périmé côté navigateur, préférer
+ *   nettoyer la session locale (voir guestSupabaseAuthCleanup côté app).
+ * - Les 500 viennent en pratique d’erreurs Resend (clé, domaine « from », etc.) ou d’exceptions.
+ */
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
@@ -8,6 +18,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 interface GuestContractRequest {

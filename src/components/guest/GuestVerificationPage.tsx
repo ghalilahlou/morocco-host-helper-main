@@ -1,12 +1,17 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { GuestVerification } from '@/pages/GuestVerification';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { clearStaleSupabaseSessionIfNeeded } from '@/lib/guestSupabaseAuthCleanup';
 
 /**
  * ✅ Wrapper stable pour GuestVerification avec nouveau design Figma
  * Utilise le GuestLocaleProvider global (App.tsx) pour la langue.
  */
 export const GuestVerificationPage: React.FC = () => {
+  useEffect(() => {
+    void clearStaleSupabaseSessionIfNeeded();
+  }, []);
+
   return (
     <ErrorBoundary
       fallback={

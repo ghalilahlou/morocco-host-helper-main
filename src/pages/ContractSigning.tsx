@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, Home, Heart, Sparkles, Calendar, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { clearStaleSupabaseSessionIfNeeded } from '@/lib/guestSupabaseAuthCleanup';
 import { useToast } from '@/hooks/use-toast';
 import { useT, useGuestLocale } from '@/i18n/GuestLocaleProvider';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -29,6 +30,10 @@ export const ContractSigning: React.FC = () => {
   // ✅ CORRIGÉ : Ref pour éviter les re-exécutions multiples
   const hasLoadedRef = useRef(false);
   const locationStateRef = useRef(location.state);
+
+  useEffect(() => {
+    void clearStaleSupabaseSessionIfNeeded();
+  }, []);
 
   useEffect(() => {
     // ✅ CORRIGÉ : Garde pour éviter les re-exécutions multiples
