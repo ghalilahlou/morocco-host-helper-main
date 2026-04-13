@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { getBookingDisplayTitle } from '@/utils/bookingDisplay';
+import { getBookingDisplayTitle, calendarBarLabelFromIcsRow } from '@/utils/bookingDisplay';
 import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
 
 export interface CalendarEvent {
@@ -73,9 +73,15 @@ export async function fetchAirbnbCalendarEvents(
       const endStr = formatLocalDate(endDateForCalendar);
       const startStr = formatLocalDate(startDateObj);
 
+      const title = calendarBarLabelFromIcsRow({
+        guest_name: row.guest_name,
+        summary: row.summary,
+        airbnb_booking_id: row.airbnb_booking_id,
+      });
+
       return {
         id: row.airbnb_booking_id,
-        title: row.guest_name || row.summary || 'Réservation',
+        title,
         start: `${startStr}T00:00:00`,
         end: `${endStr}T00:00:00`,
         allDay: true,

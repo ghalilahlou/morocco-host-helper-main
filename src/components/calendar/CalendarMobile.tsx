@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { getBookingDisplayTitle, isValidGuestName } from '@/utils/bookingDisplay';
+import { shouldShowIcalSyncBadge } from '@/domain/calendarReservationModel';
+import { useT } from '@/i18n/GuestLocaleProvider';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { 
   format, 
@@ -60,6 +62,8 @@ interface BookingBarData {
   guestName: string;
   guestCount: number;
   isValidName: boolean;
+  /** Clé technique UID iCal (référence ou airbnb_booking_id) — badge synchro */
+  showIcalBadge: boolean;
   color: string;
   textColor: string;
   isConflict: boolean;
@@ -78,6 +82,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   onDateChange,
   allReservations = [],
 }) => {
+  const t = useT();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   // ✅ NOUVEAU : Ref pour tracker si le scroll est déclenché par l'utilisateur ou programmatiquement
@@ -216,6 +221,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             guestName: displayText,
             guestCount,
             isValidName,
+            showIcalBadge: shouldShowIcalSyncBadge(booking, displayText),
             color,
             textColor,
             isConflict,
@@ -278,6 +284,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             guestName: displayText,
             guestCount,
             isValidName,
+            showIcalBadge: shouldShowIcalSyncBadge(bookingData.booking, displayText),
             color,
             textColor,
             isConflict,
@@ -621,6 +628,17 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                             )}
 
                             <div className={cn("flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1", textColor)}>
+                              {isStartOfBooking && bookingData.showIcalBadge && (
+                                <span
+                                  className="flex-shrink-0 rounded px-0.5 py-px text-[7px] sm:text-[8px] font-bold uppercase tracking-wide border border-white/35 bg-black/15"
+                                  aria-hidden
+                                  title={t('calendar.icalBadge.tooltip', {
+                                    name: bookingData.guestName,
+                                  })}
+                                >
+                                  {t('calendar.icalBadge.short')}
+                                </span>
+                              )}
                               <span className="text-[10px] sm:text-[11px] font-semibold truncate leading-tight">
                                 {bookingData.isValidName
                                   ? bookingData.guestName.split(' ')[0]

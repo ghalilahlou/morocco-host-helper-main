@@ -238,6 +238,7 @@ export const MobileDashboard = memo(({
                 bookings={bookings}
                 onEditBooking={onEditBooking}
                 propertyId={propertyId}
+                onDeleteBooking={handleDeleteBooking}
                 onRefreshBookings={handleRefreshBookings}
               />
             </motion.div>

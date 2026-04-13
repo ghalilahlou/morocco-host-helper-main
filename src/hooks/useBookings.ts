@@ -4,8 +4,10 @@ import { Booking } from '@/types/booking';
 import { useAuth } from '@/hooks/useAuth';
 import { enrichBookingsWithGuestSubmissions, EnrichedBooking, invalidateSubmissionsCache } from '@/services/guestSubmissionService';
 import { validateBookingData, logDataError } from '@/utils/errorMonitoring';
+import { sanitizeGuestNameForStorage } from '@/utils/bookingDisplay';
 import { debug, info, warn, error as logError } from '@/lib/logger';
 import { multiLevelCache } from '@/services/multiLevelCache';
+import { invalidateAirbnbEventsCache } from '@/services/calendarData';
 
 const BOOKINGS_QUERY_TIMEOUT = 8000;
 const CACHE_TTL = 60000; // 1 minute
@@ -94,47 +96,65 @@ function transformBooking(raw: any): Booking | null {
   };
 }
 
-/** Évite le flash code Airbnb : le réseau renvoie des lignes "base" sans soumissions avant l'enrichissement async. */
+/** Évite le flash code Airbnb : le réseau renvoie des lignes "base" sans soumissions avant l'enrichissement async.
+ * RÈGLE : ne jamais réinjecter un booking absent de `prev` (suppression optimiste). */
 function preserveSubmissionEnrichment(
   prev: EnrichedBooking[],
   incoming: EnrichedBooking[],
 ): EnrichedBooking[] {
   const prevById = new Map(prev.map((b) => [b.id, b]));
-  return incoming.map((b) => {
-    const p = prevById.get(b.id);
-    if (!p) return b;
+  return incoming
+    .map((b) => {
+      const p = prevById.get(b.id);
+      // Si le booking n’est pas dans prev (supprimé optimistement), on l’exclut.
+      // Il réapparaîtra via le réseau lors du prochain loadBookings si nécessaire.
+      if (!p) return null;
 
-    const prevHasNames = (p.realGuestNames?.length ?? 0) > 0;
-    const incomingHasNames = (b.realGuestNames?.length ?? 0) > 0;
+      const prevHasNames = (p.realGuestNames?.length ?? 0) > 0;
+      const incomingHasNames = (b.realGuestNames?.length ?? 0) > 0;
 
-    // Après F5 : cache / ancien enrich avait des noms ; la nouvelle passe peut avoir
-    // hasRealSubmissions mais realGuestNames [] (guest_data = "Guest", filtré, etc.).
-    // Sans ce garde-fou, setBookings(enriched) écrase les noms persistés.
-    if (prevHasNames && !incomingHasNames) {
-      return {
-        ...b,
-        realGuestNames: [...(p.realGuestNames || [])],
-        realGuestCount: p.realGuestCount || p.realGuestNames?.length || b.realGuestCount,
-        hasRealSubmissions: b.hasRealSubmissions || p.hasRealSubmissions,
-        submissionStatus: { ...p.submissionStatus, ...b.submissionStatus },
-      };
-    }
+      const enrichStillRunning = b.documentsLoading === true;
+      const serverSaysHasSubmissions = b.hasRealSubmissions === true;
+      const enrichFailed = b.enrichmentError === true;
+      const submissionsTimedOut = (b as EnrichedBooking).documentsTimeout === true;
 
-    const hadSubs =
-      (p.realGuestNames && p.realGuestNames.length > 0) || p.hasRealSubmissions;
-    const incomingEmpty =
-      (!b.realGuestNames || b.realGuestNames.length === 0) && !b.hasRealSubmissions;
-    if (hadSubs && incomingEmpty) {
-      return {
-        ...b,
-        realGuestNames: p.realGuestNames,
-        realGuestCount: p.realGuestCount,
-        hasRealSubmissions: p.hasRealSubmissions,
-        submissionStatus: p.submissionStatus,
-      };
-    }
-    return b;
-  });
+      // Ne conserver les noms du rendu précédent que si la nouvelle passe est incomplète
+      // (chargement, soumissions présentes mais JSON illisible, erreur réseau) — pas si le
+      // serveur confirme l’absence de soumissions (sinon noms fantômes après suppression).
+      if (prevHasNames && !incomingHasNames) {
+        const keepStaleNames =
+          enrichStillRunning ||
+          serverSaysHasSubmissions ||
+          enrichFailed ||
+          submissionsTimedOut;
+        if (keepStaleNames) {
+          return {
+            ...b,
+            realGuestNames: [...(p.realGuestNames || [])],
+            realGuestCount: p.realGuestCount || p.realGuestNames?.length || b.realGuestCount,
+            hasRealSubmissions: b.hasRealSubmissions || p.hasRealSubmissions,
+            submissionStatus: { ...p.submissionStatus, ...b.submissionStatus },
+          };
+        }
+        return b;
+      }
+
+      const hadSubs =
+        (p.realGuestNames && p.realGuestNames.length > 0) || p.hasRealSubmissions;
+      const incomingEmpty =
+        (!b.realGuestNames || b.realGuestNames.length === 0) && !b.hasRealSubmissions;
+      if (hadSubs && incomingEmpty && enrichStillRunning) {
+        return {
+          ...b,
+          realGuestNames: p.realGuestNames,
+          realGuestCount: p.realGuestCount,
+          hasRealSubmissions: p.hasRealSubmissions,
+          submissionStatus: p.submissionStatus,
+        };
+      }
+      return b;
+    })
+    .filter((b): b is EnrichedBooking => b !== null);
 }
 
 /** Réinjecte noms / soumissions depuis le cache (IndexedDB) pour éviter un flash « vide » au rechargement. */
@@ -209,14 +229,23 @@ export const useBookings = (options?: UseBookingsOptions) => {
     const cacheKey = buildCacheKey(propertyId, user.id, dateRange);
     const isStale = () => loadIdRef.current !== currentLoadId;
 
-    // STEP 1: Try cache first (instant display) — only if we have NO bookings yet
-    // Avoids overwriting enriched data with stale cache during realtime reloads.
+    // STEP 1: Try cache first (instant display)
+    // GARDE : ne jamais ré-injecter depuis le cache un booking absent du state courant (suppression fantôme).
     try {
       const cached = await multiLevelCache.get<EnrichedBooking[]>(cacheKey);
       if (cached && cached.length > 0 && !isStale()) {
         const relevant = propertyId ? cached.filter(b => b.propertyId === propertyId) : cached;
         if (relevant.length > 0) {
-          setBookings((prev) => prev.length > 0 ? preserveSubmissionEnrichment(prev, relevant) : relevant);
+          setBookings((prev) => {
+            if (prev.length > 0) {
+              // Filtrer le cache pour n'inclure que des IDs présents dans prev —
+              // évite de réintroduire un booking supprimé si le cache est encore chaud.
+              const prevIds = new Set(prev.map(b => b.id));
+              const safeRelevant = relevant.filter(b => prevIds.has(b.id));
+              return safeRelevant.length > 0 ? preserveSubmissionEnrichment(prev, safeRelevant) : prev;
+            }
+            return relevant;
+          });
           setIsLoading(false);
         }
       }
@@ -578,7 +607,7 @@ export const useBookings = (options?: UseBookingsOptions) => {
           check_out_date: booking.checkOutDate,
           number_of_guests: booking.numberOfGuests,
           booking_reference: booking.bookingReference,
-          guest_name: booking.guest_name,
+          guest_name: sanitizeGuestNameForStorage(booking.guest_name),
           status: statusForDb,
           documents_generated: booking.documentsGenerated as any
         })
@@ -657,7 +686,9 @@ export const useBookings = (options?: UseBookingsOptions) => {
       if (updates.checkOutDate) updateData.check_out_date = updates.checkOutDate;
       if (updates.numberOfGuests) updateData.number_of_guests = updates.numberOfGuests;
       if (updates.bookingReference !== undefined) updateData.booking_reference = updates.bookingReference;
-      if (updates.guest_name !== undefined) updateData.guest_name = updates.guest_name;
+      if (updates.guest_name !== undefined) {
+        updateData.guest_name = sanitizeGuestNameForStorage(updates.guest_name);
+      }
 
       if (updates.documentsGenerated) {
         const currentDocGen = (currentBooking.documents_generated as Record<string, any>) || { policeForm: false, contract: false };
@@ -729,19 +760,28 @@ export const useBookings = (options?: UseBookingsOptions) => {
         throw error;
       }
 
-      // Optimistic delete
+      // Optimistic delete — retirer immédiatement du state
       setBookings(prev => prev.filter(b => b.id !== id));
 
-      // Emit event for other components
-      window.dispatchEvent(new CustomEvent('booking-deleted', { detail: { bookingId: id } }));
-
       invalidateSubmissionsCache();
+      // Invalider AVANT de dispatcher l'événement : les listeners (PropertyDetail)
+      // liront ainsi un cache déjà propre, évitant la réinjection fantôme.
       await invalidateBookingCachesAfterMutation(
         bookingData?.property_id,
         user!.id,
         propertyId,
         dateRange
       );
+
+      // Cache mémoire séparé (calendarData) : sinon libellés Airbnb / fusion calendrier obsolètes jusqu’au TTL (~10s).
+      if (bookingData?.property_id) {
+        invalidateAirbnbEventsCache(bookingData.property_id);
+      }
+
+      // Dispatché APRÈS invalidation pour que PropertyDetail.refreshBookings
+      // (déclenché par cet événement) ne lise plus le cache périmé.
+      window.dispatchEvent(new CustomEvent('booking-deleted', { detail: { bookingId: id } }));
+
       await loadBookings();
     } catch (error) {
       logError('Error in deleteBooking', error as Error);

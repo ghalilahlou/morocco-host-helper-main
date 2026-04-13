@@ -160,16 +160,20 @@ class MultiLevelCache {
    * Invalider une clé du cache
    */
   async invalidate(key: string): Promise<void> {
-    // ✅ Level 1: Memory cache
+    // Level 1: Memory cache (synchrone)
     this.memoryCache.delete(key);
 
-    // ✅ Level 2: IndexedDB cache
+    // Level 2: IndexedDB cache (correctement wrappé dans une Promise)
     try {
       const db = await this.initIndexedDB();
       const tx = db.transaction([this.storeName], 'readwrite');
       const store = tx.objectStore(this.storeName);
-      await store.delete(key);
-    } catch (error) {
+      const req = store.delete(key);
+      await new Promise<void>((resolve) => {
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve(); // non-bloquant, on continue quoi qu'il arrive
+      });
+    } catch {
       // IndexedDB non disponible, ignorer silencieusement
     }
   }

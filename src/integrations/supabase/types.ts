@@ -509,9 +509,101 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      },
+      generated_documents: {
+        Row: {
+          booking_id: string | null
+          created_at: string | null
+          document_type: string
+          document_url: string | null
+          file_name: string
+          file_path: string | null
+          id: string
+          is_signed: boolean | null
+          signature_id: string | null
+          signed_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          booking_id?: string | null
+          created_at?: string | null
+          document_type: string
+          document_url?: string | null
+          file_name: string
+          file_path?: string | null
+          id?: string
+          is_signed?: boolean | null
+          signature_id?: string | null
+          signed_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          booking_id?: string | null
+          created_at?: string | null
+          document_type?: string
+          document_url?: string | null
+          file_name?: string
+          file_path?: string | null
+          id?: string
+          is_signed?: boolean | null
+          signature_id?: string | null
+          signed_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generated_documents_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "generated_documents_signature_id_fkey"
+            columns: ["signature_id"]
+            isOneToOne: false
+            referencedRelation: "contract_signatures"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
+      /** Vue matérialisée — rafraîchissement côté DB ; voir migration create_mv_bookings_enriched. */
+      mv_bookings_enriched: {
+        Row: {
+          booking_reference: string | null
+          check_in_date: string
+          check_out_date: string
+          created_at: string | null
+          documents_generated: Json | null
+          guest_count: number | null
+          guest_name: string | null
+          guest_submissions_data: Json | null
+          guests_data: Json | null
+          has_documents: boolean | null
+          has_signature: boolean | null
+          has_submissions: boolean | null
+          id: string
+          number_of_guests: number | null
+          property_data: Json | null
+          property_id: string | null
+          status: Database["public"]["Enums"]["booking_status"] | null
+          submission_count: number | null
+          submission_id: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      },
       v_booking_verification_summary: {
         Row: {
           booking_id: string | null

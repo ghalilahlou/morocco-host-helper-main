@@ -354,6 +354,9 @@ export default {
   'calendar.weekdayFri': 'vie',
   'calendar.weekdaySat': 'sáb',
   'calendar.weekdaySun': 'dom',
+  'calendar.icalBadge.short': 'iCal',
+  'calendar.icalBadge.tooltip':
+    '{{name}} — sincronización de calendario (identificador técnico Airbnb / iCal)',
   'calendar.monthJan': 'Enero',
   'calendar.monthFeb': 'Febrero',
   'calendar.monthMar': 'Marzo',

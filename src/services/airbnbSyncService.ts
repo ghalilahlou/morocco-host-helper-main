@@ -6,6 +6,8 @@ export interface AirbnbReservation {
   summary: string;
   startDate: Date;
   endDate: Date;
+  /** Renseigné côté client (ex. vue calendrier) pour distinguer les lignes import iCal. */
+  source?: 'airbnb';
   description?: string;
   guestName?: string;
   numberOfGuests?: number;

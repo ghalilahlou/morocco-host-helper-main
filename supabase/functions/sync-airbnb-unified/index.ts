@@ -1,6 +1,52 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+// Inlined (aligné src/utils/bookingDisplay) — le bundle de déploiement n’embarque souvent que ce fichier.
+function cleanGuestNameForSync(name: string | null | undefined): string {
+  if (!name) return "";
+  let cleaned = name.trim().replace(/\n/g, " ").replace(/\r/g, " ").replace(/\s+/g, " ");
+  cleaned = cleaned
+    .replace(/^[@#]\s*/, "")
+    .replace(/^(CL|PN|ZN|JN|UN|FN|HN|KN|SN|HM|CD|QT|MB|P|ZE|JBFD)\s+/i, "")
+    .replace(/^Airbnb\s*–\s*/i, "")
+    .replace(/^Réservation\s+(CL|PN|ZN|JN|UN|FN|HN|KN|SN|HM|CD|QT|MB|P|ZE|JBFD)\s*/i, "")
+    .replace(/^Réservation\s+[A-Z0-9]+\s*/i, "")
+    .replace(/\s*@\s*\d+\s*$/g, "")
+    .replace(/\s*@\s*\d+\s*/g, "")
+    .replace(/\s*\d+\s*$/g, "")
+    .replace(/\s+Phone\s*$/i, "")
+    .replace(/\s+@\s*Phone\s*$/i, "")
+    .replace(/\s*\([^)]*\)\s*$/g, "")
+    .trim();
+  return cleaned;
+}
+function isIcalAirbnbTechnicalUidSync(s: string | null | undefined): boolean {
+  if (!s || typeof s !== "string") return false;
+  const t = s.trim();
+  if (/^UID:/i.test(t)) return true;
+  if (/@airbnb\.com\s*$/i.test(t)) return true;
+  if (t.length >= 40 && t.includes("@") && /airbnb\.com/i.test(t)) return true;
+  return false;
+}
+function isAirbnbCodeSync(name: string | null | undefined): boolean {
+  if (!name) return false;
+  if (isIcalAirbnbTechnicalUidSync(name)) return true;
+  const trimmed = name.trim().toUpperCase();
+  const airbnbPatterns = [
+    /^HM[A-Z0-9]{2,10}$/, /^CL[A-Z0-9]{2,10}$/, /^PN[A-Z0-9]{2,10}$/, /^ZN[A-Z0-9]{2,10}$/,
+    /^JN[A-Z0-9]{2,10}$/, /^UN[A-Z0-9]{2,10}$/, /^FN[A-Z0-9]{2,10}$/, /^HN[A-Z0-9]{2,10}$/,
+    /^KN[A-Z0-9]{2,10}$/, /^SN[A-Z0-9]{2,10}$/, /^[A-Z]{2}[A-Z0-9]{4,8}$/, /^UID:[A-Z0-9\-]+$/i,
+  ];
+  return airbnbPatterns.some((pattern) => pattern.test(trimmed));
+}
+function sanitizeGuestNameForStorage(value: string | null | undefined): string | null {
+  const cleaned = cleanGuestNameForSync(value);
+  if (!cleaned) return null;
+  if (isIcalAirbnbTechnicalUidSync(cleaned)) return null;
+  if (isAirbnbCodeSync(cleaned)) return null;
+  return cleaned;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -431,12 +477,13 @@ serve(async (req) => {
           !validatedGuestName.toLowerCase().includes('phone') &&
           !validatedGuestName.match(/^[A-Z]{2,}\d+$/);
         
-        // Préserver le nom validé si disponible, sinon utiliser celui du ICS
-        const finalGuestName = isValidGuestName ? validatedGuestName : reservation.guest_name;
-        const finalSummary = isValidGuestName 
-          ? `Airbnb – ${validatedGuestName}` 
+        // Nom brut : booking validé > ICS ; puis nettoyage à l'écriture (pas de codes/UID en base)
+        const rawGuestName = isValidGuestName ? validatedGuestName : reservation.guest_name;
+        const finalGuestName = sanitizeGuestNameForStorage(rawGuestName);
+        const finalSummary = finalGuestName
+          ? `Airbnb – ${finalGuestName}`
           : reservation.summary;
-        
+
         return {
           ...reservation,
           guest_name: finalGuestName,

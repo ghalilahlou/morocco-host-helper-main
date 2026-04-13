@@ -6,8 +6,7 @@ import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
-// ✅ CORRIGÉ : Imports supprimés - on n'utilise plus cleanGuestName/isValidGuestName ici
-import { getBookingDisplayTitle } from '@/utils/bookingDisplay';
+import { getBookingDisplayTitle, ICAL_AIRBNB_DISPLAY_LABEL } from '@/utils/bookingDisplay';
 import { UnifiedBookingModal } from './UnifiedBookingModal';
 import { ConflictModal } from './ConflictModal';
 import { CalendarHeader } from './calendar/CalendarHeader';
@@ -30,12 +29,16 @@ import { cn } from '@/lib/utils';
 import { formatLocalDate } from '@/utils/dateUtils';
 import { getBookingDocumentStatus } from '@/utils/bookingDocuments';
 import { doBookingAndAirbnbMatch, isSameReservationByRef } from '@/utils/bookingAirbnbMatch';
+import { mergeBookingsWithAirbnbForCalendar } from '@/domain/calendarReservationModel';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { useBookings } from '@/hooks/useBookings';
 
 interface CalendarViewProps {
   bookings: EnrichedBooking[];
   onEditBooking: (booking: Booking) => void;
   propertyId?: string;
+  /** Suppression en cascade (guest_submissions, guests, documents, airbnb_reservations). Préférer celui du parent pour éviter un second hook. */
+  onDeleteBooking?: (id: string) => Promise<void>;
   onRefreshBookings?: () => void;
   airbnbIcsUrl?: string | null;
   viewMode?: 'cards' | 'calendar';
@@ -101,10 +104,13 @@ class AirbnbCache {
 
 const airbnbCache = new AirbnbCache();
 
-export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefreshBookings, airbnbIcsUrl, viewMode = 'calendar', onViewModeChange, bookingsLoading = false }: CalendarViewProps) => {
+export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onDeleteBooking: onDeleteBookingProp, onRefreshBookings, airbnbIcsUrl, viewMode = 'calendar', onViewModeChange, bookingsLoading = false }: CalendarViewProps) => {
   const navigate = useNavigate();
   const t = useT();
-  
+  // Même motif que Dashboard : cascade via useBookings.deleteBooking ; si le parent fournit déjà deleteBooking, éviter de filtrer deux fois les bookings.
+  const deleteBookingFallback = useBookings({ propertyId: onDeleteBookingProp ? undefined : propertyId });
+  const performDeleteBooking = onDeleteBookingProp ?? deleteBookingFallback.deleteBooking;
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedBooking, setSelectedBooking] = useState<Booking | EnrichedBooking | AirbnbReservation | null>(null);
   const [airbnbReservations, setAirbnbReservations] = useState<AirbnbReservation[]>([]);
@@ -119,7 +125,25 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
   const [openConflictFromAlert, setOpenConflictFromAlert] = useState<{ groupKey: string; weekIndex: number } | null>(null);
   const calendarSectionRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  
+
+  const handleCalendarDeleteBooking = useCallback(async (id: string) => {
+    const booking = bookings.find((b) => b.id === id);
+    if (!booking) return;
+    try {
+      await performDeleteBooking(id);
+      if (onRefreshBookings) await onRefreshBookings();
+      toast({ title: t('airbnb.bookingDeleted.title'), description: t('airbnb.bookingDeleted.desc') });
+    } catch (error) {
+      console.error('Error deleting booking:', error);
+      toast({
+        title: t('airbnb.deleteError.title'),
+        description: t('airbnb.deleteError.desc'),
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [bookings, performDeleteBooking, onRefreshBookings, toast, t]);
+
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const isMobile = useIsMobile();
@@ -197,11 +221,15 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onRefre
         // Le titre peut être soit un nom (ex: "Jean") soit "Réservation [CODE]"
         let guestName: string | undefined = undefined;
         
-        // Si le titre ne commence pas par "Réservation", c'est un nom valide
-        if (!event.title.toLowerCase().startsWith('réservation')) {
+        // Si le titre est un vrai nom (pas le label générique iCal, pas un préfixe "Réservation")
+        if (
+          event.title &&
+          event.title !== ICAL_AIRBNB_DISPLAY_LABEL &&
+          !event.title.toLowerCase().startsWith('réservation')
+        ) {
           guestName = event.title;
         } else {
-          // Si c'est "Réservation [CODE]", pas de guestName (sera enrichi plus tard)
+          // Label générique iCal ou code : ne pas l'utiliser comme nom d'invité
           guestName = undefined;
         }
         
@@ -394,10 +422,9 @@ const handleManualRefresh = useCallback(async () => {
         // ✅ Invalider également le cache des événements Airbnb
         invalidateAirbnbEventsCache(propertyId);
         if (propertyId) {
-          // Invalider TOUS les caches pour cette propriété (avec ou sans dateRange)
           const { multiLevelCache } = await import('@/services/multiLevelCache');
-          await multiLevelCache.invalidatePattern(`bookings-${propertyId}`);
-          await multiLevelCache.invalidatePattern(`bookings-${propertyId}-*`);
+          // Clés réelles : `bookings-v3-{uuid}…` — le UUID suffit pour tout invalider
+          await multiLevelCache.invalidatePattern(propertyId);
         }
         
         // ✅ OPTIMISATION : Rafraîchir les bookings sans délai inutile
@@ -529,26 +556,11 @@ const handleOpenConfig = useCallback(() => {
     setMatchedBookings(matchedBookingsIds);
   }, [matchedBookingsIds]);
 
-  // Combine bookings et Airbnb.
-  // Principe : quand une ligne Airbnb (ICS) correspond à un booking manuel,
-  // on ne garde QUE le booking manuel (source de vérité : status, guests, docs).
-  // Les Airbnb sans match sont conservées telles quelles.
-  const allReservations = useMemo(() => {
-    // Set des ids bookings qui ont un match Airbnb (pour la couleur uniquement)
-    const matchedAirbnbIds = new Set<string>();
-
-    // Airbnb sans booking correspondant = les seules lignes ICS affichées
-    const uniqueAirbnbReservations = airbnbReservations.filter(reservation => {
-      if (typeof reservation === 'boolean') return false;
-      const hasManualMatch = bookings.some(booking =>
-        doBookingAndAirbnbMatch(booking, reservation)
-      );
-      if (hasManualMatch) matchedAirbnbIds.add(reservation.id);
-      return !hasManualMatch;
-    });
-
-    return [...bookings, ...uniqueAirbnbReservations];
-  }, [bookings, airbnbReservations]);
+  // Combine bookings et Airbnb (logique centralisée : domain/calendarReservationModel).
+  const allReservations = useMemo(
+    () => mergeBookingsWithAirbnbForCalendar(bookings, airbnbReservations).allRows,
+    [bookings, airbnbReservations],
+  );
 
   // Generate calendar days
   const calendarDays = useMemo(() => generateCalendarDays(currentDate), [currentDate]);
@@ -981,15 +993,7 @@ const handleOpenConfig = useCallback(() => {
                 conflictGroupsWithPosition={conflictGroupsWithPosition}
                 openConflict={openConflictFromAlert}
                 onOpenConflictChange={setOpenConflictFromAlert}
-                onDeleteBooking={async (id: string) => {
-                  const booking = bookings.find((b) => b.id === id);
-                  if (booking) {
-                    const { error } = await supabase.from('bookings').delete().eq('id', id);
-                    if (error) throw error;
-                    if (onRefreshBookings) await onRefreshBookings();
-                    toast({ title: t('airbnb.bookingDeleted.title'), description: t('airbnb.bookingDeleted.desc') });
-                  }
-                }}
+                onDeleteBooking={handleCalendarDeleteBooking}
               />
             </motion.div>
           </AnimatePresence>
@@ -1011,39 +1015,7 @@ const handleOpenConfig = useCallback(() => {
           onClose={() => setShowConflictModal(false)}
           conflictDetails={conflictDetails}
           allReservations={allReservations}
-          onDeleteBooking={async (id: string) => {
-            try {
-              // Trouver la réservation à supprimer
-              const booking = bookings.find(b => b.id === id);
-              if (booking) {
-                // Supprimer via Supabase
-                const { error } = await supabase
-                  .from('bookings')
-                  .delete()
-                  .eq('id', id);
-                
-                if (error) throw error;
-                
-                // Rafraîchir les bookings
-                if (onRefreshBookings) {
-                  await onRefreshBookings();
-                }
-                
-                toast({
-                  title: t('airbnb.bookingDeleted.title'),
-                  description: t('airbnb.bookingDeleted.desc'),
-                });
-              }
-            } catch (error) {
-              console.error('Error deleting booking:', error);
-              toast({
-                title: t('airbnb.deleteError.title'),
-                description: t('airbnb.deleteError.desc'),
-                variant: "destructive"
-              });
-              throw error;
-            }
-          }}
+          onDeleteBooking={handleCalendarDeleteBooking}
         />
       )}
 

@@ -23,6 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { sanitizeGuestNameForStorage } from '@/utils/bookingDisplay';
 
 // ✅ ErrorBoundary local pour isoler le wizard
 class WizardErrorBoundary extends Component<
@@ -427,7 +428,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
             check_out_date: formData.checkOutDate,
             number_of_guests: formData.numberOfGuests,
             booking_reference: formData.bookingReference || null,
-            guest_name: primaryGuestName || null,
+            guest_name: sanitizeGuestNameForStorage(primaryGuestName),
             guest_email: primaryGuestEmail || null, // ✅ Réservation host : email invité principal pour documents/signature
             status: 'pending' as any, // ✅ TEMPORAIRE : Utiliser 'pending' si 'draft' n'existe pas encore dans l'ENUM
             // TODO: Changer en 'draft' une fois la migration add_draft_status_to_bookings.sql appliquée
@@ -872,7 +873,9 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
                   .update({
                 documents_generated: updatedDocumentsGenerated,
                 status: finalStatus, // ✅ Passer de 'draft' à 'pending' ou 'completed' après validation
-                guest_name: (guestsForDocGeneration[0]?.fullName || primaryGuestName || '').trim() || null
+                guest_name: sanitizeGuestNameForStorage(
+                  (guestsForDocGeneration[0]?.fullName || primaryGuestName || '').trim(),
+                )
                   })
                   .eq('id', bookingData.id);
 

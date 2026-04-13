@@ -190,6 +190,7 @@ export const Dashboard = memo(({
               bookings={bookings}
               onEditBooking={onEditBooking}
               propertyId={propertyId}
+              onDeleteBooking={handleDeleteBooking}
               onRefreshBookings={handleRefreshBookings}
               airbnbIcsUrl={airbnbIcsUrl}
               viewMode={viewMode}

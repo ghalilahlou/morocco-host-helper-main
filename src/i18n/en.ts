@@ -387,6 +387,9 @@ export default {
   'calendar.weekdayFri': 'Fri',
   'calendar.weekdaySat': 'Sat',
   'calendar.weekdaySun': 'Sun',
+  'calendar.icalBadge.short': 'iCal',
+  'calendar.icalBadge.tooltip':
+    '{{name}} — calendar sync (Airbnb / iCal technical identifier)',
   'calendar.monthJan': 'January',
   'calendar.monthFeb': 'February',
   'calendar.monthMar': 'March',

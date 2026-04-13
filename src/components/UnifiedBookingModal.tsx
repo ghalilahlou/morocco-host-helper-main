@@ -17,7 +17,11 @@ import { useGuestVerification } from '@/hooks/useGuestVerification';
 import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
-import { getUnifiedBookingDisplayText } from '@/utils/bookingDisplay';
+import {
+  getBookingDisplayTitle,
+  humanizeBookingReferenceForDisplay,
+  isAirbnbCode,
+} from '@/utils/bookingDisplay';
 import { supabase } from '@/integrations/supabase/client';
 import {
   AlertDialog,
@@ -94,6 +98,8 @@ export const UnifiedBookingModal = ({
   // ✅ PRESSE-PAPIERS : Lien préchargé à l'ouverture du modal pour copie synchrone au clic (iOS/Android)
   const [cachedGuestLinkUrl, setCachedGuestLinkUrl] = useState<string | null>(null);
   const [cachedGuestLinkLoading, setCachedGuestLinkLoading] = useState(false);
+  /** Aligné BookingCard : nom signataire si guest_name est un code ICS / placeholder */
+  const [signerNameForTitle, setSignerNameForTitle] = useState<string | null>(null);
 
   // ✅ DÉTECTION : Identifier le type de réservation (avant le useEffect)
   const isAirbnb = booking ? ('source' in booking && booking.source === 'airbnb') : false;
@@ -158,10 +164,40 @@ export const UnifiedBookingModal = ({
        '')
     : '';
   
-  // ✅ DISPLAY NAME : Nom d'affichage pour la réservation (guest name ou code)
-  const displayName = booking 
-    ? getUnifiedBookingDisplayText(booking as Booking | AirbnbReservation, true)
-    : '';
+  // ✅ DISPLAY NAME : même pipeline que calendrier / cartes (incl. signataire si ICS)
+  const displayName = useMemo(() => {
+    if (!booking) return '';
+    return getBookingDisplayTitle(booking as Booking | AirbnbReservation, {
+      signerNameFallback: signerNameForTitle,
+    });
+  }, [booking, signerNameForTitle]);
+
+  useEffect(() => {
+    setSignerNameForTitle(null);
+    if (!booking || isAirbnb) return;
+    const b = booking as Booking;
+    const gn = b.guest_name?.trim() || '';
+    const needsName =
+      !gn ||
+      ['guest', 'réservation', 'reservation'].includes(gn.toLowerCase()) ||
+      isAirbnbCode(gn);
+    if (!needsName) return;
+    let cancelled = false;
+    void (async () => {
+      const { data: sig } = await supabase
+        .from('contract_signatures')
+        .select('signer_name')
+        .eq('booking_id', b.id)
+        .not('signer_name', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled && sig?.signer_name) setSignerNameForTitle(sig.signer_name);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [booking?.id, isAirbnb, booking]);
 
   // ✅ STATUS BADGE : Couleur selon le statut
   const getStatusBadge = () => {
@@ -448,22 +484,20 @@ export const UnifiedBookingModal = ({
     }
   };
 
-  // ✅ TITRE : Code de réservation ou nom du client
+  // ✅ TITRE : aligné sur getBookingDisplayTitle (plus de UID ICS brut en en-tête)
   const getTitle = () => {
-    // Use the unified display text which already prioritises guest names
-    if (displayName && displayName !== 'Réservation') {
-      return displayName;
-    }
-
+    if (!booking) return '';
+    if (displayName) return displayName;
     if (isAirbnb) {
       const airbnbRes = booking as AirbnbReservation;
       return airbnbRes.airbnbBookingId || 'Réservation Airbnb';
     }
-
-    return bookingCode || `Réservation #${booking.id.slice(-6)}`;
+    const manual = booking as Booking;
+    const human = humanizeBookingReferenceForDisplay(manual.bookingReference);
+    return human || bookingCode || `Réservation #${manual.id.slice(-6)}`;
   };
 
-  // ✅ CODE RÉSERVATION : Extraction intelligente
+  // ✅ CODE RÉSERVATION : Extraction intelligente (UID iCal → libellé lisible)
   const getReservationCode = () => {
     if (isAirbnb) {
       const airbnbRes = booking as AirbnbReservation;
@@ -479,10 +513,12 @@ export const UnifiedBookingModal = ({
           }
         }
       }
-      return airbnbRes.airbnbBookingId || "Code non trouvé";
-    } else {
-      return bookingCode;
+      const abId = airbnbRes.airbnbBookingId || '';
+      return humanizeBookingReferenceForDisplay(abId) || abId || "Code non trouvé";
     }
+    const manualRef = (booking as Booking).bookingReference;
+    const human = humanizeBookingReferenceForDisplay(manualRef);
+    return human || bookingCode;
   };
 
   // ✅ CHARGEMENT DES DOCUMENTS : Lecture directe depuis props + fallback + timeout

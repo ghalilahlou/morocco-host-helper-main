@@ -4,6 +4,8 @@ import { CheckinNotDoneCrossIcon, FigmaConflictIcon } from './ReservationStatusI
 import { BookingLayout, isBookingStayPast } from './CalendarUtils';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { getBookingDisplayTitle, isValidGuestName } from '@/utils/bookingDisplay';
+import { shouldShowIcalSyncBadge } from '@/domain/calendarReservationModel';
+import { useT } from '@/i18n/GuestLocaleProvider';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 
 const CHECKIN_DONE_ICON_SRC = '/lovable-uploads/imagecheckcalendar.png';
@@ -21,6 +23,7 @@ export const CalendarBookingBar = memo(({
   conflicts, 
   onBookingClick 
 }: CalendarBookingBarProps) => {
+  const t = useT();
   const booking = bookingData.booking as Booking | AirbnbReservation;
 
   // 1. Détecter les conflits (priorité absolue = rouge)
@@ -34,6 +37,7 @@ export const CalendarBookingBar = memo(({
   // Si c'est un nom valide → réservation VALIDÉE (gris)
   // Si c'est un code → réservation EN ATTENTE (noir)
   const isValidName = isValidGuestName(displayLabel);
+  const showIcalSyncBadge = shouldShowIcalSyncBadge(booking, displayLabel);
   
   // Figma: bar #222222, circle #000000 (checkin done) or #B3B3B3 (not done)
   const bookingTyped = 'status' in booking ? (booking as Booking) : null;
@@ -95,7 +99,11 @@ export const CalendarBookingBar = memo(({
           onBookingClick(bookingData.booking);
         }
       }}
-      title={displayLabel}
+      title={
+        showIcalSyncBadge
+          ? t('calendar.icalBadge.tooltip', { name: displayLabel })
+          : displayLabel
+      }
     >
       {bookingData.isStart ? (
         <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
@@ -129,6 +137,14 @@ export const CalendarBookingBar = memo(({
           )}
 
           <div className={`flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1 ${textColor}`}>
+            {showIcalSyncBadge && (
+              <span
+                className="flex-shrink-0 rounded px-1 py-px text-[8px] sm:text-[9px] font-bold uppercase tracking-wide border border-white/35 bg-black/15"
+                aria-hidden
+              >
+                {t('calendar.icalBadge.short')}
+              </span>
+            )}
             <span className="text-xs sm:text-sm font-semibold truncate leading-tight">
               {isValidName
                 ? displayLabel.split(' ')[0]
