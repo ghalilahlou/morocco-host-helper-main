@@ -964,8 +964,8 @@ async function saveGuestDataInternal(
               property_id: booking.propertyId,
               guest_name: data.guest_name,
               summary: `Airbnb – ${data.guest_name}`,
-              start_date: booking.checkInDate || new Date().toISOString(),
-              end_date: booking.checkOutDate || new Date().toISOString(),
+              start_date: booking.checkIn || new Date().toISOString().split('T')[0],
+              end_date: booking.checkOut || new Date().toISOString().split('T')[0],
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             });
@@ -1163,8 +1163,8 @@ async function saveGuestDataInternal(
               property_id: booking.propertyId,
               guest_name: savedBooking.guest_name,
               summary: `Airbnb – ${savedBooking.guest_name}`,
-              start_date: booking.checkInDate || new Date().toISOString(),
-              end_date: booking.checkOutDate || new Date().toISOString(),
+              start_date: booking.checkIn || new Date().toISOString().split('T')[0],
+              end_date: booking.checkOut || new Date().toISOString().split('T')[0],
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
             });
@@ -2206,7 +2206,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
   }, 'Génération fiche de police');
 }
 
-// ÉTAPE 5: Envoi de l'email avec gestion d'erreur
+// ÉTAPE 5: Envoi de l'email avec gestion d'erreur (ne bloque jamais le flux métier : retourne false après échec des retries)
 async function sendGuestContractInternal(
   guestInfo: GuestInfo, 
   booking: ResolvedBooking,
@@ -2219,7 +2219,8 @@ async function sendGuestContractInternal(
     hasPoliceUrl: !!policeUrl
   });
 
-  return await withRetry(async () => {
+  try {
+    return await withRetry(async () => {
     const functionUrl = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
@@ -2229,13 +2230,27 @@ async function sendGuestContractInternal(
 
     const supabaseClient = await getServerClient();
 
+    let propertyName = (booking.propertyName || '').trim();
+    let propertyAddress = (booking.propertyAddress || '').trim();
+    if (!propertyName && booking.propertyId) {
+      const { data: propRow } = await supabaseClient
+        .from('properties')
+        .select('name, address')
+        .eq('id', booking.propertyId)
+        .maybeSingle();
+      if (propRow?.name?.trim()) propertyName = propRow.name.trim();
+      if (propRow?.address?.trim()) propertyAddress = propRow.address.trim();
+    }
+    if (!propertyName) propertyName = 'Propriété';
+    if (!propertyAddress) propertyAddress = propertyName;
+
     const emailData = {
       guestEmail: guestInfo.email,
       guestName: `${guestInfo.firstName} ${guestInfo.lastName}`,
       checkIn: booking.checkIn,
       checkOut: booking.checkOut,
-      propertyName: booking.propertyName,
-      propertyAddress: booking.propertyAddress || booking.propertyName,
+      propertyName,
+      propertyAddress,
       contractUrl: contractUrl,
       policeUrl: policeUrl,
       numberOfGuests: booking.numberOfGuests || 1,
@@ -2285,6 +2300,13 @@ async function sendGuestContractInternal(
     return true;
 
   }, 'Envoi email');
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    log('warn', 'Envoi email définitivement échoué après retries — flux invité considéré comme réussi sans email', {
+      error: msg,
+    });
+    return false;
+  }
 }
 
 // Mise à jour du statut final avec métadonnées complètes
@@ -2796,7 +2818,9 @@ serve(async (req) => {
       const supabaseClient = await getServerClient();
       const { data: bookingData, error: bookingError } = await supabaseClient
         .from('bookings')
-        .select('id, guest_name, guest_email, guest_phone, number_of_guests')
+        .select(
+          'id, property_id, booking_reference, check_in_date, check_out_date, guest_name, guest_email, guest_phone, number_of_guests'
+        )
         .eq('id', requestBody.bookingId)
         .single();
       
@@ -2979,8 +3003,8 @@ serve(async (req) => {
                 airbnbCode: bookingData.booking_reference || '',
                 checkIn: bookingData.check_in_date,
                 checkOut: bookingData.check_out_date,
-                propertyName: propertyData?.name || '',
-                propertyAddress: propertyData?.address || '',
+                propertyName: propertyData?.name?.trim() || 'Propriété',
+                propertyAddress: propertyData?.address?.trim() || propertyData?.name?.trim() || 'Propriété',
                 guestName: guestName,
                 numberOfGuests: bookingData.number_of_guests || 1
               },
@@ -2988,9 +3012,18 @@ serve(async (req) => {
               policeUrl || undefined // ✅ Passer aussi l'URL de la fiche de police si disponible
             );
             emailSent = emailResult;
-            log('info', '[generate_contract_only] Email envoyé', { success: emailSent });
+            if (emailSent) {
+              log('info', '[generate_contract_only] Email envoyé', { success: true });
+            } else {
+              log('warn', '[generate_contract_only] Email non envoyé (Resend / domaine — voir logs)', {
+                guestEmail: bookingData.guest_email,
+              });
+            }
           } catch (emailError) {
-            log('warn', '[generate_contract_only] Envoi email échoué', { error: emailError.message });
+            log('warn', '[generate_contract_only] Erreur inattendue bloc email (non bloquant)', {
+              error: emailError instanceof Error ? emailError.message : String(emailError),
+            });
+            emailSent = false;
           }
         }
         

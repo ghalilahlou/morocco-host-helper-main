@@ -119,6 +119,43 @@ describe('mergeBookingsWithAirbnbForCalendar', () => {
     expect(allRows.map((r) => r.id)).toEqual(['book-1']);
   });
 
+  it('hides Airbnb row when manual booking matches via guest_name HM code (bookingReference INDEPENDENT)', () => {
+    const manual = {
+      id: 'f03cd07e',
+      checkInDate: '2026-04-16',
+      checkOutDate: '2026-04-18',
+      numberOfGuests: 1,
+      bookingReference: 'INDEPENDENT_BOOKING',
+      guest_name: 'HMRFMPQN5Z',
+      status: 'completed',
+      guests: [],
+      realGuestNames: ['Yassine Madihi'],
+      realGuestCount: 1,
+      hasRealSubmissions: true,
+      submissionStatus: {
+        hasDocuments: true,
+        hasSignature: true,
+        documentsCount: 1,
+      },
+    } as EnrichedBooking;
+
+    const airbnb: AirbnbReservation = {
+      id: 'air-ics-1',
+      summary: 'Airbnb',
+      startDate: new Date(2026, 3, 16),
+      endDate: new Date(2026, 3, 18),
+      airbnbBookingId: 'HMRFMPQN5Z',
+    };
+
+    const { allRows, suppressedAirbnbIds } = mergeBookingsWithAirbnbForCalendar(
+      [manual],
+      [airbnb],
+    );
+
+    expect(suppressedAirbnbIds).toContain('air-ics-1');
+    expect(allRows.map((r) => r.id)).toEqual(['f03cd07e']);
+  });
+
   it('keeps both when dates differ', () => {
     const manual = {
       id: 'book-1',

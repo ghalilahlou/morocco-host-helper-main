@@ -12,6 +12,8 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") || "notifications@resend.dev";
+/** Si défini (ex. tests tant que le domaine n’est pas vérifié sur Resend), tous les envois vont à cette adresse ; le mail du guest reste en reply_to + mention dans le sujet. */
+const RESEND_REDIRECT_TO_EMAIL = Deno.env.get("RESEND_REDIRECT_TO_EMAIL")?.trim() ?? "";
 const RESEND_API_URL = "https://api.resend.com/emails";
 
 const corsHeaders = {
@@ -71,12 +73,26 @@ serve(async (req) => {
       currency = "EUR"
     } = body;
 
-    if (!guestEmail || !guestName || !checkIn || !checkOut || !propertyName) {
+    if (!guestEmail || !guestName || !checkIn || !checkOut) {
       return new Response(
         JSON.stringify({ error: "Missing required fields" }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
+
+    const displayPropertyName =
+      (typeof propertyName === "string" && propertyName.trim() !== "")
+        ? propertyName.trim()
+        : "Votre hébergement";
+    const displayPropertyAddress =
+      (typeof propertyAddress === "string" && propertyAddress.trim() !== "")
+        ? propertyAddress.trim()
+        : displayPropertyName;
+
+    const guestCount =
+      typeof numberOfGuests === "number" && numberOfGuests > 0
+        ? numberOfGuests
+        : 1;
 
     // Validation de l'email
     const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
@@ -87,13 +103,19 @@ serve(async (req) => {
       );
     }
 
-    const subject = `[Confirmation] Votre réservation - ${propertyName}`;
+    const redirectActive =
+      RESEND_REDIRECT_TO_EMAIL.length > 0 &&
+      RESEND_REDIRECT_TO_EMAIL.includes("@");
+    const toAddresses = redirectActive ? [RESEND_REDIRECT_TO_EMAIL] : [guestEmail];
+    const subjectPrefix = redirectActive ? `[Test → ${guestEmail}] ` : "";
+    const subject = `${subjectPrefix}[Confirmation] Votre réservation - ${displayPropertyName}`;
 
     const priceDisplay = totalPrice ? `\nPrix total : ${totalPrice} ${currency}` : "";
     const contractLink = contractUrl ? `\n\n📄 <a href="${contractUrl}" style="background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;">Télécharger votre contrat</a>` : "";
 
     const html = `
       <div style="font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: #111; max-width: 600px; margin: 0 auto;">
+        ${redirectActive ? `<p style="font-size:12px;color:#b45309;background:#fffbeb;padding:8px 12px;border-radius:6px;margin-bottom:12px;">Mode test Resend : envoi redirigé. Destinataire prévu : <strong>${guestEmail}</strong></p>` : ""}
         <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
           <h1 style="margin:0 0 16px 0; color: #1f2937;">Confirmation de réservation</h1>
           <p style="margin:0 0 8px 0; font-size: 18px;">Bonjour <strong>${guestName}</strong>,</p>
@@ -105,8 +127,8 @@ serve(async (req) => {
           
           <div style="margin-bottom: 16px;">
             <strong style="color: #374151;">🏠 Propriété :</strong>
-            <p style="margin: 4px 0 0 20px; color: #6b7280;">${propertyName}</p>
-            <p style="margin: 4px 0 0 20px; color: #6b7280;">📍 ${propertyAddress}</p>
+            <p style="margin: 4px 0 0 20px; color: #6b7280;">${displayPropertyName}</p>
+            <p style="margin: 4px 0 0 20px; color: #6b7280;">📍 ${displayPropertyAddress}</p>
           </div>
 
           <div style="margin-bottom: 16px;">
@@ -119,7 +141,7 @@ serve(async (req) => {
 
           <div style="margin-bottom: 16px;">
             <strong style="color: #374151;">👥 Nombre de voyageurs :</strong>
-            <p style="margin: 4px 0 0 20px; color: #6b7280;">${numberOfGuests} personne${numberOfGuests > 1 ? 's' : ''}</p>
+            <p style="margin: 4px 0 0 20px; color: #6b7280;">${guestCount} personne${guestCount > 1 ? 's' : ''}</p>
           </div>
           ${priceDisplay}
         </div>
@@ -165,7 +187,8 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         from: FROM_EMAIL,
-        to: [guestEmail],
+        to: toAddresses,
+        ...(redirectActive ? { reply_to: guestEmail } : {}),
         subject,
         html,
       }),
@@ -176,20 +199,26 @@ serve(async (req) => {
     if (!res.ok) {
       const errorMessage = (resBody as { message?: string }).message ?? resBody?.error ?? `HTTP ${res.status}`;
       console.error("Resend API error:", res.status, errorMessage, resBody);
+      const hint403 =
+        res.status === 403
+          ? "Resend 403: vérifier le domaine sur resend.com/domains et RESEND_FROM_EMAIL, ou utiliser RESEND_REDIRECT_TO_EMAIL vers une adresse de test."
+          : "Check RESEND_API_KEY and Resend domain/from-email verification";
       return new Response(
         JSON.stringify({
           error: String(errorMessage),
           success: false,
-          hint: "Check RESEND_API_KEY and Resend domain/from-email verification",
+          hint: hint403,
         }),
         {
-          status: res.status >= 500 ? 502 : 500,
+          status: res.status >= 500 ? 502 : res.status === 403 ? 502 : 500,
           headers: { "Content-Type": "application/json", ...corsHeaders },
         }
       );
     }
 
-    console.log(`✅ Email envoyé avec succès à ${guestEmail} pour ${guestName}`);
+    console.log(
+      `✅ Email envoyé (${redirectActive ? `redirect=${RESEND_REDIRECT_TO_EMAIL}` : `to=${guestEmail}`}) pour ${guestName}`,
+    );
 
     return new Response(JSON.stringify({
       success: true,

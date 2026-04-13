@@ -896,38 +896,70 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
         timeoutPromise
       ]) as any;
 
-      // ✅ CORRIGÉ : Générer le contrat signé PUIS la police (SÉQUENTIELLEMENT pour éviter les race conditions)
-      Promise.resolve().then(async () => {
-        try {
-          // 1. D'abord générer le contrat signé
-          console.log('📄 [SEQUENTIAL] Génération du contrat signé...');
-          const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+      // Génération du contrat / documents : attendre avant « confirmé » pour aligner UI et base
+      const generateTimeoutMs = 45000;
+      const generateTimeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('contract_generation_timeout')), generateTimeoutMs);
+      });
+
+      const contractLocale = locale === 'en' || locale === 'es' ? locale : 'fr';
+      let generatePayload: { data: unknown; error: unknown };
+      try {
+        generatePayload = await Promise.race([
+          supabase.functions.invoke('submit-guest-info-unified', {
             body: {
-              bookingId: bookingId,
+              bookingId,
               action: 'generate_contract_only',
               signature: {
                 data: signature,
                 timestamp: new Date().toISOString()
-              }
+              },
+              locale: contractLocale
             }
-          });
+          }),
+          generateTimeoutPromise
+        ]) as { data: unknown; error: unknown };
+      } catch (raceErr) {
+        const isTimeout = raceErr instanceof Error && raceErr.message === 'contract_generation_timeout';
+        toast({
+          title: t('contractSigning.contractGenFailedTitle'),
+          description: isTimeout
+            ? t('contractSigning.contractGenTimeoutDescription')
+            : t('contractSigning.contractGenFailedDescription'),
+          variant: 'destructive'
+        });
+        return;
+      }
 
-          if (error) {
-            console.warn('⚠️ Erreur lors de la génération du contrat signé:', error);
-          } else if (data?.success && data?.contractUrl && isMountedRef.current) {
-            setSignedContractUrl(data.contractUrl);
-            console.log('✅ [SEQUENTIAL] Contrat signé généré');
-          }
-          
-          // ✅ NOTE : La fiche de police est déjà générée par save-contract-signature
-          // via regenerate-police-with-signature. Pas besoin de la regénérer ici.
-          // Cela évite les race conditions et l'écrasement de la signature.
-          console.log('✅ [SEQUENTIAL] Fiche de police déjà générée par save-contract-signature');
-        } catch (generateError) {
-          console.error('⚠️ Failed to generate documents:', generateError);
-        }
-      });
-  
+      const { data: genData, error: genError } = generatePayload as {
+        data: { success?: boolean; contractUrl?: string; error?: string } | null;
+        error: { message?: string } | null;
+      };
+
+      if (genError) {
+        toast({
+          title: t('contractSigning.contractGenFailedTitle'),
+          description: genError.message || t('contractSigning.contractGenFailedDescription'),
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (!genData?.success) {
+        toast({
+          title: t('contractSigning.contractGenFailedTitle'),
+          description:
+            (typeof genData?.error === 'string' && genData.error) ||
+            t('contractSigning.contractGenFailedDescription'),
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (isMountedRef.current && genData.contractUrl) {
+        setSignedContractUrl(genData.contractUrl);
+      }
+
       // Notify property owner (non-blocking)
       Promise.resolve().then(async () => {
         try {
@@ -969,22 +1001,21 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
             });
             
             if (guestEmailError) {
-              // Erreur envoi email guest (non-bloquant)
+              console.warn('⚠️ Email invité (send-guest-contract) non envoyé — non bloquant:', guestEmailError);
             }
           }
         } catch (guestNotifyError) {
-          console.error('⚠️ Notification guest échouée:', guestNotifyError);
+          console.warn('⚠️ Notification guest échouée (non bloquant):', guestNotifyError);
         }
       });
 
-      // ✅ CORRIGÉ : Marquer immédiatement comme terminé pour éviter les blocages
       if (isMountedRef.current) {
         setCurrentStep('celebration');
       }
-      
+
       toast({
-        title: 'Contrat signé avec succès',
-        description: 'Votre séjour est maintenant confirmé. Vous recevrez un email de confirmation sous peu.',
+        title: t('contractSigning.signedToastTitle'),
+        description: t('contractSigning.signedToastDescription'),
       });
 
       // ✅ Sauvegarder le nom du voyageur pour la page de confirmation (ContractSigning)

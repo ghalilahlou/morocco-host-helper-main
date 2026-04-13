@@ -428,6 +428,11 @@ export default {
   'contractSigning.chipDatesLabel': 'Dates',
   'contractSigning.chipTravelersLabel': 'Voyageurs',
   'contractSigning.footer': '© {{year}} Checky — Tous droits réservés, Mentions légales • Politique de confidentialité • CGV',
+  'contractSigning.signedToastTitle': 'Contrat signé avec succès',
+  'contractSigning.signedToastDescription': 'Votre séjour est confirmé. Vous pouvez recevoir un email de confirmation sous peu.',
+  'contractSigning.contractGenFailedTitle': 'Impossible de finaliser les documents',
+  'contractSigning.contractGenFailedDescription': 'Votre signature a été enregistrée, mais les documents n\'ont pas pu être générés. Réessayez ou contactez votre hôte.',
+  'contractSigning.contractGenTimeoutDescription': 'La génération a pris trop de temps. Votre signature est peut-être enregistrée — actualisez la page ou contactez votre hôte.',
 
   // Tutoriel tableau de bord propriété
   'tutorial.previous': 'Précédent',

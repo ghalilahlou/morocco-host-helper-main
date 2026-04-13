@@ -1,5 +1,6 @@
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
+import { isAirbnbCode } from '@/utils/bookingDisplay';
 
 function toLocalMidnight(d: Date | string): Date {
   if (typeof d === 'string') {
@@ -46,19 +47,50 @@ export function isMatchingReservation(
 }
 
 /**
+ * Refs utilisées pour rapprocher un booking manuel d’une ligne ICS Airbnb.
+ * Le flux invité (lien ICS) met souvent le code HM… dans `guest_name` alors que
+ * `bookingReference` reste INDEPENDENT_BOOKING ou vide — sans cela, doublon calendrier + libellé code.
+ */
+function bookingRefCandidatesForAirbnbMatch(booking: Booking): string[] {
+  const out: string[] = [];
+  const br = booking.bookingReference?.trim();
+  if (br && br !== 'INDEPENDENT_BOOKING') {
+    out.push(br);
+  }
+  const gn = booking.guest_name?.trim();
+  if (gn && isAirbnbCode(gn) && !out.includes(gn)) {
+    out.push(gn);
+  }
+  return out;
+}
+
+/**
  * Convenience wrapper that accepts full Booking / AirbnbReservation objects.
  */
 export function doBookingAndAirbnbMatch(
   booking: Booking,
   reservation: AirbnbReservation,
 ): boolean {
-  return isMatchingReservation(
-    booking.checkInDate,
-    booking.checkOutDate,
-    booking.bookingReference,
-    reservation.startDate,
-    reservation.endDate,
-    reservation.airbnbBookingId,
+  const refs = bookingRefCandidatesForAirbnbMatch(booking);
+  if (refs.length === 0) {
+    return isMatchingReservation(
+      booking.checkInDate,
+      booking.checkOutDate,
+      null,
+      reservation.startDate,
+      reservation.endDate,
+      reservation.airbnbBookingId,
+    );
+  }
+  return refs.some((manualRef) =>
+    isMatchingReservation(
+      booking.checkInDate,
+      booking.checkOutDate,
+      manualRef,
+      reservation.startDate,
+      reservation.endDate,
+      reservation.airbnbBookingId,
+    ),
   );
 }
 

@@ -427,6 +427,11 @@ export default {
   'contractSigning.chipDatesLabel': 'Dates',
   'contractSigning.chipTravelersLabel': 'Travelers',
   'contractSigning.footer': '© {{year}} Checky — All rights reserved, Legal notices • Privacy policy • Terms & conditions',
+  'contractSigning.signedToastTitle': 'Contract signed successfully',
+  'contractSigning.signedToastDescription': 'Your stay is confirmed. You may receive a confirmation email shortly.',
+  'contractSigning.contractGenFailedTitle': 'Could not finalize documents',
+  'contractSigning.contractGenFailedDescription': 'Your signature was saved, but we could not generate the final documents. Please try again or contact your host.',
+  'contractSigning.contractGenTimeoutDescription': 'Document generation took too long. Your signature may have been saved — refresh the page or contact your host.',
 
   // Property dashboard tutorial
   'tutorial.previous': 'Previous',
