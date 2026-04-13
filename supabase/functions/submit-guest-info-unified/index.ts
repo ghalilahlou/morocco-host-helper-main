@@ -27,7 +27,8 @@ const RETRY_DELAY_MS = 1000;
 interface GuestInfo {
   firstName: string;
   lastName: string;
-  email: string;
+  /** Optionnel : sans email le flux continue ; pas d’email de confirmation. */
+  email?: string;
   phone?: string;
   nationality?: string;
   idType?: string;
@@ -209,10 +210,12 @@ function validateRequest(request: UnifiedRequest): ValidationResult {
     if (!lastName || lastName.trim().length < 2) {
       errors.push(`${label}: nom invalide (minimum 2 caractères)`);
     }
-    if (!email || !email.trim()) {
-      errors.push(`${label}: email requis`);
-    } else if (!emailRegex.test(email.trim())) {
-      errors.push(`${label}: email invalide (format incorrect)`);
+    if (email && email.trim()) {
+      if (!emailRegex.test(email.trim())) {
+        errors.push(`${label}: email invalide (format incorrect)`);
+      }
+    } else {
+      warnings.push(`${label}: email non fourni — confirmation par courriel désactivée`);
     }
   };
 
@@ -268,7 +271,7 @@ function sanitizeGuestInfo(guestInfo: GuestInfo): GuestInfo {
   const sanitized: GuestInfo = {
     firstName: guestInfo.firstName?.trim().replace(/[<>]/g, '') || '',
     lastName: guestInfo.lastName?.trim().replace(/[<>]/g, '') || '',
-    email: guestInfo.email?.toLowerCase().trim(),
+    email: guestInfo.email?.toLowerCase().trim() || '',
     phone: guestInfo.phone?.trim() || undefined,
     nationality: guestInfo.nationality?.trim() || 'Non spécifiée',
     idType: guestInfo.idType?.trim() || 'passport',
@@ -866,7 +869,7 @@ async function saveGuestDataInternal(
       number_of_guests: booking.numberOfGuests || 1,
       total_price: booking.totalPrice || null,
       booking_reference: booking.airbnbCode,
-      guest_email: primaryGuest.email,
+      guest_email: primaryGuest.email?.trim() ? primaryGuest.email.trim().toLowerCase() : null,
       guest_phone: primaryGuest.phone || null,
       status: 'pending',
       updated_at: new Date().toISOString()
@@ -1210,7 +1213,7 @@ async function saveGuestDataInternal(
     }
 
     // ✅ CRITIQUE : Sauvegarder TOUTES les données du guest pour la variabilisation complète
-    // ❌ IMPORTANT : La table 'guests' n'a PAS de colonne 'email' - l'email est dans bookings.guest_email
+    // ❌ IMPORTANT : La table 'guests' n'a PAS de colonnes 'email' ni 'phone' (bookings.guest_email / guest_phone)
     const guestData: any = {
       booking_id: bookingId,
       full_name: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`,
@@ -1219,7 +1222,6 @@ async function saveGuestDataInternal(
       document_number: sanitizedGuest.idNumber || '',
       date_of_birth: processedDateOfBirth,
       document_issue_date: sanitizedGuest.documentIssueDate || null, // ✅ Date d'expiration du document
-      phone: sanitizedGuest.phone || null,
       // ✅ CRITIQUE : Ajouter tous les champs pour la variabilisation complète
       place_of_birth: '', // Non disponible dans GuestInfo pour l'instant
       profession: sanitizedGuest.profession || '',
@@ -1240,8 +1242,8 @@ async function saveGuestDataInternal(
       processedDateOfBirth,
       // ✅ DIAGNOSTIC : L'email est dans booking, pas dans guestData (table guests n'a pas de colonne email)
       bookingEmail: booking.guestEmail || sanitizedGuest.email,
-      phone: guestData.phone,
-      hasPhone: !!guestData.phone
+      phoneFromForm: sanitizedGuest.phone || null,
+      hasPhone: !!sanitizedGuest.phone
     });
 
     // ✅ CORRECTION : Vérifier si l'invité existe déjà pour éviter les doublons
@@ -1275,14 +1277,13 @@ async function saveGuestDataInternal(
           document_number: guestData.document_number,
           date_of_birth: guestData.date_of_birth,
           document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
-          phone: guestData.phone,
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
           motif_sejour: guestData.motif_sejour,
           adresse_personnelle: guestData.adresse_personnelle,
           updated_at: new Date().toISOString()
         };
-        // ❌ Ne PAS ajouter email - colonne inexistante
+        // ❌ Ne PAS ajouter email / phone — colonnes inexistantes sur guests
         
         const { error: updateErr } = await supabase
           .from('guests')
@@ -1319,7 +1320,6 @@ async function saveGuestDataInternal(
             document_number: guestData.document_number,
             date_of_birth: guestData.date_of_birth,
             document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
-            phone: guestData.phone,
             place_of_birth: guestData.place_of_birth,
             profession: guestData.profession,
             motif_sejour: guestData.motif_sejour,
@@ -1378,7 +1378,6 @@ async function saveGuestDataInternal(
           document_number: guestData.document_number,
           date_of_birth: guestData.date_of_birth,
           document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
-          phone: guestData.phone,
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
           motif_sejour: guestData.motif_sejour,
@@ -2213,6 +2212,11 @@ async function sendGuestContractInternal(
   contractUrl: string,
   policeUrl?: string
 ): Promise<boolean> {
+  if (!guestInfo.email?.trim()) {
+    log('info', 'ÉTAPE 5: Pas d’email invité — envoi ignoré (flux non bloquant)');
+    return false;
+  }
+
   log('info', 'ÉTAPE 5: Démarrage envoi email', {
     to: guestInfo.email,
     hasContractUrl: !!contractUrl,
@@ -2857,7 +2861,6 @@ serve(async (req) => {
         const guestData: any = {
           booking_id: requestBody.bookingId,
           full_name: bookingData.guest_name,
-          phone: bookingData.guest_phone || null,
           nationality: 'Non spécifiée',
           document_type: 'passport',
           document_number: '',
@@ -2865,8 +2868,7 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         };
         
-        // ❌ SUPPRIMÉ : Ne PAS ajouter email car la colonne n'existe pas dans la table guests
-        // L'email est géré via bookings.guest_email
+        // ❌ Pas de colonne email/phone sur guests — téléphone dans bookings.guest_phone
         
         const { error: insertError } = await supabaseClient
           .from('guests')
@@ -6807,192 +6809,8 @@ async function generatePoliceFormsPDF(
 // ❌ SUPPRIMÉ : Fonction generateIdentityDocumentsPDF - Code mort (258 lignes)
 // Cette fonction n'était jamais appelée car la génération automatique des documents d'identité
 // a été désactivée (ligne 3371). On utilise uniquement les documents uploadés par l'invité.
-
-// =====================================================
-// HANDLER HTTP PRINCIPAL
-// =====================================================
-
-serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  const startTime = Date.now();
-  
-  try {
-    log('info', '🚀 Nouvelle requête reçue', {
-      method: req.method,
-      url: req.url
-    });
-
-    // Parse request body
-    const body = await req.json();
-    log('info', '📦 Body reçu:', {
-      hasBookingId: !!body.bookingId,
-      hasAction: !!body.action,
-      action: body.action
-    });
-
-    // Get Supabase client
-    const client = await getServerClient();
-
-    // =====================================================
-    // ROUTER - Gérer différentes actions
-    // =====================================================
-
-    const action = body.action || 'submit_guest_info';
-
-    switch (action) {
-      case 'generate_contract_only': {
-        log('info', '📄 Action: Génération contrat uniquement (switch)');
-        
-        if (!body.bookingId) {
-          throw new Error('bookingId requis');
-        }
-
-        const { data: booking } = await client
-          .from('bookings')
-          .select('*, property:properties(*), guests(*)')
-          .eq('id', body.bookingId)
-          .single();
-
-        if (!booking) throw new Error('Booking non trouvé');
-
-        // ✅ CORRECTION : Récupérer la signature depuis contract_signatures si non fournie
-        let signatureData = body.signature?.data;
-        let signatureTimestamp = body.signature?.timestamp;
-        
-        if (!signatureData) {
-          log('info', '[generate_contract_only switch] Recherche signature dans contract_signatures...');
-          
-          const { data: signatures } = await client
-            .from('contract_signatures')
-            .select('signature_data, signed_at, signer_name')
-            .eq('booking_id', body.bookingId)
-            .order('created_at', { ascending: false });
-          
-          if (signatures && signatures.length > 0) {
-            signatureData = signatures[0].signature_data;
-            signatureTimestamp = signatures[0].signed_at;
-            log('info', '[generate_contract_only switch] ✅ Signature trouvée', {
-              signerName: signatures[0].signer_name,
-              hasData: !!signatureData
-            });
-          } else {
-            log('warn', '[generate_contract_only switch] Aucune signature trouvée');
-          }
-        }
-
-        const contractLocale = body.locale && ['fr', 'en', 'es'].includes(body.locale) ? body.locale : 'fr';
-        const ctx = await buildContractContext(client, body.bookingId);
-        const contractUrl = await generateContractPDF(client, ctx, {
-          guestSignatureData: signatureData,
-          guestSignedAt: signatureTimestamp,
-          locale: contractLocale
-        });
-
-        await client
-          .from('bookings')
-          .update({
-            documents_generated: { ...booking.documents_generated, contract: true },
-            signed_contract_url: contractUrl
-          })
-          .eq('id', booking.id);
-
-        return new Response(
-          JSON.stringify({ success: true, contractUrl, bookingId: booking.id, isSigned: !!signatureData }),
-          { headers: corsHeaders }
-        );
-      }
-
-      case 'generate_police_only': {
-        log('info', '🚔 Action: Génération police uniquement');
-        
-        if (!body.bookingId) {
-          throw new Error('bookingId requis');
-        }
-
-        const { data: bookingPolice } = await client
-          .from('bookings')
-          .select('*, property:properties(*), guests(*)')
-          .eq('id', body.bookingId)
-          .single();
-
-        if (!bookingPolice) throw new Error('Booking non trouvé');
-
-        // ✅ CORRECTION : Récupérer la signature depuis contract_signatures si non fournie
-        let policeSignatureData = body.signature?.data;
-        let policeSignatureTimestamp = body.signature?.timestamp;
-        
-        if (!policeSignatureData) {
-          log('info', '[generate_police_only switch] Recherche signature dans contract_signatures...');
-          
-          const { data: policeSignatures } = await client
-            .from('contract_signatures')
-            .select('signature_data, signed_at, signer_name')
-            .eq('booking_id', body.bookingId)
-            .order('created_at', { ascending: false });
-          
-          if (policeSignatures && policeSignatures.length > 0) {
-            policeSignatureData = policeSignatures[0].signature_data;
-            policeSignatureTimestamp = policeSignatures[0].signed_at;
-            log('info', '[generate_police_only switch] ✅ Signature trouvée', {
-              signerName: policeSignatures[0].signer_name,
-              hasData: !!policeSignatureData
-            });
-          } else {
-            log('warn', '[generate_police_only switch] Aucune signature trouvée');
-          }
-        }
-
-        const policeUrl = await generatePoliceFormsPDF(
-          client,
-          bookingPolice,
-          false, // isPreview
-          policeSignatureData, // guestSignatureData
-          policeSignatureTimestamp // guestSignedAt
-        );
-
-        await client
-          .from('bookings')
-          .update({
-            documents_generated: { ...bookingPolice.documents_generated, policeForm: true }
-          })
-          .eq('id', bookingPolice.id);
-
-        return new Response(
-          JSON.stringify({ success: true, policeUrl, bookingId: bookingPolice.id, isSigned: !!policeSignatureData }),
-          { headers: corsHeaders }
-        );
-      }
-
-      default: {
-        log('info', '📝 Action: Soumission informations invité');
-        
-        const validation = validateRequest(body);
-        if (!validation.isValid) {
-          return new Response(
-            JSON.stringify({ success: false, errors: validation.errors }),
-            { status: 400, headers: corsHeaders }
-          );
-        }
-
-        const result = await processGuestSubmission(client, body);
-
-        return new Response(
-          JSON.stringify({ success: true, ...result }),
-          { headers: corsHeaders }
-        );
-      }
-    }
-
-  } catch (error) {
-    log('error', '❌ Erreur', { error: error.message });
-
-    return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      { status: 500, headers: corsHeaders }
-    );
-  }
-});
+//
+// NOTE : Un second `serve()` avait été ajouté ici avec un `default` appelant
+// `processGuestSubmission` (symbole inexistant), ce qui écrasait le handler principal
+// et provoquait « processGuestSubmission is not defined » pour le workflow invité sans action.
+// Le point d’entrée HTTP unique est le `serve` en tête de fichier (~l.2518).

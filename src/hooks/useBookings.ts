@@ -97,7 +97,9 @@ function transformBooking(raw: any): Booking | null {
 }
 
 /** Évite le flash code Airbnb : le réseau renvoie des lignes "base" sans soumissions avant l'enrichissement async.
- * RÈGLE : ne jamais réinjecter un booking absent de `prev` (suppression optimiste). */
+ * Fusionne les noms enrichis du rendu précédent quand la nouvelle passe est encore incomplète.
+ * Les lignes présentes dans `incoming` mais absentes de `prev` sont des **nouvelles** réservations serveur :
+ * il faut les garder (sinon disparition au refresh, ex. INDEPENDENT_BOOKING). */
 function preserveSubmissionEnrichment(
   prev: EnrichedBooking[],
   incoming: EnrichedBooking[],
@@ -106,9 +108,8 @@ function preserveSubmissionEnrichment(
   return incoming
     .map((b) => {
       const p = prevById.get(b.id);
-      // Si le booking n’est pas dans prev (supprimé optimistement), on l’exclut.
-      // Il réapparaîtra via le réseau lors du prochain loadBookings si nécessaire.
-      if (!p) return null;
+      // Nouvelle réservation : pas d’état local à fusionner — on la garde telle quelle.
+      if (!p) return b;
 
       const prevHasNames = (p.realGuestNames?.length ?? 0) > 0;
       const incomingHasNames = (b.realGuestNames?.length ?? 0) > 0;
@@ -153,8 +154,7 @@ function preserveSubmissionEnrichment(
         };
       }
       return b;
-    })
-    .filter((b): b is EnrichedBooking => b !== null);
+    });
 }
 
 /** Réinjecte noms / soumissions depuis le cache (IndexedDB) pour éviter un flash « vide » au rechargement. */

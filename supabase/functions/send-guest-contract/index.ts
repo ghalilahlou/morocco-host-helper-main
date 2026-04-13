@@ -51,9 +51,14 @@ serve(async (req) => {
 
   if (!RESEND_API_KEY || RESEND_API_KEY.trim() === "") {
     console.error("send-guest-contract: RESEND_API_KEY is missing");
+    // HTTP 200 : échec métier uniquement — l’app traite l’email comme non bloquant (évite 503/502 dans la console réseau).
     return new Response(
-      JSON.stringify({ error: "RESEND_API_KEY is not configured", success: false }),
-      { status: 503, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      JSON.stringify({
+        success: false,
+        skipped: true,
+        error: "RESEND_API_KEY is not configured",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }
 
@@ -203,16 +208,16 @@ serve(async (req) => {
         res.status === 403
           ? "Resend 403: vérifier le domaine sur resend.com/domains et RESEND_FROM_EMAIL, ou utiliser RESEND_REDIRECT_TO_EMAIL vers une adresse de test."
           : "Check RESEND_API_KEY and Resend domain/from-email verification";
+      // HTTP 200 : l’échec Resend n’est pas une panne du flux invité (évite 502/500 côté invoke).
       return new Response(
         JSON.stringify({
-          error: String(errorMessage),
           success: false,
+          skipped: true,
+          resendStatus: res.status,
+          error: String(errorMessage),
           hint: hint403,
         }),
-        {
-          status: res.status >= 500 ? 502 : res.status === 403 ? 502 : 500,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
@@ -234,11 +239,12 @@ serve(async (req) => {
     console.error("send-guest-contract error:", message, stack);
     return new Response(
       JSON.stringify({
-        error: message,
         success: false,
+        skipped: true,
+        error: message,
         ...(stack && { details: stack }),
       }),
-      { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }
 });

@@ -1847,22 +1847,12 @@ export const GuestVerification = () => {
 
       const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
       for (let i = 0; i < guestsPayload.length; i++) {
-        if (!guestsPayload[i].email || !guestsPayload[i].email.trim()) {
-          console.error('❌ Email manquant pour le voyageur', i + 1);
-          toast({
-            title: "Email requis",
-            description: `Veuillez renseigner l'adresse email pour le voyageur ${i + 1}.`,
-            variant: "destructive",
-          });
-          isSubmittingRef.current = false;
-          isProcessingRef.current = false;
-          return;
-        }
-        if (!emailRegex.test(guestsPayload[i].email)) {
+        const raw = guestsPayload[i].email?.trim() ?? '';
+        if (raw && !emailRegex.test(raw)) {
           console.error('❌ Format email invalide:', guestsPayload[i].email);
           toast({
             title: "Email invalide",
-            description: `Veuillez saisir une adresse email valide pour le voyageur ${i + 1}.`,
+            description: `Si vous renseignez un courriel pour le voyageur ${i + 1}, utilisez un format valide.`,
             variant: "destructive",
           });
           isSubmittingRef.current = false;
@@ -3808,7 +3798,7 @@ export const GuestVerification = () => {
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
-                                      Courriel <span className="text-red-500">*</span>
+                                      Courriel <span className="text-gray-500 font-normal">(optionnel)</span>
                                     </Label>
                                     <input
                                       type="email"
@@ -3820,7 +3810,6 @@ export const GuestVerification = () => {
                                         updateGuest(index, 'email', target.value);
                                       }}
                                       placeholder=""
-                                      required
                                       disabled={fieldsLocked}
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />

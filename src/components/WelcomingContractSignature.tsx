@@ -987,7 +987,12 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
         try {
           const guestEmail = guestData?.guests?.[0]?.email;
           if (guestEmail && guestEmail.trim() !== '') {
-            const { error: guestEmailError } = await supabase.functions.invoke('send-guest-contract', {
+            const { data: guestEmailResult, error: guestEmailError } = await supabase.functions.invoke<{
+              success?: boolean;
+              skipped?: boolean;
+              error?: string;
+              hint?: string;
+            }>('send-guest-contract', {
               body: {
                 guestEmail: guestEmail,
                 guestName: signerName,
@@ -1002,6 +1007,8 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
             
             if (guestEmailError) {
               console.warn('⚠️ Email invité (send-guest-contract) non envoyé — non bloquant:', guestEmailError);
+            } else if (guestEmailResult && guestEmailResult.success === false) {
+              console.warn('⚠️ Email invité (send-guest-contract) non envoyé — non bloquant:', guestEmailResult.error ?? guestEmailResult);
             }
           }
         } catch (guestNotifyError) {

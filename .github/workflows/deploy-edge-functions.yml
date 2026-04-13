@@ -45,7 +45,7 @@ jobs:
         run: |
           set -e
           PROJECT="${{ secrets.SUPABASE_PROJECT_REF }}"
-          for fn in save-contract-signature generate-documents resolve-guest-link storage-sign-url extract-document-data sync-airbnb-calendar sync-airbnb-reservations get-airbnb-reservation send-owner-notification list-guest-docs; do
+          for fn in save-contract-signature generate-documents resolve-guest-link storage-sign-url extract-document-data sync-airbnb-calendar sync-airbnb-reservations get-airbnb-reservation send-owner-notification list-guest-docs submit-guest-info-unified send-guest-contract; do
             if [ -d "supabase/functions/$fn" ]; then
               echo "Deploying $fn"
               supabase functions deploy "$fn" --project-ref "$PROJECT"

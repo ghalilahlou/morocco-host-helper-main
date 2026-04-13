@@ -10,7 +10,8 @@ import { edgeClient } from '@/lib/edgeClient';
 export interface GuestInfo {
   firstName: string;
   lastName: string;
-  email: string; // ✅ REQUIS : Email obligatoire
+  /** Optionnel : sans email, le flux documents / signature fonctionne ; l’email de confirmation n’est pas envoyé. */
+  email?: string;
   phone?: string;
   nationality?: string;
   idType?: string;
@@ -111,13 +112,15 @@ export async function submitDocumentsUnified(
     throw new Error('Token, code Airbnb et informations invité sont requis');
   }
 
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   for (let i = 0; i < allGuests.length; i++) {
     const g = allGuests[i];
     if (!g.firstName || !g.lastName) {
       throw new Error(`Le prénom et nom sont obligatoires (voyageur ${i + 1})`);
     }
-    if (!g.email?.trim()) {
-      throw new Error(`Email requis pour le voyageur ${i + 1}`);
+    const em = g.email?.trim();
+    if (em && !emailOk.test(em)) {
+      throw new Error(`Format d'email invalide pour le voyageur ${i + 1}`);
     }
   }
 
@@ -334,11 +337,10 @@ export function validateGuestInfo(guestInfo: GuestInfo): string[] {
     errors.push('Le nom est requis');
   }
 
-  if (!guestInfo.email?.trim()) {
-    errors.push('L\'email est requis');
-  } else {
+  const em = guestInfo.email?.trim();
+  if (em) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(guestInfo.email)) {
+    if (!emailRegex.test(em)) {
       errors.push('Format d\'email invalide');
     }
   }
