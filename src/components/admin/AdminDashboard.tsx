@@ -38,7 +38,7 @@ import { AdminProperties } from '@/components/admin/AdminProperties';
 export const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { isAdmin, isLoading, dashboardData } = useAdminContext();
+  const { isAdmin, isLoading, dashboardData, adminRole } = useAdminContext();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -116,7 +116,7 @@ export const AdminDashboard = () => {
                   Dashboard Administrateur
                 </h1>
                 <p className="text-sm text-gray-500">
-                  Super User - Gestion globale de l'application
+                  Back-office — gestion globale (rôle : {adminRole === 'super_admin' ? 'super administrateur' : 'administrateur'})
                 </p>
               </div>
             </div>
@@ -124,7 +124,7 @@ export const AdminDashboard = () => {
             <div className="flex items-center space-x-4">
               <Badge variant="secondary" className="bg-green-100 text-green-800">
                 <Target className="h-4 w-4 mr-1" />
-                Super Admin
+                {adminRole === 'super_admin' ? 'Super admin' : 'Admin'}
               </Badge>
               <div className="text-sm text-gray-500">
                 Connecté en tant que {user?.email}
@@ -243,9 +243,9 @@ export const AdminDashboard = () => {
                     {(dashboardData?.recentBookings || []).slice(0, 5).map((booking: any) => (
                       <div key={booking.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                         <div>
-                          <p className="font-medium">{booking.bookingReference}</p>
+                          <p className="font-medium">{booking.booking_reference || booking.bookingReference || '—'}</p>
                           <p className="text-sm text-gray-500">
-                            {booking.properties?.name || 'Propriété inconnue'}
+                            {booking.properties?.name || booking.property?.name || 'Propriété inconnue'}
                           </p>
                         </div>
                         <Badge variant={booking.status === 'completed' ? 'default' : 'secondary'}>

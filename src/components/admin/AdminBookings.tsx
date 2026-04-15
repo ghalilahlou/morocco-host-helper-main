@@ -66,6 +66,8 @@ const BOOKING_STATUSES = [
   { value: 'confirmed', label: 'Confirmée' },
   { value: 'completed', label: 'Complétée' },
   { value: 'cancelled', label: 'Annulée' },
+  { value: 'archived', label: 'Archivée' },
+  { value: 'draft', label: 'Brouillon' },
 ] as const;
 
 export const AdminBookings = () => {
@@ -136,10 +138,14 @@ export const AdminBookings = () => {
         return <Badge className="bg-green-100 text-green-800">Complétée</Badge>;
       case 'pending':
         return <Badge className="bg-yellow-100 text-yellow-800">En attente</Badge>;
+      case 'confirmed':
+        return <Badge className="bg-blue-100 text-blue-800">Confirmée</Badge>;
       case 'cancelled':
         return <Badge variant="destructive">Annulée</Badge>;
       case 'archived':
         return <Badge variant="secondary">Archivée</Badge>;
+      case 'draft':
+        return <Badge variant="outline">Brouillon</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -185,8 +191,10 @@ export const AdminBookings = () => {
   const stats = {
     total: bookings.length,
     pending: bookings.filter(b => b.status === 'pending').length,
+    confirmed: bookings.filter(b => b.status === 'confirmed').length,
     completed: bookings.filter(b => b.status === 'completed').length,
-    cancelled: bookings.filter(b => b.status === 'cancelled').length
+    cancelled: bookings.filter(b => b.status === 'cancelled').length,
+    archived: bookings.filter(b => b.status === 'archived').length,
   };
 
   return (
@@ -206,7 +214,7 @@ export const AdminBookings = () => {
       </div>
 
       {/* Statistiques */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total réservations</CardTitle>
@@ -235,6 +243,17 @@ export const AdminBookings = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Confirmées</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.confirmed}</div>
+            <p className="text-xs text-muted-foreground">Confirmées</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Complétées</CardTitle>
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -256,6 +275,17 @@ export const AdminBookings = () => {
             <p className="text-xs text-muted-foreground">
               Réservations annulées
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Archivées</CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.archived}</div>
+            <p className="text-xs text-muted-foreground">Anciennes / archivées</p>
           </CardContent>
         </Card>
       </div>
@@ -291,6 +321,8 @@ export const AdminBookings = () => {
               <option value="completed">Complétées</option>
               <option value="cancelled">Annulées</option>
               <option value="archived">Archivées</option>
+              <option value="confirmed">Confirmées</option>
+              <option value="draft">Brouillons</option>
             </select>
           </div>
         </CardContent>

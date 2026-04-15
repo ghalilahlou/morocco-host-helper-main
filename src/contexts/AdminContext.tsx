@@ -8,6 +8,8 @@ import { AdminDashboardData } from '@/types/admin';
 
 interface AdminContextType {
   isAdmin: boolean;
+  /** Rôle depuis `admin_users` (null si non admin) */
+  adminRole: 'admin' | 'super_admin' | null;
   isLoading: boolean;
   checkAdminStatus: () => Promise<void>;
   dashboardData: AdminDashboardData | null;
@@ -19,6 +21,7 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminRole, setAdminRole] = useState<'admin' | 'super_admin' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [checkedUserId, setCheckedUserId] = useState<string | null>(null);
   const [dashboardData, setDashboardData] = useState<AdminDashboardData | null>(null);
@@ -26,6 +29,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const checkAdminStatus = async () => {
     if (!user) {
       setIsAdmin(false);
+      setAdminRole(null);
       setIsLoading(false);
       setCheckedUserId(null);
       return;
@@ -45,17 +49,26 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (error) {
         console.error('❌ [Context] Erreur RPC:', error);
         setIsAdmin(false);
+        setAdminRole(null);
       } else if (adminData && adminData.length > 0) {
         const adminUser = adminData[0];
-        setIsAdmin(!!adminUser && adminUser.is_active);
+        const active = !!adminUser && adminUser.is_active;
+        setIsAdmin(active);
+        setAdminRole(
+          active && (adminUser.role === 'super_admin' || adminUser.role === 'admin')
+            ? adminUser.role
+            : null
+        );
       } else {
         setIsAdmin(false);
+        setAdminRole(null);
       }
       
       setCheckedUserId(user.id);
     } catch (error) {
       console.error('❌ [Context] Erreur critique:', error);
       setIsAdmin(false);
+      setAdminRole(null);
       setCheckedUserId(user.id);
     } finally {
       setIsLoading(false);
@@ -73,7 +86,16 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         supabase.from('properties').select('id, name, user_id, created_at'),
         supabase.from('bookings').select('id, status, total_amount, created_at'),
         supabase.from('bookings')
-          .select('id, booking_reference, check_in_date, check_out_date, status, created_at, property_id')
+          .select(`
+            id,
+            booking_reference,
+            check_in_date,
+            check_out_date,
+            status,
+            created_at,
+            property_id,
+            properties(name)
+          `)
           .order('created_at', { ascending: false })
           .limit(10)
       ]);
@@ -106,7 +128,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           activeTokens: 0, // À calculer si nécessaire
           pendingBookings: bookingsRes.data?.filter(b => b.status === 'pending').length || 0,
           completedBookings: bookingsRes.data?.filter(b => b.status === 'completed').length || 0,
-          cancelledBookings: bookingsRes.data?.filter(b => b.status === 'archived').length || 0
+          cancelledBookings: bookingsRes.data?.filter(b => b.status === 'cancelled').length || 0
         },
         bookingAnalytics: [], // À implémenter si nécessaire
         userAnalytics: [], // À implémenter si nécessaire
@@ -133,7 +155,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [isAdmin]);
 
   return (
-    <AdminContext.Provider value={{ isAdmin, isLoading, checkAdminStatus, dashboardData, loadDashboardData }}>
+    <AdminContext.Provider value={{ isAdmin, adminRole, isLoading, checkAdminStatus, dashboardData, loadDashboardData }}>
       {children}
     </AdminContext.Provider>
   );

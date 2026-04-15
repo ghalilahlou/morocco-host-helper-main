@@ -659,6 +659,10 @@ export type Database = {
       }
     }
     Functions: {
+      admin_delete_property: {
+        Args: { p_property_id: string }
+        Returns: boolean
+      }
       delete_property_with_reservations: {
         Args: { p_property_id: string; p_user_id: string }
         Returns: boolean

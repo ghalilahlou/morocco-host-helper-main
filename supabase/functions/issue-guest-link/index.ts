@@ -112,6 +112,12 @@ function isAirbnbCode(input?: string | null): boolean {
   return /^HM[A-Z0-9]{8,12}$/.test(normalizeCode(input));
 }
 
+/** Lien sans date d'expiration (expires_at NULL) reste valide jusqu'à révocation admin (is_active). */
+function guestTokenDateValid(expiresAt: string | null | undefined): boolean {
+  if (expiresAt == null || expiresAt === '') return true;
+  return new Date(expiresAt).getTime() >= Date.now();
+}
+
 async function hashAccessCode(code: string, pepper?: string): Promise<string> {
   const normalized = normalizeCode(code);
   if (!normalized) throw new Error('Empty access code');
@@ -132,7 +138,8 @@ type IssueReq = {
   propertyId: string;
   airbnbCode?: string;
   bookingId?: string;
-  expiresIn?: number;
+  /** Jours avant expiration. Omis / null / 0 / "unlimited" = pas d'expiration automatique (révocation par admin via is_active). */
+  expiresIn?: number | null | 'unlimited';
   linkType?: 'ics_direct' | 'ics_with_code' | 'independent';
   reservationData?: {
     airbnbCode: string;
@@ -195,7 +202,8 @@ serve(async (req) => {
     }
 
     // --- ACTION: ISSUE (basé sur votre version originale) ---
-    const { propertyId, bookingId, airbnbCode, expiresIn = 7 } = requestBody as IssueReq;
+    const { propertyId, bookingId, airbnbCode } = requestBody as IssueReq;
+    const expiresInRaw = (requestBody as IssueReq).expiresIn;
 
     // Validate required fields
     if (!propertyId || typeof propertyId !== 'string') {
@@ -223,20 +231,29 @@ serve(async (req) => {
       });
     }
 
-    // Validate expiresIn
-    if (expiresIn && (typeof expiresIn !== 'number' || expiresIn < 1 || expiresIn > 365)) {
-      console.error('❌ Invalid expiresIn:', expiresIn);
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'ExpiresIn must be a number between 1 and 365 days',
-        details: { expiresIn }
-      }), {
-        status: 400,
-        headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
-      });
+    // expiresIn : uniquement si l'appelant impose une durée (sinon illimité côté date)
+    let expiresAtIso: string | null = null;
+    if (expiresInRaw === 0) {
+      expiresAtIso = null;
+    } else if (expiresInRaw !== undefined && expiresInRaw !== null && expiresInRaw !== 'unlimited') {
+      const n = typeof expiresInRaw === 'number' ? expiresInRaw : Number(expiresInRaw);
+      if (Number.isNaN(n) || n < 1 || n > 365) {
+        console.error('❌ Invalid expiresIn:', expiresInRaw);
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'expiresIn doit être omis ou 0 (illimité), ou un nombre de jours entre 1 et 365',
+          details: { expiresIn: expiresInRaw }
+        }), {
+          status: 400,
+          headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      const d = new Date();
+      d.setDate(d.getDate() + n);
+      expiresAtIso = d.toISOString();
     }
 
-    console.log('📥 Request validated:', { propertyId, bookingId, airbnbCode, expiresIn });
+    console.log('📥 Request validated:', { propertyId, bookingId, airbnbCode, expiresIn: expiresInRaw, expiresAtIso });
 
     // ✅ NOUVEAU : Vérifier les permissions de génération de tokens (avec fallback permissif)
     console.log('🔐 Vérification des permissions de génération de tokens...');
@@ -328,28 +345,24 @@ serve(async (req) => {
           .eq('property_id', propertyId)
           .eq('is_active', true)
           .eq('airbnb_confirmation_code', candidate)
-          .gte('expires_at', new Date().toISOString())
           .maybeSingle();
-        
-        if (tokenWithCode) {
+
+        if (tokenWithCode && guestTokenDateValid(tokenWithCode.expires_at)) {
           existingActiveToken = tokenWithCode;
         }
       } else {
-        // Sinon, vérifier par booking_id ou property_id seul
         const tokenQuery = server
           .from('property_verification_tokens')
           .select('id, token, expires_at, created_at, metadata')
           .eq('property_id', propertyId)
-          .eq('is_active', true)
-          .gte('expires_at', new Date().toISOString()); // Seulement les tokens non expirés
-        
-        // Si un bookingId est fourni, vérifier aussi par booking_id
+          .eq('is_active', true);
+
         if (finalBookingId) {
           tokenQuery.eq('booking_id', finalBookingId);
         }
-        
+
         const { data: tokenResult } = await tokenQuery.maybeSingle();
-        if (tokenResult) {
+        if (tokenResult && guestTokenDateValid(tokenResult.expires_at)) {
           existingActiveToken = tokenResult;
         }
       }
@@ -385,14 +398,12 @@ serve(async (req) => {
       // Continue avec la création d'un nouveau token
     }
 
-    // Ne pas désactiver les anciens tokens : le lien /v/{token} doit rester valide pour plusieurs
-    // check-ins / réservations jusqu’à expires_at. La limite métier (crédits) est appliquée ailleurs.
+    // Ne pas désactiver les anciens tokens : le lien /v/{token} reste valide tant que is_active et
+    // (expires_at IS NULL OU expires_at future). Pas d'expiration automatique par défaut.
 
     // ✅ CORRECTION : Générer un nouveau token unique
     console.log('🆕 Génération d\'un nouveau token...');
     const token = generateUniqueToken();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + expiresIn); // Use provided expiresIn
 
     // ✅ NOUVEAU : Gestion des codes Airbnb sécurisés avec support des liens directs
     let requiresCode = false;
@@ -691,14 +702,15 @@ serve(async (req) => {
         property_id: propertyId,
         token,
         is_active: true,
-        expires_at: expiresAt.toISOString(),
+        expires_at: expiresAtIso,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         booking_id: finalBookingId || null,
         metadata: { 
           source: 'issue',
           linkType: linkType,
-          reservationData: reservation_metadata
+          reservationData: reservation_metadata,
+          guestLinkExpiry: expiresAtIso ? 'dated' : 'unlimited'
         }
       };
 
@@ -955,10 +967,11 @@ async function handleResolve(server: any, args: ResolveReq) {
   if (!tokenRow) return { status: 404, body: { success: false, error: 'TOKEN_NOT_FOUND' } };
 
   if (tokenRow.is_active === false) {
-    return { status: 410, body: { success: false, error: 'expired' } };
+    return { status: 410, body: { success: false, error: 'expired', reason: 'inactive' } };
   }
+  // expires_at NULL = pas d'expiration automatique (révocation par admin uniquement)
   if (tokenRow.expires_at && new Date(tokenRow.expires_at) < new Date()) {
-    return { status: 410, body: { success: false, error: 'expired' } };
+    return { status: 410, body: { success: false, error: 'expired', reason: 'past_expires_at' } };
   }
 
   const requiresCode = !!tokenRow.access_code_hash;
