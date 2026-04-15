@@ -73,7 +73,7 @@ export const CalendarBookingBar = memo(({
     <div
       className={`
         w-full h-full
-        rounded-full flex items-center px-3 sm:px-4 text-xs font-semibold ${textColor}
+        rounded-full flex items-center pl-2 pr-3 sm:pl-2.5 sm:pr-4 text-xs font-semibold ${textColor}
         cursor-pointer transition-all duration-200
         ${isConflict ? 'ring-2 ring-red-300/70' : 'ring-0'}
       `}
@@ -108,7 +108,7 @@ export const CalendarBookingBar = memo(({
       {bookingData.isStart ? (
         <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
           <div
-            className="flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6"
+            className="-translate-x-px flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6 sm:-translate-x-0.5"
             style={{ backgroundColor: circleBg }}
           >
             {isConflict ? (

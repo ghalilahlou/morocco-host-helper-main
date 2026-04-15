@@ -572,7 +572,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                         >
                           <div
                             className={cn(
-                              "h-full flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2",
+                              "h-full flex items-center gap-1 sm:gap-1.5 pl-1 pr-1.5 sm:pl-1.5 sm:pr-2",
                               "shadow-sm transition-all duration-200",
                               "hover:shadow-md active:scale-[0.99]",
                               bookingData.isConflict && "ring-2 ring-red-400"
@@ -587,7 +587,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                           >
                             {isStartOfBooking && (
                               <div
-                                className="flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6"
+                                className="-translate-x-px sm:-translate-x-0.5 flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6"
                                 style={{ backgroundColor: circleBg }}
                               >
                                 {bookingData.isConflict ? (
