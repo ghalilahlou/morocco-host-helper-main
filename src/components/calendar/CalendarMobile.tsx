@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ChevronUp } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { ChevronUp, CalendarDays } from 'lucide-react';
 import { CheckinNotDoneCrossIcon, FigmaConflictIcon } from './ReservationStatusIcons';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,16 +9,16 @@ import { getBookingDisplayTitle, isValidGuestName } from '@/utils/bookingDisplay
 import { shouldShowIcalSyncBadge } from '@/domain/calendarReservationModel';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
-import { 
-  format, 
-  startOfMonth, 
-  endOfMonth, 
-  eachDayOfInterval, 
-  isToday, 
-  isSameMonth, 
-  addMonths, 
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isToday,
+  isSameMonth,
+  addMonths,
   startOfWeek,
-  endOfWeek
+  endOfWeek,
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -37,21 +37,15 @@ interface CalendarMobileProps {
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
   currentDate: Date;
   onDateChange: (date: Date) => void;
-  // ✅ NOUVEAU : Toutes les réservations pour affichage multi-mois
   allReservations?: (Booking | AirbnbReservation)[];
 }
 
-// Jours de la semaine format Airbnb (première lettre) - Lundi à Dimanche
 const dayNamesShort = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
-// Générer les initiales pour l'avatar
 const getInitials = (name: string): string => {
   if (!name || name.length === 0) return '?';
-  
   const words = name.trim().split(/\s+/);
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
-  }
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
   return name.substring(0, 2).toUpperCase();
 };
 
@@ -62,7 +56,6 @@ interface BookingBarData {
   guestName: string;
   guestCount: number;
   isValidName: boolean;
-  /** Clé technique UID iCal (référence ou airbnb_booking_id) — badge synchro */
   showIcalBadge: boolean;
   color: string;
   textColor: string;
@@ -72,8 +65,29 @@ interface BookingBarData {
   photoUrl?: string;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Animation variants                                                 */
+/* ------------------------------------------------------------------ */
+const barVariants = {
+  hidden: { opacity: 0, x: -6, scale: 0.97 },
+  visible: (i: number) => ({
+    opacity: 1,
+    x: 0,
+    scale: 1,
+    transition: { delay: i * 0.04, type: 'spring', stiffness: 340, damping: 28 },
+  }),
+  tap: { scale: 0.97 },
+};
+
+const monthVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.25, ease: 'easeOut' } },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Main component                                                     */
+/* ------------------------------------------------------------------ */
 export const CalendarMobile: React.FC<CalendarMobileProps> = ({
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   calendarDays: _calendarDays,
   bookingLayout,
   conflicts,
@@ -85,419 +99,200 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   const t = useT();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  // ✅ NOUVEAU : Ref pour tracker si le scroll est déclenché par l'utilisateur ou programmatiquement
   const isUserScrolling = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  // ✅ NOUVEAU : Tracker le dernier mois sélectionné pour éviter les scrolls répétés
   const lastScrolledMonth = useRef<string | null>(null);
-  
-  // ✅ CORRIGÉ : Générer les mois à afficher basés sur currentDate (au lieu de toujours partir de maintenant)
+
   const monthsToShow = useMemo(() => {
     const months: Date[] = [];
     const startMonth = startOfMonth(currentDate);
-    
-    // Afficher 3 mois avant et 12 mois après le mois actuel
-    for (let i = -3; i < 12; i++) {
-      months.push(addMonths(startMonth, i));
-    }
-    
+    for (let i = -3; i < 12; i++) months.push(addMonths(startMonth, i));
     return months;
   }, [currentDate]);
 
-  // ✅ NOUVEAU : Scroller vers le mois sélectionné quand currentDate change
   useEffect(() => {
     const targetMonth = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
-    
-    // Éviter les scrolls répétés vers le même mois
-    if (lastScrolledMonth.current === targetMonth) {
-      return;
-    }
-    
-    // Attendre un court instant pour que le DOM soit rendu
+    if (lastScrolledMonth.current === targetMonth) return;
+
     const scrollToMonth = () => {
       if (!scrollContainerRef.current || isUserScrolling.current) return;
-      
-      const targetElement = scrollContainerRef.current.querySelector(
-        `[data-month="${targetMonth}"]`
-      );
-      
-      if (targetElement) {
+      const el = scrollContainerRef.current.querySelector(`[data-month="${targetMonth}"]`);
+      if (el) {
         lastScrolledMonth.current = targetMonth;
-        
-        // Calculer la position de scroll pour centrer le mois
-        const containerRect = scrollContainerRef.current.getBoundingClientRect();
-        const elementRect = targetElement.getBoundingClientRect();
-        const scrollTop = scrollContainerRef.current.scrollTop;
-        
-        // Position relative de l'élément dans le container
-        const relativeTop = elementRect.top - containerRect.top + scrollTop;
-        
-        // Scroller pour que le mois soit en haut avec un petit offset
-        scrollContainerRef.current.scrollTo({
-          top: relativeTop - 10,
-          behavior: 'smooth'
-        });
+        const cRect = scrollContainerRef.current.getBoundingClientRect();
+        const eRect = el.getBoundingClientRect();
+        const top = eRect.top - cRect.top + scrollContainerRef.current.scrollTop;
+        scrollContainerRef.current.scrollTo({ top: top - 10, behavior: 'smooth' });
       }
     };
-    
-    // Petit délai pour s'assurer que le DOM est à jour
-    const timeoutId = setTimeout(scrollToMonth, 100);
-    
-    return () => clearTimeout(timeoutId);
+
+    const id = setTimeout(scrollToMonth, 100);
+    return () => clearTimeout(id);
   }, [currentDate]);
-  
-  // ✅ NOUVEAU : Cleanup du timeout au démontage
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
-      }
-    };
-  }, []);
 
-  // ✅ CORRIGÉ : Utiliser allReservations directement si disponible, sinon extraire de bookingLayout
+  useEffect(() => () => { if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current); }, []);
+
+  /* ---------- Build all bookings once ---------- */
   const allBookings = useMemo(() => {
-    const bookingsMap = new Map<string, BookingBarData>();
-    
-    // ✅ SOURCE 1 : Utiliser allReservations passées en prop (multi-mois)
-    if (allReservations && allReservations.length > 0) {
-      allReservations.forEach((booking) => {
-        if (!bookingsMap.has(booking.id)) {
-          // ✅ ICS/AIRBNB : Détecter les réservations ICS/Airbnb issues de fichiers ICS
-          // Toute réservation avec bookingReference au format Airbnb (HM, CL, etc.) est considérée comme ICS/Airbnb
-          const hasAirbnbCode = 'bookingReference' in booking && 
-            (booking as Booking).bookingReference && 
-            (booking as Booking).bookingReference !== 'INDEPENDENT_BOOKING' &&
-            /^(HM|CL|PN|ZN|JN|UN|FN|HN|KN|SN|CD|QT|MB|P|ZE|JBFD)[A-Z0-9]+/.test((booking as Booking).bookingReference);
-          
-          // ✅ AIRBNB : Détecter si c'est une réservation Airbnb réelle (depuis airbnb_reservations)
-          const isAirbnb = 'source' in booking && booking.source === 'airbnb';
-          
-          const startDate = isAirbnb
-            ? new Date((booking as AirbnbReservation).startDate)
-            : new Date((booking as Booking).checkInDate);
-          
-          const endDate = isAirbnb
-            ? new Date((booking as AirbnbReservation).endDate)
-            : new Date((booking as Booking).checkOutDate);
-          
-          const displayText = getBookingDisplayTitle(booking);
-          // ✅ CLEF : Vérifier si le displayText est un NOM VALIDE (Mouhcine, Zaineb)
-          // ou un CODE (HM8548HWET, CLXYZ123)
-          const isValidName = isValidGuestName(displayText);
-          
-          const guestCount = isAirbnb
-            ? (booking as AirbnbReservation).numberOfGuests || 1
-            : (booking as Booking).numberOfGuests || 1;
-          
-          const isConflict = conflicts.includes(booking.id);
-          
-          const bTyped = 'status' in booking ? (booking as Booking) : null;
-          const hasDocs = bTyped?.documentsGenerated?.contract && bTyped?.documentsGenerated?.policeForm;
-          const isPastStay = isBookingStayPast(booking);
+    const map = new Map<string, BookingBarData>();
 
-          let color: string;
-          let textColor: string;
-          let circleBg: string;
+    const push = (booking: Booking | AirbnbReservation) => {
+      if (map.has(booking.id)) return;
+      const isAirbnb = 'source' in booking && booking.source === 'airbnb';
+      const startDate = isAirbnb ? new Date((booking as AirbnbReservation).startDate) : new Date((booking as Booking).checkInDate);
+      const endDate = isAirbnb ? new Date((booking as AirbnbReservation).endDate) : new Date((booking as Booking).checkOutDate);
+      const displayText = getBookingDisplayTitle(booking);
+      const valid = isValidGuestName(displayText);
+      const guestCount = isAirbnb ? (booking as AirbnbReservation).numberOfGuests || 1 : (booking as Booking).numberOfGuests || 1;
+      const isConflict = conflicts.includes(booking.id);
+      const bTyped = 'status' in booking ? (booking as Booking) : null;
+      const hasDocs = bTyped?.documentsGenerated?.contract && bTyped?.documentsGenerated?.policeForm;
+      const isPast = isBookingStayPast(booking);
 
-          if (isConflict) {
-            color = BOOKING_COLORS.conflict.hex;
-            textColor = 'text-white';
-            circleBg = '#000000';
-          } else if (isPastStay) {
-            color = '#D1D5DB';
-            textColor = 'text-neutral-900';
-            circleBg = hasDocs ? '#000000' : '#B3B3B3';
-          } else {
-            color = '#222222';
-            textColor = 'text-white';
-            circleBg = hasDocs ? '#000000' : '#B3B3B3';
-          }
+      let color: string, tc: string, circleBg: string;
+      if (isConflict) { color = BOOKING_COLORS.conflict.hex; tc = 'text-white'; circleBg = '#000000'; }
+      else if (isPast) { color = '#D1D5DB'; tc = 'text-neutral-900'; circleBg = hasDocs ? '#000000' : '#B3B3B3'; }
+      else { color = '#222222'; tc = 'text-white'; circleBg = hasDocs ? '#000000' : '#B3B3B3'; }
 
-          bookingsMap.set(booking.id, {
-            booking,
-            startDate,
-            endDate,
-            guestName: displayText,
-            guestCount,
-            isValidName,
-            showIcalBadge: shouldShowIcalSyncBadge(booking, displayText),
-            color,
-            textColor,
-            isConflict,
-            circleBg,
-            isPastStay,
-            photoUrl: undefined
-          });
-        }
+      map.set(booking.id, {
+        booking, startDate, endDate, guestName: displayText, guestCount,
+        isValidName: valid, showIcalBadge: shouldShowIcalSyncBadge(booking, displayText),
+        color, textColor: tc, isConflict, circleBg, isPastStay: isPast, photoUrl: undefined,
       });
-    }
-    
-    // ✅ SOURCE 2 : Fallback sur bookingLayout (compatibilité)
-    Object.values(bookingLayout).forEach((weekBookings) => {
-      weekBookings.forEach((bookingData) => {
-        if (bookingData.booking && !bookingsMap.has(bookingData.booking.id)) {
-          const isAirbnb = 'source' in bookingData.booking && bookingData.booking.source === 'airbnb';
-          
-          const startDate = isAirbnb
-            ? new Date((bookingData.booking as AirbnbReservation).startDate)
-            : new Date((bookingData.booking as Booking).checkInDate);
-          
-          const endDate = isAirbnb
-            ? new Date((bookingData.booking as AirbnbReservation).endDate)
-            : new Date((bookingData.booking as Booking).checkOutDate);
-          
-          const displayText = getBookingDisplayTitle(bookingData.booking);
-          const isValidName = isValidGuestName(displayText);
-          
-          const guestCount = isAirbnb
-            ? (bookingData.booking as AirbnbReservation).numberOfGuests || 1
-            : (bookingData.booking as Booking).numberOfGuests || 1;
-          
-          const isConflict = conflicts.includes(bookingData.booking.id);
-          const bTyped = 'status' in bookingData.booking ? (bookingData.booking as Booking) : null;
-          const hasDocs = bTyped?.documentsGenerated?.contract && bTyped?.documentsGenerated?.policeForm;
-          const isPastStay = isBookingStayPast(bookingData.booking);
+    };
 
-          let color: string;
-          let textColor: string;
-          let circleBg: string;
-
-          if (isConflict) {
-            color = BOOKING_COLORS.conflict.hex;
-            textColor = 'text-white';
-            circleBg = '#000000';
-          } else if (isPastStay) {
-            color = '#D1D5DB';
-            textColor = 'text-neutral-900';
-            circleBg = hasDocs ? '#000000' : '#B3B3B3';
-          } else {
-            color = '#222222';
-            textColor = 'text-white';
-            circleBg = hasDocs ? '#000000' : '#B3B3B3';
-          }
-
-          bookingsMap.set(bookingData.booking.id, {
-            booking: bookingData.booking,
-            startDate,
-            endDate,
-            guestName: displayText,
-            guestCount,
-            isValidName,
-            showIcalBadge: shouldShowIcalSyncBadge(bookingData.booking, displayText),
-            color,
-            textColor,
-            isConflict,
-            circleBg,
-            isPastStay,
-            photoUrl: undefined
-          });
-        }
-      });
-    });
-    
-    return Array.from(bookingsMap.values());
+    allReservations.forEach(push);
+    Object.values(bookingLayout).forEach((wk) => wk.forEach((bl) => { if (bl.booking) push(bl.booking); }));
+    return Array.from(map.values());
   }, [allReservations, bookingLayout, conflicts]);
 
-  // ✅ CORRIGÉ : Gérer le scroll et synchroniser currentDate avec le mois visible
-  const handleScroll = () => {
-    if (scrollContainerRef.current) {
-      setShowScrollTop(scrollContainerRef.current.scrollTop > 300);
-      
-      // ✅ NOUVEAU : Marquer que l'utilisateur est en train de scroller
-      isUserScrolling.current = true;
-      
-      // Reset le flag après un délai
-      if (scrollTimeoutRef.current) {
-        clearTimeout(scrollTimeoutRef.current);
+  /* ---------- Scroll handling ---------- */
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current) return;
+    setShowScrollTop(scrollContainerRef.current.scrollTop > 300);
+    isUserScrolling.current = true;
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      isUserScrolling.current = false;
+      if (!scrollContainerRef.current) return;
+      const cTop = scrollContainerRef.current.getBoundingClientRect().top;
+      const els = scrollContainerRef.current.querySelectorAll('[data-month]');
+      let vis: string | null = null;
+      for (const el of els) { const r = el.getBoundingClientRect(); if (r.top >= cTop - 50 && r.top < cTop + 150) { vis = el.getAttribute('data-month'); break; } }
+      if (!vis) { for (const el of els) { if (el.getBoundingClientRect().bottom > cTop) { vis = el.getAttribute('data-month'); break; } } }
+      if (vis) {
+        const [y, m] = vis.split('-').map(Number);
+        const nd = new Date(y, m, 1);
+        if (nd.getFullYear() !== currentDate.getFullYear() || nd.getMonth() !== currentDate.getMonth()) {
+          lastScrolledMonth.current = vis;
+          onDateChange(nd);
+        }
       }
-      
-      scrollTimeoutRef.current = setTimeout(() => {
-        isUserScrolling.current = false;
-        
-        // ✅ NOUVEAU : Détecter le mois visible et mettre à jour currentDate
-        if (!scrollContainerRef.current) return;
-        
-        const container = scrollContainerRef.current;
-        const containerTop = container.getBoundingClientRect().top;
-        
-        // Trouver le premier mois visible dans le viewport
-        const monthElements = container.querySelectorAll('[data-month]');
-        let visibleMonth: string | null = null;
-        
-        for (const element of monthElements) {
-          const rect = element.getBoundingClientRect();
-          // Le mois est considéré visible si son haut est dans le viewport
-          if (rect.top >= containerTop - 50 && rect.top < containerTop + 150) {
-            visibleMonth = element.getAttribute('data-month');
-            break;
-          }
-        }
-        
-        // Si aucun trouvé, prendre celui qui est le plus proche du haut
-        if (!visibleMonth) {
-          for (const element of monthElements) {
-            const rect = element.getBoundingClientRect();
-            if (rect.bottom > containerTop) {
-              visibleMonth = element.getAttribute('data-month');
-              break;
-            }
-          }
-        }
-        
-        if (visibleMonth) {
-          const [year, month] = visibleMonth.split('-').map(Number);
-          const newDate = new Date(year, month, 1);
-          
-          // Vérifier si c'est un mois différent de currentDate
-          if (newDate.getFullYear() !== currentDate.getFullYear() || 
-              newDate.getMonth() !== currentDate.getMonth()) {
-            // Mettre à jour le tracker pour éviter le scroll automatique
-            lastScrolledMonth.current = visibleMonth;
-            onDateChange(newDate);
-          }
-        }
-      }, 150);
-    }
-  };
+    }, 150);
+  }, [currentDate, onDateChange]);
 
-  const scrollToTop = () => {
-    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  const scrollToToday = useCallback(() => {
+    const now = new Date();
+    onDateChange(new Date(now.getFullYear(), now.getMonth(), 1));
+    setTimeout(() => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' }), 120);
+  }, [onDateChange]);
 
-  // Générer les semaines pour un mois donné
+  /* ---------- Week helpers ---------- */
   const getWeeksForMonth = (monthDate: Date) => {
-    const firstDay = startOfMonth(monthDate);
-    const lastDay = endOfMonth(monthDate);
-    
-    // ✅ CORRIGÉ : Commencer la première semaine au lundi précédent
-    const start = startOfWeek(firstDay, { weekStartsOn: 1 });
-    // ✅ CORRIGÉ : Terminer la dernière semaine au dimanche suivant
-    const end = endOfWeek(lastDay, { weekStartsOn: 1 });
-    
-    const days = eachDayOfInterval({ start, end });
+    const days = eachDayOfInterval({
+      start: startOfWeek(startOfMonth(monthDate), { weekStartsOn: 1 }),
+      end: endOfWeek(endOfMonth(monthDate), { weekStartsOn: 1 }),
+    });
     const weeks: Date[][] = [];
-    
-    for (let i = 0; i < days.length; i += 7) {
-      weeks.push(days.slice(i, i + 7));
-    }
-    
+    for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
     return weeks;
   };
 
-  // Obtenir les réservations qui chevauchent une semaine donnée
-  const getBookingsForWeek = (week: Date[]): { booking: BookingBarData; startCol: number; span: number }[] => {
-    const weekStart = week[0];
-    const weekEnd = week[6];
-    
+  const getBookingsForWeek = (week: Date[]) => {
+    const ws = new Date(week[0].getFullYear(), week[0].getMonth(), week[0].getDate());
+    const we = new Date(week[6].getFullYear(), week[6].getMonth(), week[6].getDate());
     const result: { booking: BookingBarData; startCol: number; span: number }[] = [];
-    
-    allBookings.forEach(bookingData => {
-      const bookingStart = new Date(bookingData.startDate.getFullYear(), bookingData.startDate.getMonth(), bookingData.startDate.getDate());
-      const bookingEnd = new Date(bookingData.endDate.getFullYear(), bookingData.endDate.getMonth(), bookingData.endDate.getDate());
-      
-      // Vérifier si la réservation chevauche cette semaine
-      const weekStartNorm = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
-      const weekEndNorm = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
-      
-      // La réservation chevauche si elle commence avant la fin de la semaine ET se termine après le début
-      if (bookingStart <= weekEndNorm && bookingEnd > weekStartNorm) {
-        // Calculer la colonne de départ (0-6)
-        let startCol = 0;
-        for (let i = 0; i < 7; i++) {
-          const dayNorm = new Date(week[i].getFullYear(), week[i].getMonth(), week[i].getDate());
-          if (dayNorm.getTime() >= bookingStart.getTime()) {
-            startCol = i;
-            break;
-          }
-          if (i === 6) startCol = 0; // La réservation commence avant cette semaine
-        }
-        
-        // Si la réservation commence avant cette semaine
-        if (bookingStart < weekStartNorm) {
-          startCol = 0;
-        }
-        
-        // Calculer le span (nombre de jours dans cette semaine)
-        let span = 0;
-        for (let i = startCol; i < 7; i++) {
-          const dayNorm = new Date(week[i].getFullYear(), week[i].getMonth(), week[i].getDate());
-          // Inclure le jour si il est >= début ET < fin (exclusif)
-          if (dayNorm >= bookingStart && dayNorm < bookingEnd) {
-            span++;
-          }
-        }
-        
-        // S'assurer qu'on a au moins 1 jour
-        if (span > 0) {
-          result.push({ booking: bookingData, startCol, span });
-        }
+
+    allBookings.forEach((bd) => {
+      const bs = new Date(bd.startDate.getFullYear(), bd.startDate.getMonth(), bd.startDate.getDate());
+      const be = new Date(bd.endDate.getFullYear(), bd.endDate.getMonth(), bd.endDate.getDate());
+      if (bs <= we && be > ws) {
+        let sc = 0;
+        if (bs < ws) sc = 0;
+        else { for (let i = 0; i < 7; i++) { const d = new Date(week[i].getFullYear(), week[i].getMonth(), week[i].getDate()); if (d.getTime() >= bs.getTime()) { sc = i; break; } if (i === 6) sc = 0; } }
+        let sp = 0;
+        for (let i = sc; i < 7; i++) { const d = new Date(week[i].getFullYear(), week[i].getMonth(), week[i].getDate()); if (d >= bs && d < be) sp++; }
+        if (sp > 0) result.push({ booking: bd, startCol: sc, span: sp });
       }
     });
-    
-    // Trier par date de début puis par durée
-    return result.sort((a, b) => {
-      if (a.startCol !== b.startCol) return a.startCol - b.startCol;
-      return b.span - a.span;
-    });
+    return result.sort((a, b) => a.startCol !== b.startCol ? a.startCol - b.startCol : b.span - a.span);
   };
 
-  // Composant pour afficher un mois
+  /* ---------- Bar height constants ---------- */
+  const DAY_NUM_H = 30;
+  const BAR_H = 32;
+  const BAR_GAP = 6;
+
+  /* ---------- Month sub-component ---------- */
   const MonthView = ({ monthDate, dataMonth }: { monthDate: Date; dataMonth?: string }) => {
     const weeks = getWeeksForMonth(monthDate);
     const monthName = format(monthDate, 'MMMM', { locale: fr });
     const year = format(monthDate, 'yyyy');
-    const currentYear = new Date().getFullYear();
-    const monthYear = monthDate.getFullYear();
-    const showYear = monthYear !== currentYear || monthDate.getMonth() === 0; // Montrer l'année si différente ou janvier
-    
+    const thisYear = new Date().getFullYear();
+    const showYear = monthDate.getFullYear() !== thisYear || monthDate.getMonth() === 0;
+
     return (
-      <div className="mb-4" data-month={dataMonth}>
-        {/* En-tête du mois - Style Airbnb */}
-        <div className="pb-2 pt-5">
-          <h2 className="text-base font-bold text-gray-900 capitalize">
-            {monthName}{showYear && <span className="font-normal text-gray-400 ml-1">{year}</span>}
+      <motion.div
+        className="mb-2"
+        data-month={dataMonth}
+        variants={monthVariants}
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, amount: 0.15 }}
+      >
+        <div className="pb-1.5 pt-6">
+          <h2 className="text-[15px] font-bold text-gray-900 capitalize tracking-tight">
+            {monthName}
+            {showYear && <span className="font-normal text-gray-400 ml-1.5 text-[13px]">{year}</span>}
           </h2>
         </div>
 
-        {/* Semaines */}
-        <div className="border-t border-gray-200">
+        <div className="border-t border-gray-200/70 rounded-lg overflow-hidden">
           {weeks.map((week, weekIndex) => {
-            const bookingsInWeek = getBookingsForWeek(week);
-            // ✅ AIRBNB : Hauteur fixe pour chaque ligne (réservations en ligne, pas en cascade)
-            const baseHeight = 28; // Hauteur pour les numéros de jour (mobile)
-            const bookingHeight = 28; // Hauteur par ligne de réservation (mobile)
-            const barGap = 8; // Léger espace entre réservations successives
-            // ✅ AIRBNB : Chaque réservation sur sa propre ligne horizontale + espace entre elles
-            const totalHeight = baseHeight + (bookingsInWeek.length * (bookingHeight + barGap)) - barGap + 4;
-            
+            const booksInWeek = getBookingsForWeek(week);
+            const totalH = DAY_NUM_H + (booksInWeek.length > 0 ? booksInWeek.length * (BAR_H + BAR_GAP) - BAR_GAP + 6 : 0);
+
             return (
-              <div key={`${monthDate.getTime()}-week-${weekIndex}`} className="relative border-b border-gray-100" style={{ minHeight: `${totalHeight}px` }}>
-                {/* ✅ Grille des jours avec bordures visibles */}
+              <div
+                key={`${monthDate.getTime()}-w${weekIndex}`}
+                className="relative border-b border-gray-100/80"
+                style={{ minHeight: `${totalH}px` }}
+              >
+                {/* Day number grid */}
                 <div className="grid grid-cols-7 relative">
-                  {week.map((day, dayIndex) => {
-                    const isCurrentMonthDay = isSameMonth(day, monthDate);
-                    const isTodayDay = isToday(day);
-                    const isPast = day < new Date(new Date().setHours(0, 0, 0, 0));
-                    const dayBg = !isCurrentMonthDay ? '' : isPast ? 'bg-[#FDFDF9]' : '';
-                    
+                  {week.map((day, di) => {
+                    const inMonth = isSameMonth(day, monthDate);
+                    const today = isToday(day);
+                    const past = day < new Date(new Date().setHours(0, 0, 0, 0));
                     return (
                       <div
-                        key={`${day.getTime()}-${dayIndex}`}
+                        key={day.getTime()}
                         className={cn(
-                          "relative flex items-start justify-center pt-1.5",
-                          "border-r border-gray-100 last:border-r-0",
-                          !isCurrentMonthDay && "bg-gray-50/50",
-                          dayBg
+                          'relative flex items-start justify-center pt-1.5',
+                          'border-r border-gray-100/60 last:border-r-0',
+                          !inMonth && 'bg-gray-50/40',
+                          inMonth && past && 'bg-[#FDFDF9]',
                         )}
-                        style={{ minHeight: `${totalHeight}px` }}
+                        style={{ minHeight: `${totalH}px` }}
                       >
                         <span
                           className={cn(
-                            "text-sm font-medium z-20 relative",
-                            isTodayDay && "bg-[#55BA9F] text-white rounded-full w-6 h-6 flex items-center justify-center text-xs",
-                            !isTodayDay && isCurrentMonthDay && "text-gray-900",
-                            !isCurrentMonthDay && "text-gray-300"
+                            'z-20 relative font-medium select-none',
+                            today
+                              ? 'bg-[#55BA9F] text-white rounded-full w-7 h-7 flex items-center justify-center text-[11px] font-bold shadow-sm'
+                              : inMonth
+                                ? 'text-[13px] text-gray-800'
+                                : 'text-[13px] text-gray-300',
                           )}
                         >
                           {format(day, 'd')}
@@ -507,152 +302,119 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                   })}
                 </div>
 
-                {/* ✅ AIRBNB : Barres de réservation en ligne (chaque réservation sur sa propre ligne) */}
-                {bookingsInWeek.length > 0 && (
-                  <div 
-                    className="absolute left-0 right-0 pointer-events-none"
-                    style={{ top: '26px' }}
-                  >
-                    {bookingsInWeek.map((item, idx) => {
-                      const { booking: bookingData, startCol, span } = item;
-                      const isStartOfBooking = week.some(d => {
-                        const dayNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-                        const bookingStartNorm = new Date(
-                          bookingData.startDate.getFullYear(),
-                          bookingData.startDate.getMonth(),
-                          bookingData.startDate.getDate()
-                        );
-                        return dayNorm.getTime() === bookingStartNorm.getTime();
-                      });
-                      
-                      // ✅ CORRIGÉ : La fin de la réservation = dernier jour INCLUS (checkout - 1)
-                      const lastNightDate = new Date(
-                        bookingData.endDate.getFullYear(),
-                        bookingData.endDate.getMonth(),
-                        bookingData.endDate.getDate() - 1
+                {/* Booking bars */}
+                {booksInWeek.length > 0 && (
+                  <div className="absolute left-0 right-0 pointer-events-none" style={{ top: `${DAY_NUM_H}px` }}>
+                    {booksInWeek.map((item, idx) => {
+                      const { booking: bd, startCol, span } = item;
+                      const isStart = week.some(
+                        (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() ===
+                               new Date(bd.startDate.getFullYear(), bd.startDate.getMonth(), bd.startDate.getDate()).getTime(),
                       );
-                      
-                      const isEndOfBooking = week.some(d => {
-                        const dayNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-                        return dayNorm.getTime() === lastNightDate.getTime();
-                      });
-                      
-                      // ✅ Calculer les positions avec extension vers la date de sortie
-                      const cellWidth = 100 / 7; // ~14.28% par cellule
-                      const leftPercent = startCol * cellWidth;
-                      // ✅ Étendre la barre jusqu'au BORD DROIT de la dernière cellule
-                      const widthPercent = span * cellWidth;
-                      
-                      // ✅ AIRBNB : Style de bordure arrondie - arrondi seulement aux extrémités
-                      let borderRadius = '0';
-                      if (isStartOfBooking && isEndOfBooking) {
-                        borderRadius = '14px';
-                      } else if (isStartOfBooking) {
-                        borderRadius = '14px 0 0 14px';
-                      } else if (isEndOfBooking) {
-                        borderRadius = '0 14px 14px 0';
-                      }
-                      
-                      const backgroundColor = bookingData.color;
-                      const textColor = bookingData.textColor;
-                      const circleBg = bookingData.circleBg ?? '#B3B3B3';
-                      const isCheckinDone = circleBg === '#000000' && !bookingData.isConflict;
-                      
+                      const lastNight = new Date(bd.endDate.getFullYear(), bd.endDate.getMonth(), bd.endDate.getDate() - 1);
+                      const isEnd = week.some(
+                        (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() === lastNight.getTime(),
+                      );
+
+                      const cellW = 100 / 7;
+                      const leftPct = startCol * cellW;
+                      const widthPct = span * cellW;
+
+                      let radius = '0';
+                      if (isStart && isEnd) radius = '16px';
+                      else if (isStart) radius = '16px 0 0 16px';
+                      else if (isEnd) radius = '0 16px 16px 0';
+
+                      const isCheckinDone = bd.circleBg === '#000000' && !bd.isConflict;
+
                       return (
-                        <div
-                          key={`${bookingData.booking.id}-${weekIndex}-${idx}`}
-                          className="absolute h-7 sm:h-8 pointer-events-auto cursor-pointer"
-                            style={{
-                            left: `calc(${leftPercent}% + 1px)`,
-                            width: `calc(${widthPercent}% - 2px)`,
-                            // ✅ AIRBNB : Chaque réservation sur sa propre ligne avec espace entre elles
-                            top: `${idx * (bookingHeight + barGap)}px`,
+                        <motion.div
+                          key={`${bd.booking.id}-${weekIndex}-${idx}`}
+                          className="absolute pointer-events-auto cursor-pointer"
+                          custom={idx}
+                          variants={barVariants}
+                          initial="hidden"
+                          animate="visible"
+                          whileTap="tap"
+                          style={{
+                            left: `calc(${leftPct}% + 1px)`,
+                            width: `calc(${widthPct}% - 2px)`,
+                            top: `${idx * (BAR_H + BAR_GAP)}px`,
+                            height: `${BAR_H}px`,
                           }}
-                          onClick={() => onBookingClick(bookingData.booking)}
+                          onClick={() => onBookingClick(bd.booking)}
                         >
                           <div
                             className={cn(
-                              "h-full flex items-center gap-1 sm:gap-1.5 pl-1 pr-1.5 sm:pl-1.5 sm:pr-2",
-                              "shadow-sm transition-all duration-200",
-                              "hover:shadow-md active:scale-[0.99]",
-                              bookingData.isConflict && "ring-2 ring-red-400"
+                              'h-full flex items-center gap-1.5 pl-1.5 pr-2',
+                              'transition-shadow duration-200',
+                              bd.isConflict && 'ring-2 ring-red-400/80',
                             )}
-                            style={{ 
-                              backgroundColor,
-                              borderRadius,
-                              boxShadow: bookingData.isPastStay && !bookingData.isConflict
-                                ? '0 2px 6px rgba(15,23,42,0.08)'
-                                : undefined,
+                            style={{
+                              backgroundColor: bd.color,
+                              borderRadius: radius,
+                              boxShadow: bd.isConflict
+                                ? '0 3px 10px rgba(220,38,38,0.22)'
+                                : bd.isPastStay
+                                  ? '0 1px 4px rgba(15,23,42,0.06)'
+                                  : '0 2px 8px rgba(15,23,42,0.14)',
                             }}
                           >
-                            {isStartOfBooking && (
+                            {/* Status icon */}
+                            {isStart && (
                               <div
-                                className="-translate-x-px sm:-translate-x-0.5 flex items-center justify-center flex-shrink-0 rounded-full w-5 h-5 sm:w-6 sm:h-6"
-                                style={{ backgroundColor: circleBg }}
+                                className="flex items-center justify-center flex-shrink-0 rounded-full w-[22px] h-[22px] -ml-px"
+                                style={{ backgroundColor: bd.circleBg }}
                               >
-                                {bookingData.isConflict ? (
-                                  <FigmaConflictIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                {bd.isConflict ? (
+                                  <FigmaConflictIcon className="w-3.5 h-3.5" />
                                 ) : isCheckinDone ? (
-                                  <img
-                                    src={CHECKIN_DONE_ICON_SRC}
-                                    alt=""
-                                    className="w-3 h-3 sm:w-3.5 sm:h-3.5 object-contain pointer-events-none"
-                                  />
+                                  <img src={CHECKIN_DONE_ICON_SRC} alt="" className="w-3 h-3 object-contain pointer-events-none" />
                                 ) : (
-                                  <CheckinNotDoneCrossIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                                  <CheckinNotDoneCrossIcon className="w-3.5 h-3.5" />
                                 )}
                               </div>
                             )}
 
-                            {isStartOfBooking && bookingData.isValidName && (
+                            {/* Avatar initials */}
+                            {isStart && bd.isValidName && (
                               <div
                                 className={cn(
-                                  'w-4 h-4 sm:w-5 sm:h-5 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden',
-                                  bookingData.isPastStay && !bookingData.isConflict
-                                    ? 'bg-neutral-200/90'
-                                    : 'bg-white/20'
+                                  'w-[20px] h-[20px] rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden',
+                                  bd.isPastStay && !bd.isConflict ? 'bg-neutral-200/90' : 'bg-white/20',
                                 )}
                               >
-                                {bookingData.photoUrl ? (
-                                  <img 
-                                    src={bookingData.photoUrl} 
-                                    alt={bookingData.guestName}
-                                    className="w-full h-full object-cover"
-                                  />
+                                {bd.photoUrl ? (
+                                  <img src={bd.photoUrl} alt={bd.guestName} className="w-full h-full object-cover" />
                                 ) : (
-                                  <span className={cn("text-[8px] sm:text-[9px] font-bold", textColor)}>
-                                    {getInitials(bookingData.guestName)}
+                                  <span className={cn('text-[8px] font-bold', bd.textColor)}>
+                                    {getInitials(bd.guestName)}
                                   </span>
                                 )}
                               </div>
                             )}
 
-                            <div className={cn("flex items-center gap-0.5 sm:gap-1 min-w-0 flex-1", textColor)}>
-                              {isStartOfBooking && bookingData.showIcalBadge && (
-                                <span
-                                  className="flex-shrink-0 rounded px-0.5 py-px text-[7px] sm:text-[8px] font-bold uppercase tracking-wide border border-white/35 bg-black/15"
-                                  aria-hidden
-                                  title={t('calendar.icalBadge.tooltip', {
-                                    name: bookingData.guestName,
-                                  })}
-                                >
+                            {/* Label */}
+                            <div className={cn('flex items-center gap-0.5 min-w-0 flex-1', bd.textColor)}>
+                              {isStart && bd.showIcalBadge && (
+                                <span className="flex-shrink-0 rounded px-0.5 py-px text-[7px] font-bold uppercase tracking-wide border border-white/30 bg-black/15">
                                   {t('calendar.icalBadge.short')}
                                 </span>
                               )}
-                              <span className="text-[10px] sm:text-[11px] font-semibold truncate leading-tight">
-                                {bookingData.isValidName
-                                  ? bookingData.guestName.split(' ')[0]
-                                  : bookingData.guestName.substring(0, isStartOfBooking ? 10 : 12) +
-                                    (bookingData.guestName.length > (isStartOfBooking ? 10 : 12) ? '…' : '')}
+                              <span className="text-[11px] font-semibold truncate leading-tight">
+                                {bd.isValidName
+                                  ? bd.guestName.split(' ')[0]
+                                  : bd.guestName.substring(0, isStart ? 10 : 12) +
+                                    (bd.guestName.length > (isStart ? 10 : 12) ? '…' : '')}
                               </span>
-                              {isStartOfBooking && bookingData.guestCount > 1 && (
-                                <span className="text-[9px] sm:text-[10px] font-medium opacity-80 flex-shrink-0 leading-tight">
-                                  +{bookingData.guestCount - 1}
+                              {isStart && bd.guestCount > 1 && (
+                                <span className="text-[9px] font-medium opacity-75 flex-shrink-0 leading-tight">
+                                  +{bd.guestCount - 1}
                                 </span>
                               )}
                             </div>
                           </div>
-                        </div>
+                        </motion.div>
                       );
                     })}
                   </div>
@@ -661,58 +423,68 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             );
           })}
         </div>
-      </div>
+      </motion.div>
     );
   };
 
+  /* ---------------------------------------------------------------- */
+  /*  Render                                                            */
+  /* ---------------------------------------------------------------- */
   return (
     <div className="w-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
-      {/* En-tête fixe avec jours de la semaine */}
-      <div className="sticky top-0 z-30 bg-white border-b border-gray-200 px-3">
+      {/* Sticky week-day header */}
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-3">
         <div className="grid grid-cols-7">
-          {dayNamesShort.map((day, index) => (
+          {dayNamesShort.map((d, i) => (
             <div
-              key={`header-${index}`}
-              className="text-center text-xs font-semibold text-gray-500 py-2.5 border-r border-gray-100 last:border-r-0"
+              key={`hd-${i}`}
+              className="text-center text-[11px] font-semibold text-gray-500 py-2.5 border-r border-gray-100/60 last:border-r-0 uppercase tracking-wider"
             >
-              {day}
+              {d}
             </div>
           ))}
         </div>
       </div>
-      
-      {/* Container scrollable */}
-      <div 
+
+      {/* Scrollable months */}
+      <div
         ref={scrollContainerRef}
-        className="h-[calc(100vh-220px)] overflow-y-auto px-3 scroll-smooth"
+        className="h-[calc(100vh-220px)] overflow-y-auto px-3 scroll-smooth overscroll-contain"
         onScroll={handleScroll}
       >
-        {/* Mois */}
         {monthsToShow.map((month) => (
-          <MonthView 
-            key={month.getTime()} 
+          <MonthView
+            key={month.getTime()}
             monthDate={month}
             dataMonth={`${month.getFullYear()}-${month.getMonth()}`}
           />
         ))}
-        
-        {/* Espace en bas */}
-        <div className="h-24" />
+        <div className="h-28" />
       </div>
 
-      {/* Bouton scroll to top - Style Airbnb */}
+      {/* Floating actions */}
       <AnimatePresence>
         {showScrollTop && (
           <motion.div
             initial={{ opacity: 0, scale: 0.8, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 20 }}
-            className="absolute bottom-6 right-4 z-40"
+            transition={{ type: 'spring', stiffness: 400, damping: 26 }}
+            className="absolute bottom-6 right-4 z-40 flex flex-col gap-2"
           >
             <Button
               size="icon"
               variant="outline"
-              onClick={scrollToTop}
+              onClick={scrollToToday}
+              className="rounded-full shadow-lg bg-white border-gray-200 hover:bg-gray-50 h-10 w-10"
+              title="Aujourd'hui"
+            >
+              <CalendarDays className="h-4 w-4 text-[#55BA9F]" />
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={() => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
               className="rounded-full shadow-lg bg-white border-gray-200 hover:bg-gray-50 h-10 w-10"
             >
               <ChevronUp className="h-5 w-5 text-gray-700" />
