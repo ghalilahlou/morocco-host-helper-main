@@ -67,6 +67,7 @@ import { EnhancedCalendar } from '@/components/ui/enhanced-calendar';
 import { validateToken, isTestToken, logTestTokenUsage, TEST_TOKENS_CONFIG } from '@/utils/testTokens';
 import { validateTokenDirect } from '@/utils/tokenValidation';
 import { Guest } from '@/types/booking'; // ✅ Importer le type centralisé
+import { DEV_GUEST_VERIFICATION_URL, DEV_PRESET_GUEST } from '@/config/devGuestVerification';
 import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
 import { GuestHybridDateField } from '@/components/guest/GuestHybridDateField';
 import { NATIONALITIES } from '@/data/nationalities';
@@ -95,6 +96,38 @@ interface UploadedDocument {
   processing: boolean;
   extractedData?: any;
   isInvalid?: boolean;
+}
+
+/** Parse une date extraite par l’IA en évitant `new Date('YYYY-MM-DD')` (décalage UTC / jour manquant). */
+function parseGuestDateFromExtraction(value: string | undefined): Date | null {
+  if (!value || typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  const isoStrict = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (isoStrict) {
+    try {
+      return parseLocalDate(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  const direct = new Date(trimmed);
+  if (!isNaN(direct.getTime())) return direct;
+  const ddmmyyyy = trimmed.match(/^(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})$/);
+  if (ddmmyyyy) {
+    return new Date(parseInt(ddmmyyyy[3], 10), parseInt(ddmmyyyy[2], 10) - 1, parseInt(ddmmyyyy[1], 10));
+  }
+  return null;
+}
+
+function formatDocExtractSummary(doc: UploadedDocument, guestAtIndex: Guest | undefined): string {
+  const ext = doc.extractedData as Partial<Guest> | undefined;
+  const parts: string[] = [];
+  const name = ext?.fullName || guestAtIndex?.fullName;
+  if (name) parts.push(String(name));
+  if (ext?.documentNumber) parts.push(`N° ${ext.documentNumber}`);
+  if (ext?.nationality) parts.push(String(ext.nationality));
+  if (ext?.placeOfBirth) parts.push(`Né(e) à ${ext.placeOfBirth}`);
+  return parts.join(' · ') || '—';
 }
 
 // Animation variants
@@ -1374,15 +1407,16 @@ export const GuestVerification = () => {
             if (targetIndex === -1) {
               const newGuest: Guest = {
                 fullName: extractedData.fullName || '',
-                dateOfBirth: extractedData.dateOfBirth ? new Date(extractedData.dateOfBirth) : undefined,
+                dateOfBirth: parseGuestDateFromExtraction(extractedData.dateOfBirth) ?? undefined,
                 nationality: extractedData.nationality || '',
                 documentNumber: extractedData.documentNumber || '',
                 documentType: (extractedData.documentType as 'passport' | 'national_id') || 'passport',
-                documentIssueDate: extractedData.documentIssueDate ? new Date(extractedData.documentIssueDate) : undefined,
+                documentIssueDate: parseGuestDateFromExtraction(extractedData.documentIssueDate) ?? undefined,
                 profession: '',
                 motifSejour: 'TOURISME',
                 adressePersonnelle: '',
-                email: ''
+                email: '',
+                placeOfBirth: extractedData.placeOfBirth || undefined,
               };
               return [...updatedGuests, newGuest];
             }
@@ -1403,72 +1437,31 @@ export const GuestVerification = () => {
             if (extractedData.documentType && (!targetGuest.documentType || targetGuest.documentType !== extractedData.documentType)) {
               targetGuest.documentType = extractedData.documentType as 'passport' | 'national_id';
             }
+            if (
+              extractedData.placeOfBirth &&
+              (!targetGuest.placeOfBirth || targetGuest.placeOfBirth !== extractedData.placeOfBirth)
+            ) {
+              targetGuest.placeOfBirth = extractedData.placeOfBirth;
+            }
             
-            // ✅ AMÉLIORÉ : Parsing robuste de la date de naissance - toujours mettre à jour si extraite
             if (extractedData.dateOfBirth) {
-              let parsedDate: Date | null = null;
-              
-              // Tentative 1: Direct parsing
-              parsedDate = new Date(extractedData.dateOfBirth);
-              if (isNaN(parsedDate.getTime())) {
-                // Tentative 2: Format ISO (YYYY-MM-DD)
-                const isoMatch = extractedData.dateOfBirth.match(/(\d{4})-(\d{2})-(\d{2})/);
-                if (isoMatch) {
-                  parsedDate = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
-                } else {
-                  // Tentative 3: Format DD/MM/YYYY ou DD-MM-YYYY
-                  const ddmmyyyyMatch = extractedData.dateOfBirth.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
-                  if (ddmmyyyyMatch) {
-                    parsedDate = new Date(parseInt(ddmmyyyyMatch[3]), parseInt(ddmmyyyyMatch[2]) - 1, parseInt(ddmmyyyyMatch[1]));
-                  }
-                }
-              }
-              
-              if (parsedDate && !isNaN(parsedDate.getTime())) {
-                // Vérifier que la date est raisonnable (pas dans le futur, pas trop ancienne)
-                const now = new Date();
-                const minDate = new Date(1900, 0, 1);
-                if (parsedDate <= now && parsedDate >= minDate) {
-                  targetGuest.dateOfBirth = parsedDate;
-                  console.log('✅ Date de naissance extraite et mise à jour:', format(parsedDate, 'dd/MM/yyyy'));
-                } else {
-                  console.warn('⚠️ Date de naissance invalide (hors limites):', parsedDate);
-                }
+              const parsedDate = parseGuestDateFromExtraction(extractedData.dateOfBirth);
+              const minDate = new Date(1900, 0, 1);
+              if (parsedDate && !isNaN(parsedDate.getTime()) && parsedDate >= minDate) {
+                targetGuest.dateOfBirth = parsedDate;
+                console.log('✅ Date de naissance extraite et mise à jour:', format(parsedDate, 'dd/MM/yyyy'));
               } else {
                 console.warn('⚠️ Impossible de parser la date de naissance:', extractedData.dateOfBirth);
               }
             }
             
-            // ✅ Parsing de la date d'expiration du document (extraite par l'analyse de la pièce d'identité)
             if (extractedData.documentIssueDate) {
-              let parsedExpiryDate: Date | null = null;
-              
-              // Tentative 1: Direct parsing
-              parsedExpiryDate = new Date(extractedData.documentIssueDate);
-              if (isNaN(parsedExpiryDate.getTime())) {
-                // Tentative 2: Format ISO (YYYY-MM-DD)
-                const isoMatch = extractedData.documentIssueDate.match(/(\d{4})-(\d{2})-(\d{2})/);
-                if (isoMatch) {
-                  parsedExpiryDate = new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
-                } else {
-                  // Tentative 3: Format DD/MM/YYYY ou DD-MM-YYYY
-                  const ddmmyyyyMatch = extractedData.documentIssueDate.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
-                  if (ddmmyyyyMatch) {
-                    parsedExpiryDate = new Date(parseInt(ddmmyyyyMatch[3]), parseInt(ddmmyyyyMatch[2]) - 1, parseInt(ddmmyyyyMatch[1]));
-                  }
-                }
-              }
-              
-              if (parsedExpiryDate && !isNaN(parsedExpiryDate.getTime())) {
-                // Pour la date d'expiration : accepter une plage raisonnable (documents valides ou récemment expirés)
-                const minDate = new Date(1990, 0, 1);
-                const maxDate = new Date(2050, 11, 31);
-                if (parsedExpiryDate >= minDate && parsedExpiryDate <= maxDate) {
-                  targetGuest.documentIssueDate = parsedExpiryDate;
-                  console.log('✅ Date d\'expiration extraite et mise à jour:', format(parsedExpiryDate, 'dd/MM/yyyy'));
-                } else {
-                  console.warn('⚠️ Date d\'expiration invalide (hors limites):', parsedExpiryDate);
-                }
+              const parsedExpiryDate = parseGuestDateFromExtraction(extractedData.documentIssueDate);
+              const minDate = new Date(1990, 0, 1);
+              const maxDate = new Date(2050, 11, 31);
+              if (parsedExpiryDate && !isNaN(parsedExpiryDate.getTime()) && parsedExpiryDate >= minDate && parsedExpiryDate <= maxDate) {
+                targetGuest.documentIssueDate = parsedExpiryDate;
+                console.log('✅ Date d\'expiration extraite et mise à jour:', format(parsedExpiryDate, 'dd/MM/yyyy'));
               } else {
                 console.warn('⚠️ Impossible de parser la date d\'expiration:', extractedData.documentIssueDate);
               }
@@ -2416,6 +2409,40 @@ export const GuestVerification = () => {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row items-start" style={{ backgroundColor: '#FDFDF9' }}>
+      {DEV_GUEST_VERIFICATION_URL ? (
+        <div
+          className="w-full border-b border-dashed border-amber-300/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-950"
+          role="region"
+          aria-label="Raccourci développement vérification invité"
+        >
+          <p className="font-medium mb-1">Lien de réservation / vérification (prédéfini)</p>
+          <p className="text-xs text-amber-900/90 mb-2">
+            Défini via <code className="rounded bg-white/80 px-1">VITE_DEV_GUEST_VERIFICATION_URL</code> dans{' '}
+            <code className="rounded bg-white/80 px-1">.env</code>. Ouvrez le lien pour tester le flux invité classique.
+          </p>
+          <a
+            href={DEV_GUEST_VERIFICATION_URL}
+            className="text-teal-700 underline break-all block mb-2"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {DEV_GUEST_VERIFICATION_URL}
+          </a>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="border-amber-400 bg-white/90"
+            onClick={() => {
+              setGuests([{ ...DEV_PRESET_GUEST }]);
+              setNumberOfGuests(1);
+              toast({ title: 'Invité démo', description: 'Champs préremplis — complétez ou remplacez avant envoi.' });
+            }}
+          >
+            Préremplir l’invité démo
+          </Button>
+        </div>
+      ) : null}
       
       {/* ========================================
           MOBILE HEADER - Visible uniquement sur mobile
@@ -2705,8 +2732,8 @@ export const GuestVerification = () => {
                             {doc.file.name}
                             {doc.processing && <span className="ml-2 text-green-400 text-xs">(Traitement...)</span>}
                           </p>
-                          <p className="text-gray-400 text-xs">
-                            Nom: {deduplicatedGuests[index]?.fullName || (doc.extractedData?.fullName || 'Non assigné')}
+                          <p className="text-gray-400 text-xs break-words">
+                            {formatDocExtractSummary(doc, guests[index])}
                           </p>
                         </div>
                       </div>
@@ -3519,8 +3546,8 @@ export const GuestVerification = () => {
                                   )}
                                   <div className="flex-1 min-w-0 pr-8">
                                     <p className="text-sm font-medium text-gray-900 truncate">{doc.file.name}</p>
-                                    <p className="text-xs text-gray-500">
-                                      {deduplicatedGuests[index]?.fullName || (doc.extractedData?.fullName || '—')}
+                                    <p className="text-xs text-gray-500 break-words">
+                                      {formatDocExtractSummary(doc, guests[index])}
                                     </p>
                                   </div>
                                 </div>

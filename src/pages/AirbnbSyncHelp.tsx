@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { supabase } from '@/integrations/supabase/client';
 
 export const AirbnbSyncHelp = () => {
@@ -96,28 +97,32 @@ export const AirbnbSyncHelp = () => {
       setIsEditing(false);
       toast.success("URL du calendrier sauvegardée");
       
-      // 2) Trigger synchronization using the edge function (automatique)
-      toast.info('Synchronisation des réservations en cours...');
-      const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, airbnbUrl.trim());
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Erreur lors de la synchronisation');
-      }
-      
-      // Mettre à jour le statut de synchronisation
-      const now = new Date();
-      const formattedDate = now.toLocaleDateString('fr-FR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-          setLastSync(formattedDate);
-      
-      // Silent success on mobile, only show on desktop
-      if (window.innerWidth >= 768) {
-        toast.success(`Synchronisation réussie ! ${result.count || 0} réservations importées`);
+      if (FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+        // 2) Trigger synchronization using the edge function (automatique)
+        toast.info('Synchronisation des réservations en cours...');
+        const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, airbnbUrl.trim());
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Erreur lors de la synchronisation');
+        }
+        
+        const now = new Date();
+        const formattedDate = now.toLocaleDateString('fr-FR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        setLastSync(formattedDate);
+        
+        if (window.innerWidth >= 768) {
+          toast.success(`Synchronisation réussie ! ${result.count || 0} réservations importées`);
+        }
+      } else {
+        toast.message('Synchronisation désactivée', {
+          description: 'L’URL est enregistrée mais l’import ICS ne s’exécute pas (mode réservations classiques).',
+        });
       }
       
       // 3) Redirect to property calendar
@@ -141,6 +146,12 @@ export const AirbnbSyncHelp = () => {
 
     setIsLoading(true);
     try {
+      if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+        toast.message('Actualisation désactivée', {
+          description: 'La synchronisation ICS est coupée côté application.',
+        });
+        return;
+      }
       toast.info('Actualisation en cours...');
       const result = await AirbnbEdgeFunctionService.syncReservations(propertyId, currentIcsUrl);
       

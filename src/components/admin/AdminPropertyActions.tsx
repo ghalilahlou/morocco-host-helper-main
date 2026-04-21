@@ -27,6 +27,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { AdminGuestLinkSection } from '@/components/admin/AdminGuestLinkSection';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import {
   Eye,
   Edit,
@@ -523,14 +524,16 @@ export const AdminPropertyActions: React.FC<AdminPropertyActionsProps> = ({ prop
                   onChange={(e) => setEditData({ ...editData, photo_url: e.target.value })}
                 />
               </div>
-              <div className="col-span-2">
-                <Label htmlFor="airbnb_ics_url">URL calendrier ICS (Airbnb / sync)</Label>
-                <Input
-                  id="airbnb_ics_url"
-                  value={editData.airbnb_ics_url}
-                  onChange={(e) => setEditData({ ...editData, airbnb_ics_url: e.target.value })}
-                />
-              </div>
+              {FRONT_CALENDAR_ICS_SYNC_ENABLED && (
+                <div className="col-span-2">
+                  <Label htmlFor="airbnb_ics_url">URL calendrier ICS (Airbnb / sync)</Label>
+                  <Input
+                    id="airbnb_ics_url"
+                    value={editData.airbnb_ics_url}
+                    onChange={(e) => setEditData({ ...editData, airbnb_ics_url: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
             <div className="flex items-center space-x-2">
               <Switch

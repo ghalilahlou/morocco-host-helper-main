@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 
 export interface AirbnbReservation {
   id: string;
@@ -39,6 +40,13 @@ export class AirbnbUnifiedService {
    */
   static async syncReservations(propertyId: string, force: boolean = false): Promise<SyncResult> {
     try {
+      if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+        return {
+          success: false,
+          message: 'Calendar ICS sync disabled',
+          reservationsCount: 0,
+        };
+      }
       console.log(`🔄 Syncing Airbnb reservations for property ${propertyId} (force: ${force})`);
       
       const { data, error } = await supabase.functions.invoke('sync-airbnb-unified', {

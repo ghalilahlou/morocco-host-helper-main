@@ -3,6 +3,7 @@ import { Property, Booking } from '@/types/booking';
 import { useProperties } from '@/hooks/useProperties';
 import { useBookings } from '@/hooks/useBookings';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { PropertySelector } from './PropertySelector';
 import { Dashboard } from './Dashboard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,6 +53,11 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
   useEffect(() => {
     const loadAirbnbCount = async () => {
       if (!selectedProperty?.id) return;
+
+      if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+        setAirbnbReservationsCount(0);
+        return;
+      }
       
       try {
         const reservations = await AirbnbEdgeFunctionService.getReservations(selectedProperty.id);
@@ -204,13 +210,15 @@ export const PropertyDashboard = ({ onNewBooking, onEditBooking }: PropertyDashb
                   <div className="text-xs text-muted-foreground">Archivé</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-1">
-                <Calendar className="h-4 w-4 text-blue-500" />
-                <div>
-                  <div className="text-lg sm:text-2xl font-bold text-blue-600">{stats.airbnb}</div>
-                  <div className="text-xs text-muted-foreground">Airbnb</div>
+              {FRONT_CALENDAR_ICS_SYNC_ENABLED && (
+                <div className="flex items-center gap-2 sm:col-span-2 lg:col-span-1">
+                  <Calendar className="h-4 w-4 text-blue-500" />
+                  <div>
+                    <div className="text-lg sm:text-2xl font-bold text-blue-600">{stats.airbnb}</div>
+                    <div className="text-xs text-muted-foreground">Airbnb</div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>

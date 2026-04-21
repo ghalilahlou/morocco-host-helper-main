@@ -263,7 +263,7 @@ export const Landing = () => {
             src={heroBg}
             alt=""
             className="absolute inset-0 z-[1] h-full w-full object-cover object-center"
-            fetchPriority="high"
+            fetchpriority="high"
           />
           <div
             className="absolute inset-0 z-[2] bg-gradient-to-r from-black/[0.42] to-black/10"

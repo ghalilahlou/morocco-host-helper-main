@@ -30,6 +30,7 @@ import { formatLocalDate } from '@/utils/dateUtils';
 import { getBookingDocumentStatus } from '@/utils/bookingDocuments';
 import { doBookingAndAirbnbMatch, isSameReservationByRef } from '@/utils/bookingAirbnbMatch';
 import { mergeBookingsWithAirbnbForCalendar } from '@/domain/calendarReservationModel';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { useBookings } from '@/hooks/useBookings';
 
@@ -171,6 +172,12 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onDelet
   // forceReload: après une sync ICS, forcer le rechargement même si un chargement est en cours / cache présent
   const loadAirbnbReservations = useCallback(async (forceReload?: boolean) => {
     if (!propertyId) return;
+
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      airbnbCache.clear();
+      setAirbnbReservations([]);
+      return;
+    }
     
     // ✅ PROTECTION : Empêcher les appels multiples simultanés (sauf après sync)
     if (isLoadingRef.current && !forceReload) {
@@ -272,6 +279,13 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onDelet
 
   // Sync hasIcs/icsUrl from prop (no extra Supabase query needed)
   useEffect(() => {
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      airbnbCache.clear();
+      setIcsUrl(null);
+      setHasIcs(false);
+      setAirbnbReservations([]);
+      return;
+    }
     setIcsUrl(airbnbIcsUrl || null);
     setHasIcs(!!airbnbIcsUrl);
   }, [airbnbIcsUrl]);
@@ -291,9 +305,11 @@ const handleManualRefresh = useCallback(async () => {
     if (onRefreshBookings) {
       await onRefreshBookings();
     }
-    airbnbCache.clear();
-    invalidateAirbnbEventsCache(propertyId);
-    await loadAirbnbReservations(true);
+    if (FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      airbnbCache.clear();
+      invalidateAirbnbEventsCache(propertyId);
+      await loadAirbnbReservations(true);
+    }
     
     toast({
       title: t('airbnb.calendarUpdated.title'),
@@ -343,9 +359,9 @@ const handleManualRefresh = useCallback(async () => {
     }
   }, [loadAirbnbReservations, propertyId]);
 
-  // Single optimized real-time subscription
+  // Single optimized real-time subscription (désactivé si sync ICS front coupée)
   useEffect(() => {
-    if (!propertyId) return;
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED || !propertyId) return;
 
     const channel = supabase
       .channel(`calendar-${propertyId}`)
@@ -391,6 +407,15 @@ const handleManualRefresh = useCallback(async () => {
 
   const handleSyncFromCalendar = useCallback(async () => {
     if (!propertyId) return;
+
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      toast({
+        title: t('airbnb.syncError.title'),
+        description: 'La synchronisation calendrier Airbnb est désactivée. Utilisez les réservations créées dans l’application.',
+        variant: 'default',
+      });
+      return;
+    }
     
     try {
       setIsSyncing(true);
@@ -558,7 +583,11 @@ const handleOpenConfig = useCallback(() => {
 
   // Combine bookings et Airbnb (logique centralisée : domain/calendarReservationModel).
   const allReservations = useMemo(
-    () => mergeBookingsWithAirbnbForCalendar(bookings, airbnbReservations).allRows,
+    () =>
+      mergeBookingsWithAirbnbForCalendar(
+        bookings,
+        FRONT_CALENDAR_ICS_SYNC_ENABLED ? airbnbReservations : [],
+      ).allRows,
     [bookings, airbnbReservations],
   );
 

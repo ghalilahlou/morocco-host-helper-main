@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, CSSProperties } from 'react';
+import { useState, useEffect, useCallback, useMemo, CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,7 @@ import { motion, AnimatePresence, type PanInfo } from 'framer-motion';
 import { useDeviceType } from '@/hooks/use-mobile';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { cn } from '@/lib/utils';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -58,6 +59,10 @@ const mobileTutorialSteps: TutorialStep[] = [
   { id: 'sync-airbnb', titleKey: 'tutorial.mobile.syncAirbnb.title', descriptionKey: 'tutorial.mobile.syncAirbnb.desc', tipKey: 'tutorial.tip.syncAirbnb', target: '[data-tutorial="sync-airbnb"]', position: 'bottom', icon: RefreshCw, accentColor: '#EC4899' },
   { id: 'tutorial-button', titleKey: 'tutorial.mobile.tutorialButton.title', descriptionKey: 'tutorial.mobile.tutorialButton.desc', target: '[data-tutorial="tutorial-button"]', position: 'bottom', icon: GraduationCap, accentColor: '#6366F1' },
 ];
+
+function filterTutorialSteps(steps: TutorialStep[]) {
+  return FRONT_CALENDAR_ICS_SYNC_ENABLED ? steps : steps.filter((s) => s.id !== 'sync-airbnb');
+}
 
 /* ------------------------------------------------------------------ */
 /*  Animation variants                                                 */
@@ -232,7 +237,10 @@ export const PropertyTutorial = ({ onComplete }: PropertyTutorialProps) => {
   const [direction, setDirection] = useState(0);
   const deviceType = useDeviceType();
   const isMobile = deviceType === 'mobile';
-  const tutorialSteps = isMobile ? mobileTutorialSteps : desktopTutorialSteps;
+  const tutorialSteps = useMemo(
+    () => filterTutorialSteps(isMobile ? mobileTutorialSteps : desktopTutorialSteps),
+    [isMobile],
+  );
   const currentStepData = tutorialSteps[currentStep];
 
   useEffect(() => () => { document.body.style.overflow = 'unset'; }, []);

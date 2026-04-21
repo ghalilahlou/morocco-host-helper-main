@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 
 export interface SyncResult {
   success: boolean;
@@ -13,6 +14,12 @@ export class AirbnbEdgeFunctionService {
   private static syncInProgress = new Map<string, Promise<SyncResult>>();
   
   static async syncReservations(propertyId: string, icsUrl: string): Promise<SyncResult> {
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      return {
+        success: false,
+        error: 'Synchronisation calendrier ICS désactivée (réservations classiques uniquement).',
+      };
+    }
     // ✅ PROTECTION : Vérifier si une synchronisation est déjà en cours pour cette propriété
     const existingSync = this.syncInProgress.get(propertyId);
     if (existingSync) {

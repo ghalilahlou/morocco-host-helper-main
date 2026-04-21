@@ -12,6 +12,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { cn } from '@/lib/utils';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 interface CalendarHeaderProps {
   currentDate: Date;
   onDateChange: (date: Date) => void;
@@ -112,29 +113,27 @@ export const CalendarHeader = ({
             <div className="w-1 h-1 rounded-full bg-gray-400"></div>
           </div>
           
-          {/* Icônes Wi-Fi et Chaîne */}
-          <div className="flex items-center justify-center gap-3">
-            {/* Icône Wi-Fi */}
-            <button
-              onClick={onOpenConfig}
-              className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-              aria-label={t('dashboard.sync')}
-            >
-              <Wifi className={cn(
-                "h-5 w-5",
-                hasIcs ? "text-[#55BA9F]" : "text-gray-400"
-              )} />
-            </button>
-            
-            {/* Icône Chaîne */}
-            <button
-              onClick={onOpenConfig}
-              className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
-              aria-label="Lien de synchronisation"
-            >
-              <Link className="h-5 w-5 text-gray-700" />
-            </button>
-          </div>
+          {FRONT_CALENDAR_ICS_SYNC_ENABLED && (
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={onOpenConfig}
+                className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                aria-label={t('dashboard.sync')}
+              >
+                <Wifi className={cn(
+                  "h-5 w-5",
+                  hasIcs ? "text-[#55BA9F]" : "text-gray-400"
+                )} />
+              </button>
+              <button
+                onClick={onOpenConfig}
+                className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                aria-label="Lien de synchronisation"
+              >
+                <Link className="h-5 w-5 text-gray-700" />
+              </button>
+            </div>
+          )}
           
           {/* Navigation mois/année pour mobile */}
           <div className="flex items-center justify-center gap-2">
@@ -292,22 +291,23 @@ export const CalendarHeader = ({
         </div>
         
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Sync Airbnb Button - Redirige vers la page d'aide */}
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={onOpenConfig}
-            className="flex items-center gap-1 sm:gap-2 hover:bg-gray-100 border-gray-300 bg-white text-gray-900 px-2 sm:px-3"
-            data-tutorial="sync-airbnb"
-          >
-            {hasIcs ? (
-              <Wifi className="h-4 w-4 flex-shrink-0" />
-            ) : (
-              <WifiOff className="h-4 w-4 flex-shrink-0" />
-            )}
-            <span className="text-sm font-medium hidden sm:inline">{t('dashboard.sync')}</span>
-            <span className="text-sm font-medium sm:hidden">{t('dashboard.syncShort')}</span>
-          </Button>
+          {FRONT_CALENDAR_ICS_SYNC_ENABLED && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={onOpenConfig}
+              className="flex items-center gap-1 sm:gap-2 hover:bg-gray-100 border-gray-300 bg-white text-gray-900 px-2 sm:px-3"
+              data-tutorial="sync-airbnb"
+            >
+              {hasIcs ? (
+                <Wifi className="h-4 w-4 flex-shrink-0" />
+              ) : (
+                <WifiOff className="h-4 w-4 flex-shrink-0" />
+              )}
+              <span className="text-sm font-medium hidden sm:inline">{t('dashboard.sync')}</span>
+              <span className="text-sm font-medium sm:hidden">{t('dashboard.syncShort')}</span>
+            </Button>
+          )}
           
           {/* Bouton Créer une réservation */}
           {onCreateBooking && (

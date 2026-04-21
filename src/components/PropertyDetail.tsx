@@ -18,6 +18,7 @@ import { PropertyTutorial } from './PropertyTutorial';
 import { ShareModal } from './ShareModal';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { supabase } from '@/integrations/supabase/client';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { isAirbnbCode } from '@/utils/airbnbCodeFilter';
 
 
@@ -131,6 +132,12 @@ export const PropertyDetail = () => {
 
   const loadAirbnbCount = useCallback(async () => {
     if (!property?.id) return;
+
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      setAirbnbReservationsCount(0);
+      airbnbCountCacheRef.current = { propertyId: property.id, count: 0, timestamp: Date.now() };
+      return;
+    }
 
     const cache = airbnbCountCacheRef.current;
     const now = Date.now();

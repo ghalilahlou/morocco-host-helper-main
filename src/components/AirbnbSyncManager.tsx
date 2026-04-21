@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Link as LinkIcon, Save, Check, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAirbnbSync } from '@/hooks/useAirbnbSync';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { useToast } from '@/hooks/use-toast';
 import { useT } from '@/i18n/GuestLocaleProvider';
 
@@ -21,8 +22,6 @@ export const AirbnbSyncManager = ({
   currentIcsUrl = '', 
   onUrlUpdated 
 }: AirbnbSyncManagerProps) => {
-  
-  
   const [icsUrl, setIcsUrl] = useState(currentIcsUrl);
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -111,6 +110,14 @@ export const AirbnbSyncManager = ({
   };
 
   const handleSync = async () => {
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      toast({
+        title: t('airbnb.syncError.title'),
+        description: 'La synchronisation calendrier est désactivée (réservations manuelles uniquement).',
+        variant: 'default',
+      });
+      return;
+    }
     if (!currentIcsUrl) {
       toast({
         title: t('airbnb.configRequiredSync.title'),
@@ -165,6 +172,10 @@ export const AirbnbSyncManager = ({
   };
 
   const statusDisplay = getSyncStatusDisplay();
+
+  if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+    return null;
+  }
 
   return (
     <Card>

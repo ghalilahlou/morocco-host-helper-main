@@ -18,12 +18,14 @@ interface SyncTask {
   status: 'pending' | 'syncing' | 'completed' | 'failed';
 }
 
+type SyncEventCallback = (...args: unknown[]) => void;
+
 class SyncService {
   private tasks = new Map<string, SyncTask>();
   private config: SyncConfig;
   private syncInterval: NodeJS.Timeout | null = null;
   private isOnline = navigator.onLine;
-  private eventListeners = new Map<string, Set<Function>>();
+  private eventListeners = new Map<string, Set<SyncEventCallback>>();
 
   constructor(config: Partial<SyncConfig> = {}) {
     this.config = {
@@ -184,14 +186,14 @@ class SyncService {
   }
 
   // Gestion des événements
-  on(event: string, callback: Function): void {
+  on(event: string, callback: SyncEventCallback): void {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, new Set());
     }
     this.eventListeners.get(event)!.add(callback);
   }
 
-  off(event: string, callback: Function): void {
+  off(event: string, callback: SyncEventCallback): void {
     const listeners = this.eventListeners.get(event);
     if (listeners) {
       listeners.delete(callback);

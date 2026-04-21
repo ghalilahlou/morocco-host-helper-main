@@ -16,8 +16,9 @@ interface ExtractedGuestData {
 function cleanExtractedName(name: string): string {
   if (!name || name.trim() === '') return '';
   
-  // Nettoyer le nom des éléments indésirables
-  let cleanedName = name.trim();
+  // Une seule ligne : l’OCR regroupe parfois plusieurs lignes (nom + légende) → tests sur la 1re ligne uniquement
+  let cleanedName = name.trim().split(/[\n\r]+/).map((s) => s.trim()).find((s) => s.length > 0) || '';
+  if (!cleanedName) return '';
   
   // Supprimer les patterns communs qui ne sont pas des noms
   const unwantedPatterns = [
@@ -79,8 +80,15 @@ export class OpenAIDocumentService {
         throw new Error('OpenAI extraction was not successful');
       }
 
-      const extractedData = response.data.extractedData;
+      const extractedData = response.data.extractedData as ExtractedGuestData & {
+        documentExpiryDate?: string;
+      };
       console.log('✅ Successfully extracted data via OpenAI:', extractedData);
+
+      const expiryRaw =
+        (extractedData as { documentExpiryDate?: string }).documentExpiryDate ??
+        extractedData.documentIssueDate ??
+        '';
 
       // Validate and clean the extracted data
       const cleanedData: ExtractedGuestData = {
@@ -90,7 +98,7 @@ export class OpenAIDocumentService {
         nationality: extractedData.nationality || '',
         placeOfBirth: extractedData.placeOfBirth || '',
         documentType: extractedData.documentType || 'passport',
-        documentIssueDate: extractedData.documentIssueDate || '' // ✅ Date d'expiration extraite
+        documentIssueDate: typeof expiryRaw === 'string' ? expiryRaw : '' // date d’expiration (même clé que l’API)
       };
 
       // Remove empty strings and replace with undefined, but keep null values for debugging

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { AirbnbEdgeFunctionService } from '@/services/airbnbEdgeFunctionService';
 
 export interface SyncStatus {
@@ -23,6 +24,11 @@ export const useAirbnbSync = (propertyId: string) => {
   
   // Load sync status from database
   const loadSyncStatus = useCallback(async () => {
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      setSyncStatus(null);
+      setIsLoading(false);
+      return;
+    }
     if (!propertyId || loadingStatusRef.current) {
       return;
     }
@@ -43,6 +49,9 @@ export const useAirbnbSync = (propertyId: string) => {
 
   // Perform sync operation using Edge Function
   const performSync = useCallback(async (icsUrl: string) => {
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      return { success: false, error: 'Synchronisation ICS désactivée côté front.' };
+    }
     if (!propertyId || !icsUrl || isSyncing) {
       return { success: false, error: 'Invalid parameters or sync in progress' };
     }
@@ -80,7 +89,7 @@ export const useAirbnbSync = (propertyId: string) => {
 
   // Set up real-time subscription for sync status changes
   useEffect(() => {
-    if (!propertyId) return;
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED || !propertyId) return;
     
     const channel = supabase
       .channel(`sync-status-${propertyId}`)

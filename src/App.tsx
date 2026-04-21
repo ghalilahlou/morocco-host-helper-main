@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -14,7 +14,6 @@ import { ContractSigning } from "@/pages/ContractSigning";
 import { VerifyToken } from "@/pages/VerifyToken";
 import { Landing } from "@/pages/Landing";
 import { Pricing } from "@/pages/Pricing";
-import { AirbnbSyncHelp } from "@/pages/AirbnbSyncHelp";
 import { ClientLinkHelp } from "@/pages/ClientLinkHelp";
 import { Layout } from "@/components/Layout";
 import { Profile } from "@/pages/Profile";
@@ -275,7 +274,7 @@ const App = () => (
           
           {/* Help pages - WITH LAYOUT */}
           <Route path="/help" element={<Layout />}>
-            <Route path="airbnb-sync/:propertyId" element={<AirbnbSyncHelp />} />
+            <Route path="airbnb-sync/:propertyId" element={<Navigate to="/dashboard" replace />} />
             <Route path="client-link/:propertyId" element={<ClientLinkHelp />} />
           </Route>
           

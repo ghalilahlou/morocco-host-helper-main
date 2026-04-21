@@ -15,6 +15,7 @@ import {
   isIcalAirbnbTechnicalUid,
   isValidGuestName,
 } from '@/utils/bookingDisplay';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 
 /**
  * Indique si la clé stockée (référence booking ou id Airbnb) est un UID iCal technique,
@@ -37,6 +38,9 @@ export function shouldShowIcalSyncBadge(
   item: Booking | AirbnbReservation,
   displayTitle: string,
 ): boolean {
+  if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+    return false;
+  }
   const title = displayTitle.trim();
   if (title === ICAL_AIRBNB_DISPLAY_LABEL) return true;
   if (!isIcsCalendarTechnicalKey(item)) return false;

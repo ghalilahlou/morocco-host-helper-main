@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { getBookingDisplayTitle, calendarBarLabelFromIcsRow } from '@/utils/bookingDisplay';
 import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
 
@@ -29,6 +30,9 @@ export async function fetchAirbnbCalendarEvents(
   end: string
 ): Promise<CalendarEvent[]> {
   try {
+    if (!FRONT_CALENDAR_ICS_SYNC_ENABLED) {
+      return [];
+    }
     if (!start || !end || !propertyId) {
       return [];
     }
