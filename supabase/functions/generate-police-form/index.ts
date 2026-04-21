@@ -251,7 +251,27 @@ serve(async (req: Request) => {
         };
       }
 
-      guests = (submissions || []).map((s: any) => mapGuestData(s.guest_data || {}));
+      /** Aligné sur submit-guest-info-unified : `guest_data.guests[]` + champs du 1er invité à la racine. */
+      function guestsFromSubmissionGuestData(raw: Record<string, any> | null | undefined): Record<string, string>[] {
+        if (!raw || typeof raw !== 'object') return [];
+        if (Array.isArray(raw.guests) && raw.guests.length > 0) {
+          return raw.guests.map((g: any) => mapGuestData(g));
+        }
+        if (Array.isArray(raw)) {
+          return raw.map((g: any) => mapGuestData(g));
+        }
+        if (raw.fullName || raw.full_name || raw.documentNumber || raw.document_number) {
+          return [mapGuestData(raw)];
+        }
+        return [];
+      }
+
+      const flattened: Record<string, string>[] = [];
+      for (const s of submissions || []) {
+        const rows = guestsFromSubmissionGuestData(s?.guest_data);
+        for (const row of rows) flattened.push(row);
+      }
+      guests = flattened;
 
       if (guests.length === 0) {
         const { data: guestsRows, error: guestsError } = await supabase

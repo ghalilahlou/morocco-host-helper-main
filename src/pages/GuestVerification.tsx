@@ -1223,21 +1223,20 @@ export const GuestVerification = () => {
     }
   };
 
-  const updateGuest = (index: number, field: keyof Guest, value: any) => {
-    const doc = uploadedDocuments[index];
-    if (!doc || doc.processing) {
-      return;
-    }
+  /** Index réel dans `guests` (le formulaire affiche `deduplicatedGuests`, indices différents si doublons filtrés). */
+  const rowIndexForGuest = (guest: Guest) => {
+    const i = guests.findIndex((g) => g === guest);
+    return i >= 0 ? i : 0;
+  };
 
-    console.log('🔄 updateGuest appelé:', { index, field, value });
-    
-    // ✅ SIMPLIFIÉ : Utiliser directement l'index dans guests
-    // Pas besoin de chercher dans deduplicatedGuests car l'index correspond à guests
-    setGuests(prevGuests => {
+  const updateGuest = (rowIndex: number, field: keyof Guest, value: any) => {
+    console.log('🔄 updateGuest appelé:', { rowIndex, field, value });
+
+    setGuests((prevGuests) => {
       const updatedGuests = [...prevGuests];
-      if (updatedGuests[index]) {
-    updatedGuests[index] = { ...updatedGuests[index], [field]: value };
-        console.log('✅ Guest mis à jour:', updatedGuests[index]);
+      if (updatedGuests[rowIndex]) {
+        updatedGuests[rowIndex] = { ...updatedGuests[rowIndex], [field]: value };
+        console.log('✅ Guest mis à jour:', updatedGuests[rowIndex]);
       }
       return updatedGuests;
     });
@@ -1639,24 +1638,25 @@ export const GuestVerification = () => {
       return;
     }
 
-    for (let gi = 0; gi < actualGuestCount; gi++) {
-      if (!uploadedDocuments[gi]) {
+    // Une pièce par ligne `guests` (tableau parallèle à `uploadedDocuments`, cf. suppression doc + guest au même index).
+    for (let ri = 0; ri < guests.length; ri++) {
+      if (!uploadedDocuments[ri]) {
         isSubmittingRef.current = false;
         isProcessingRef.current = false;
         toast({
           title: t('validation.error.title'),
-          description: t(isMobile ? 'guestVerification.formLockedHintMobile' : 'guestVerification.formLockedHintDesktop', { n: gi + 1 }),
+          description: t(isMobile ? 'guestVerification.formLockedHintMobile' : 'guestVerification.formLockedHintDesktop', { n: ri + 1 }),
           variant: 'destructive'
         });
         return;
       }
     }
-    
-    // ✅ VALIDATION : Vérifier que le nombre de documents correspond au nombre de guests dédupliqués
-    if (uploadedDocuments.length !== actualGuestCount) {
+
+    // ✅ VALIDATION : une entrée de pièce par voyageur (même nombre que `guests`, pas seulement les lignes dédupliquées)
+    if (uploadedDocuments.length !== guests.length) {
       console.log('❌ Document validation failed:', {
         uploadedCount: uploadedDocuments.length,
-        expectedCount: actualGuestCount,
+        expectedCount: guests.length,
         numberOfGuests,
         guestsRaw: guests.length
       });
@@ -1665,7 +1665,7 @@ export const GuestVerification = () => {
       isProcessingRef.current = false;
       toast({
         title: t('validation.error.title'),
-        description: t('validation.exactDocs.desc', { count: actualGuestCount, s: actualGuestCount > 1 ? 's' : '' }),
+        description: t('validation.exactDocs.desc', { count: guests.length, s: guests.length > 1 ? 's' : '' }),
         variant: "destructive"
       });
       return;
@@ -1676,9 +1676,9 @@ export const GuestVerification = () => {
     // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour la validation (évite les doubles formulaires)
     // ✅ VALIDATION STRICTE : Vérifier que TOUS les champs requis sont remplis, y compris le motif de séjour
     // ✅ NOUVEAU : Validation adaptée pour citoyens marocains (CIN acceptée avec date d'entrée optionnelle)
-    const incompleteGuests = deduplicatedGuests.filter((guest, index) => {
-      // Lire le motif de séjour depuis le select pour cet invité
-      const motifSelect = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
+    const incompleteGuests = deduplicatedGuests.filter((guest) => {
+      const rowIndex = rowIndexForGuest(guest);
+      const motifSelect = document.querySelector(`select[name="motifSejour-${rowIndex}"]`) as HTMLSelectElement;
       const motifSejour = motifSelect?.value || guest.motifSejour || '';
       
       // Vérifier les champs de base
@@ -1747,9 +1747,9 @@ export const GuestVerification = () => {
       // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour éviter les doublons dans la soumission
       // ✅ VALIDATION STRICTE : Inclure le motif de séjour pour TOUS les invités (même critères que réservation/documents/signatures)
       const guestData = {
-        guests: deduplicatedGuests.map((guest, index) => {
-          // Lire le motif de séjour depuis le select pour cet invité
-          const motifSelect = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
+        guests: deduplicatedGuests.map((guest) => {
+          const rowIndex = rowIndexForGuest(guest);
+          const motifSelect = document.querySelector(`select[name="motifSejour-${rowIndex}"]`) as HTMLSelectElement;
           const motifSejour = motifSelect?.value || guest.motifSejour || 'TOURISME';
           
           return {
@@ -1795,8 +1795,9 @@ export const GuestVerification = () => {
 
       // ✅ VALIDATION STRICTE : Vérifier que TOUS les invités ont un motif de séjour valide
       // (même critères que pour la réservation, les documents et les signatures)
-      const guestsWithoutMotif = deduplicatedGuests.filter((guest, index) => {
-        const motifSelect = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
+      const guestsWithoutMotif = deduplicatedGuests.filter((guest) => {
+        const rowIndex = rowIndexForGuest(guest);
+        const motifSelect = document.querySelector(`select[name="motifSejour-${rowIndex}"]`) as HTMLSelectElement;
         const motifSejour = motifSelect?.value || guest.motifSejour || '';
         return !motifSejour || motifSejour.trim() === '';
       });
@@ -1814,11 +1815,12 @@ export const GuestVerification = () => {
       }
 
       // ✅ CRITIQUE : Lire les valeurs depuis les inputs pour chaque voyageur (email, profession, adresse, motif)
-      const guestsPayload = deduplicatedGuests.map((guest, index) => {
-        const emailInput = document.querySelector(`input[name="email-${index}"]`) as HTMLInputElement;
-        const professionInput = document.querySelector(`input[name="profession-${index}"]`) as HTMLInputElement;
-        const adresseInput = document.querySelector(`input[name="adresse-${index}"]`) as HTMLInputElement;
-        const motifSelectEl = document.querySelector(`select[name="motifSejour-${index}"]`) as HTMLSelectElement;
+      const guestsPayload = deduplicatedGuests.map((guest) => {
+        const rowIndex = rowIndexForGuest(guest);
+        const emailInput = document.querySelector(`input[name="email-${rowIndex}"]`) as HTMLInputElement;
+        const professionInput = document.querySelector(`input[name="profession-${rowIndex}"]`) as HTMLInputElement;
+        const adresseInput = document.querySelector(`input[name="adresse-${rowIndex}"]`) as HTMLInputElement;
+        const motifSelectEl = document.querySelector(`select[name="motifSejour-${rowIndex}"]`) as HTMLSelectElement;
         const motifSejour = motifSelectEl?.value || guest.motifSejour || '';
         return {
           firstName: guest.fullName?.split(' ')[0] || '',
@@ -3583,13 +3585,14 @@ export const GuestVerification = () => {
                     <div className="space-y-6">
 
                         <div className="space-y-6">
-                          {deduplicatedGuests.map((guest, index) => {
-                            const fieldsLocked = !identityUnlockedForGuest(index);
-                            const docAt = uploadedDocuments[index];
+                          {deduplicatedGuests.map((guest, displayIndex) => {
+                            const rowIndex = rowIndexForGuest(guest);
+                            const fieldsLocked = !identityUnlockedForGuest(rowIndex);
+                            const docAt = uploadedDocuments[rowIndex];
                             const showProcessingBanner = Boolean(docAt?.processing);
                             return (
                             <div
-                              key={`guest-form-${index}`}
+                              key={`guest-form-${rowIndex}-${displayIndex}`}
                             >
                               {/* Guest Card - Figma style */}
                               <div style={{
@@ -3606,10 +3609,10 @@ export const GuestVerification = () => {
                                     fontSize: '16px',
                                     lineHeight: '36px',
                                     color: '#040404'
-                                  }}>Voyageur {index + 1}</span>
+                                  }}>Voyageur {displayIndex + 1}</span>
                                   {deduplicatedGuests.length > 1 && (
                                     <button 
-                                      onClick={() => removeGuest(index)} 
+                                      onClick={() => removeGuest(rowIndex)} 
                                       style={{
                                         background: 'transparent',
                                         border: 'none',
@@ -3637,7 +3640,7 @@ export const GuestVerification = () => {
                                           isMobile
                                             ? 'guestVerification.formLockedHintMobile'
                                             : 'guestVerification.formLockedHintDesktop',
-                                          { n: index + 1 }
+                                          { n: displayIndex + 1 }
                                         )}
                                   </div>
                                 )}
@@ -3650,9 +3653,9 @@ export const GuestVerification = () => {
                                     </Label>
                                     <input
                                       type="text"
-                                      id={`fullName-${index}`}
+                                      id={`fullName-${rowIndex}`}
                                       value={guest.fullName}
-                                      onChange={(e) => updateGuest(index, 'fullName', e.target.value)}
+                                      onChange={(e) => updateGuest(rowIndex, 'fullName', e.target.value)}
                                       placeholder=""
                                       required
                                       disabled={fieldsLocked}
@@ -3661,18 +3664,18 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label htmlFor={`guest-dob-${index}`} className="text-sm font-semibold text-gray-900">
+                                    <Label htmlFor={`guest-dob-${rowIndex}`} className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.dateOfBirth')} <span className="text-red-500">*</span>
                                     </Label>
                                     <GuestHybridDateField
-                                      id={`guest-dob-${index}`}
+                                      id={`guest-dob-${rowIndex}`}
                                       variant="birth"
                                       value={
                                         guest.dateOfBirth
                                           ? new Date(guest.dateOfBirth)
                                           : undefined
                                       }
-                                      onChange={(date) => updateGuest(index, 'dateOfBirth', date)}
+                                      onChange={(date) => updateGuest(rowIndex, 'dateOfBirth', date)}
                                       ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
                                       disabled={fieldsLocked}
                                     />
@@ -3684,16 +3687,16 @@ export const GuestVerification = () => {
                                     </Label>
                                     <input
                                       type="text"
-                                      id={`nationality-${index}`}
+                                      id={`nationality-${rowIndex}`}
                                       value={guest.nationality}
-                                      onChange={(e) => updateGuest(index, 'nationality', e.target.value)}
+                                      onChange={(e) => updateGuest(rowIndex, 'nationality', e.target.value)}
                                       placeholder=""
                                       required
                                       disabled={fieldsLocked}
-                                      list={`nationalities-list-${index}`}
+                                      list={`nationalities-list-${rowIndex}`}
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
-                                    <datalist id={`nationalities-list-${index}`}>
+                                    <datalist id={`nationalities-list-${rowIndex}`}>
                                       {NATIONALITIES.filter(n => n !== '---').map((nationality) => (
                                         <option key={nationality} value={nationality} />
                                       ))}
@@ -3706,9 +3709,9 @@ export const GuestVerification = () => {
                                     </Label>
                                     <div className="relative">
                                       <select
-                                        id={`documentType-${index}`}
+                                        id={`documentType-${rowIndex}`}
                                         value={guest.documentType} 
-                                        onChange={(e) => updateGuest(index, 'documentType', e.target.value)}
+                                        onChange={(e) => updateGuest(rowIndex, 'documentType', e.target.value)}
                                         disabled={fieldsLocked}
                                         className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                                       >
@@ -3727,9 +3730,9 @@ export const GuestVerification = () => {
                                     </Label>
                                     <input
                                       type="text"
-                                      id={`documentNumber-${index}`}
+                                      id={`documentNumber-${rowIndex}`}
                                       value={guest.documentNumber}
-                                      onChange={(e) => updateGuest(index, 'documentNumber', e.target.value)}
+                                      onChange={(e) => updateGuest(rowIndex, 'documentNumber', e.target.value)}
                                       placeholder=""
                                       required
                                       disabled={fieldsLocked}
@@ -3738,18 +3741,18 @@ export const GuestVerification = () => {
                                   </div>
                                   
                                   <div className="space-y-2">
-                                    <Label htmlFor={`guest-doc-expiry-${index}`} className="text-sm font-semibold text-gray-900">
+                                    <Label htmlFor={`guest-doc-expiry-${rowIndex}`} className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.documentExpiryDate')}
                                     </Label>
                                     <GuestHybridDateField
-                                      id={`guest-doc-expiry-${index}`}
+                                      id={`guest-doc-expiry-${rowIndex}`}
                                       variant="expiry"
                                       value={
                                         guest.documentIssueDate
                                           ? new Date(guest.documentIssueDate)
                                           : undefined
                                       }
-                                      onChange={(date) => updateGuest(index, 'documentIssueDate', date)}
+                                      onChange={(date) => updateGuest(rowIndex, 'documentIssueDate', date)}
                                       ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
                                       disabled={fieldsLocked}
                                     />
@@ -3761,12 +3764,12 @@ export const GuestVerification = () => {
                                     </Label>
                                     <input
                                       type="text"
-                                      id={`profession-${index}`}
-                                      name={`profession-${index}`}
+                                      id={`profession-${rowIndex}`}
+                                      name={`profession-${rowIndex}`}
                                       defaultValue={guest.profession || ''}
                                       onInput={(e) => {
                                         const target = e.target as HTMLInputElement;
-                                        updateGuest(index, 'profession', target.value);
+                                        updateGuest(rowIndex, 'profession', target.value);
                                       }}
                                       placeholder=""
                                       disabled={fieldsLocked}
@@ -3780,11 +3783,11 @@ export const GuestVerification = () => {
                                     </Label>
                                     <div className="relative">
                                       <select
-                                        id={`motifSejour-${index}`}
-                                        name={`motifSejour-${index}`}
+                                        id={`motifSejour-${rowIndex}`}
+                                        name={`motifSejour-${rowIndex}`}
                                         defaultValue={guest.motifSejour || ''} 
                                         onChange={(e) => {
-                                          updateGuest(index, 'motifSejour', e.target.value);
+                                          updateGuest(rowIndex, 'motifSejour', e.target.value);
                                         }}
                                         disabled={fieldsLocked}
                                         className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
@@ -3810,12 +3813,12 @@ export const GuestVerification = () => {
                                     </Label>
                                     <input
                                       type="text"
-                                      id={`adresse-${index}`}
-                                      name={`adresse-${index}`}
+                                      id={`adresse-${rowIndex}`}
+                                      name={`adresse-${rowIndex}`}
                                       defaultValue={guest.adressePersonnelle || ''}
                                       onInput={(e) => {
                                         const target = e.target as HTMLInputElement;
-                                        updateGuest(index, 'adressePersonnelle', target.value);
+                                        updateGuest(rowIndex, 'adressePersonnelle', target.value);
                                       }}
                                       placeholder=""
                                       disabled={fieldsLocked}
@@ -3829,12 +3832,12 @@ export const GuestVerification = () => {
                                     </Label>
                                     <input
                                       type="email"
-                                      id={`email-${index}`}
-                                      name={`email-${index}`}
+                                      id={`email-${rowIndex}`}
+                                      name={`email-${rowIndex}`}
                                       defaultValue={guest.email || ''}
                                       onInput={(e) => {
                                         const target = e.target as HTMLInputElement;
-                                        updateGuest(index, 'email', target.value);
+                                        updateGuest(rowIndex, 'email', target.value);
                                       }}
                                       placeholder=""
                                       disabled={fieldsLocked}
