@@ -26,7 +26,7 @@ import { useToast } from '@/hooks/use-toast';
 import { BOOKING_COLORS } from '@/constants/bookingColors';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { formatLocalDate } from '@/utils/dateUtils';
+import { formatLocalDate, parseStayDateForCalendar } from '@/utils/dateUtils';
 import { getBookingDocumentStatus } from '@/utils/bookingDocuments';
 import { doBookingAndAirbnbMatch, isSameReservationByRef } from '@/utils/bookingAirbnbMatch';
 import { mergeBookingsWithAirbnbForCalendar } from '@/domain/calendarReservationModel';
@@ -623,8 +623,8 @@ const handleOpenConfig = useCallback(() => {
   const debugDateSummary = useMemo(() => {
     if (!debugMode) return null;
 
-    const manualStarts = bookings.map(b => new Date(b.checkInDate));
-    const manualEnds = bookings.map(b => new Date(b.checkOutDate));
+    const manualStarts = bookings.map(b => parseStayDateForCalendar(b.checkInDate));
+    const manualEnds = bookings.map(b => parseStayDateForCalendar(b.checkOutDate));
     const airbnbStarts = airbnbReservations.map(r => new Date(r.startDate));
     const airbnbEnds = airbnbReservations.map(r => new Date(r.endDate));
 
@@ -691,16 +691,16 @@ const handleOpenConfig = useCallback(() => {
 
         const start1 = isAirbnb1
           ? new Date((res1 as any).startDate)
-          : new Date((res1 as Booking).checkInDate);
+          : parseStayDateForCalendar((res1 as Booking).checkInDate);
         const end1 = isAirbnb1
           ? new Date((res1 as any).endDate)
-          : new Date((res1 as Booking).checkOutDate);
+          : parseStayDateForCalendar((res1 as Booking).checkOutDate);
         const start2 = isAirbnb2
           ? new Date((res2 as any).startDate)
-          : new Date((res2 as Booking).checkInDate);
+          : parseStayDateForCalendar((res2 as Booking).checkInDate);
         const end2 = isAirbnb2
           ? new Date((res2 as any).endDate)
-          : new Date((res2 as Booking).checkOutDate);
+          : parseStayDateForCalendar((res2 as Booking).checkOutDate);
 
         const normStart1 = new Date(start1.getFullYear(), start1.getMonth(), start1.getDate());
         const normEnd1 = new Date(end1.getFullYear(), end1.getMonth(), end1.getDate());
@@ -788,19 +788,19 @@ const handleOpenConfig = useCallback(() => {
       const starts = reservationsInGroup.map((r) =>
         'source' in r && r.source === 'airbnb'
           ? toLocalMidnight((r as AirbnbReservation).startDate)
-          : toLocalMidnight(new Date((r as Booking).checkInDate))
+          : parseStayDateForCalendar((r as Booking).checkInDate)
       );
       const ends = reservationsInGroup.map((r) =>
         'source' in r && r.source === 'airbnb'
           ? toLocalMidnight((r as AirbnbReservation).endDate)
-          : toLocalMidnight(new Date((r as Booking).checkOutDate))
+          : parseStayDateForCalendar((r as Booking).checkOutDate)
       );
       const groupStart = new Date(Math.min(...starts.map((d) => d.getTime())));
       const groupEnd = new Date(Math.max(...ends.map((d) => d.getTime())));
 
       const reservations = reservationsInGroup.map((r) => {
-        const start = 'source' in r && r.source === 'airbnb' ? (r as AirbnbReservation).startDate : new Date((r as Booking).checkInDate);
-        const end = 'source' in r && r.source === 'airbnb' ? (r as AirbnbReservation).endDate : new Date((r as Booking).checkOutDate);
+        const start = 'source' in r && r.source === 'airbnb' ? (r as AirbnbReservation).startDate : parseStayDateForCalendar((r as Booking).checkInDate);
+        const end = 'source' in r && r.source === 'airbnb' ? (r as AirbnbReservation).endDate : parseStayDateForCalendar((r as Booking).checkOutDate);
         return {
           id: r.id,
           displayName: getBookingDisplayTitle(r) || 'Réservation',
@@ -810,8 +810,8 @@ const handleOpenConfig = useCallback(() => {
       });
 
       const sortedByStart = [...reservationsInGroup].sort((a, b) => {
-        const startA = 'source' in a && a.source === 'airbnb' ? (a as AirbnbReservation).startDate.getTime() : new Date((a as Booking).checkInDate).getTime();
-        const startB = 'source' in b && b.source === 'airbnb' ? (b as AirbnbReservation).startDate.getTime() : new Date((b as Booking).checkInDate).getTime();
+        const startA = 'source' in a && a.source === 'airbnb' ? (a as AirbnbReservation).startDate.getTime() : parseStayDateForCalendar((a as Booking).checkInDate).getTime();
+        const startB = 'source' in b && b.source === 'airbnb' ? (b as AirbnbReservation).startDate.getTime() : parseStayDateForCalendar((b as Booking).checkInDate).getTime();
         return startA - startB;
       });
       const primaryRes = reservations.find((r) => r.id === sortedByStart[0].id)!;

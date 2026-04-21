@@ -1,0 +1,125 @@
+-- Réattache les réservations listées à la propriété « 7ème ciel - vue sur l'océan - 2 chambres »
+-- pour qu'elles réapparaissent dans le calendrier (useBookings filtre sur property_id + user_id).
+--
+-- Avant d'appliquer : vérifier une seule ligne cible :
+--   SELECT id, name, user_id FROM properties
+--   WHERE name ILIKE '%7ème ciel%' AND name ILIKE '%océan%' AND name ILIKE '%2 chambres%';
+
+WITH target_property AS (
+  SELECT id AS property_id, user_id AS owner_id
+  FROM properties
+  WHERE name ILIKE '%7ème ciel%'
+    AND (name ILIKE '%océan%' OR name ILIKE '%ocean%')
+    AND name ILIKE '%2 chambres%'
+  ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+  LIMIT 1
+)
+UPDATE bookings b
+SET
+  property_id = tp.property_id,
+  user_id = COALESCE(tp.owner_id, b.user_id),
+  updated_at = now()
+FROM target_property tp
+WHERE b.id IN (
+  'f203f857-5db7-49dd-aa7e-5112fdfa5216',
+  '76b9a70a-4d3f-42dc-9aa4-21e7f3492807',
+  'ed427c2e-d2e7-4018-bc7e-4d1d7ef506d9',
+  'f889d7fc-f1d4-4a53-9a7d-d060d00fdb07',
+  '4d08f89a-f411-440e-bd8d-38f06593fdd1',
+  'a6cbb282-032d-4f6b-af35-bb3302142ed1',
+  'aaf7ad31-d859-446a-9b75-6f3e22afb722',
+  '39763d6d-bfc5-4254-ac7f-f394cebdda26',
+  '1aef92ac-a7b8-4c7a-96d0-500cbdade145',
+  '081dd711-6444-4f44-b665-dbfd1babe24b',
+  '134412e5-08a9-48e4-88f6-f8eab90548c3',
+  '44115a8c-c47b-4261-b2e0-ee4e8f87a707',
+  '270f3c3b-028f-4130-a862-2cd1e7fedb23',
+  '272fdf75-c646-48f4-a4e7-0427bc8a8f54',
+  '716896f3-e758-4724-a8eb-789d3fe7586f',
+  '25fdb916-115f-46b4-bf87-72fc04a1e1ad',
+  '15162abe-971a-478d-ac40-65584565e780',
+  '1d6bdbab-a124-4a13-bfd5-4e9ea7c6afa2',
+  '33732729-87cb-43dd-aae7-78b5af40525a',
+  '4147923d-7a3a-4fd7-970d-21d5186a49a1',
+  '42e6fe30-a4e0-405f-add7-91099c53547a',
+  'fed48ccf-d35e-4497-bb1f-9b665d41fbc0',
+  '20709ffd-2396-478b-8e2d-2f0848cc1c8a',
+  '0d1d00dd-729e-43c5-8538-9e2ba16e6c71',
+  'cf65249a-97f4-429e-a436-d34d8d426acd',
+  'cccca4a7-0f36-4dd8-a36f-9d3e7ad93810',
+  '6f28421f-05b5-4cec-a505-8a744e564210',
+  '31d44f8d-0c98-4996-a99a-ab571d22a7e1',
+  'ec4a6712-3b68-499f-94bf-925c8e107093',
+  '8cd057cf-fe51-4b99-ac7e-89b4cbc4fb5a',
+  '9cf90ec0-8ba5-494b-b1ca-bfa6c0d72a76',
+  '91faa58b-46ee-46ff-8615-89dc3eb1d301',
+  'fcb39493-225c-4ba6-bbc9-38489b710791',
+  'e0173a51-3181-42e4-80d8-d48664076063',
+  '84262480-5dcb-4b52-b982-af5de0076f41',
+  '8747f76b-c615-4095-915d-99c111c97d1c',
+  '66e699eb-383d-48d8-bbaa-0671fa95cf27',
+  'b71b022e-846c-409b-8cd5-d665ed6ef7ef',
+  'ae0892bb-0ba0-4d1e-ba44-fe5a10333a2a',
+  '07d0d60a-078b-4170-b4b1-8d2583f67b70',
+  '382cc62a-4143-4a0e-9b29-fbaf19c7aabb',
+  'c66080c4-3df9-4fec-9c6e-ed97b65cf08b',
+  '8b3595dc-e1d6-46ce-8df1-38edf327b3d0',
+  '9cd28c4d-8108-4a3b-b072-b986b8570593',
+  'e84571f9-c3ac-4283-9dc6-5b85a6d9e959',
+  '6e404842-528e-4b4e-8bf8-2af437410bea',
+  'b79dea02-5646-487c-a27d-526e298c1a15',
+  '20249038-59fa-4b1c-b068-fe16a9da1d39',
+  'efc820ba-3d1e-4c2d-a5c8-49a18e3f3ce0',
+  '33218a37-c1a5-47de-ace0-148b6726489b',
+  'a7cee0eb-46d3-48d4-a833-6ec261e6632a',
+  'c444d65a-9956-4b25-8ea1-988a031db204',
+  'e801bb0c-64cd-4831-a94f-6ace1b8aeb90',
+  '5b02f5fb-77d9-463d-ac52-e8deade6f60d',
+  '6c935271-0983-437b-b137-b6c5c7a97fd6',
+  '776e10b1-f21f-406c-84e8-81c97c1bebdb',
+  '5a54bccc-ddcf-43eb-b2fc-f17e933c8b9c',
+  '3757d03c-3265-481c-8c77-7414577ede92',
+  'b58d41ca-de34-475d-95ab-63e1be5ee28f',
+  '00306c14-004a-430d-9a06-fc693a2e53b9',
+  '514da7aa-030b-4b49-934c-21877aa3bff9',
+  '89a43e18-dc1f-4ed9-84f7-636a7a724cae',
+  'ba865bdb-719c-4fc2-b674-7a7e3aeb957a',
+  'e6f34c29-4686-4e4f-b3e0-29987c2761c0',
+  '00aef75a-ae29-42ba-8f2b-85cf98628f6b',
+  'ce6c67b7-d7c3-4994-b94d-d27dd35633aa',
+  'c7340ba1-b162-4b81-a386-c430c4c259f6',
+  '58ebf547-5978-4722-a92b-8499649ce13d',
+  '6e61b686-b23f-42a6-b94d-04d8156617bf',
+  '7a4d9302-14d5-4cef-861e-0caf1ba004cf',
+  '1bc75237-342b-480d-8a74-c305586b21f0',
+  '3dae5614-9f9f-4e53-b17a-12ea94a9a69b',
+  '78ec0a6a-df0a-4247-adbe-02f359256136',
+  '8940b856-bd5b-4053-882e-cc287800f7d8',
+  'd13d6338-9eff-4282-ab00-aaa3f50f318f',
+  'c326f403-06d5-4a59-9c38-9dd63d29967f',
+  'c51855cb-fe32-49fd-9c79-18198be2b175',
+  'a3176f95-8e1a-4787-8cce-da0af41105df',
+  '530086ab-8e9f-4233-b142-77ab27879357',
+  '1894bd1b-f0e9-45c9-af4b-7a521d68c4af',
+  'aa9e9ce9-7657-44f7-bde5-2be66e7ba243',
+  '60e95140-5ed2-4868-acb1-7b0818a487ba',
+  '1cc82fbd-b1e2-401f-aedc-4c791c7d92c7',
+  '66d70863-9108-4204-8c90-3ba6695a139b',
+  'd532514f-5cfb-4230-9a23-f610769fe640',
+  'ed042b70-93e4-4f8d-8a4a-9bb68300daa1',
+  'e6633a22-a13c-43e4-8ddb-b2cc5b5e2c36',
+  'faace2b9-2035-4f8c-b4ff-ca58eeab743c',
+  '5ea38a21-128c-47d3-92bd-930b40b86684',
+  '5969f705-18c2-4146-8dac-abca15dd647a',
+  '47d117a0-bef1-4f38-9f5f-1d230d73df2c',
+  '848f8192-86c4-4581-a06f-19c76de0cda3',
+  '65b15caf-7364-4e62-86d7-050b544bd406',
+  '252df6ad-b9c8-4412-a6c8-a685b8b56352',
+  '396862c4-4bd3-4e8f-bfaf-b1e30e662309',
+  '7a1b6140-b107-494b-987e-e5ca40e63f9c',
+  'e5a42402-2ddd-46f2-80d4-1ac8fec97bae',
+  'b4875a18-a303-40ac-aea2-c2cf2629d68c',
+  '7697e44f-a901-4a3b-9e11-05876bcda1fe',
+  '95f897af-7428-4ae7-ad3b-b36eef6c6011'
+)
+AND tp.property_id IS NOT NULL;

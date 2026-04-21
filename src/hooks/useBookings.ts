@@ -8,6 +8,7 @@ import { sanitizeGuestNameForStorage } from '@/utils/bookingDisplay';
 import { debug, info, warn, error as logError } from '@/lib/logger';
 import { multiLevelCache } from '@/services/multiLevelCache';
 import { invalidateAirbnbEventsCache } from '@/services/calendarData';
+import { formatLocalDate, parseStayDateForCalendar } from '@/utils/dateUtils';
 
 const BOOKINGS_QUERY_TIMEOUT = 8000;
 const CACHE_TTL = 60000; // 1 minute
@@ -51,6 +52,14 @@ async function invalidateBookingCachesAfterMutation(
   }
 }
 
+/** Jour civil local (YYYY-MM-DD), même si PostgREST renvoie un timestamptz ISO. */
+function bookingStayYmdFromDb(value: unknown, fallback: string): string {
+  if (value == null || String(value).trim() === '') return fallback;
+  const d = parseStayDateForCalendar(value as string);
+  if (Number.isNaN(d.getTime())) return fallback;
+  return formatLocalDate(d);
+}
+
 function transformBooking(raw: any): Booking | null {
   if (!raw.property_id) {
     warn('Booking sans property_id exclu', { bookingId: raw.id });
@@ -60,12 +69,15 @@ function transformBooking(raw: any): Booking | null {
   const property = Array.isArray(raw.property) ? raw.property[0] : raw.property;
   const guests = Array.isArray(raw.guests) ? raw.guests : [];
 
+  const checkInNorm = bookingStayYmdFromDb(raw.check_in_date, String(raw.check_in_date ?? ''));
+  const checkOutNorm = bookingStayYmdFromDb(raw.check_out_date, String(raw.check_out_date ?? ''));
+
   return {
     id: raw.id,
     propertyId: raw.property_id,
     userId: raw.user_id,
-    checkInDate: raw.check_in_date,
-    checkOutDate: raw.check_out_date,
+    checkInDate: checkInNorm,
+    checkOutDate: checkOutNorm,
     numberOfGuests: raw.number_of_guests || 0,
     bookingReference: raw.booking_reference || '',
     guest_name: raw.guest_name || '',
@@ -187,7 +199,9 @@ function mergeEnrichmentFromCache(
 }
 
 export const useBookings = (options?: UseBookingsOptions) => {
-  const { propertyId, dateRange, limit = 50 } = options || {};
+  const { propertyId, dateRange, limit: limitOption } = options || {};
+  // Calendrier par bien : plus de lignes qu'un dashboard global (doublons / historique).
+  const limit = limitOption ?? (propertyId ? 200 : 50);
   const [bookings, setBookings] = useState<EnrichedBooking[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
@@ -270,9 +284,10 @@ export const useBookings = (options?: UseBookingsOptions) => {
           .lte('check_out_date', dateRange.end.toISOString().split('T')[0]);
       }
 
+      const maxRows = propertyId ? 250 : 100;
       query = query
         .order('check_in_date', { ascending: false })
-        .limit(Math.min(limit, 100));
+        .limit(Math.min(limit, maxRows));
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), BOOKINGS_QUERY_TIMEOUT);
@@ -509,8 +524,8 @@ export const useBookings = (options?: UseBookingsOptions) => {
             const temp: EnrichedBooking = {
               id: raw.id,
               propertyId: raw.property_id,
-              checkInDate: raw.check_in_date,
-              checkOutDate: raw.check_out_date,
+              checkInDate: bookingStayYmdFromDb(raw.check_in_date, String(raw.check_in_date ?? '')),
+              checkOutDate: bookingStayYmdFromDb(raw.check_out_date, String(raw.check_out_date ?? '')),
               numberOfGuests: raw.number_of_guests,
               bookingReference: raw.booking_reference,
               guest_name: raw.guest_name,
@@ -539,8 +554,8 @@ export const useBookings = (options?: UseBookingsOptions) => {
             b.id === upd.id
               ? {
                   ...b,
-                  checkInDate: upd.check_in_date,
-                  checkOutDate: upd.check_out_date,
+                  checkInDate: bookingStayYmdFromDb(upd.check_in_date, String(upd.check_in_date ?? b.checkInDate)),
+                  checkOutDate: bookingStayYmdFromDb(upd.check_out_date, String(upd.check_out_date ?? b.checkOutDate)),
                   numberOfGuests: upd.number_of_guests,
                   status: upd.status as any,
                   guest_name: upd.guest_name ?? b.guest_name,

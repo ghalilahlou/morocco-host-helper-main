@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { getBookingDisplayTitle, calendarBarLabelFromIcsRow } from '@/utils/bookingDisplay';
-import { parseLocalDate, formatLocalDate } from '@/utils/dateUtils';
+import { parseLocalDate, formatLocalDate, parseStayDateForCalendar } from '@/utils/dateUtils';
 
 export interface CalendarEvent {
   id: string;
@@ -142,8 +142,8 @@ export async function fetchAllCalendarEvents(
     const bookingEvents: CalendarEvent[] = bookings
       .filter(booking => {
         // Filtrer par date range : la réservation doit chevaucher la plage demandée
-        const checkIn = parseLocalDate(booking.checkInDate);
-        const checkOut = parseLocalDate(booking.checkOutDate);
+        const checkIn = parseStayDateForCalendar(booking.checkInDate);
+        const checkOut = parseStayDateForCalendar(booking.checkOutDate);
         
         // Une réservation est incluse si elle chevauche la plage [start, end]
         return checkIn <= rangeEnd && checkOut >= rangeStart;
@@ -152,15 +152,17 @@ export async function fetchAllCalendarEvents(
         const title = getBookingDisplayTitle(booking);
         
         // ✅ CORRECTION : Calculer la date de fin pour FullCalendar (+1 jour car date exclusive)
-        const checkOutDate = parseLocalDate(booking.checkOutDate);
+        const checkInNorm = parseStayDateForCalendar(booking.checkInDate);
+        const checkOutDate = parseStayDateForCalendar(booking.checkOutDate);
         const endDateForCalendar = new Date(checkOutDate);
         endDateForCalendar.setDate(endDateForCalendar.getDate() + 1);
         const endStr = formatLocalDate(endDateForCalendar);
+        const startStr = formatLocalDate(checkInNorm);
         
         return {
           id: booking.id,
           title: title,
-          start: `${booking.checkInDate}T00:00:00`,
+          start: `${startStr}T00:00:00`,
           end: `${endStr}T00:00:00`, // ✅ +1 jour pour FullCalendar
           allDay: true,
           source: 'booking' as const,

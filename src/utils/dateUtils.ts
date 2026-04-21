@@ -34,6 +34,39 @@ export function parseLocalDate(dateString: string): Date {
 }
 
 /**
+ * Jour civil de séjour pour affichage calendrier (check-in / check-out).
+ * - `YYYY-MM-DD` seul → minuit local ce jour-là (comme {@link parseLocalDate}).
+ * - Chaîne ISO avec heure (ex. timestamptz PostgREST) → jour **local** de cet instant,
+ *   et non la portion date avant `T` (souvent en UTC), ce qui provoquait des barres décalées
+ *   par rapport aux PDF qui utilisent `toLocaleDateString`.
+ */
+export function parseStayDateForCalendar(dateValue: string | Date | null | undefined): Date {
+  if (dateValue == null || dateValue === '') {
+    return new Date(NaN);
+  }
+  if (typeof dateValue === 'string') {
+    const s = dateValue.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      return parseLocalDate(s);
+    }
+    const parsed = new Date(s);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+    }
+    try {
+      return parseLocalDate(s);
+    } catch {
+      return new Date(NaN);
+    }
+  }
+  const d = dateValue as Date;
+  if (Number.isNaN(d.getTime())) {
+    return new Date(NaN);
+  }
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
  * Formate une date en chaîne YYYY-MM-DD en heure locale
  * Évite le décalage d'un jour causé par toISOString() qui utilise UTC
  * 
@@ -91,7 +124,7 @@ export function extractDateOnly(dateValue: string | Date | any): string {
     }
     // Sinon, essayer de parser
     try {
-      return parseLocalDate(dateValue);
+      return formatLocalDate(parseLocalDate(dateValue));
     } catch {
       // Si échec, essayer avec new Date puis formater
       const dateObj = new Date(dateValue);

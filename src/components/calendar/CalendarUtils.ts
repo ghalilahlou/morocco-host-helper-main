@@ -1,4 +1,5 @@
 import { isBefore, startOfDay } from 'date-fns';
+import { parseStayDateForCalendar } from '@/utils/dateUtils';
 import { Booking } from '@/types/booking';
 import { AirbnbReservation } from '@/services/airbnbSyncService';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
@@ -196,24 +197,10 @@ export const calculateBookingLayout = (
   bookings.forEach((booking, bookingIndex) => {
     const isAirbnb = 'source' in booking && booking.source === 'airbnb';
     // ✅ NORMALISATION LOCALE AMÉLIORÉE : gérer les dates YYYY-MM-DD sans décalage UTC
-    const toLocalMidnight = (d: Date | string) => {
-      if (typeof d === 'string') {
-        // Si c'est une chaîne au format YYYY-MM-DD, parser manuellement pour éviter UTC
-        const match = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (match) {
-          const year = parseInt(match[1], 10);
-          const month = parseInt(match[2], 10) - 1; // Les mois commencent à 0
-          const day = parseInt(match[3], 10);
-          return new Date(year, month, day);
-        }
-        // Sinon, utiliser new Date() qui peut interpréter en UTC
-        const date = new Date(d);
-      return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      } else {
-        // Si c'est déjà un objet Date, extraire les composants locaux
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      }
-    };
+    const toLocalMidnight = (d: Date | string) =>
+      typeof d === 'string'
+        ? parseStayDateForCalendar(d)
+        : new Date(d.getFullYear(), d.getMonth(), d.getDate());
     const rawCheckIn = isAirbnb 
       ? (booking as unknown as AirbnbReservation).startDate
       : (booking as Booking).checkInDate;
@@ -470,8 +457,8 @@ export const detectBookingConflicts = (
     const documentStatus = getBookingDocumentStatus(booking);
     allReservations.push({
       id: booking.id,
-      start: new Date(booking.checkInDate),
-      end: new Date(booking.checkOutDate),
+      start: parseStayDateForCalendar(booking.checkInDate),
+      end: parseStayDateForCalendar(booking.checkOutDate),
       bookingReference: booking.bookingReference,
       status: booking.status,
       isValidated: documentStatus.isValidated
@@ -497,8 +484,8 @@ export const detectBookingConflicts = (
         const documentStatus = getBookingDocumentStatus(booking);
         allReservations.push({
           id: booking.id,
-          start: new Date(booking.checkInDate),
-          end: new Date(booking.checkOutDate),
+          start: parseStayDateForCalendar(booking.checkInDate),
+          end: parseStayDateForCalendar(booking.checkOutDate),
           bookingReference: booking.bookingReference,
           status: booking.status,
           isValidated: documentStatus.isValidated
@@ -599,7 +586,7 @@ export function getBookingCheckoutDate(booking: Booking | AirbnbReservation): Da
   const isAirbnb = 'source' in booking && booking.source === 'airbnb';
   return isAirbnb
     ? new Date((booking as AirbnbReservation).endDate)
-    : new Date((booking as Booking).checkOutDate);
+    : parseStayDateForCalendar((booking as Booking).checkOutDate);
 }
 
 /** Séjour terminé : jour de check-out strictement avant aujourd'hui */

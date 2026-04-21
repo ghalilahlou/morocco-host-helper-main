@@ -22,6 +22,7 @@ import {
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { parseStayDateForCalendar } from '@/utils/dateUtils';
 import { isBookingStayPast, type BookingLayout } from './CalendarUtils';
 
 const CHECKIN_DONE_ICON_SRC = '/lovable-uploads/imagecheckcalendar.png';
@@ -139,8 +140,8 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     const push = (booking: Booking | AirbnbReservation) => {
       if (map.has(booking.id)) return;
       const isAirbnb = 'source' in booking && booking.source === 'airbnb';
-      const startDate = isAirbnb ? new Date((booking as AirbnbReservation).startDate) : new Date((booking as Booking).checkInDate);
-      const endDate = isAirbnb ? new Date((booking as AirbnbReservation).endDate) : new Date((booking as Booking).checkOutDate);
+      const startDate = isAirbnb ? new Date((booking as AirbnbReservation).startDate) : parseStayDateForCalendar((booking as Booking).checkInDate);
+      const endDate = isAirbnb ? new Date((booking as AirbnbReservation).endDate) : parseStayDateForCalendar((booking as Booking).checkOutDate);
       const displayText = getBookingDisplayTitle(booking);
       const valid = isValidGuestName(displayText);
       const guestCount = isAirbnb ? (booking as AirbnbReservation).numberOfGuests || 1 : (booking as Booking).numberOfGuests || 1;
