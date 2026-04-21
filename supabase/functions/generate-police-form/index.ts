@@ -227,23 +227,52 @@ serve(async (req: Request) => {
 
       // ÉTAPE 2: Récupérer les guests (guest_submissions → table guests → booking.guest_name)
       log('info', '👥 Récupération des guests...');
-      const { data: submissions, error: submissionsError } = await supabase
+      const { data: submissionLatest, error: submissionsError } = await supabase
         .from('guest_submissions')
         .select('guest_data')
-        .eq('booking_id', bookingId);
+        .eq('booking_id', bookingId)
+        .order('updated_at', { ascending: false })
+        .limit(1);
       if (submissionsError) log('warn', 'Erreur récupération submissions', { error: submissionsError.message });
 
       function mapGuestData(guestData: Record<string, any>): Record<string, string> {
+        const composed = [guestData.firstName, guestData.lastName]
+          .filter(Boolean)
+          .map((x: string) => String(x).trim())
+          .join(' ')
+          .trim();
+        const rawDob = guestData.date_of_birth || guestData.dateOfBirth || guestData.birth_date;
+        let date_of_birth = '';
+        if (rawDob != null && rawDob !== '') {
+          if (typeof rawDob === 'string') date_of_birth = rawDob.slice(0, 10);
+          else {
+            try {
+              date_of_birth = new Date(rawDob).toISOString().slice(0, 10);
+            } catch {
+              date_of_birth = String(rawDob);
+            }
+          }
+        }
         return {
-          full_name: guestData.full_name || guestData.fullName || guestData.name || '',
+          full_name: guestData.full_name || guestData.fullName || guestData.name || composed || '',
           first_name: guestData.first_name || guestData.firstName || guestData.prenom || '',
           last_name: guestData.last_name || guestData.lastName || guestData.nom || '',
           email: guestData.email || guestData.courriel || '',
           phone: guestData.phone || guestData.telephone || guestData.phone_number || guestData.phoneNumber || '',
           nationality: guestData.nationality || guestData.nationalite || guestData.nationalité || '',
-          document_type: guestData.document_type || guestData.documentType || guestData.id_type || 'passport',
-          document_number: guestData.document_number || guestData.documentNumber || guestData.id_number || '',
-          date_of_birth: guestData.date_of_birth || guestData.dateOfBirth || guestData.birth_date || '',
+          document_type:
+            guestData.document_type ||
+            guestData.documentType ||
+            guestData.id_type ||
+            guestData.idType ||
+            'passport',
+          document_number:
+            guestData.document_number ||
+            guestData.documentNumber ||
+            guestData.id_number ||
+            guestData.idNumber ||
+            '',
+          date_of_birth,
           place_of_birth: guestData.place_of_birth || guestData.placeOfBirth || guestData.birth_place || '',
           profession: guestData.profession || guestData.occupation || '',
           motif_sejour: guestData.motif_sejour || guestData.motifSejour || 'TOURISME',
@@ -260,18 +289,19 @@ serve(async (req: Request) => {
         if (Array.isArray(raw)) {
           return raw.map((g: any) => mapGuestData(g));
         }
-        if (raw.fullName || raw.full_name || raw.documentNumber || raw.document_number) {
+        if (
+          raw.fullName ||
+          raw.full_name ||
+          raw.documentNumber ||
+          raw.document_number ||
+          raw.idNumber
+        ) {
           return [mapGuestData(raw)];
         }
         return [];
       }
 
-      const flattened: Record<string, string>[] = [];
-      for (const s of submissions || []) {
-        const rows = guestsFromSubmissionGuestData(s?.guest_data);
-        for (const row of rows) flattened.push(row);
-      }
-      guests = flattened;
+      guests = guestsFromSubmissionGuestData(submissionLatest?.[0]?.guest_data ?? null);
 
       if (guests.length === 0) {
         const { data: guestsRows, error: guestsError } = await supabase

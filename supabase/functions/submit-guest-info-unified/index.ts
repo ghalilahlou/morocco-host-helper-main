@@ -4331,6 +4331,59 @@ function diffDays(a: string, b: string): number {
   return Math.max(1, Math.ceil((+d2 - +d1) / 86400000));
 }
 
+/** Données formulaire / sanitizeGuestInfo : idNumber, idType, dateOfBirth camelCase — aligné PDF contrat. */
+function parseGuestDataFromSubmissionPayload(guestData: any, bookingRow: any): any[] {
+  if (!guestData || typeof guestData !== 'object') return [];
+  let guestsArray: any[] = [];
+  if (guestData.guests && Array.isArray(guestData.guests) && guestData.guests.length > 0) {
+    guestsArray = guestData.guests;
+  } else if (Array.isArray(guestData)) {
+    guestsArray = guestData;
+  } else if (
+    guestData.fullName ||
+    guestData.full_name ||
+    guestData.documentNumber ||
+    guestData.document_number ||
+    guestData.idNumber
+  ) {
+    guestsArray = [guestData];
+  }
+  if (guestsArray.length === 0) return [];
+  return guestsArray.map((g: any) => {
+    const composed = [g.firstName, g.lastName]
+      .filter(Boolean)
+      .map((x: string) => String(x).trim())
+      .join(' ')
+      .trim();
+    const dob = g.dateOfBirth || g.date_of_birth || null;
+    const dobStr =
+      dob == null || dob === ''
+        ? null
+        : typeof dob === 'string'
+          ? dob.slice(0, 10)
+          : (() => {
+              try {
+                return new Date(dob).toISOString().slice(0, 10);
+              } catch {
+                return String(dob);
+              }
+            })();
+    return {
+      full_name: (g.fullName || g.full_name || g.name || composed || '').trim(),
+      email: g.email || bookingRow?.guest_email || null,
+      phone: g.phone || bookingRow?.guest_phone || null,
+      nationality: (g.nationality && String(g.nationality).trim()) || 'Non spécifiée',
+      document_type: g.documentType || g.document_type || g.idType || 'passport',
+      document_number: String(g.documentNumber || g.document_number || g.idNumber || '').trim(),
+      date_of_birth: dobStr,
+      place_of_birth: g.placeOfBirth || g.place_of_birth || '',
+      profession: g.profession || '',
+      motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
+      adresse_personnelle: g.adressePersonnelle || g.adresse_personnelle || '',
+    };
+  });
+}
+
 function durationHuman(days: number): string {
   if (days === 1) return '1 jour';
   if (days < 7) return `${days} jours`;
@@ -4524,17 +4577,29 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     ) : 'none'
   });
 
-  // ✅ SIMPLIFICATION : Récupération directe depuis la table guests (source principale)
+  // Dernière soumission vérification invité (source fidèle au formulaire web)
+  const { data: submissionRows, error: submissionFetchError } = await client
+    .from('guest_submissions')
+    .select('guest_data')
+    .eq('booking_id', bookingId)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  const submissionGuests =
+    !submissionFetchError && submissionRows?.[0]?.guest_data
+      ? parseGuestDataFromSubmissionPayload(submissionRows[0].guest_data, b)
+      : [];
+
+  // Relation booking → guests puis table (souvent incomplet si colonnes non remplies à l’upsert)
   let guests = Array.isArray(b.guests) ? b.guests : [];
-  
-  // Si pas de guests dans la relation, récupérer directement depuis la table
+
   if (!guests.length) {
     log('warn', '[buildContractContext] Aucun guest dans relation, tentative récupération depuis table guests');
     const { data: guestsData, error: guestsError } = await client
       .from('guests')
       .select('*')
       .eq('booking_id', bookingId);
-    
+
     if (guestsError) {
       log('error', '[buildContractContext] Erreur récupération guests', { error: guestsError });
     } else if (guestsData && guestsData.length > 0) {
@@ -4542,85 +4607,24 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       log('info', '[buildContractContext] Guests récupérés depuis table', { count: guests.length });
     }
   }
-  
-  // ✅ CRITIQUE : Fallback - Récupérer d'abord depuis guest_submissions si disponible
-  if (!guests.length) {
-    log('warn', '[buildContractContext] Aucun guest trouvé, tentative récupération depuis guest_submissions');
-    const { data: submissionsData, error: submissionsError } = await client
-      .from('guest_submissions')
-      .select('*')
-      .eq('booking_id', bookingId)
-      .order('created_at', { ascending: false })
-      .limit(1);
 
-    if (!submissionsError && submissionsData && submissionsData.length > 0) {
-      const submission = submissionsData[0];
-      log('info', '[buildContractContext] Submission trouvée', {
-        hasGuestData: !!submission.guest_data,
-        guestDataType: typeof submission.guest_data
-      });
-      
-      // ✅ CRITIQUE : Essayer de récupérer les guests depuis la soumission
-      if (submission.guest_data && typeof submission.guest_data === 'object') {
-        const guestData = submission.guest_data as any;
-        
-        // Essayer plusieurs formats possibles
-        let guestsArray: any[] = [];
-        
-        if (guestData.guests && Array.isArray(guestData.guests)) {
-          guestsArray = guestData.guests;
-        } else if (Array.isArray(guestData)) {
-          guestsArray = guestData;
-        } else if (guestData.fullName || guestData.full_name) {
-          // Format avec un seul guest directement dans guest_data
-          guestsArray = [guestData];
-        }
-        
-        if (guestsArray.length > 0) {
-          guests = guestsArray.map((g: any) => {
-            // ✅ CRITIQUE : Normaliser toutes les variantes de noms de champs
-            const normalizedGuest = {
-              full_name: g.fullName || g.full_name || g.name || '',
-              email: g.email || b.guest_email || null,
-              phone: g.phone || b.guest_phone || null,
-              nationality: g.nationality || 'Non spécifiée',
-              document_type: g.documentType || g.document_type || g.idType || 'passport',
-              document_number: g.documentNumber || g.document_number || g.idNumber || g.document_number || '',
-              date_of_birth: g.dateOfBirth || g.date_of_birth || g.dateOfBirth || null,
-            place_of_birth: g.placeOfBirth || g.place_of_birth || '',
-            profession: g.profession || '',
-              motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
-              adresse_personnelle: g.adressePersonnelle || g.adresse_personnelle || ''
-            };
-            
-            log('info', '[buildContractContext] Guest normalisé depuis submission', {
-              hasDateOfBirth: !!normalizedGuest.date_of_birth,
-              hasDocumentNumber: !!normalizedGuest.document_number,
-              hasNationality: !!normalizedGuest.nationality && normalizedGuest.nationality !== 'Non spécifiée'
-            });
-            
-            return normalizedGuest;
-          });
-          
-          log('info', '[buildContractContext] ✅ Guests récupérés depuis guest_submissions', { 
-            count: guests.length,
-            firstGuest: guests[0] ? {
-              name: guests[0].full_name,
-              hasDateOfBirth: !!guests[0].date_of_birth,
-              hasDocumentNumber: !!guests[0].document_number,
-              nationality: guests[0].nationality
-            } : null
-          });
-        } else {
-          log('warn', '[buildContractContext] Aucun guest trouvé dans guest_data', { guestData });
-        }
-      } else {
-        log('warn', '[buildContractContext] guest_data n\'est pas un objet valide', { 
-          type: typeof submission.guest_data,
-          value: submission.guest_data 
-          });
-        }
-      }
+  const dbGuestSparse = (row: any) =>
+    !row ||
+    String(row.date_of_birth ?? '').trim() === '' ||
+    String(row.document_number ?? '').trim() === '';
+
+  // Priorité guest_submissions : la table `guests` peut n’avoir que full_name (contrat avec placeholders sinon)
+  if (submissionGuests.length > 0 && (guests.length === 0 || dbGuestSparse(guests[0]))) {
+    guests = submissionGuests;
+    log('info', '[buildContractContext] Guests issus de guest_submissions (priorité sur relation/table)', {
+      count: guests.length,
+      firstHasDob: !!guests[0]?.date_of_birth,
+      firstHasDoc: !!guests[0]?.document_number,
+    });
+  } else if (submissionGuests.length > 0) {
+    log('info', '[buildContractContext] Relation guests déjà complète, conservation table + guest_data disponible', {
+      submissionCount: submissionGuests.length,
+    });
   }
   
   // ✅ CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests

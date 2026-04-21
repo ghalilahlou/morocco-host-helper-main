@@ -5,6 +5,12 @@
 - Après OCR ou modification manuelle (date de naissance, nationalité, n° document), le contrat ou la fiche police affichent encore des placeholders ou « Non spécifiée ».
 - Plusieurs invités enregistrés mais une seule fiche / données incomplètes côté hôte.
 
+## Cause racine supplémentaire (contrat / fiche police vides malgré le formulaire)
+
+La table `guests` (jointe sur `bookings`) peut contenir une ligne avec **seulement le nom**, alors que `guest_submissions.guest_data` contient la fiche complète (`guests[]`, `idNumber`, `dateOfBirth`, etc.).  
+`buildContractContext` utilisait d’abord `b.guests` et **ne lisait `guest_submissions` que si aucune ligne** — le contrat et la logique police côté serveur prenaient donc des champs vides. **Corrigé** : dernière soumission lue en priorité quand la ligne `guests` est « sparse » (sans date de naissance ou sans n° document).  
+Sur la fiche police, `mapGuestData` ignorait aussi **`idNumber` / `idType`** (camelCase du payload) : complété + dernière soumission par `updated_at`.
+
 ## Causes identifiées dans le code
 
 ### 1. `updateGuest` bloquait les mises à jour sans document à l’index
