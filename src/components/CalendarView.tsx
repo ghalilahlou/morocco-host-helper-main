@@ -29,7 +29,10 @@ import { cn } from '@/lib/utils';
 import { formatLocalDate, parseStayDateForCalendar } from '@/utils/dateUtils';
 import { getBookingDocumentStatus } from '@/utils/bookingDocuments';
 import { doBookingAndAirbnbMatch, isSameReservationByRef } from '@/utils/bookingAirbnbMatch';
-import { mergeBookingsWithAirbnbForCalendar } from '@/domain/calendarReservationModel';
+import {
+  mergeBookingsWithAirbnbForCalendar,
+  dedupeBookingsForCalendarLayout,
+} from '@/domain/calendarReservationModel';
 import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { useBookings } from '@/hooks/useBookings';
@@ -113,6 +116,8 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onDelet
   const performDeleteBooking = onDeleteBookingProp ?? deleteBookingFallback.deleteBooking;
 
   const [currentDate, setCurrentDate] = useState(new Date());
+  /** Sur mobile : mois le plus visible au scroll (en-tête), sans toucher à `currentDate` (fenêtre ICS / liste de mois). */
+  const [mobileVisibleMonth, setMobileVisibleMonth] = useState<Date | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<Booking | EnrichedBooking | AirbnbReservation | null>(null);
   const [airbnbReservations, setAirbnbReservations] = useState<AirbnbReservation[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -148,6 +153,18 @@ export const CalendarView = memo(({ bookings, onEditBooking, propertyId, onDelet
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const isMobile = useIsMobile();
+
+  useEffect(() => {
+    if (!isMobile) setMobileVisibleMonth(null);
+  }, [isMobile]);
+
+  const handleCalendarHeaderDateChange = useCallback((d: Date) => {
+    setCurrentDate(d);
+    setMobileVisibleMonth(null);
+  }, []);
+
+  const calendarHeaderCurrentDate =
+    isMobile && mobileVisibleMonth != null ? mobileVisibleMonth : currentDate;
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -511,16 +528,11 @@ const handleOpenConfig = useCallback(() => {
     return detectedConflicts;
   }, [bookings, airbnbReservations]);
 
-  // ✅ MOBILE : Ouvrir automatiquement la modale de conflit si des conflits sont détectés
   useEffect(() => {
-    if (isMobile && conflicts.length > 0 && !showConflictModal) {
-      // Utiliser setTimeout pour éviter les mises à jour d'état pendant le rendu
-      const timer = setTimeout(() => {
-        setShowConflictModal(true);
-      }, 300); // Petit délai pour que le calendrier soit rendu
-      return () => clearTimeout(timer);
+    if (conflicts.length === 0 && showConflictModal) {
+      setShowConflictModal(false);
     }
-  }, [isMobile, conflicts.length, showConflictModal]);
+  }, [conflicts.length, showConflictModal]);
 
   // ✅ CORRIGÉ : Calcul des matchs et couleurs avec conflits inclus
   const { colorOverrides: getColorOverrides, matchedBookingsIds } = useMemo(() => {
@@ -591,6 +603,12 @@ const handleOpenConfig = useCallback(() => {
     [bookings, airbnbReservations],
   );
 
+  /** Une barre par (référence + dates) pour éviter 100+ couches / semaine (doublons DB / tests). */
+  const reservationsForLayout = useMemo(
+    () => dedupeBookingsForCalendarLayout(allReservations),
+    [allReservations],
+  );
+
   // Generate calendar days
   const calendarDays = useMemo(() => generateCalendarDays(currentDate), [currentDate]);
 
@@ -608,7 +626,7 @@ const handleOpenConfig = useCallback(() => {
     //   console.log('📅 [CALENDAR DIAGNOSTIC] Calcul du layout avec', allReservations.length, 'réservations');
     // }
 
-    const layout = calculateBookingLayout(calendarDays, allReservations, colorOverrides);
+    const layout = calculateBookingLayout(calendarDays, reservationsForLayout, colorOverrides);
 
     // ✅ NETTOYAGE LOGS : Supprimé pour éviter les boucles infinies
     // Ces logs étaient dans un useMemo et s'exécutaient à chaque re-render
@@ -617,7 +635,7 @@ const handleOpenConfig = useCallback(() => {
     // }
 
     return layout;
-  }, [calendarDays, allReservations, colorOverrides, debugMode]);
+  }, [calendarDays, reservationsForLayout, colorOverrides, debugMode]);
 
   // ✅ NOUVEAU : Résumé de debug pour vérifier concrètement les dates chargées
   const debugDateSummary = useMemo(() => {
@@ -927,24 +945,30 @@ const handleOpenConfig = useCallback(() => {
         </Alert>
       )}
 
-      {/* ✅ MOBILE : Afficher automatiquement la modale de conflit sur mobile */}
-      {isMobile && conflicts.length > 0 && !showConflictModal && (
-        <Alert 
-          className="border-destructive p-3 text-sm cursor-pointer"
-          onClick={() => setShowConflictModal(true)}
-        >
-          <AlertTriangle className="h-3 w-3" />
-          <AlertDescription className="text-xs">
-            <strong>{conflicts.length} conflit(s) détecté(s)</strong> — Vérifiez et cliquez sur les barres en rouge (ou ici) pour consulter les réservations en conflit.
-          </AlertDescription>
-        </Alert>
+      {isMobile && conflicts.length > 0 && (
+        <div className="sticky top-0 z-20 -mx-1 mb-1 rounded-lg border border-destructive/40 bg-destructive/5 px-2 py-2 shadow-sm backdrop-blur-sm">
+          <Alert className="border-0 bg-transparent p-0 text-sm">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-destructive" />
+            <AlertDescription className="text-xs sm:text-sm leading-snug">
+              <strong>{conflicts.length} conflit(s)</strong> — les barres rouges se chevauchent. Touchez une barre rouge
+              pour voir la liste, ou ouvrez le récapitulatif ci-dessous.
+              <button
+                type="button"
+                className="mt-2 block w-full rounded-md border border-destructive/40 bg-background px-3 py-2 text-center text-xs font-semibold text-destructive hover:bg-destructive/5 sm:inline sm:w-auto sm:px-3"
+                onClick={() => setShowConflictModal(true)}
+              >
+                Récapitulatif des réservations
+              </button>
+            </AlertDescription>
+          </Alert>
+        </div>
       )}
 
       {/* Calendar Header */}
       <ErrorBoundary>
         <CalendarHeader 
-          currentDate={currentDate}
-          onDateChange={setCurrentDate}
+          currentDate={calendarHeaderCurrentDate}
+          onDateChange={handleCalendarHeaderDateChange}
           bookingCount={allReservations.length}
           onAirbnbSync={handleSyncFromCalendar}
           isSyncing={isSyncing}
@@ -1001,7 +1025,10 @@ const handleOpenConfig = useCallback(() => {
             onBookingClick={handleBookingClick}
             currentDate={currentDate}
             onDateChange={setCurrentDate}
-            allReservations={allReservations}
+            onVisibleMonthChange={setMobileVisibleMonth}
+            allReservations={reservationsForLayout}
+            conflictBookingLookup={allReservations}
+            conflictGroupsWithPosition={conflictGroupsWithPosition}
           />
         ) : (
           <AnimatePresence mode="wait" initial={false}>
@@ -1018,7 +1045,7 @@ const handleOpenConfig = useCallback(() => {
                 bookingLayout={bookingLayout}
                 conflicts={conflicts}
                 onBookingClick={handleBookingClick}
-                allReservations={allReservations}
+                allReservations={reservationsForLayout}
                 conflictGroupsWithPosition={conflictGroupsWithPosition}
                 openConflict={openConflictFromAlert}
                 onOpenConflictChange={setOpenConflictFromAlert}
@@ -1044,7 +1071,10 @@ const handleOpenConfig = useCallback(() => {
           onClose={() => setShowConflictModal(false)}
           conflictDetails={conflictDetails}
           allReservations={allReservations}
-          onDeleteBooking={handleCalendarDeleteBooking}
+          onSelectBooking={(b) => {
+            setSelectedBooking(b);
+            setShowConflictModal(false);
+          }}
         />
       )}
 

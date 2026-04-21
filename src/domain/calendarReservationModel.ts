@@ -16,6 +16,7 @@ import {
   isValidGuestName,
 } from '@/utils/bookingDisplay';
 import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
+import { formatLocalDate, parseStayDateForCalendar } from '@/utils/dateUtils';
 
 /**
  * Indique si la clé stockée (référence booking ou id Airbnb) est un UID iCal technique,
@@ -77,4 +78,46 @@ export function mergeBookingsWithAirbnbForCalendar(
     allRows: [...bookings, ...uniqueAirbnb],
     suppressedAirbnbIds,
   };
+}
+
+function manualCalendarLayoutKey(b: Booking | EnrichedBooking): string {
+  const ref = (b.bookingReference || '').trim().toUpperCase();
+  const ci = formatLocalDate(parseStayDateForCalendar(b.checkInDate));
+  const co = formatLocalDate(parseStayDateForCalendar(b.checkOutDate));
+  return `m:${ref}|${ci}|${co}`;
+}
+
+function calendarRowRecencyScore(r: Booking | EnrichedBooking | AirbnbReservation): number {
+  if ('source' in r && (r as AirbnbReservation).source === 'airbnb') {
+    const a = r as AirbnbReservation;
+    const sd = a.startDate instanceof Date ? a.startDate.getTime() : new Date(a.startDate as string).getTime();
+    return Number.isNaN(sd) ? 0 : sd;
+  }
+  const b = r as EnrichedBooking;
+  const u = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+  const c = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+  const c2 = (b as { created_at?: string }).created_at
+    ? new Date((b as { created_at: string }).created_at).getTime()
+    : 0;
+  return Math.max(u, c, c2);
+}
+
+/**
+ * Réduit les centaines de lignes identiques (même ref + mêmes dates) à **une** barre pour le layout
+ * (calculateBookingLayers, mobile). Ne modifie pas la liste métier côté API : conflits / suppressions
+ * restent sur les ids réels via `bookings` et `conflictDetails`.
+ */
+export function dedupeBookingsForCalendarLayout(
+  rows: Array<EnrichedBooking | AirbnbReservation>,
+): Array<EnrichedBooking | AirbnbReservation> {
+  const map = new Map<string, EnrichedBooking | AirbnbReservation>();
+  for (const r of rows) {
+    const isAirbnb = 'source' in r && (r as AirbnbReservation).source === 'airbnb';
+    const key = isAirbnb ? `a:${(r as AirbnbReservation).id}` : manualCalendarLayoutKey(r as Booking);
+    const prev = map.get(key);
+    if (!prev || calendarRowRecencyScore(r) >= calendarRowRecencyScore(prev)) {
+      map.set(key, r);
+    }
+  }
+  return Array.from(map.values());
 }

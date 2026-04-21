@@ -216,7 +216,6 @@ export const CalendarGrid = memo(({
                           {isOpen && (
                             <ConflictCadran
                               reservations={group.reservations}
-                              onDelete={onDeleteBooking ? (id) => onDeleteBooking(id).catch(() => {}) : () => {}}
                               onSelectReservation={(id) => {
                                 const res = allReservations.find((r) => r.id === id);
                                 if (res) {

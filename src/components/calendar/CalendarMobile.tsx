@@ -24,6 +24,9 @@ import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { parseStayDateForCalendar } from '@/utils/dateUtils';
 import { isBookingStayPast, type BookingLayout } from './CalendarUtils';
+import type { ConflictGroupForCalendar } from './CalendarGrid';
+import { ConflictCadran } from './ConflictCadran';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 
 const CHECKIN_DONE_ICON_SRC = '/lovable-uploads/imagecheckcalendar.png';
 
@@ -38,7 +41,13 @@ interface CalendarMobileProps {
   onBookingClick: (booking: Booking | AirbnbReservation) => void;
   currentDate: Date;
   onDateChange: (date: Date) => void;
+  /** Mois le plus visible au scroll — ne doit pas modifier `currentDate` (évite rebuild de la liste / sauts). */
+  onVisibleMonthChange?: (date: Date) => void;
+  /** Lignes affichées (souvent dédupliquées pour le layout). */
   allReservations?: (Booking | AirbnbReservation)[];
+  /** Recherche fiche réservation (liste complète) pour le panneau conflit. */
+  conflictBookingLookup?: (Booking | AirbnbReservation)[];
+  conflictGroupsWithPosition?: ConflictGroupForCalendar[];
 }
 
 const dayNamesShort = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -49,6 +58,15 @@ const getInitials = (name: string): string => {
   if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
   return name.substring(0, 2).toUpperCase();
 };
+
+/** Minuit local du jour civil (aligné CalendarUtils / desktop). */
+const toLocalDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+/** Airbnb : startDate/endDate sont des Date ; on les ramène au jour local comme les bookings. */
+const airbnbStayBounds = (r: AirbnbReservation) => ({
+  start: toLocalDay(new Date(r.startDate)),
+  end: toLocalDay(new Date(r.endDate)),
+});
 
 interface BookingBarData {
   booking: Booking | AirbnbReservation;
@@ -70,19 +88,13 @@ interface BookingBarData {
 /*  Animation variants                                                 */
 /* ------------------------------------------------------------------ */
 const barVariants = {
-  hidden: { opacity: 0, x: -6, scale: 0.97 },
+  hidden: { opacity: 0, scale: 0.98 },
   visible: (i: number) => ({
     opacity: 1,
-    x: 0,
     scale: 1,
-    transition: { delay: i * 0.04, type: 'spring', stiffness: 340, damping: 28 },
+    transition: { delay: i * 0.03, type: 'spring', stiffness: 380, damping: 30 },
   }),
-  tap: { scale: 0.97 },
-};
-
-const monthVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.25, ease: 'easeOut' } },
+  tap: { scale: 0.98 },
 };
 
 /* ------------------------------------------------------------------ */
@@ -95,14 +107,20 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   onBookingClick,
   currentDate,
   onDateChange,
+  onVisibleMonthChange,
   allReservations = [],
+  conflictBookingLookup,
+  conflictGroupsWithPosition = [],
 }) => {
   const t = useT();
+  const bookingPool = conflictBookingLookup ?? allReservations;
+  const [openConflictGroup, setOpenConflictGroup] = useState<ConflictGroupForCalendar | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const isUserScrolling = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastScrolledMonth = useRef<string | null>(null);
+  const lastEmittedVisibleMonth = useRef<string | null>(null);
 
   const monthsToShow = useMemo(() => {
     const months: Date[] = [];
@@ -131,6 +149,10 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     return () => clearTimeout(id);
   }, [currentDate]);
 
+  useEffect(() => {
+    lastEmittedVisibleMonth.current = null;
+  }, [currentDate]);
+
   useEffect(() => () => { if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current); }, []);
 
   /* ---------- Build all bookings once ---------- */
@@ -140,8 +162,16 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     const push = (booking: Booking | AirbnbReservation) => {
       if (map.has(booking.id)) return;
       const isAirbnb = 'source' in booking && booking.source === 'airbnb';
-      const startDate = isAirbnb ? new Date((booking as AirbnbReservation).startDate) : parseStayDateForCalendar((booking as Booking).checkInDate);
-      const endDate = isAirbnb ? new Date((booking as AirbnbReservation).endDate) : parseStayDateForCalendar((booking as Booking).checkOutDate);
+      let startDate: Date;
+      let endDate: Date;
+      if (isAirbnb) {
+        const b = airbnbStayBounds(booking as AirbnbReservation);
+        startDate = b.start;
+        endDate = b.end;
+      } else {
+        startDate = parseStayDateForCalendar((booking as Booking).checkInDate);
+        endDate = parseStayDateForCalendar((booking as Booking).checkOutDate);
+      }
       const displayText = getBookingDisplayTitle(booking);
       const valid = isValidGuestName(displayText);
       const guestCount = isAirbnb ? (booking as AirbnbReservation).numberOfGuests || 1 : (booking as Booking).numberOfGuests || 1;
@@ -181,16 +211,13 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
       let vis: string | null = null;
       for (const el of els) { const r = el.getBoundingClientRect(); if (r.top >= cTop - 50 && r.top < cTop + 150) { vis = el.getAttribute('data-month'); break; } }
       if (!vis) { for (const el of els) { if (el.getBoundingClientRect().bottom > cTop) { vis = el.getAttribute('data-month'); break; } } }
-      if (vis) {
+      if (vis && onVisibleMonthChange && vis !== lastEmittedVisibleMonth.current) {
+        lastEmittedVisibleMonth.current = vis;
         const [y, m] = vis.split('-').map(Number);
-        const nd = new Date(y, m, 1);
-        if (nd.getFullYear() !== currentDate.getFullYear() || nd.getMonth() !== currentDate.getMonth()) {
-          lastScrolledMonth.current = vis;
-          onDateChange(nd);
-        }
+        onVisibleMonthChange(new Date(y, m, 1));
       }
     }, 150);
-  }, [currentDate, onDateChange]);
+  }, [onVisibleMonthChange]);
 
   const scrollToToday = useCallback(() => {
     const now = new Date();
@@ -210,23 +237,30 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   };
 
   const getBookingsForWeek = (week: Date[]) => {
-    const ws = new Date(week[0].getFullYear(), week[0].getMonth(), week[0].getDate());
-    const we = new Date(week[6].getFullYear(), week[6].getMonth(), week[6].getDate());
+    const ws = toLocalDay(week[0]);
+    const we = toLocalDay(week[6]);
     const result: { booking: BookingBarData; startCol: number; span: number }[] = [];
 
     allBookings.forEach((bd) => {
-      const bs = new Date(bd.startDate.getFullYear(), bd.startDate.getMonth(), bd.startDate.getDate());
-      const be = new Date(bd.endDate.getFullYear(), bd.endDate.getMonth(), bd.endDate.getDate());
-      if (bs <= we && be > ws) {
-        let sc = 0;
-        if (bs < ws) sc = 0;
-        else { for (let i = 0; i < 7; i++) { const d = new Date(week[i].getFullYear(), week[i].getMonth(), week[i].getDate()); if (d.getTime() >= bs.getTime()) { sc = i; break; } if (i === 6) sc = 0; } }
+      const bs = toLocalDay(bd.startDate);
+      const be = toLocalDay(bd.endDate);
+      // Aligné CalendarUtils : plage [check-in, check-out] inclusive (jour de départ inclus).
+      if (bs.getTime() <= we.getTime() && be.getTime() >= ws.getTime()) {
+        let sc = -1;
         let sp = 0;
-        for (let i = sc; i < 7; i++) { const d = new Date(week[i].getFullYear(), week[i].getMonth(), week[i].getDate()); if (d >= bs && d < be) sp++; }
-        if (sp > 0) result.push({ booking: bd, startCol: sc, span: sp });
+        for (let i = 0; i < 7; i++) {
+          const d = toLocalDay(week[i]);
+          if (d.getTime() >= bs.getTime() && d.getTime() <= be.getTime()) {
+            if (sc === -1) sc = i;
+            sp++;
+          }
+        }
+        if (sc >= 0 && sp > 0) {
+          result.push({ booking: bd, startCol: sc, span: sp });
+        }
       }
     });
-    return result.sort((a, b) => a.startCol !== b.startCol ? a.startCol - b.startCol : b.span - a.span);
+    return result.sort((a, b) => (a.startCol !== b.startCol ? a.startCol - b.startCol : b.span - a.span));
   };
 
   /* ---------- Bar height constants ---------- */
@@ -243,14 +277,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     const showYear = monthDate.getFullYear() !== thisYear || monthDate.getMonth() === 0;
 
     return (
-      <motion.div
-        className="mb-2"
-        data-month={dataMonth}
-        variants={monthVariants}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.15 }}
-      >
+      <div className="mb-2" data-month={dataMonth}>
         <div className="pb-1.5 pt-6">
           <h2 className="text-[15px] font-bold text-gray-900 capitalize tracking-tight">
             {monthName}
@@ -308,18 +335,10 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                   <div className="absolute left-0 right-0 pointer-events-none" style={{ top: `${DAY_NUM_H}px` }}>
                     {booksInWeek.map((item, idx) => {
                       const { booking: bd, startCol, span } = item;
-                      const isStart = week.some(
-                        (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() ===
-                               new Date(bd.startDate.getFullYear(), bd.startDate.getMonth(), bd.startDate.getDate()).getTime(),
-                      );
-                      const lastNight = new Date(bd.endDate.getFullYear(), bd.endDate.getMonth(), bd.endDate.getDate() - 1);
-                      const isEnd = week.some(
-                        (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() === lastNight.getTime(),
-                      );
-
-                      const cellW = 100 / 7;
-                      const leftPct = startCol * cellW;
-                      const widthPct = span * cellW;
+                      const checkInDay = toLocalDay(bd.startDate);
+                      const checkOutDay = toLocalDay(bd.endDate);
+                      const isStart = week.some((d) => toLocalDay(d).getTime() === checkInDay.getTime());
+                      const isEnd = week.some((d) => toLocalDay(d).getTime() === checkOutDay.getTime());
 
                       let radius = '0';
                       if (isStart && isEnd) radius = '16px';
@@ -329,21 +348,34 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                       const isCheckinDone = bd.circleBg === '#000000' && !bd.isConflict;
 
                       return (
+                        <div
+                          key={`${bd.booking.id}-${weekIndex}-${idx}-row`}
+                          className="absolute left-0 right-0 grid grid-cols-7 min-w-0"
+                          style={{
+                            top: `${idx * (BAR_H + BAR_GAP)}px`,
+                            height: `${BAR_H}px`,
+                          }}
+                        >
                         <motion.div
-                          key={`${bd.booking.id}-${weekIndex}-${idx}`}
-                          className="absolute pointer-events-auto cursor-pointer"
+                          className="min-w-0 pointer-events-auto cursor-pointer px-[1px]"
                           custom={idx}
                           variants={barVariants}
                           initial="hidden"
                           animate="visible"
                           whileTap="tap"
                           style={{
-                            left: `calc(${leftPct}% + 1px)`,
-                            width: `calc(${widthPct}% - 2px)`,
-                            top: `${idx * (BAR_H + BAR_GAP)}px`,
-                            height: `${BAR_H}px`,
+                            gridColumn: `${startCol + 1} / span ${span}`,
                           }}
-                          onClick={() => onBookingClick(bd.booking)}
+                          onClick={() => {
+                            if (conflicts.includes(bd.booking.id) && conflictGroupsWithPosition.length > 0) {
+                              const g = conflictGroupsWithPosition.find((gr) => gr.ids.includes(bd.booking.id));
+                              if (g) {
+                                setOpenConflictGroup(g);
+                                return;
+                              }
+                            }
+                            onBookingClick(bd.booking);
+                          }}
                         >
                           <div
                             className={cn(
@@ -416,6 +448,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                             </div>
                           </div>
                         </motion.div>
+                        </div>
                       );
                     })}
                   </div>
@@ -424,7 +457,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
             );
           })}
         </div>
-      </motion.div>
+      </div>
     );
   };
 
@@ -432,6 +465,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   /*  Render                                                            */
   /* ---------------------------------------------------------------- */
   return (
+    <>
     <div className="w-full bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
       {/* Sticky week-day header */}
       <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-gray-200 px-3">
@@ -450,7 +484,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
       {/* Scrollable months */}
       <div
         ref={scrollContainerRef}
-        className="h-[calc(100vh-220px)] overflow-y-auto px-3 scroll-smooth overscroll-contain"
+        className="h-[calc(100vh-220px)] overflow-y-auto overflow-x-hidden px-3 scroll-auto overscroll-y-contain touch-pan-y [overflow-anchor:none]"
         onScroll={handleScroll}
       >
         {monthsToShow.map((month) => (
@@ -494,5 +528,31 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
         )}
       </AnimatePresence>
     </div>
+
+    <Drawer open={!!openConflictGroup} onOpenChange={(open) => !open && setOpenConflictGroup(null)}>
+      <DrawerContent className="max-h-[88dvh]">
+        <DrawerHeader className="text-left">
+          <DrawerTitle>Conflit sur ces dates</DrawerTitle>
+        </DrawerHeader>
+        <div className="px-4 pb-6">
+          {openConflictGroup && (
+            <ConflictCadran
+              variant="inline"
+              reservations={openConflictGroup.reservations}
+              onSelectReservation={(id) => {
+                const res = bookingPool.find((r) => r.id === id);
+                if (res) {
+                  onBookingClick(res);
+                  setOpenConflictGroup(null);
+                }
+              }}
+              onClose={() => setOpenConflictGroup(null)}
+              className="border border-slate-200 shadow-md rounded-2xl"
+            />
+          )}
+        </div>
+      </DrawerContent>
+    </Drawer>
+    </>
   );
 };

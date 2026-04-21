@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isIcsCalendarTechnicalKey,
   mergeBookingsWithAirbnbForCalendar,
+  dedupeBookingsForCalendarLayout,
 } from './calendarReservationModel';
 import { ICAL_AIRBNB_DISPLAY_LABEL, calendarBarLabelFromIcsRow } from '@/utils/bookingDisplay';
 import type { EnrichedBooking } from '@/services/guestSubmissionService';
@@ -185,5 +186,65 @@ describe('mergeBookingsWithAirbnbForCalendar', () => {
 
     const { allRows } = mergeBookingsWithAirbnbForCalendar([manual], [airbnb]);
     expect(allRows).toHaveLength(2);
+  });
+});
+
+describe('dedupeBookingsForCalendarLayout', () => {
+  it('keeps one manual row per bookingReference + check-in + check-out', () => {
+    const base = {
+      numberOfGuests: 1,
+      status: 'confirmed' as const,
+      guests: [],
+      documentsGenerated: { policeForm: false, contract: false },
+      updated_at: '2026-01-01T00:00:00Z',
+    };
+    const a: EnrichedBooking = {
+      id: 'a',
+      propertyId: 'p',
+      ...base,
+      checkInDate: '2026-02-25',
+      checkOutDate: '2026-02-27',
+      bookingReference: 'HMCZD34WJW',
+      guest_name: 'Guest',
+    } as EnrichedBooking;
+    const b: EnrichedBooking = {
+      id: 'b',
+      propertyId: 'p',
+      ...base,
+      checkInDate: '2026-02-25',
+      checkOutDate: '2026-02-27',
+      bookingReference: 'HMCZD34WJW',
+      guest_name: 'Guest',
+      updated_at: '2026-02-27T02:00:00Z',
+    } as EnrichedBooking;
+    const out = dedupeBookingsForCalendarLayout([a, b]);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('b');
+  });
+
+  it('keeps distinct manual stays with different references', () => {
+    const x: EnrichedBooking = {
+      id: '1',
+      propertyId: 'p',
+      numberOfGuests: 1,
+      status: 'confirmed',
+      guests: [],
+      documentsGenerated: { policeForm: true, contract: true },
+      checkInDate: '2026-04-19',
+      checkOutDate: '2026-04-20',
+      bookingReference: 'REF1',
+    } as EnrichedBooking;
+    const y: EnrichedBooking = {
+      id: '2',
+      propertyId: 'p',
+      numberOfGuests: 1,
+      status: 'confirmed',
+      guests: [],
+      documentsGenerated: { policeForm: true, contract: true },
+      checkInDate: '2026-04-19',
+      checkOutDate: '2026-04-20',
+      bookingReference: 'REF2',
+    } as EnrichedBooking;
+    expect(dedupeBookingsForCalendarLayout([x, y])).toHaveLength(2);
   });
 });

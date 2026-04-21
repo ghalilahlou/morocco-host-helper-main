@@ -12,17 +12,19 @@ export interface ConflictCadranReservation {
 
 interface ConflictCadranProps {
   reservations: ConflictCadranReservation[];
-  onDelete: (id: string) => void;
+  /** Si absent, aucun bouton supprimer (information seule). */
+  onDelete?: (id: string) => void;
   /** Au clic sur une ligne (hors bouton supprimer), ouvre le détail de la réservation (police, contrat, etc.) */
   onSelectReservation?: (id: string) => void;
   onClose?: () => void;
   deletingIds?: Set<string>;
   className?: string;
+  /** `inline` : pas de position absolute (tiroir mobile, etc.). */
+  variant?: 'popover' | 'inline';
 }
 
 /**
- * Petit cadran Figma : liste des réservations en conflit sur une période,
- * avec message et bouton supprimer (x) par réservation.
+ * Liste des réservations en conflit sur une période (cadran desktop ou tiroir mobile).
  */
 export const ConflictCadran = memo(({
   reservations,
@@ -31,14 +33,19 @@ export const ConflictCadran = memo(({
   onClose,
   deletingIds = new Set(),
   className,
+  variant = 'popover',
 }: ConflictCadranProps) => {
   if (reservations.length === 0) return null;
+
+  const isInline = variant === 'inline';
 
   return (
     <div
       className={cn(
-        'absolute z-10 box-border p-4',
-        'min-w-[200px] max-w-[min(320px,calc(100vw-2rem))]',
+        'z-10 box-border p-4',
+        isInline
+          ? 'relative w-full max-w-none min-w-0'
+          : 'absolute min-w-[200px] max-w-[min(320px,calc(100vw-2rem))]',
         className
       )}
       style={{
@@ -54,7 +61,7 @@ export const ConflictCadran = memo(({
             Vous avez un conflit sur cette période.
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
-            Veuillez supprimer les réservations en trop
+            Plusieurs séjours validés se chevauchent. Touchez une ligne pour ouvrir la fiche (dates, documents).
           </p>
         </div>
         {onClose && (
@@ -103,20 +110,22 @@ export const ConflictCadran = memo(({
               <span className="min-w-0 flex-1 truncate text-xs font-medium">
                 {r.displayName} • {r.startFormatted} – {r.endFormatted}
               </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 flex-shrink-0 text-red-400 hover:text-red-600 hover:bg-red-100"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(r.id);
-                }}
-                disabled={isDeleting}
-                aria-label={`Supprimer ${r.displayName}`}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              {onDelete && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 flex-shrink-0 text-red-400 hover:text-red-600 hover:bg-red-100"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(r.id);
+                  }}
+                  disabled={isDeleting}
+                  aria-label={`Supprimer ${r.displayName}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </li>
           );
         })}

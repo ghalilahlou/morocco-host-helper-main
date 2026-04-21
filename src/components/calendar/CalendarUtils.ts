@@ -154,9 +154,15 @@ const assignBookingLayers = (bookings: BookingLayout[]): BookingLayout[] => {
     }
   }
   
-  // ✅ Un seul warning résumé au lieu d'un par réservation
-  if (overflowCount > 0) {
-    console.warn(`⚠️ ${overflowCount} réservation(s) dépassent ${MAX_LAYERS} couches dans la semaine (${bookings.length} réservations au total)`);
+  if (overflowCount > 0 && process.env.NODE_ENV === 'development') {
+    const key = `${bookings.length}-${overflowCount}`;
+    const w = typeof window !== 'undefined' ? (window as unknown as { __calLayerOverflowKey?: string }) : undefined;
+    if (!w || w.__calLayerOverflowKey !== key) {
+      if (w) w.__calLayerOverflowKey = key;
+      console.warn(
+        `⚠️ ${overflowCount} réservation(s) dépassent ${MAX_LAYERS} couches (${bookings.length} barres/semaine). Dédupliquez les mêmes ref+dates côté données ou calendrier.`,
+      );
+    }
   }
   
   return layeredBookings;
