@@ -1918,16 +1918,28 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       source: signature?.data ? 'parametre' : 'database'
     });
     
-    // ✅ SIMPLIFICATION : Récupération directe depuis la table guests
+    // Même logique que buildContractContext : la relation `guests` peut n'avoir que le nom.
+    const { data: submissionPoliceRows, error: submissionPoliceErr } = await supabaseClient
+      .from('guest_submissions')
+      .select('guest_data')
+      .eq('booking_id', bookingId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    const submissionGuestsPolice =
+      !submissionPoliceErr && submissionPoliceRows?.[0]?.guest_data
+        ? parseGuestDataFromSubmissionPayload(submissionPoliceRows[0].guest_data, booking)
+        : [];
+
     let guests = Array.isArray(booking.guests) ? booking.guests : [];
-    
+
     if (!guests.length) {
       log('warn', '[Police] Aucun guest dans booking.guests, tentative récupération depuis table guests');
       const { data: guestsData, error: guestsError } = await supabaseClient
         .from('guests')
         .select('*')
         .eq('booking_id', bookingId);
-      
+
       if (guestsError) {
         log('error', '[Police] Erreur récupération guests', { error: guestsError });
       } else if (guestsData && guestsData.length > 0) {
@@ -1935,87 +1947,20 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
         log('info', '[Police] Guests récupérés depuis table', { count: guests.length });
       }
     }
-    
-  // ✅ CRITIQUE : Fallback - Récupérer d'abord depuis guest_submissions si disponible
-  if (!guests.length) {
-    log('warn', '[Police] Aucun guest trouvé, tentative récupération depuis guest_submissions');
-    const { data: submissionsData, error: submissionsError } = await supabaseClient
-      .from('guest_submissions')
-      .select('*')
-      .eq('booking_id', bookingId)
-      .order('created_at', { ascending: false })
-      .limit(1);
-    
-    if (!submissionsError && submissionsData && submissionsData.length > 0) {
-      const submission = submissionsData[0];
-      log('info', '[Police] Submission trouvée', {
-        hasGuestData: !!submission.guest_data,
-        guestDataType: typeof submission.guest_data
+
+    const dbGuestSparsePolice = (row: any) =>
+      !row ||
+      String(row.date_of_birth ?? '').trim() === '' ||
+      String(row.document_number ?? '').trim() === '';
+
+    if (submissionGuestsPolice.length > 0 && (guests.length === 0 || dbGuestSparsePolice(guests[0]))) {
+      guests = submissionGuestsPolice;
+      log('info', '[Police] Guests issus de guest_submissions (priorité — PDF police)', {
+        count: guests.length,
+        firstHasDob: !!guests[0]?.date_of_birth,
+        firstHasDoc: !!guests[0]?.document_number,
       });
-      
-      // ✅ CRITIQUE : Essayer de récupérer les guests depuis la soumission
-      if (submission.guest_data && typeof submission.guest_data === 'object') {
-        const guestData = submission.guest_data as any;
-        
-        // Essayer plusieurs formats possibles
-        let guestsArray: any[] = [];
-        
-        if (guestData.guests && Array.isArray(guestData.guests)) {
-          guestsArray = guestData.guests;
-        } else if (Array.isArray(guestData)) {
-          guestsArray = guestData;
-        } else if (guestData.fullName || guestData.full_name) {
-          // Format avec un seul guest directement dans guest_data
-          guestsArray = [guestData];
-        }
-        
-        if (guestsArray.length > 0) {
-          guests = guestsArray.map((g: any) => {
-            // ✅ CRITIQUE : Normaliser toutes les variantes de noms de champs
-            const normalizedGuest = {
-              full_name: g.fullName || g.full_name || g.name || '',
-              email: g.email || booking.guest_email || null,
-              phone: g.phone || booking.guest_phone || null,
-              nationality: g.nationality || 'Non spécifiée',
-              document_type: g.documentType || g.document_type || g.idType || 'passport',
-              document_number: g.documentNumber || g.document_number || g.idNumber || g.document_number || '',
-              date_of_birth: g.dateOfBirth || g.date_of_birth || g.dateOfBirth || null,
-              document_issue_date: g.documentIssueDate || g.document_issue_date || null, // ✅ Date d'expiration du document
-              place_of_birth: g.placeOfBirth || g.place_of_birth || '',
-              profession: g.profession || '',
-              motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
-              adresse_personnelle: g.adressePersonnelle || g.adresse_personnelle || ''
-            };
-            
-            log('info', '[Police] Guest normalisé depuis submission', {
-              hasDateOfBirth: !!normalizedGuest.date_of_birth,
-              hasDocumentNumber: !!normalizedGuest.document_number,
-              hasNationality: !!normalizedGuest.nationality && normalizedGuest.nationality !== 'Non spécifiée'
-            });
-            
-            return normalizedGuest;
-          });
-          
-          log('info', '[Police] ✅ Guests récupérés depuis guest_submissions', { 
-            count: guests.length,
-            firstGuest: guests[0] ? {
-              name: guests[0].full_name,
-              hasDateOfBirth: !!guests[0].date_of_birth,
-              hasDocumentNumber: !!guests[0].document_number,
-              nationality: guests[0].nationality
-            } : null
-          });
-      } else {
-          log('warn', '[Police] Aucun guest trouvé dans guest_data', { guestData });
-        }
-      } else {
-        log('warn', '[Police] guest_data n\'est pas un objet valide', { 
-          type: typeof submission.guest_data,
-          value: submission.guest_data 
-        });
-      }
     }
-  }
   
   // ✅ CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests
   const hasGuestName = booking.guest_name && booking.guest_name.trim().length > 0;
@@ -4368,6 +4313,19 @@ function parseGuestDataFromSubmissionPayload(guestData: any, bookingRow: any): a
                 return String(dob);
               }
             })();
+    const docExp = g.documentIssueDate || g.document_issue_date || null;
+    const docExpStr =
+      docExp == null || docExp === ''
+        ? null
+        : typeof docExp === 'string'
+          ? docExp.slice(0, 10)
+          : (() => {
+              try {
+                return new Date(docExp).toISOString().slice(0, 10);
+              } catch {
+                return String(docExp);
+              }
+            })();
     return {
       full_name: (g.fullName || g.full_name || g.name || composed || '').trim(),
       email: g.email || bookingRow?.guest_email || null,
@@ -4376,6 +4334,7 @@ function parseGuestDataFromSubmissionPayload(guestData: any, bookingRow: any): a
       document_type: g.documentType || g.document_type || g.idType || 'passport',
       document_number: String(g.documentNumber || g.document_number || g.idNumber || '').trim(),
       date_of_birth: dobStr,
+      document_issue_date: docExpStr,
       place_of_birth: g.placeOfBirth || g.place_of_birth || '',
       profession: g.profession || '',
       motif_sejour: g.motifSejour || g.motif_sejour || 'TOURISME',
