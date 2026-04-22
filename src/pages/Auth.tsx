@@ -45,9 +45,23 @@ function passwordStrength(password: string): 0 | 1 | 2 | 3 {
   return 2;
 }
 
-const GOOGLE_CLIENT_ID =
-  (import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ||
+/** Public client id for Checky GIS; still override with VITE_GOOGLE_CLIENT_ID when needed. */
+const CHECKY_GOOGLE_CLIENT_ID =
+  '473612320516-vtjeavdbh5v9hk3ag936thlgjt71kl8a.apps.googleusercontent.com';
+const CHECKY_GOOGLE_OAUTH_NUMBER_PREFIX = '473612320516';
+
+function resolveGoogleClientId(): string {
+  const raw = (import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ||
     import.meta.env.VITE_GOOGLEqu_CLIENT_ID?.trim()) as string | undefined;
+  if (!raw) return CHECKY_GOOGLE_CLIENT_ID;
+  if (/^\d+-/.test(raw)) return raw;
+  if (raw.endsWith('.apps.googleusercontent.com')) {
+    return `${CHECKY_GOOGLE_OAUTH_NUMBER_PREFIX}-${raw}`;
+  }
+  return raw;
+}
+
+const GOOGLE_CLIENT_ID = resolveGoogleClientId();
 
 export default function Auth() {
   const [email, setEmail] = useState('');
