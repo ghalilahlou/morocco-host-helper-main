@@ -45,7 +45,9 @@ function passwordStrength(password: string): 0 | 1 | 2 | 3 {
   return 2;
 }
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+const GOOGLE_CLIENT_ID =
+  (import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ||
+    import.meta.env.VITE_GOOGLEqu_CLIENT_ID?.trim()) as string | undefined;
 
 export default function Auth() {
   const [email, setEmail] = useState('');
