@@ -21,12 +21,31 @@ declare global {
     google?: {
       accounts: {
         id: {
-          initialize: (config: { client_id: string; callback: (r: { credential: string }) => void }) => void;
+          cancel: () => void;
+          initialize: (config: {
+            client_id: string;
+            callback: (r: { credential: string }) => void;
+            /** SHA-256 hex of raw nonce — must pair with same raw nonce passed to signInWithIdToken */
+            nonce?: string;
+            /** FedCM uses postMessage; COOP on some hosts blocks it — false uses classic flow */
+            use_fedcm_for_prompt?: boolean;
+          }) => void;
           renderButton: (element: HTMLElement, options: object) => void;
         };
       };
     };
   }
+}
+
+/** Supabase Auth expects a raw nonce in signInWithIdToken and the SHA-256 hex here in GIS initialize. */
+async function generateGoogleSessionNonce(): Promise<{ nonce: string; hashedNonce: string }> {
+  const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+  const encoded = new TextEncoder().encode(nonce);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+  const hashedNonce = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return { nonce, hashedNonce };
 }
 
 const LANGUAGES: { code: Locale; label: string }[] = [
@@ -76,6 +95,7 @@ export default function Auth() {
   });
   const navigate = useNavigate();
   const hasCheckedSession = useRef(false);
+  const googleIdNonceRef = useRef<string | undefined>(undefined);
   const { toast } = useToast();
   const t = useT();
   const { locale, setLocale } = useGuestLocale();
@@ -101,6 +121,7 @@ export default function Auth() {
       const { error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
         token: response.credential,
+        nonce: googleIdNonceRef.current,
       });
       if (error) throw error;
       navigate('/dashboard/');
@@ -125,26 +146,52 @@ export default function Auth() {
       const opts = { theme: 'outline', size: 'large', width: 340, text: 'continue_with' };
       const siEl = document.getElementById('google-signin-btn');
       const suEl = document.getElementById('google-signup-btn');
-      if (siEl) window.google.accounts.id.renderButton(siEl, opts);
-      if (suEl) window.google.accounts.id.renderButton(suEl, opts);
+      if (siEl) {
+        siEl.innerHTML = '';
+        window.google.accounts.id.renderButton(siEl, opts);
+      }
+      if (suEl) {
+        suEl.innerHTML = '';
+        window.google.accounts.id.renderButton(suEl, opts);
+      }
     };
 
-    const initGoogle = () => {
+    const initGoogle = async () => {
       if (!window.google) return;
-      window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: stableCallback });
-      // Wait until Radix Tabs (and forceMount panels) have painted
+      try {
+        const { nonce, hashedNonce } = await generateGoogleSessionNonce();
+        googleIdNonceRef.current = nonce;
+        try {
+          window.google.accounts.id.cancel();
+        } catch {
+          /* noop */
+        }
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: stableCallback,
+          nonce: hashedNonce,
+          use_fedcm_for_prompt: false,
+        });
+      } catch {
+        googleIdNonceRef.current = undefined;
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: stableCallback,
+          use_fedcm_for_prompt: false,
+        });
+      }
       requestAnimationFrame(() => requestAnimationFrame(renderButtons));
     };
 
     let script: HTMLScriptElement | null = null;
     if (window.google) {
-      initGoogle();
+      void initGoogle();
     } else {
       script = document.createElement('script');
       script.src = 'https://accounts.google.com/gsi/client';
       script.async = true;
       script.defer = true;
-      script.onload = initGoogle;
+      script.onload = () => void initGoogle();
       document.body.appendChild(script);
     }
 
