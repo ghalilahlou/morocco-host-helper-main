@@ -97,9 +97,10 @@ export default function Auth() {
     }
   };
 
-  // Load Google Identity Services script and render official buttons
+  // Load Google Identity Services after the real auth layout is mounted (not the session splash),
+  // otherwise getElementById finds nothing and the buttons never render.
   useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) return;
+    if (!GOOGLE_CLIENT_ID || isCheckingSession) return;
 
     const stableCallback = (r: { credential: string }) => credentialCallbackRef.current?.(r);
 
@@ -115,7 +116,8 @@ export default function Auth() {
     const initGoogle = () => {
       if (!window.google) return;
       window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: stableCallback });
-      renderButtons();
+      // Wait until Radix Tabs (and forceMount panels) have painted
+      requestAnimationFrame(() => requestAnimationFrame(renderButtons));
     };
 
     let script: HTMLScriptElement | null = null;
@@ -133,7 +135,7 @@ export default function Auth() {
     return () => {
       if (script && document.body.contains(script)) document.body.removeChild(script);
     };
-  }, []); // GOOGLE_CLIENT_ID is a build-time constant
+  }, [isCheckingSession]);
 
   // Sync tab with URL params
   useEffect(() => {
@@ -368,7 +370,11 @@ export default function Auth() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="signin" className="mt-8 space-y-6 outline-none">
+            <TabsContent
+              value="signin"
+              forceMount
+              className="mt-8 space-y-6 outline-none data-[state=inactive]:hidden"
+            >
               <div>
                 <h1 className="text-[1.875rem] font-extrabold tracking-tight text-[#1A1A2E]">{t('auth.signin.title')}</h1>
                 <p className="mt-1 text-sm text-gray-500">
@@ -456,7 +462,11 @@ export default function Auth() {
               <p className="text-center text-xs text-gray-400">{t('auth.signin.demoNote')}</p>
             </TabsContent>
 
-            <TabsContent value="signup" className="mt-8 space-y-6 outline-none">
+            <TabsContent
+              value="signup"
+              forceMount
+              className="mt-8 space-y-6 outline-none data-[state=inactive]:hidden"
+            >
               <div>
                 <h1 className="text-[1.875rem] font-extrabold tracking-tight text-[#1A1A2E]">{t('auth.signup.title')}</h1>
                 <p className="mt-1 text-sm text-gray-500">
