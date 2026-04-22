@@ -367,18 +367,23 @@ serve(async (req) => {
         }
       }
       
-      // Si un token actif existe et a été créé il y a moins de 5 secondes, le réutiliser (idempotence)
+      // Réutiliser le token existant selon le type :
+      // - Tokens avec code Airbnb : TOUJOURS réutiliser (évite que l'upsert remplace le token et invalide les anciens liens)
+      // - Tokens sans code : réutiliser seulement dans la fenêtre de 5s (idempotence)
       if (existingActiveToken) {
-        const tokenAge = Date.now() - new Date(existingActiveToken.created_at).getTime();
-        if (tokenAge < 5000) { // 5 secondes
-          console.log('✅ Token actif récent trouvé (idempotence), réutilisation:', existingActiveToken.id);
+        const shouldReuse = hasAirbnbCode
+          ? true // Pour les codes Airbnb : toujours réutiliser le token existant
+          : (Date.now() - new Date(existingActiveToken.created_at).getTime()) < 5000;
+
+        if (shouldReuse) {
+          console.log('✅ Token actif trouvé, réutilisation:', existingActiveToken.id, hasAirbnbCode ? '(Airbnb stable)' : '(idempotence 5s)');
           const baseUrl = GUEST_LINK_BASE_URL;
           const rdEarly = (requestBody as IssueReq).reservationData;
           const codeEarly = rdEarly?.airbnbCode && rdEarly.airbnbCode !== 'INDEPENDENT_BOOKING' ? rdEarly.airbnbCode : null;
           const guestLink = codeEarly
             ? `${baseUrl}/v/${existingActiveToken.token}/${encodeURIComponent(codeEarly)}`
             : `${baseUrl}/v/${existingActiveToken.token}`;
-          
+
           return new Response(JSON.stringify({
             success: true,
             token: existingActiveToken.token,

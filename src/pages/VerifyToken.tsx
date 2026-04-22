@@ -53,23 +53,75 @@ export function VerifyToken() {
     const resolveAndRedirect = async () => {
       setIsRedirecting(true);
       setError(null);
-      
+
       try {
         console.log('🔄 [VerifyToken] Résolution automatique du token et redirection vers GuestVerification...');
         console.log('🔗 [VerifyToken] Token reçu:', token);
-        
-        // ✅ Récupérer property_id via RPC (anon n'a pas accès direct à property_verification_tokens)
+
+        // Tentative 1 : RPC resolve_guest_token (anon-safe)
+        let tokenData: any = null;
+        let rpcFailed = false;
+
         const { data: tokenRows, error: tokenError } = await (supabase as any)
           .rpc('resolve_guest_token', { p_token: token });
-        const tokenData = Array.isArray(tokenRows) && tokenRows.length > 0 ? tokenRows[0] : null;
 
-        console.log('📦 [VerifyToken] Résultat requête token:', { tokenData, tokenError });
+        console.log('📦 [VerifyToken] Résultat RPC:', { tokenRows, tokenError });
 
         if (tokenError) {
-          console.error('❌ [VerifyToken] Erreur base de données:', tokenError);
-          setError("Erreur de connexion. Vérifiez votre connexion internet et réessayez.");
-          setIsRedirecting(false);
-          return;
+          // RPC manquant (PGRST202) ou erreur réseau → fallback Edge Function
+          const isMissingFn = tokenError.code === 'PGRST202'
+            || tokenError.message?.includes('Could not find the function')
+            || tokenError.message?.includes('not found');
+          if (isMissingFn) {
+            console.warn('⚠️ [VerifyToken] RPC resolve_guest_token absent, fallback Edge Function...');
+            rpcFailed = true;
+          } else {
+            console.error('❌ [VerifyToken] Erreur base de données:', tokenError);
+            setError("Erreur de connexion. Vérifiez votre connexion internet et réessayez.");
+            setIsRedirecting(false);
+            return;
+          }
+        } else {
+          tokenData = Array.isArray(tokenRows) && tokenRows.length > 0 ? tokenRows[0] : null;
+        }
+
+        // Tentative 2 : Edge Function issue-guest-link action=resolve (fallback si RPC absent)
+        if (rpcFailed || (!tokenData && !tokenError)) {
+          console.log('🔄 [VerifyToken] Fallback : appel issue-guest-link resolve...');
+          try {
+            const decodedReservationCode = reservationCode ? decodeURIComponent(reservationCode.trim()) : undefined;
+            const { data: efData, error: efError } = await supabase.functions.invoke('issue-guest-link', {
+              body: { action: 'resolve', token, airbnbCode: decodedReservationCode }
+            });
+            if (!efError && efData?.success && efData?.propertyId) {
+              // Construire un tokenData compatible depuis la réponse de l'Edge Function
+              tokenData = {
+                property_id: efData.propertyId,
+                is_active: true,
+                expires_at: null,
+                metadata: null
+              };
+              console.log('✅ [VerifyToken] Fallback Edge Function réussi:', efData.propertyId);
+            } else {
+              const reason = efData?.error || efError?.message || 'unknown';
+              if (reason === 'expired' || reason === 'inactive') {
+                fatalErrorRef.current = true;
+                setError("Ce lien a été désactivé. Demandez un nouveau lien à votre hôte.");
+              } else if (reason === 'TOKEN_NOT_FOUND') {
+                fatalErrorRef.current = true;
+                setError("Ce lien de vérification n'existe pas ou a été supprimé.");
+              } else {
+                setError("Erreur de connexion. Vérifiez votre connexion internet et réessayez.");
+              }
+              setIsRedirecting(false);
+              return;
+            }
+          } catch (efErr) {
+            console.error('❌ [VerifyToken] Fallback Edge Function échoué:', efErr);
+            setError("Erreur de connexion. Vérifiez votre connexion internet et réessayez.");
+            setIsRedirecting(false);
+            return;
+          }
         }
 
         if (!tokenData) {
@@ -89,9 +141,9 @@ export function VerifyToken() {
           return;
         }
 
-        // Vérifier si le token n'est pas expiré
+        // Vérifier si le token n'est pas expiré (expires_at NULL = pas d'expiration)
         if (tokenData.expires_at && new Date(tokenData.expires_at) < new Date()) {
-          console.error('❌ [VerifyToken] Token expiré');
+          console.error('❌ [VerifyToken] Token expiré (expires_at passé):', tokenData.expires_at);
           fatalErrorRef.current = true;
           setError("Ce lien a expiré. Demandez un nouveau lien à votre hôte.");
           setIsRedirecting(false);

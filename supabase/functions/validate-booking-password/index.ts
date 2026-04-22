@@ -199,25 +199,8 @@ serve(async (req) => {
         );
       }
 
-      // Vérifier les limites d'usage
-      const maxUses = tokenData.max_uses || 1;
-      const usedCount = tokenData.used_count || 0;
-      const maxUsesReached = usedCount >= maxUses;
-      
-      if (maxUsesReached) {
-        console.log('❌ Maximum uses reached');
-        return new Response(
-          JSON.stringify({ 
-            success: true,
-            valid: false,
-            error: 'Maximum uses reached for this token'
-          }), 
-          { 
-            status: 200, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        );
-      }
+      // max_uses ignoré : les liens invités n'ont pas de limite d'utilisation par défaut.
+      // La révocation se fait uniquement via is_active=false (action admin).
 
       console.log('✅ Password validation successful');
 
