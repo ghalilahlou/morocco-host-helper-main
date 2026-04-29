@@ -10,24 +10,48 @@ export const useAuth = () => {
   useEffect(() => {
     let mounted = true;
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const clearInvalidSession = async () => {
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch {
+        /* ignore */
+      }
       if (mounted) {
-        setSession(session);
-        setUser(session?.user ?? null);
+        setSession(null);
+        setUser(null);
         setIsLoading(false);
       }
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth')) {
+        window.location.href = '/auth';
+      }
+    };
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (!mounted) return;
+      const msg = error?.message?.toLowerCase() ?? '';
+      if (
+        error &&
+        (msg.includes('refresh token') ||
+          msg.includes('refresh_token') ||
+          msg.includes('invalid refresh'))
+      ) {
+        void clearInvalidSession();
+        return;
+      }
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsLoading(false);
     });
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setIsLoading(false);
-      }
+      if (!mounted) return;
+      setSession(session);
+      setUser(session?.user ?? null);
+      setIsLoading(false);
     });
 
     return () => {

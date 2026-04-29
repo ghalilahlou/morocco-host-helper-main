@@ -13,7 +13,8 @@ interface GuestSubmissionData {
   id: string;
   booking_id: string | null;
   guest_data: any;
-  document_urls: any;
+  /** Absent on list enrichment queries (avoids reading multi‑MB base64 rows → statement timeout). */
+  document_urls?: any;
   signature_data: string | null;
   status: string;
   submitted_at: string;
@@ -87,13 +88,14 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
       
       // Query guest_submissions directly (the view v_guest_submissions misses rows
       // whose token_id doesn't match a real property_verification_tokens row).
+      // Do NOT select document_urls here: rows often store huge data:image/jpeg;base64,... strings
+      // and Postgres hits statement_timeout (57014) → PostgREST returns 500.
       const queryPromise = supabase
         .from('guest_submissions')
         .select(`
           id,
           booking_id,
           guest_data,
-          document_urls,
           signature_data,
           status,
           submitted_at
@@ -289,8 +291,8 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
           }
         }
 
-        // Count documents
-        if (submission.document_urls) {
+        // Count documents (document_urls omitted in bulk query — infer for list/calendar hints)
+        if (submission.document_urls != null) {
           if (Array.isArray(submission.document_urls)) {
             totalDocuments += submission.document_urls.length;
           } else if (typeof submission.document_urls === 'string') {
@@ -299,10 +301,16 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
               if (Array.isArray(parsed)) {
                 totalDocuments += parsed.length;
               }
-            } catch (e) {
-              // If it's a string but not JSON, count as 1 document
+            } catch {
               totalDocuments += 1;
             }
+          }
+        } else {
+          const st = (submission.status || '').toLowerCase();
+          if (st === 'completed' || st === 'reviewed') {
+            totalDocuments += 1;
+          } else if (submission.signature_data) {
+            totalDocuments += 1;
           }
         }
 

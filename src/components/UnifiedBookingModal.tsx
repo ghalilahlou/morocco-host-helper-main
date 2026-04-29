@@ -259,8 +259,12 @@ export const UnifiedBookingModal = ({
           const manualBooking = booking as Booking;
           const startDate = parseLocalDate(manualBooking.checkInDate);
           const endDate = parseLocalDate(manualBooking.checkOutDate);
-          const url = await generatePropertyVerificationUrl(propertyId, manualBooking.id, {
+          const url = await generatePropertyVerificationUrl(
+            propertyId,
+            manualBooking.bookingReference || undefined,
+            {
             linkType: 'ics_direct',
+            bookingId: manualBooking.id,
             reservationData: {
               airbnbCode: manualBooking.bookingReference || 'INDEPENDENT_BOOKING',
               startDate,
@@ -268,7 +272,8 @@ export const UnifiedBookingModal = ({
               numberOfGuests: manualBooking.numberOfGuests
             },
             skipCopy: true
-          });
+            },
+          );
           if (!cancelled && url) setCachedGuestLinkUrl(url);
         }
       } catch {
@@ -400,8 +405,12 @@ export const UnifiedBookingModal = ({
         });
         
         // ICS/manual : passer le code résa (bookingReference) pour que le backend associe le lien à la bonne résa
-        generatedUrl = await generatePropertyVerificationUrl(propertyId, manualBooking.bookingReference || manualBooking.id, {
+        generatedUrl = await generatePropertyVerificationUrl(
+          propertyId,
+          manualBooking.bookingReference || undefined,
+          {
           linkType: 'ics_direct', // ✅ FORCÉ : Toujours utiliser ics_direct
+          bookingId: manualBooking.id,
           reservationData: {
             airbnbCode: manualBooking.bookingReference || 'INDEPENDENT_BOOKING',
             startDate: startDate,
@@ -410,7 +419,8 @@ export const UnifiedBookingModal = ({
           },
           userEvent: userEvent,
           skipCopy: true
-        });
+          },
+        );
       }
       
       console.log('✅ Lien généré avec succès:', generatedUrl);
@@ -630,7 +640,7 @@ export const UnifiedBookingModal = ({
             .single() : Promise.resolve({ data: null, error: null }),
           supabase
             .from('guest_submissions')
-            .select('id, document_urls, guest_data, submitted_at')
+            .select('id, guest_data, submitted_at')
             .eq('booking_id', booking.id)
             .order('submitted_at', { ascending: false })
             .limit(1)

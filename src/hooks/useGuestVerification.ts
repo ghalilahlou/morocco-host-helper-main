@@ -51,6 +51,14 @@ function cleanGuestNameForUrl(guestName: string): string {
   return cleanedName;
 }
 
+/** UUID réservation Supabase (évite d’envoyer l’id comme `airbnbCode` racine vers issue-guest-link). */
+const BOOKING_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isLikelyBookingUuid(value?: string): boolean {
+  return !!value && BOOKING_UUID_RE.test(value.trim());
+}
+
 /** Lien copié : toujours `https://checky.ma/v/{token}` ou `.../v/{token}/{code}` — jamais `/guest-verification/...?...` ni domaine erroné. */
 function buildCanonicalGuestVerificationUrl(
   token: string,
@@ -193,6 +201,8 @@ export const useGuestVerification = () => {
     airbnbBookingId?: string, 
     options?: {
       linkType?: 'ics_direct'; // ✅ UNIFIÉ : Seule la logique ics_direct est utilisée (dates pré-remplies)
+      /** Réservation déjà connue : obligatoire pour les séjours `INDEPENDENT_BOOKING` multiples sur la même propriété. */
+      bookingId?: string;
       reservationData?: {
         airbnbCode: string;
         startDate: Date;
@@ -241,45 +251,61 @@ export const useGuestVerification = () => {
         });
       }
 
+      const explicitBookingId = options?.bookingId?.trim();
+      const inferredBookingId =
+        explicitBookingId ||
+        (isLikelyBookingUuid(airbnbBookingId) ? airbnbBookingId!.trim() : undefined);
+      const topLevelAirbnbCode =
+        inferredBookingId && airbnbBookingId?.trim() === inferredBookingId
+          ? undefined
+          : airbnbBookingId;
+
       // Use the Edge Function instead of direct database access
       const { data, error } = await supabase.functions.invoke('issue-guest-link', {
-        body: { 
-          action: 'issue', // Explicite
-          propertyId, 
-          airbnbCode: airbnbBookingId, // Utiliser airbnbCode au lieu de bookingId
-          linkType: 'ics_direct', // ✅ FORCÉ : Toujours utiliser ics_direct avec dates pré-remplies
-          reservationData: finalReservationData // Données de réservation pour liens directs (dates au format YYYY-MM-DD)
-        }
+        body: {
+          action: 'issue',
+          propertyId,
+          ...(inferredBookingId ? { bookingId: inferredBookingId } : {}),
+          ...(topLevelAirbnbCode ? { airbnbCode: topLevelAirbnbCode } : {}),
+          linkType: 'ics_direct',
+          reservationData: finalReservationData,
+        },
       });
 
+      const showIssueToast = !options?.skipCopy;
+
       if (error) {
-        // Erreur masquée en production
-        toast({
-          title: "Erreur",
-          description: error.message || "Impossible de créer le lien de vérification",
-          variant: "destructive"
-        });
+        if (showIssueToast) {
+          toast({
+            title: "Erreur",
+            description: error.message || "Impossible de créer le lien de vérification",
+            variant: "destructive",
+          });
+        }
         return null;
       }
 
       if (!data || !data.success) {
-        // Erreur masquée en production
         const errorMessage = data?.error || "Réponse invalide du serveur";
         const errorDetails = data?.details ? ` (${JSON.stringify(data.details)})` : '';
-        toast({
-          title: "Erreur",
-          description: `${errorMessage}${errorDetails}`,
-          variant: "destructive"
-        });
+        if (showIssueToast) {
+          toast({
+            title: "Erreur",
+            description: `${errorMessage}${errorDetails}`,
+            variant: "destructive",
+          });
+        }
         return null;
       }
 
       if (!data.token) {
-        toast({
-          title: "Erreur",
-          description: "Aucun token généré",
-          variant: "destructive"
-        });
+        if (showIssueToast) {
+          toast({
+            title: "Erreur",
+            description: "Aucun token généré",
+            variant: "destructive",
+          });
+        }
         return null;
       }
 
@@ -315,12 +341,13 @@ export const useGuestVerification = () => {
       }
       return guestUrl;
     } catch (error) {
-      // Erreur masquée en production (utiliser le toast pour l'utilisateur)
-      toast({
-        title: "Erreur",
-        description: "Erreur lors de la génération du lien",
-        variant: "destructive"
-      });
+      if (!options?.skipCopy) {
+        toast({
+          title: "Erreur",
+          description: "Erreur lors de la génération du lien",
+          variant: "destructive",
+        });
+      }
       return null;
     } finally {
       setIsLoading(false);

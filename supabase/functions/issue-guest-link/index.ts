@@ -537,7 +537,64 @@ serve(async (req) => {
         const checkOutDate = extractDateOnly(reservationData.endDate);
           
           console.log('📅 Dates normalisées pour la réservation:', { checkInDate, checkOutDate });
-          
+
+          let resolvedIcsBookingId: string;
+
+          if (finalBookingId) {
+            console.log('🎯 ICS direct : réservation ciblée par bookingId (client)', finalBookingId);
+            const { data: targetedRow, error: targetedErr } = await server
+              .from('bookings')
+              .select('id')
+              .eq('id', finalBookingId)
+              .eq('property_id', propertyId)
+              .maybeSingle();
+
+            if (targetedErr) {
+              console.error('❌ Lecture réservation par bookingId:', targetedErr);
+              throw new Error(`Réservation introuvable: ${targetedErr.message}`);
+            }
+            if (!targetedRow) {
+              return new Response(
+                JSON.stringify({
+                  success: false,
+                  error: 'booking_not_found',
+                  details: { bookingId: finalBookingId, propertyId },
+                }),
+                { status: 404, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } },
+              );
+            }
+
+            resolvedIcsBookingId = targetedRow.id;
+            console.log('📝 Mise à jour réservation (par bookingId):', resolvedIcsBookingId);
+
+            const { error: updateByIdError } = await server
+              .from('bookings')
+              .update({
+                check_in_date: checkInDate,
+                check_out_date: checkOutDate,
+                guest_name: reservationData.guestName || 'Guest',
+                number_of_guests: reservationData.numberOfGuests || 1,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', resolvedIcsBookingId);
+
+            if (updateByIdError) {
+              console.error('❌ Erreur mise à jour réservation (par bookingId):', updateByIdError);
+              if (updateByIdError.code === '23505') {
+                return new Response(
+                  JSON.stringify({
+                    success: false,
+                    error: 'duplicate_independent_stay',
+                    message:
+                      'Ces dates sont déjà utilisées par une autre réservation pour cette propriété (contrainte unique).',
+                    details: updateByIdError,
+                  }),
+                  { status: 409, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } },
+                );
+              }
+              throw new Error(`Erreur mise à jour réservation: ${updateByIdError.message}`);
+            }
+          } else {
           // Vérifier si une réservation existe déjà pour ce code Airbnb
           // ✅ CORRIGÉ : .order().limit(1) avant .maybeSingle() pour éviter l'erreur
           // quand des doublons existent déjà (maybeSingle échoue si >1 résultat)
@@ -550,13 +607,11 @@ serve(async (req) => {
             .limit(1)
             .maybeSingle();
 
-          let bookingId: string;
-          
           if (existingBooking) {
             // Mettre à jour la réservation existante
             console.log('📝 Mise à jour réservation existante:', existingBooking.id);
-            bookingId = existingBooking.id;
-            
+            resolvedIcsBookingId = existingBooking.id;
+
             const { error: updateError } = await server
               .from('bookings')
               .update({
@@ -566,16 +621,28 @@ serve(async (req) => {
                 number_of_guests: reservationData.numberOfGuests || 1,
                 updated_at: new Date().toISOString()
               })
-              .eq('id', bookingId);
+              .eq('id', resolvedIcsBookingId);
 
             if (updateError) {
               console.error('❌ Erreur mise à jour réservation:', updateError);
+              if (updateError.code === '23505') {
+                return new Response(
+                  JSON.stringify({
+                    success: false,
+                    error: 'duplicate_independent_stay',
+                    message:
+                      'Ces dates sont déjà utilisées par une autre réservation pour cette propriété (contrainte unique).',
+                    details: updateError,
+                  }),
+                  { status: 409, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } },
+                );
+              }
               throw new Error(`Erreur mise à jour réservation: ${updateError.message}`);
             }
           } else {
             // Créer une nouvelle réservation
             console.log('🆕 Création nouvelle réservation ICS');
-            
+
             // ✅ PROTECTION : Dernière vérification avant insertion pour éviter les doublons
             // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
             const { data: lastCheckBooking } = await server
@@ -586,11 +653,11 @@ serve(async (req) => {
               .order('updated_at', { ascending: false })
               .limit(1)
               .maybeSingle();
-            
+
             if (lastCheckBooking) {
               // Une réservation a été créée entre-temps (race condition), la réutiliser
               console.log('⚠️ Réservation trouvée lors de la dernière vérification (race condition évitée):', lastCheckBooking.id);
-              bookingId = lastCheckBooking.id;
+              resolvedIcsBookingId = lastCheckBooking.id;
             } else {
               const { data: newBooking, error: createError } = await server
                 .from('bookings')
@@ -612,6 +679,18 @@ serve(async (req) => {
               if (createError) {
                 // Si c'est une erreur de contrainte unique (doublon), récupérer la réservation existante
                 if (createError.code === '23505' || createError.message?.includes('unique') || createError.message?.includes('duplicate')) {
+                  if (createError.message?.includes('idx_bookings_unique_independent_stay')) {
+                    return new Response(
+                      JSON.stringify({
+                        success: false,
+                        error: 'duplicate_independent_stay',
+                        message:
+                          'Une réservation avec ces dates existe déjà pour cette propriété.',
+                        details: createError,
+                      }),
+                      { status: 409, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } },
+                    );
+                  }
                   console.log('⚠️ Contrainte unique violée, récupération de la réservation existante...');
                   const { data: existingBookingAfterError } = await server
                     .from('bookings')
@@ -621,10 +700,10 @@ serve(async (req) => {
                     .order('updated_at', { ascending: false })
                     .limit(1)
                     .maybeSingle();
-                  
+
                   if (existingBookingAfterError) {
-                    bookingId = existingBookingAfterError.id;
-                    console.log('✅ Réservation existante récupérée:', bookingId);
+                    resolvedIcsBookingId = existingBookingAfterError.id;
+                    console.log('✅ Réservation existante récupérée:', resolvedIcsBookingId);
                   } else {
                     throw new Error(`Erreur création réservation: ${createError.message}`);
                   }
@@ -633,12 +712,13 @@ serve(async (req) => {
                   throw new Error(`Erreur création réservation: ${createError.message}`);
                 }
               } else {
-                bookingId = newBooking.id;
+                resolvedIcsBookingId = newBooking.id;
               }
             }
           }
-          
-          console.log('✅ Réservation ICS créée/mise à jour avec ID:', bookingId);
+          }
+
+          console.log('✅ Réservation ICS créée/mise à jour avec ID:', resolvedIcsBookingId);
           
           // ✅ CORRIGÉ : Stocker les dates normalisées (YYYY-MM-DD) dans les métadonnées
           // Cela évite les problèmes de décalage lors de la récupération dans VerifyToken.tsx
@@ -649,13 +729,13 @@ serve(async (req) => {
             endDate: checkOutDate, // ✅ CORRIGÉ : Utiliser la date normalisée
             guestName: reservationData.guestName,
             numberOfGuests: reservationData.numberOfGuests,
-            bookingId: bookingId // ✅ NOUVEAU : ID de la réservation créée
+            bookingId: resolvedIcsBookingId // ✅ ID de la réservation créée / mise à jour
           };
           
           console.log('✅ Métadonnées de réservation normalisées:', {
             startDate: checkInDate,
             endDate: checkOutDate,
-            bookingId
+            bookingId: resolvedIcsBookingId
           });
           
           console.log('✅ Données de réservation et ID stockés dans le token');

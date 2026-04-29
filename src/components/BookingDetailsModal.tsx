@@ -416,17 +416,22 @@ export const BookingDetailsModal = ({
       const endDate = booking.checkOutDate
         ? (typeof booking.checkOutDate === 'string' ? parseLocalDate(booking.checkOutDate) : new Date(booking.checkOutDate))
         : new Date();
-      const url = await generatePropertyVerificationUrl(propertyId, booking.bookingReference || booking.id, {
+      const url = await generatePropertyVerificationUrl(
+        propertyId,
+        booking.bookingReference || undefined,
+        {
         userEvent: userEvent,
         skipCopy: true,
         linkType: 'ics_direct',
+        bookingId: booking.id,
         reservationData: {
           airbnbCode: booking.bookingReference || 'INDEPENDENT_BOOKING',
           startDate,
           endDate,
           numberOfGuests: booking.numberOfGuests
         }
-      });
+        },
+      );
       if (url) {
         if (isMobile) {
           setShareModalUrl(url);

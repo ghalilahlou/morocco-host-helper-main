@@ -129,6 +129,28 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     return months;
   }, [currentDate]);
 
+  /** Semaines couvrant la plage scrollée, sans doublon : une semaine = le mois civil du **lundi** (ISO, semaine commence lundi). */
+  const weeksByMonthKey = useMemo(() => {
+    if (monthsToShow.length === 0) return new Map<string, Date[][]>();
+    const first = monthsToShow[0];
+    const last = monthsToShow[monthsToShow.length - 1];
+    const rangeStart = startOfWeek(startOfMonth(first), { weekStartsOn: 1 });
+    const rangeEnd = endOfWeek(endOfMonth(last), { weekStartsOn: 1 });
+    const allDays = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
+    const allWeeks: Date[][] = [];
+    for (let i = 0; i < allDays.length; i += 7) {
+      allWeeks.push(allDays.slice(i, i + 7));
+    }
+    const map = new Map<string, Date[][]>();
+    for (const week of allWeeks) {
+      const monday = week[0];
+      const key = `${monday.getFullYear()}-${monday.getMonth()}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(week);
+    }
+    return map;
+  }, [monthsToShow]);
+
   useEffect(() => {
     const targetMonth = `${currentDate.getFullYear()}-${currentDate.getMonth()}`;
     if (lastScrolledMonth.current === targetMonth) return;
@@ -226,15 +248,6 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   }, [onDateChange]);
 
   /* ---------- Week helpers ---------- */
-  const getWeeksForMonth = (monthDate: Date) => {
-    const days = eachDayOfInterval({
-      start: startOfWeek(startOfMonth(monthDate), { weekStartsOn: 1 }),
-      end: endOfWeek(endOfMonth(monthDate), { weekStartsOn: 1 }),
-    });
-    const weeks: Date[][] = [];
-    for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
-    return weeks;
-  };
 
   const getBookingsForWeek = (week: Date[]) => {
     const ws = toLocalDay(week[0]);
@@ -269,8 +282,15 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
   const BAR_GAP = 6;
 
   /* ---------- Month sub-component ---------- */
-  const MonthView = ({ monthDate, dataMonth }: { monthDate: Date; dataMonth?: string }) => {
-    const weeks = getWeeksForMonth(monthDate);
+  const MonthView = ({
+    monthDate,
+    dataMonth,
+    weeks,
+  }: {
+    monthDate: Date;
+    dataMonth?: string;
+    weeks: Date[][];
+  }) => {
     const monthName = format(monthDate, 'MMMM', { locale: fr });
     const year = format(monthDate, 'yyyy');
     const thisYear = new Date().getFullYear();
@@ -487,13 +507,18 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
         className="h-[calc(100vh-220px)] overflow-y-auto overflow-x-hidden px-3 scroll-auto overscroll-y-contain touch-pan-y [overflow-anchor:none]"
         onScroll={handleScroll}
       >
-        {monthsToShow.map((month) => (
-          <MonthView
-            key={month.getTime()}
-            monthDate={month}
-            dataMonth={`${month.getFullYear()}-${month.getMonth()}`}
-          />
-        ))}
+        {monthsToShow.map((month) => {
+          const mk = `${month.getFullYear()}-${month.getMonth()}`;
+          const weeksForMonth = weeksByMonthKey.get(mk) ?? [];
+          return (
+            <MonthView
+              key={month.getTime()}
+              monthDate={month}
+              dataMonth={mk}
+              weeks={weeksForMonth}
+            />
+          );
+        })}
         <div className="h-28" />
       </div>
 
