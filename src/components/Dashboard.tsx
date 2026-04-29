@@ -9,7 +9,9 @@ import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { debug } from '@/lib/logger';
 
-import { useT } from '@/i18n/GuestLocaleProvider';
+import { useGuestLocale, useT } from '@/i18n/GuestLocaleProvider';
+import { bookingOverlapsYearMonth, buildCardMonthFilterValues } from '@/utils/bookingMonthFilter';
+import { CardMonthFilterPicker } from '@/components/CardMonthFilterPicker';
 
 // ✅ OPTIMISATION : Lazy loading pour CalendarView (composant lourd)
 const CalendarView = lazy(() => import('./CalendarView'));
@@ -37,6 +39,7 @@ export const Dashboard = memo(({
   bookingsLoading: bookingsLoadingProp
 }: DashboardProps) => {
   const t = useT();
+  const { locale } = useGuestLocale();
   
   // When Dashboard is used inside PropertyDetail, bookings/callbacks come as props.
   // Only fall back to useBookings when used standalone (no props).
@@ -48,7 +51,17 @@ export const Dashboard = memo(({
   const bookingsLoading = bookingsLoadingProp ?? fallback.isLoading;
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('calendar');
+
+  const intlLocale = locale === 'fr' ? 'fr-FR' : locale === 'es' ? 'es-ES' : 'en-US';
+  const monthFilterValues = useMemo(() => buildCardMonthFilterValues(bookings), [bookings]);
+
+  useEffect(() => {
+    if (monthFilter !== 'all' && !monthFilterValues.includes(monthFilter)) {
+      setMonthFilter('all');
+    }
+  }, [monthFilter, monthFilterValues]);
   
   // Bookings are already loaded by useBookings in the parent (PropertyDetail).
   // No need to trigger a redundant refresh here.
@@ -63,10 +76,14 @@ export const Dashboard = memo(({
       const hasDocs = booking.documentsGenerated?.contract && booking.documentsGenerated?.policeForm;
       const effectiveStatus = hasDocs ? 'completed' : 'pending';
       const matchesStatus = statusFilter === 'all' || effectiveStatus === statusFilter;
+
+      const matchesMonth =
+        monthFilter === 'all' ||
+        bookingOverlapsYearMonth(booking.checkInDate, booking.checkOutDate, monthFilter);
       
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesStatus && matchesMonth;
     });
-  }, [bookings, searchTerm, statusFilter]);
+  }, [bookings, searchTerm, statusFilter, monthFilter]);
 
   // Écouter l'événement de création de réservation depuis CalendarHeader
   useEffect(() => {
@@ -115,7 +132,7 @@ export const Dashboard = memo(({
 
       {/* Filters - Only show in cards view */}
       {viewMode === 'cards' && (
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col gap-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
@@ -125,18 +142,30 @@ export const Dashboard = memo(({
               className="pl-10"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-48">
-              <Filter className="w-4 h-4 mr-2" />
-              <SelectValue placeholder={t('dashboard.filterByStatus')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t('dashboard.allStatuses')}</SelectItem>
-              <SelectItem value="pending">{t('dashboard.pending')}</SelectItem>
-              <SelectItem value="completed">{t('dashboard.completedPlural')}</SelectItem>
-              <SelectItem value="archived">{t('dashboard.archived')}</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-48">
+                <Filter className="w-4 h-4 mr-2" />
+                <SelectValue placeholder={t('dashboard.filterByStatus')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('dashboard.allStatuses')}</SelectItem>
+                <SelectItem value="pending">{t('dashboard.pending')}</SelectItem>
+                <SelectItem value="completed">{t('dashboard.completedPlural')}</SelectItem>
+                <SelectItem value="archived">{t('dashboard.archived')}</SelectItem>
+              </SelectContent>
+            </Select>
+            <CardMonthFilterPicker
+              value={monthFilter}
+              onValueChange={setMonthFilter}
+              monthKeys={monthFilterValues}
+              intlLocale={intlLocale}
+              allMonthsLabel={t('dashboard.allMonths')}
+              panelTitle={t('dashboard.filterByMonth')}
+              panelHint={t('dashboard.monthFilterPanelHint')}
+              triggerClassName="sm:min-w-[220px] sm:flex-1 sm:max-w-xs"
+            />
+          </div>
         </div>
       )}
 

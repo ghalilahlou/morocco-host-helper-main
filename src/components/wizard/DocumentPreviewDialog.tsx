@@ -4,6 +4,7 @@ import { Download, X, Loader2, AlertCircle } from 'lucide-react';
 import { BookingFormData } from '../BookingWizard';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSubmitGuestInfoUnified } from '@/lib/invokeSubmitGuestInfoUnified';
 import { useToast } from '@/hooks/use-toast';
 
 interface DocumentPreviewDialogProps {
@@ -86,7 +87,7 @@ export const DocumentPreviewDialog = ({
 
         console.log('📤 [PREVIEW] Appel Edge Function avec données:', JSON.stringify(previewData, null, 2));
 
-        const { data: docData, error: docError } = await supabase.functions.invoke('submit-guest-info-unified', {
+        const { data: docData, error: docError } = await invokeSubmitGuestInfoUnified({
           body: previewData
         });
 

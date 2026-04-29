@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSubmitGuestInfoUnified } from '@/lib/invokeSubmitGuestInfoUnified';
 import { FRONT_CALENDAR_ICS_SYNC_ENABLED } from '@/config/frontCalendarSync';
 import { Booking } from '@/types/booking';
 
@@ -147,7 +148,7 @@ export class UnifiedDocumentService {
 
       // ✅ CORRECTION : Utiliser la fonction unifiée pour tous les types de documents
       try {
-        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+        const { data, error } = await invokeSubmitGuestInfoUnified({
           body: {
             bookingId: bookingId,
             action: 'generate_all_documents',

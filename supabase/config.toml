@@ -33,6 +33,7 @@ verify_jwt = false
 [functions.sync-documents]
 verify_jwt = false
 
+# Guest flows use body token; CI deploy must keep this file so verify_jwt is applied (see deploy-edge-functions workflow).
 [functions.submit-guest-info-unified]
 verify_jwt = false
 

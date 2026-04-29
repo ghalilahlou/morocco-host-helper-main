@@ -72,7 +72,8 @@ export const enrichBookingsWithGuestSubmissions = async (bookings: Booking[]): P
     } else {
       // ✅ OPTIMISATION TIMEOUT : Augmenter le délai à 15s pour les requêtes complexes
       const TIMEOUT_MS = 15000; // ✅ AUGMENTÉ : 15 secondes pour permettre aux requêtes complexes de se terminer
-      const MAX_BOOKING_IDS = 100; // ✅ AUGMENTÉ : Permettre plus de booking IDs avec le timeout plus long
+      // Aligné sur useBookings (jusqu’à 200+ réservations par bien) : éviter d’enrichir seulement les 100 premières.
+      const MAX_BOOKING_IDS = 250;
       
       // ✅ OPTIMISATION : Limiter le nombre de booking IDs si trop nombreux
       const limitedBookingIds = bookingIds.slice(0, MAX_BOOKING_IDS);

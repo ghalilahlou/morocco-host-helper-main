@@ -60,6 +60,26 @@ function bookingStayYmdFromDb(value: unknown, fallback: string): string {
   return formatLocalDate(d);
 }
 
+/**
+ * Même bien + mêmes dates + même référence = une seule réservation affichée (ex. double soumission wizard).
+ * On conserve la ligne la plus récente (updated_at / created_at) pour garder les données les plus à jour.
+ */
+function dedupeBookingsByStayAndReference(bookings: Booking[]): Booking[] {
+  if (bookings.length <= 1) return bookings;
+  const rowTime = (b: Booking) =>
+    new Date(b.updated_at || b.createdAt || b.created_at || 0).getTime();
+  const refKey = (b: Booking) => {
+    const ref = (b.bookingReference || '').trim().toUpperCase();
+    return `${b.propertyId}|${b.checkInDate}|${b.checkOutDate}|${ref}`;
+  };
+  const sorted = [...bookings].sort((a, b) => rowTime(a) - rowTime(b));
+  const byKey = new Map<string, Booking>();
+  for (const b of sorted) {
+    byKey.set(refKey(b), b);
+  }
+  return Array.from(byKey.values());
+}
+
 function transformBooking(raw: any): Booking | null {
   if (!raw.property_id) {
     warn('Booking sans property_id exclu', { bookingId: raw.id });
@@ -323,7 +343,16 @@ export const useBookings = (options?: UseBookingsOptions) => {
       // Deduplicate by id
       const byId = new Map<string, Booking>();
       transformed.forEach(b => { if (!byId.has(b.id)) byId.set(b.id, b); });
-      const uniqueBookings = Array.from(byId.values());
+      const uniqueById = Array.from(byId.values());
+      const uniqueBookings = dedupeBookingsByStayAndReference(uniqueById);
+
+      if (uniqueBookings.length < uniqueById.length) {
+        warn('Réservations en double (même bien, dates et référence) : affichage fusionné', {
+          rowsServeur: uniqueById.length,
+          apresFusion: uniqueBookings.length,
+          propertyId: propertyId ?? 'toutes',
+        });
+      }
 
       if (isStale()) return;
 

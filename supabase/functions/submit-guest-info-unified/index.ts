@@ -4170,7 +4170,25 @@ serve(async (req) => {
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    
+    const msg = error instanceof Error ? error.message : String(error);
+    // Lien invité (property_verification_tokens) : distinguer des 500 génériques et éviter la confusion avec le 401 JWT passerelle
+    const isGuestVerificationTokenFailure =
+      msg.includes('Token invalide') ||
+      msg.includes('Token non trouvé') ||
+      /token.*expir/i.test(msg);
+
+    if (isGuestVerificationTokenFailure) {
+      log('warn', 'Jeton de vérification invité rejeté', { message: msg });
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: msg,
+          code: 'ERR_GUEST_TOKEN',
+        }),
+        { status: 403, headers: corsHeaders }
+      );
+    }
+
     log('error', '💥 ERREUR FATALE', {
       error: error instanceof Error ? error.message : 'Erreur inconnue',
       stack: error instanceof Error ? error.stack : undefined,

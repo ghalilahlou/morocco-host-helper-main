@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSubmitGuestInfoUnified } from '@/lib/invokeSubmitGuestInfoUnified';
 
 // Types pour les réponses API
 export interface ApiResponse<T = any> {
@@ -279,7 +280,7 @@ export class ApiService {
     try {
       console.log('✍️ ApiService.saveHostSignature called');
 
-      const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+      const { data, error } = await invokeSubmitGuestInfoUnified({
         body: {
           bookingId: params.bookingId,
           action: 'save_host_signature',
@@ -339,7 +340,7 @@ export class ApiService {
       console.log('📄 ApiService.generateDocuments called for booking:', bookingId);
 
       // ✅ CORRECTION : Utiliser la fonction unifiée pour tous les documents
-      const { data: unifiedData, error: unifiedError } = await supabase.functions.invoke('submit-guest-info-unified', {
+      const { data: unifiedData, error: unifiedError } = await invokeSubmitGuestInfoUnified({
         body: {
           bookingId: bookingId,
           action: 'generate_all_documents'

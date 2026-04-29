@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSubmitGuestInfoUnified } from '@/lib/invokeSubmitGuestInfoUnified';
 import { getContractPdfUrl } from '@/services/contractService';
 import { ApiService } from '@/services/apiService';
 import { useT, useGuestLocale } from '@/i18n/GuestLocaleProvider';
@@ -906,7 +907,7 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
       let generatePayload: { data: unknown; error: unknown };
       try {
         generatePayload = await Promise.race([
-          supabase.functions.invoke('submit-guest-info-unified', {
+          invokeSubmitGuestInfoUnified({
             body: {
               bookingId,
               action: 'generate_contract_only',

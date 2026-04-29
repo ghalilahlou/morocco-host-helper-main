@@ -12,7 +12,9 @@ import { Booking } from '@/types/booking';
 import { EnrichedBooking } from '@/services/guestSubmissionService';
 import { motion, AnimatePresence } from 'framer-motion';
 import { hasAllRequiredDocumentsForCalendar } from '@/utils/bookingDocuments';
-import { useT } from '@/i18n/GuestLocaleProvider';
+import { useGuestLocale, useT } from '@/i18n/GuestLocaleProvider';
+import { bookingOverlapsYearMonth, buildCardMonthFilterValues } from '@/utils/bookingMonthFilter';
+import { CardMonthFilterPicker } from '@/components/CardMonthFilterPicker';
 
 interface MobileDashboardProps {
   onNewBooking: () => void;
@@ -32,6 +34,7 @@ export const MobileDashboard = memo(({
   propertyId
 }: MobileDashboardProps) => {
   const t = useT();
+  const { locale } = useGuestLocale();
   // ✅ PHASE 1 : Passer propertyId pour filtrer les réservations
   const { bookings: allBookings, deleteBooking, refreshBookings } = useBookings({ propertyId });
   
@@ -41,8 +44,18 @@ export const MobileDashboard = memo(({
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'calendar'>('cards');
   const [currentPage, setCurrentPage] = useState('dashboard');
+
+  const intlLocale = locale === 'fr' ? 'fr-FR' : locale === 'es' ? 'es-ES' : 'en-US';
+  const monthFilterValues = useMemo(() => buildCardMonthFilterValues(bookings), [bookings]);
+
+  useEffect(() => {
+    if (monthFilter !== 'all' && !monthFilterValues.includes(monthFilter)) {
+      setMonthFilter('all');
+    }
+  }, [monthFilter, monthFilterValues]);
 
   useEffect(() => {
     handleRefreshBookings();
@@ -65,10 +78,14 @@ export const MobileDashboard = memo(({
       
       // ✅ FILTRE 3 : Filtre par statut
       const matchesStatus = statusFilter === 'all' || booking.status === statusFilter;
+
+      const matchesMonth =
+        monthFilter === 'all' ||
+        bookingOverlapsYearMonth(booking.checkInDate, booking.checkOutDate, monthFilter);
       
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesStatus && matchesMonth;
     });
-  }, [bookings, searchTerm, statusFilter, viewMode]);
+  }, [bookings, searchTerm, statusFilter, monthFilter, viewMode]);
 
   const stats = useMemo(() => ({
     total: bookings.length,
@@ -167,6 +184,17 @@ export const MobileDashboard = memo(({
                 <SelectItem value="archived">{t('mobile.archivedStatus')}</SelectItem>
               </SelectContent>
             </Select>
+
+            <CardMonthFilterPicker
+              value={monthFilter}
+              onValueChange={setMonthFilter}
+              monthKeys={monthFilterValues}
+              intlLocale={intlLocale}
+              allMonthsLabel={t('mobile.allMonths')}
+              panelTitle={t('mobile.filterByMonth')}
+              panelHint={t('mobile.monthFilterPanelHint')}
+              size="comfortable"
+            />
           </motion.div>
         )}
 

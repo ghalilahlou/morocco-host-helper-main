@@ -17,6 +17,8 @@ import { ShareModal } from '@/components/ShareModal';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { parseLocalDate } from '@/utils/dateUtils';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { supabase } from '@/integrations/supabase/client';
+import { invokeSubmitGuestInfoUnified } from '@/lib/invokeSubmitGuestInfoUnified';
 
 interface BookingDetailsModalProps {
   booking: EnrichedBooking;
@@ -291,7 +293,7 @@ export const BookingDetailsModal = ({
       const {
         data,
         error
-      } = await supabase.functions.invoke('submit-guest-info-unified', {
+      } = await invokeSubmitGuestInfoUnified({
         body: {
           bookingId: booking.id,
           action: 'generate_contract_only',

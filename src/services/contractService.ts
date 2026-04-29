@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSubmitGuestInfoUnified } from '@/lib/invokeSubmitGuestInfoUnified';
 import { Booking } from '@/types/booking';
 
 /**
@@ -57,7 +58,7 @@ export class ContractService {
           hasSignature: !!signedContract.signature_data
         });
         
-        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+        const { data, error } = await invokeSubmitGuestInfoUnified({
           body: {
             bookingId: booking.id,
             action: 'generate_contract_only',
@@ -113,7 +114,7 @@ export class ContractService {
           documentType: 'contract'
         });
         
-        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+        const { data, error } = await invokeSubmitGuestInfoUnified({
           body: {
             bookingId: booking.id,
             action: 'generate_contract_only',
@@ -195,7 +196,7 @@ export class ContractService {
     try {
       console.log('🔍 ContractService - Downloading signed contract PDF...');
       
-      const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+      const { data, error } = await invokeSubmitGuestInfoUnified({
         body: {
           bookingId: booking.id,
           action: 'generate_contract_only',
@@ -264,7 +265,7 @@ export async function getContractPdfUrl(params: {
     throw new Error('Missing bookingId or bookingLike');
   }
 
-  const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+  const { data, error } = await invokeSubmitGuestInfoUnified({
     body: {
       ...body,
       action: 'generate_contract_only',

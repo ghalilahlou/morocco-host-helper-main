@@ -21,6 +21,7 @@ import { Booking, Guest, UploadedDocument } from '@/types/booking';
 import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSubmitGuestInfoUnified } from '@/lib/invokeSubmitGuestInfoUnified';
 import { v4 as uuidv4 } from 'uuid';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { sanitizeGuestNameForStorage } from '@/utils/bookingDisplay';
@@ -745,7 +746,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               }
             });
             
-            const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+            const { data, error } = await invokeSubmitGuestInfoUnified({
               body: {
                 action: 'host_direct',
                   bookingId: bookingId,
@@ -794,7 +795,7 @@ export const BookingWizard = ({ onClose, editingBooking, propertyId }: BookingWi
               
           // Générer le contrat
           try {
-              const { data: contractData, error: contractError } = await supabase.functions.invoke('submit-guest-info-unified', {
+              const { data: contractData, error: contractError } = await invokeSubmitGuestInfoUnified({
                 body: {
                   action: 'generate_contract_only',
                 bookingId: bookingId

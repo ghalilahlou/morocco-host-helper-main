@@ -6,6 +6,7 @@ on:
     branches: [ main ]
     paths:
       - "supabase/functions/**"
+      - "supabase/config.toml"
       - ".github/workflows/deploy-edge-functions.yml"
 
 jobs:
@@ -30,13 +31,7 @@ jobs:
             exit 1
           fi
 
-      # Remove any config that could confuse the CLI
-      - name: Remove local supabase config if present
-        run: |
-          if [ -f supabase/config.toml ]; then
-            echo "Removing supabase/config.toml to avoid parse errors"
-            rm -f supabase/config.toml
-          fi
+      # Keep supabase/config.toml so per-function verify_jwt matches the repo (Dashboard can drift).
 
       - name: Supabase login
         run: supabase login --token "${{ secrets.SUPABASE_ACCESS_TOKEN }}"

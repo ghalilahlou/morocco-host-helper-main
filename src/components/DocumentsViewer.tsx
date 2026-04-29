@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeSubmitGuestInfoUnified } from '@/lib/invokeSubmitGuestInfoUnified';
 import { Booking } from '@/types/booking';
 import { useToast } from '@/hooks/use-toast';
 import { DocumentStorageService } from '@/services/documentStorageService';
@@ -816,7 +817,7 @@ export const DocumentsViewer = ({
                     onClick={async () => {
                       try {
                         console.log('🧹 Nettoyage des doublons de contrats...');
-                        const { data, error } = await supabase.functions.invoke('submit-guest-info-unified', {
+                        const { data, error } = await invokeSubmitGuestInfoUnified({
                           body: {
                             action: 'clean_duplicate_contracts',
                             bookingId: booking.id
