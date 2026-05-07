@@ -1,7 +1,19 @@
-import { Calendar, Users, FileCheck, Download, Edit, Trash2, Clock, FileText, UserCheck, AlertTriangle } from 'lucide-react';
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import {
+  Calendar,
+  Users,
+  Download,
+  Edit,
+  Trash2,
+  Clock,
+  FileText,
+  AlertTriangle,
+  GripVertical,
+  ArrowRight,
+  MoreHorizontal,
+  File,
+  Archive,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Booking } from '@/types/booking';
 import { UnifiedDocumentService } from '@/services/unifiedDocumentService';
 import { ContractService } from '@/services/contractService';
@@ -10,12 +22,17 @@ import { useBookings } from '@/hooks/useBookings';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useSubscription } from '@/hooks/useSubscription';
-
 import { DocumentsViewer } from './DocumentsViewer';
-import { TestDocumentUpload } from './TestDocumentUpload';
-import { useState, useEffect, memo, useCallback } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { getBookingDisplayTitle, isAirbnbCode } from '@/utils/bookingDisplay';
+import { useT } from '@/i18n/GuestLocaleProvider';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface BookingCardProps {
   booking: Booking;
@@ -24,33 +41,32 @@ interface BookingCardProps {
   onGenerateDocuments: (booking: Booking) => void;
 }
 
-// ✅ OPTIMISATION : Mémoriser le composant pour éviter les re-renders inutiles
+const TEAL = '#55BA9F';
+
 export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocuments }: BookingCardProps) => {
   const { updateBooking } = useBookings();
   const { toast } = useToast();
   const { isOverLimit } = useSubscription();
-  
-  // Documents status check
+  const t = useT();
+  const { user } = useAuth();
+
   const hasPoliceForm = booking.documentsGenerated?.policeForm === true;
   const hasContract = booking.documentsGenerated?.contract === true;
-  const { user } = useAuth();
   const [showDocuments, setShowDocuments] = useState<'id-documents' | 'contract' | 'police-form' | null>(null);
-  const [signedContract, setSignedContract] = useState<any>(null);
   const [verificationCounts, setVerificationCounts] = useState({
     guestSubmissions: 0,
     uploadedDocuments: 0,
-    hasSignature: false
+    hasSignature: false,
   });
   const [hasAnyDocuments, setHasAnyDocuments] = useState(false);
   const [signerName, setSignerName] = useState<string | null>(null);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('fr-FR', {
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString('fr-FR', {
       day: '2-digit',
       month: '2-digit',
-      year: 'numeric'
+      year: 'numeric',
     });
-  };
 
   const calculateNights = () => {
     const checkIn = new Date(booking.checkInDate);
@@ -58,30 +74,23 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
     return Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
   };
 
-  const getStatusBadge = () => {
-    if (hasAnyDocuments && booking.status === 'completed') {
-      return <Badge variant="default" className="bg-emerald-500 text-white">Terminé</Badge>;
-    }
-    return <Badge variant="secondary" className="bg-[#222] text-white">En attente</Badge>;
-  };
+  const nights = calculateNights();
+  const isCompletedWithoutDocuments = booking.status === 'completed' && !hasAnyDocuments;
+  const totalDocs = verificationCounts.guestSubmissions + verificationCounts.uploadedDocuments;
 
-  const canGenerateDocuments = booking.guests.length > 0;
-
-  // Load verification counts and check for documents
   useEffect(() => {
-    const loadVerificationCounts = async () => {
+    const load = async () => {
       try {
         const summary = await BookingVerificationService.getVerificationSummary(booking.id);
         if (summary) {
           setVerificationCounts({
             guestSubmissions: summary.guestSubmissionsCount,
             uploadedDocuments: summary.uploadedDocumentsCount,
-            hasSignature: summary.hasSignature
+            hasSignature: summary.hasSignature,
           });
         }
-        
-        // ✅ NOUVEAU : Vérifier si des documents existent dans toutes les tables
-        const [uploadedDocsResult, generatedDocsResult] = await Promise.allSettled([
+
+        const [uploadedRes, generatedRes] = await Promise.allSettled([
           supabase
             .from('uploaded_documents')
             .select('id')
@@ -92,35 +101,31 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
             .select('id')
             .eq('booking_id', booking.id)
             .in('document_type', ['contract', 'police', 'identity'])
-            .then(result => result)
-            .catch(() => ({ data: [], error: null }))
+            .then((r) => r)
+            .catch(() => ({ data: [], error: null })),
         ]);
-        
-        const uploadedDocs = uploadedDocsResult.status === 'fulfilled' && !uploadedDocsResult.value.error 
-          ? uploadedDocsResult.value.data || [] 
-          : [];
-        const generatedDocs = generatedDocsResult.status === 'fulfilled' && !generatedDocsResult.value.error 
-          ? generatedDocsResult.value.data || [] 
-          : [];
-        
-        // ✅ Vérifier si des documents existent (dans documents_generated, uploaded_documents, ou generated_documents)
-        const hasDocsInGenerated = booking.documentsGenerated && (
-          booking.documentsGenerated.contract === true ||
-          booking.documentsGenerated.policeForm === true ||
-          booking.documentsGenerated.police === true ||
-          (booking.documentsGenerated as any)?.contractUrl ||
-          (booking.documentsGenerated as any)?.policeUrl
-        );
-        
+
+        const uploaded =
+          uploadedRes.status === 'fulfilled' && !uploadedRes.value.error ? uploadedRes.value.data || [] : [];
+        const generated =
+          generatedRes.status === 'fulfilled' && !generatedRes.value.error ? generatedRes.value.data || [] : [];
+
+        const hasDocsGenerated =
+          booking.documentsGenerated &&
+          (booking.documentsGenerated.contract === true ||
+            booking.documentsGenerated.policeForm === true ||
+            booking.documentsGenerated.police === true ||
+            (booking.documentsGenerated as any)?.contractUrl ||
+            (booking.documentsGenerated as any)?.policeUrl);
+
         setHasAnyDocuments(
-          hasDocsInGenerated || 
-          uploadedDocs.length > 0 || 
-          generatedDocs.length > 0 ||
-          (summary?.guestSubmissionsCount ?? 0) > 0 ||
-          (summary?.uploadedDocumentsCount ?? 0) > 0
+          hasDocsGenerated ||
+            uploaded.length > 0 ||
+            generated.length > 0 ||
+            (summary?.guestSubmissionsCount ?? 0) > 0 ||
+            (summary?.uploadedDocumentsCount ?? 0) > 0,
         );
 
-        // Même logique que useBookings / calendrier : code ICS ou placeholder → nom signataire
         const gn = booking.guest_name?.trim() || '';
         const needsName =
           !gn ||
@@ -135,290 +140,263 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          if (sig?.signer_name) {
-            setSignerName(sig.signer_name);
-          }
+          if (sig?.signer_name) setSignerName(sig.signer_name);
         }
-      } catch (error) {
-        console.error('❌ Error loading verification counts:', error);
-      }
+      } catch {}
     };
-    
-    loadVerificationCounts();
+    load();
   }, [booking.id, booking.documentsGenerated, booking.guest_name]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('contract_signatures')
+      .select('booking_id')
+      .eq('booking_id', booking.id)
+      .then(({ data }) => {
+        /* just pre-fetching */
+      });
+  }, [booking.id, user?.id]);
 
   const handleDownloadPolice = async () => {
     try {
       await UnifiedDocumentService.downloadPoliceFormsForAllGuests(booking);
-      
-      // Mark police forms as generated
       updateBooking(booking.id, {
-        documentsGenerated: {
-          ...booking.documentsGenerated,
-          policeForm: true
-        }
+        documentsGenerated: { ...booking.documentsGenerated, policeForm: true },
       });
-
-      toast({
-        title: "Fiches police générées",
-        description: `${booking.guests.length} fiche(s) police téléchargée(s) et sauvegardée(s) (une par client)`,
-      });
-    } catch (error) {
-      console.error('Error generating police forms:', error);
-      toast({
-        title: "Erreur",
-        description: "Erreur lors de la génération des fiches police",
-        variant: "destructive",
-      });
+      toast({ title: 'Fiches police générées', description: `${booking.guests.length} fiche(s) téléchargée(s)` });
+    } catch {
+      toast({ title: 'Erreur', description: 'Erreur lors de la génération', variant: 'destructive' });
     }
   };
-
-  useEffect(() => {
-    const checkForSignedContract = async () => {
-      if (!user?.id) return;
-      
-      try {
-        const { data, error } = await supabase
-          .from('contract_signatures')
-          .select('booking_id')
-          .eq('booking_id', booking.id);
-        
-        if (error) {
-          console.error('Error fetching signed contracts:', error);
-          return;
-        }
-        
-        // Find signed contract for this booking
-        const contract = data ? (data as any[]).find((c: any) => c.booking_id === booking.id) : null;
-        setSignedContract(contract);
-      } catch (error) {
-        console.error('Error checking for signed contract:', error);
-      }
-    };
-    
-    checkForSignedContract();
-  }, [booking.id, user?.id]);
 
   const handleDownloadContract = async () => {
-    
     const result = await ContractService.generateAndDownloadContract(booking);
-    
     if (result.success) {
-      // Mark contract as generated if it's a new contract
-      const signedContract = await ContractService.getSignedContract(booking.id);
-      if (!signedContract) {
+      const sc = await ContractService.getSignedContract(booking.id);
+      if (!sc) {
         updateBooking(booking.id, {
-          documentsGenerated: {
-            ...booking.documentsGenerated,
-            contract: true
-          }
+          documentsGenerated: { ...booking.documentsGenerated, contract: true },
         });
       }
-
-      toast({
-        title: result.success && !signedContract ? "Contrat généré" : "Contrat signé téléchargé",
-        description: result.message,
-      });
+      toast({ title: sc ? 'Contrat signé téléchargé' : 'Contrat généré', description: result.message });
     } else {
-      toast({
-        title: "Erreur",
-        description: result.message,
-        variant: result.variant,
-      });
+      toast({ title: 'Erreur', description: result.message, variant: result.variant });
     }
   };
 
+  const title = getBookingDisplayTitle(booking, { signerNameFallback: signerName });
 
-  // ✅ NOUVEAU : Détecter si la réservation est completed mais sans documents
-  const isCompletedWithoutDocuments = booking.status === 'completed' && !hasAnyDocuments;
-  
+  // Guest subtitle (e.g. "VIACHESLAV V. KLYUCHE...")
+  const guestSubtitle = (() => {
+    if (booking.guests.length > 0) {
+      const first = booking.guests[0].fullName?.toUpperCase() || '';
+      return first.length > 22 ? first.slice(0, 22) + '...' : first;
+    }
+    return null;
+  })();
+
   return (
-    <Card className={`rounded-2xl border shadow-[var(--shadow-soft)] hover:shadow-[var(--shadow-medium)] transition-all duration-300 group ${
-      isCompletedWithoutDocuments ? 'border-red-500 border-2' : ''
-    }`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-              <div className="flex items-center space-x-2">
-                <h3 className="font-semibold text-foreground">
-                  {getBookingDisplayTitle(booking, { signerNameFallback: signerName })}
-                </h3>
-                {getStatusBadge()}
-                {/* ✅ NOUVEAU : Indicateur d'alerte si completed sans documents */}
-                {isCompletedWithoutDocuments && (
-                  <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" title="Réservation terminée sans documents - Dossier administratif vide" />
-                )}
-              </div>
-          </div>
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onEdit(booking)}
-              className="h-8 w-8"
-            >
-              <Edit className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onDelete(booking.id)}
-              className="h-8 w-8 text-destructive hover:text-destructive"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-          <div className="flex items-center space-x-2">
-            <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <div>
-              <p className="font-medium">Arrivée</p>
-              <p className="text-muted-foreground">{formatDate(booking.checkInDate)}</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Calendar className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <div>
-              <p className="font-medium">Départ</p>
-              <p className="text-muted-foreground">{formatDate(booking.checkOutDate)}</p>
-            </div>
-          </div>
+    <>
+      <div
+        className={`bg-white rounded-2xl border flex items-center gap-0 overflow-hidden transition-shadow duration-200 hover:shadow-md ${
+          isCompletedWithoutDocuments ? 'border-red-400 border-2' : 'border-gray-200'
+        }`}
+      >
+        {/* ── Drag handle ── */}
+        <div className="hidden md:flex items-center justify-center px-3 self-stretch text-gray-300 cursor-grab hover:text-gray-400 border-r border-gray-100">
+          <GripVertical className="w-4 h-4" />
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
-          <div className="flex items-center space-x-2">
-            <Users className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-medium">
-              {booking.guests.length > 0 && booking.guests.length < booking.numberOfGuests
-                ? `${booking.guests.length}/${booking.numberOfGuests} client(s)`
-                : `${booking.numberOfGuests} client(s)`}
-            </span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Clock className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">{calculateNights()} nuit(s)</span>
-          </div>
-        </div>
+        {/* ── Main content ── */}
+        <div className="flex flex-col md:flex-row md:items-center flex-1 gap-4 px-4 py-4">
 
-        {booking.guests.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Clients enregistrés:</p>
-            <div className="space-y-1">
-              {booking.guests.map((guest, index) => (
-                <div key={guest.id ?? index} className="text-sm text-muted-foreground bg-muted/50 px-2 py-1 rounded">
-                  {guest.fullName} ({guest.nationality})
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-          <div className="flex items-center space-x-1">
-            <FileCheck className={`w-3 h-3 flex-shrink-0 ${booking.documentsGenerated.policeForm ? 'text-success' : 'text-muted-foreground'}`} />
-            <span className={`truncate ${booking.documentsGenerated.policeForm ? 'text-success' : 'text-muted-foreground'}`}>
-              Fiches de police
-            </span>
-          </div>
-          <div className="flex items-center space-x-1">
-            <FileCheck className={`w-3 h-3 flex-shrink-0 ${verificationCounts.hasSignature ? 'text-success' : booking.documentsGenerated.contract ? 'text-warning' : 'text-muted-foreground'}`} />
-            <span className={`truncate ${verificationCounts.hasSignature ? 'text-success' : booking.documentsGenerated.contract ? 'text-warning' : 'text-muted-foreground'}`}>
-              {verificationCounts.hasSignature ? 'Contrat signé' : 'Contrat'}
-            </span>
-          </div>
-        </div>
-
-        {/* Verification Status */}
-        {(verificationCounts.guestSubmissions > 0 || verificationCounts.uploadedDocuments > 0) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-            <div className="flex items-center space-x-1">
-              <UserCheck className={`w-3 h-3 flex-shrink-0 ${verificationCounts.guestSubmissions > 0 ? 'text-success' : 'text-muted-foreground'}`} />
-              <span className={`truncate ${verificationCounts.guestSubmissions > 0 ? 'text-success' : 'text-muted-foreground'}`}>
-                Soumissions: {verificationCounts.guestSubmissions}
-              </span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <FileText className={`w-3 h-3 flex-shrink-0 ${verificationCounts.uploadedDocuments > 0 ? 'text-success' : 'text-muted-foreground'}`} />
-              <span className={`truncate ${verificationCounts.uploadedDocuments > 0 ? 'text-success' : 'text-muted-foreground'}`}>
-                Documents: {verificationCounts.uploadedDocuments}
-              </span>
-            </div>
-          </div>
-        )}
-      </CardContent>
-
-      <CardFooter className="pt-3">
-        <div className="w-full space-y-2">
-          {/* ALWAYS show document buttons - contracts can be generated even without guests */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowDocuments('police-form')}
-              disabled={false}
-              className="text-xs"
-            >
-              <Download className="w-3 h-3 sm:mr-1" />
-              <span className="hidden sm:inline">Police</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowDocuments('contract')}
-              className="text-xs"
-            >
-              <Download className="w-3 h-3 sm:mr-1" />
-              <span className="hidden sm:inline">Contrat</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowDocuments('id-documents')}
-              className="text-xs col-span-2 sm:col-span-1 relative"
-            >
-              <FileText className="w-3 h-3 sm:mr-1" />
-              <span className="hidden sm:inline">ID Docs</span>
-              {(verificationCounts.guestSubmissions > 0 || verificationCounts.uploadedDocuments > 0) && (
-                <Badge variant="secondary" className="ml-1 h-4 text-xs px-1">
-                  {verificationCounts.guestSubmissions + verificationCounts.uploadedDocuments}
-                </Badge>
+          {/* 1. Name + subtitle + badge */}
+          <div className="flex-shrink-0 md:w-48">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-[15px] text-gray-900 leading-tight">{title}</span>
+              {isCompletedWithoutDocuments && (
+                <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
               )}
-            </Button>
+            </div>
+            {guestSubtitle && (
+              <p className="text-[11px] text-gray-400 mt-0.5 font-medium tracking-wide truncate">{guestSubtitle}</p>
+            )}
+            {!guestSubtitle && (
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                — {booking.numberOfGuests} {t('card.client')}{booking.numberOfGuests > 1 ? 's' : ''}
+              </p>
+            )}
           </div>
-          
-          {/* Show add guests button only if no guests */}
-          {!canGenerateDocuments && (
-            <Button
-              variant="professional"
-              size="sm"
-              onClick={() => onGenerateDocuments(booking)}
-              className="w-full"
+
+          {/* 2. Dates + duration + clients */}
+          <div className="flex flex-wrap items-center gap-5 flex-1">
+            {/* ARRIVÉE */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: TEAL }}>
+                {t('card.arrival')}
+              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <Calendar className="w-3.5 h-3.5 flex-shrink-0" style={{ color: TEAL }} />
+                <span className="font-semibold text-sm text-gray-900">{formatDate(booking.checkInDate)}</span>
+              </div>
+            </div>
+
+            <ArrowRight className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+
+            {/* DÉPART */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: TEAL }}>
+                {t('card.departure')}
+              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <Calendar className="w-3.5 h-3.5 flex-shrink-0" style={{ color: TEAL }} />
+                <span className="font-semibold text-sm text-gray-900">{formatDate(booking.checkOutDate)}</span>
+              </div>
+            </div>
+
+            {/* DURÉE */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: TEAL }}>
+                {t('card.duration')}
+              </p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <Clock className="w-3.5 h-3.5 flex-shrink-0" style={{ color: TEAL }} />
+                <span className="text-sm text-gray-700">
+                  {nights} {nights > 1 ? t('card.nights') : t('card.night')}
+                </span>
+              </div>
+            </div>
+
+            {/* CLIENTS */}
+            {booking.guests.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: TEAL }}>
+                  {t('card.clients')}
+                </p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Users className="w-3.5 h-3.5 flex-shrink-0" style={{ color: TEAL }} />
+                  <span className="text-sm text-gray-700">
+                    {booking.guests.length < booking.numberOfGuests
+                      ? `${booking.guests.length} / ${booking.numberOfGuests}`
+                      : `${booking.guests.length} ${t('card.client')}${booking.guests.length > 1 ? 's' : ''}`}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Documents — single row, left-aligned */}
+          <div className="flex-shrink-0 flex items-center gap-4">
+            {/* Police */}
+            <button
+              onClick={() => setShowDocuments('police-form')}
+              className="flex items-center gap-1.5 text-[12px] font-medium hover:opacity-80 transition-opacity whitespace-nowrap"
             >
-              Ajouter les clients
-            </Button>
-          )}
-          
-          {/* Guest self-service link generation */}
+              {hasPoliceForm ? (
+                <Download className="w-3.5 h-3.5 flex-shrink-0" style={{ color: TEAL }} />
+              ) : (
+                <File className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
+              )}
+              <span className={hasPoliceForm ? 'text-gray-700' : 'text-gray-400'}>
+                {t('card.policeForm')}
+              </span>
+            </button>
+
+            {/* Contrat */}
+            <button
+              onClick={() => setShowDocuments('contract')}
+              className="flex items-center gap-1.5 text-[12px] font-medium hover:opacity-80 transition-opacity whitespace-nowrap"
+            >
+              {hasContract || verificationCounts.hasSignature ? (
+                <Download className="w-3.5 h-3.5 flex-shrink-0" style={{ color: TEAL }} />
+              ) : (
+                <File className="w-3.5 h-3.5 flex-shrink-0 text-gray-400" />
+              )}
+              <span className={hasContract || verificationCounts.hasSignature ? 'text-gray-700' : 'text-gray-400'}>
+                {verificationCounts.hasSignature ? t('card.signedContract') : t('card.contract')}
+              </span>
+            </button>
+
+            {/* ID Docs */}
+            <button
+              onClick={() => setShowDocuments('id-documents')}
+              className="flex items-center gap-1.5 text-[12px] font-medium hover:opacity-80 transition-opacity whitespace-nowrap"
+            >
+              <FileText className={`w-3.5 h-3.5 flex-shrink-0 ${totalDocs > 0 ? '' : 'text-gray-400'}`}
+                style={totalDocs > 0 ? { color: TEAL } : undefined}
+              />
+              <span className={totalDocs > 0 ? 'text-gray-700' : 'text-gray-400'}>
+                {t('card.idDocs')}
+              </span>
+              {totalDocs > 0 && (
+                <span
+                  className="ml-0.5 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none flex-shrink-0"
+                  style={{ backgroundColor: TEAL }}
+                >
+                  {totalDocs}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* 4. Action button */}
+          <div className="flex-shrink-0">
+            <button
+              onClick={() => onEdit(booking)}
+              className="flex items-center gap-1.5 text-gray-700 text-[13px] font-semibold px-4 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 transition-colors whitespace-nowrap"
+            >
+              <FileText className="w-4 h-4 text-gray-500" />
+              {t('card.details')}
+            </button>
+          </div>
         </div>
-        
-        {showDocuments && (
-          <DocumentsViewer
-            booking={booking}
-            documentType={showDocuments}
-            onClose={() => setShowDocuments(null)}
-            isOverLimit={isOverLimit}
-          />
-        )}
-      </CardFooter>
-    </Card>
+
+        {/* ── Three-dot menu ── */}
+        <div className="flex-shrink-0 pr-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onEdit(booking)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Modifier
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  updateBooking(booking.id, { status: 'archived' });
+                  toast({ title: 'Réservation archivée', description: 'La réservation a été déplacée dans les archives.' });
+                }}
+              >
+                <Archive className="w-4 h-4 mr-2" />
+                Archiver
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => onDelete(booking.id)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Supprimer
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {showDocuments && (
+        <DocumentsViewer
+          booking={booking}
+          documentType={showDocuments}
+          onClose={() => setShowDocuments(null)}
+          isOverLimit={isOverLimit}
+        />
+      )}
+    </>
   );
 }, (prevProps, nextProps) => {
-  // ✅ OPTIMISATION : Comparaison personnalisée pour éviter les re-renders inutiles
-  // Ne re-render que si l'ID de la réservation change ou si les données importantes changent
   return (
     prevProps.booking.id === nextProps.booking.id &&
     prevProps.booking.status === nextProps.booking.status &&

@@ -33,6 +33,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+type StatusFilterValue = 'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'archived' | 'draft';
+
 interface Booking {
   id: string;
   booking_reference?: string;
@@ -75,7 +77,7 @@ export const AdminBookings = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>('all');
   const [isLoading, setIsLoading] = useState(false);
   const [detailBooking, setDetailBooking] = useState<Booking | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -311,19 +313,20 @@ export const AdminBookings = () => {
                 />
               </div>
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="all">Tous les statuts</option>
-              <option value="pending">En attente</option>
-              <option value="completed">Complétées</option>
-              <option value="cancelled">Annulées</option>
-              <option value="archived">Archivées</option>
-              <option value="confirmed">Confirmées</option>
-              <option value="draft">Brouillons</option>
-            </select>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilterValue)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Tous les statuts" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les statuts</SelectItem>
+                <SelectItem value="pending">En attente</SelectItem>
+                <SelectItem value="confirmed">Confirmées</SelectItem>
+                <SelectItem value="completed">Complétées</SelectItem>
+                <SelectItem value="cancelled">Annulées</SelectItem>
+                <SelectItem value="archived">Archivées</SelectItem>
+                <SelectItem value="draft">Brouillons</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

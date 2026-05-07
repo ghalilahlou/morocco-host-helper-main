@@ -273,6 +273,25 @@ export default {
   'dashboard.viewGrid': 'Grid view',
   'dashboard.loadingProperties': 'Loading properties…',
 
+  // Booking card (cards view)
+  'card.arrival': 'Arrival',
+  'card.departure': 'Departure',
+  'card.duration': 'Duration',
+  'card.night': 'night',
+  'card.nights': 'nights',
+  'card.clients': 'Guests',
+  'card.client': 'guest',
+  'card.addClients': 'Add guests',
+  'card.details': 'Details',
+  'card.policeForm': 'Police',
+  'card.contract': 'Contract',
+  'card.idDocs': 'ID Docs',
+  'card.signedContract': 'Signed contract',
+  'card.submissions': 'Submissions',
+  'card.registeredGuests': 'Registered guests',
+  'card.status.pending': 'Pending',
+  'card.status.completed': 'Completed',
+
   // Property list (host app)
   'properties.title': 'My listings',
   'properties.add': 'Add',

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAdminContext } from '@/contexts/AdminContext';
-import { Loader2, Shield } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 interface AdminRouteProps {
   children: React.ReactNode;
@@ -9,9 +9,6 @@ interface AdminRouteProps {
 
 export const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
   const { isAdmin, isLoading } = useAdminContext();
-  
-  // ✅ DEBUG TEMPORAIRE
-  console.log('🔐 AdminRoute - isAdmin:', isAdmin, 'isLoading:', isLoading);
 
   if (isLoading) {
     return (
@@ -25,18 +22,7 @@ export const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
   }
 
   if (!isAdmin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md mx-auto p-6">
-          <Shield className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Accès refusé</h1>
-          <p className="text-gray-600 mb-4">
-            Vous n'avez pas les permissions nécessaires pour accéder à cette section.
-          </p>
-          <Navigate to="/dashboard" replace />
-        </div>
-      </div>
-    );
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

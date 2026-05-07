@@ -67,21 +67,47 @@ export const Dashboard = memo(({
   // No need to trigger a redundant refresh here.
 
   const filteredBookings = useMemo(() => {
-    return bookings.filter(booking => {
-      const matchesSearch = !searchTerm || 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(today.getDate() + 7);
+
+    const filtered = bookings.filter(booking => {
+      const matchesSearch = !searchTerm ||
                            booking.bookingReference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            booking.guest_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            (booking.guests || []).some(guest => guest?.fullName?.toLowerCase().includes(searchTerm.toLowerCase()));
-      
-      const hasDocs = booking.documentsGenerated?.contract && booking.documentsGenerated?.policeForm;
-      const effectiveStatus = hasDocs ? 'completed' : 'pending';
-      const matchesStatus = statusFilter === 'all' || effectiveStatus === statusFilter;
+
+      const isArchived = booking.status === 'archived';
+      // "all" = only non-archived; "archived" = only archived
+      const matchesStatus = statusFilter === 'archived' ? isArchived : !isArchived;
 
       const matchesMonth =
         monthFilter === 'all' ||
         bookingOverlapsYearMonth(booking.checkInDate, booking.checkOutDate, monthFilter);
-      
+
       return matchesSearch && matchesStatus && matchesMonth;
+    });
+
+    // Sort: active/upcoming this week first, then by check-in date ascending
+    return filtered.sort((a, b) => {
+      const aIn = new Date(a.checkInDate); aIn.setHours(0,0,0,0);
+      const aOut = new Date(a.checkOutDate); aOut.setHours(0,0,0,0);
+      const bIn = new Date(b.checkInDate); bIn.setHours(0,0,0,0);
+      const bOut = new Date(b.checkOutDate); bOut.setHours(0,0,0,0);
+
+      // Priority 0: ongoing right now (checkIn <= today <= checkOut)
+      const aOngoing = aIn <= today && today <= aOut;
+      const bOngoing = bIn <= today && today <= bOut;
+      if (aOngoing !== bOngoing) return aOngoing ? -1 : 1;
+
+      // Priority 1: arriving within the next 7 days
+      const aThisWeek = aIn >= today && aIn <= weekEnd;
+      const bThisWeek = bIn >= today && bIn <= weekEnd;
+      if (aThisWeek !== bThisWeek) return aThisWeek ? -1 : 1;
+
+      // Fallback: sort by check-in date ascending
+      return aIn.getTime() - bIn.getTime();
     });
   }, [bookings, searchTerm, statusFilter, monthFilter]);
 
@@ -150,8 +176,6 @@ export const Dashboard = memo(({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('dashboard.allStatuses')}</SelectItem>
-                <SelectItem value="pending">{t('dashboard.pending')}</SelectItem>
-                <SelectItem value="completed">{t('dashboard.completedPlural')}</SelectItem>
                 <SelectItem value="archived">{t('dashboard.archived')}</SelectItem>
               </SelectContent>
             </Select>
@@ -196,7 +220,7 @@ export const Dashboard = memo(({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="flex flex-col gap-3">
             {filteredBookings.map((booking) => (
               <BookingCard
                 key={booking.id}

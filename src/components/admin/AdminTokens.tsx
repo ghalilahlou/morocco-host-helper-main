@@ -38,9 +38,9 @@ import {
   XCircle,
   AlertCircle
 } from 'lucide-react';
-import { useAdmin } from '@/hooks/useAdmin';
+import { useAdminContext } from '@/contexts/AdminContext';
 import { useToast } from '@/hooks/use-toast';
-import { TokenAllocation } from '@/types/admin';
+import { TokenAllocation, AdminUser } from '@/types/admin';
 import { TokenControlService } from '@/services/tokenControlService';
 import { selectActiveProperties } from '@/lib/properties';
 import { TokenCreationService } from '@/services/tokenCreationService';
@@ -63,8 +63,90 @@ import {
 import { AdminHostAccounts } from './AdminHostAccounts';
 
 export const AdminTokens = () => {
-  const { tokenAllocations, users, allocateTokens, loadUsers, loadDashboardData } = useAdmin();
+  const { isAdmin } = useAdminContext();
   const { toast } = useToast();
+  const [tokenAllocations, setTokenAllocations] = useState<TokenAllocation[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+
+  const loadTokenAllocations = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_token_allocations_for_admin');
+      if (error) throw error;
+      const mapped: TokenAllocation[] = (data || []).map((row: any) => ({
+        id: row.id,
+        user_id: row.user_id,
+        user_email: row.user_email || '—',
+        user_name: row.user_name || row.user_email?.split('@')[0] || '—',
+        tokens_allocated: row.tokens_allocated,
+        tokens_used: row.tokens_used,
+        tokens_remaining: row.tokens_remaining,
+        is_active: row.is_active,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+      setTokenAllocations(mapped);
+    } catch {
+      const { data } = await supabase
+        .from('token_allocations')
+        .select('*')
+        .order('created_at', { ascending: false });
+      setTokenAllocations(
+        (data || []).map((row: any) => ({
+          ...row,
+          user_email: row.user_email || '—',
+          user_name: row.user_email?.split('@')[0] || '—',
+        }))
+      );
+    }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_all_users_for_admin');
+      if (error || !data || !Array.isArray(data)) throw error || new Error('no data');
+      setUsers(
+        data.map((u: any) => ({
+          id: u.id,
+          email: u.email || '',
+          full_name: u.full_name || u.user_name || u.email?.split('@')[0] || 'Unknown',
+          role: (u.admin_role || 'user') as 'admin' | 'super_admin',
+          created_at: u.created_at,
+          is_active: u.is_admin_active !== false,
+        }))
+      );
+    } catch {
+      const { data } = await supabase.rpc('get_users_for_admin');
+      if (data && Array.isArray(data)) {
+        setUsers(
+          data.map((u: any) => ({
+            id: u.user_id || u.id,
+            email: u.email || '',
+            full_name: u.full_name || u.email?.split('@')[0] || 'Unknown',
+            role: (u.role || 'user') as 'admin' | 'super_admin',
+            created_at: u.created_at,
+            is_active: u.is_active !== false,
+          }))
+        );
+      }
+    }
+  };
+
+  const allocateTokens = async (userId: string, tokens: number) => {
+    const { data, error } = await supabase
+      .from('token_allocations')
+      .upsert({
+        user_id: userId,
+        tokens_allocated: tokens,
+        tokens_used: 0,
+        tokens_remaining: tokens,
+        is_active: true,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    await loadTokenAllocations();
+    return data;
+  };
   const [isLoading, setIsLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState('');
   const [tokenAmount, setTokenAmount] = useState('');
@@ -99,8 +181,8 @@ export const AdminTokens = () => {
         // Load data sequentially to avoid overwhelming the server
         await loadUsers();
         if (cancelled) return;
-        
-        await loadDashboardData();
+
+        await loadTokenAllocations();
         if (cancelled) return;
         
         await loadTokenControlSettings();
@@ -324,7 +406,7 @@ export const AdminTokens = () => {
       setIsDialogOpen(false);
       setSelectedUser('');
       setTokenAmount('');
-      loadDashboardData(); // Recharger les données
+      loadTokenAllocations();
     } catch (error) {
       toast({
         title: "Erreur",
@@ -566,7 +648,7 @@ export const AdminTokens = () => {
                             title: newActive ? 'Allocation activée' : 'Allocation révoquée',
                             description: newActive ? 'L\'utilisateur peut à nouveau utiliser ses tokens.' : 'L\'accès aux tokens a été révoqué.'
                           });
-                          loadDashboardData();
+                          loadTokenAllocations();
                         } catch (e) {
                           toast({ title: 'Erreur', description: 'Impossible de modifier l\'allocation', variant: 'destructive' });
                         }

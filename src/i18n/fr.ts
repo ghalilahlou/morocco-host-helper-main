@@ -273,6 +273,25 @@ export default {
   'dashboard.viewGrid': 'Vue grille',
   'dashboard.loadingProperties': 'Chargement Biens…',
 
+  // Booking card (vue Cards)
+  'card.arrival': 'Arrivée',
+  'card.departure': 'Départ',
+  'card.duration': 'Durée',
+  'card.night': 'nuit',
+  'card.nights': 'nuits',
+  'card.clients': 'Clients',
+  'card.client': 'client',
+  'card.addClients': 'Ajouter clients',
+  'card.details': 'Détails',
+  'card.policeForm': 'Police',
+  'card.contract': 'Contrat',
+  'card.idDocs': 'ID Docs',
+  'card.signedContract': 'Contrat signé',
+  'card.submissions': 'Soumissions',
+  'card.registeredGuests': 'Clients enregistrés',
+  'card.status.pending': 'En attente',
+  'card.status.completed': 'Terminé',
+
   // Liste des propriétés (app hôte)
   'properties.title': 'Mes annonces',
   'properties.add': 'Ajouter',

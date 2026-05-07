@@ -1,10 +1,12 @@
-// ✅ CONTEXTE GLOBAL POUR L'ÉTAT ADMIN
-// Solution pour maintenir l'état admin à travers les navigations
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { AdminDashboardData } from '@/types/admin';
+
+const isDev = import.meta.env.DEV;
+const log = {
+  error: (...args: unknown[]) => { if (isDev) console.error(...args); },
+};
 
 interface AdminContextType {
   isAdmin: boolean;
@@ -47,7 +49,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       if (error) {
-        console.error('❌ [Context] Erreur RPC:', error);
+        log.error('❌ [Context] Erreur RPC:', error);
         setIsAdmin(false);
         setAdminRole(null);
       } else if (adminData && adminData.length > 0) {
@@ -66,7 +68,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       setCheckedUserId(user.id);
     } catch (error) {
-      console.error('❌ [Context] Erreur critique:', error);
+      log.error('❌ [Context] Erreur critique:', error);
       setIsAdmin(false);
       setAdminRole(null);
       setCheckedUserId(user.id);
@@ -140,7 +142,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       setDashboardData(data);
     } catch (error) {
-      console.error('❌ [Context] Erreur chargement dashboard:', error);
+      log.error('❌ [Context] Erreur chargement dashboard:', error);
     }
   };
 

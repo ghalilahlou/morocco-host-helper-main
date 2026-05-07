@@ -23,22 +23,7 @@ import {
 } from 'lucide-react';
 import { useAdminContext } from '@/contexts/AdminContext';
 import { supabase } from '@/integrations/supabase/client';
-import { AdminUser } from '@/types/admin';
-
-interface EnhancedUser {
-  id: string;
-  email: string;
-  full_name: string;
-  user_name?: string;
-  created_at: string;
-  last_login?: string;
-  is_active: boolean;
-  role: string;
-  properties_count: number;
-  is_property_owner: boolean;
-  last_booking_date?: string;
-  total_bookings: number;
-}
+import { EnhancedUser } from '@/types/admin';
 
 export const AdminUsers = () => {
   const { isAdmin } = useAdminContext();
@@ -52,22 +37,22 @@ export const AdminUsers = () => {
     
     setIsLoading(true);
     try {
-      console.log('🔄 [AdminUsers] Chargement des utilisateurs enrichis...');
+      if (import.meta.env.DEV) console.log('🔄 [AdminUsers] Chargement des utilisateurs enrichis...');
       
       // Utiliser la fonction SQL get_users_for_admin qui fonctionne
       const { data: authUsers, error: authError } = await supabase.rpc('get_all_users_for_admin');
       
       if (authError) {
-        console.error('❌ Erreur récupération utilisateurs:', authError);
+        if (import.meta.env.DEV) console.error('❌ Erreur récupération utilisateurs:', authError);
         return;
       }
       
       // authUsers est déjà un array d'utilisateurs enrichis
       if (!authUsers || !Array.isArray(authUsers)) {
-        console.error('❌ Format données utilisateurs invalide');
+        if (import.meta.env.DEV) console.error('❌ Format données utilisateurs invalide');
         return;
       }
-      console.log('✅ Utilisateurs auth récupérés:', authUsers.length);
+      if (import.meta.env.DEV) console.log('✅ Utilisateurs auth récupérés:', authUsers.length);
       
       // Les données sont déjà enrichies par get_users_for_admin
       // Convertir au format EnhancedUser pour l'interface
@@ -87,10 +72,10 @@ export const AdminUsers = () => {
       }));
       
       setUsers(enrichedUsers);
-      console.log('✅ [AdminUsers] Utilisateurs enrichis chargés:', enrichedUsers.length);
+      if (import.meta.env.DEV) console.log('✅ [AdminUsers] Utilisateurs enrichis chargés:', enrichedUsers.length);
       
     } catch (error) {
-      console.error('❌ [AdminUsers] Erreur chargement:', error);
+      if (import.meta.env.DEV) console.error('❌ [AdminUsers] Erreur chargement:', error);
     } finally {
       setIsLoading(false);
     }

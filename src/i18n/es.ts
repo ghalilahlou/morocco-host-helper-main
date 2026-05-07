@@ -241,6 +241,25 @@ export default {
   'dashboard.viewGrid': 'Vista cuadrícula',
   'dashboard.loadingProperties': 'Cargando propiedades…',
 
+  // Tarjeta de reserva (vista Cards)
+  'card.arrival': 'Llegada',
+  'card.departure': 'Salida',
+  'card.duration': 'Duración',
+  'card.night': 'noche',
+  'card.nights': 'noches',
+  'card.clients': 'Huéspedes',
+  'card.client': 'huésped',
+  'card.addClients': 'Añadir huéspedes',
+  'card.details': 'Detalles',
+  'card.policeForm': 'Policía',
+  'card.contract': 'Contrato',
+  'card.idDocs': 'Docs ID',
+  'card.signedContract': 'Contrato firmado',
+  'card.submissions': 'Envíos',
+  'card.registeredGuests': 'Huéspedes registrados',
+  'card.status.pending': 'Pendiente',
+  'card.status.completed': 'Completado',
+
   // Lista de propiedades (app anfitrión)
   'properties.title': 'Mis anuncios',
   'properties.add': 'Añadir',

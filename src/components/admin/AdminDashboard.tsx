@@ -4,26 +4,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Users, 
-  Building2, 
-  Calendar, 
-  DollarSign, 
-  TrendingUp, 
-  Settings, 
+import {
+  Users,
+  Building2,
+  Calendar,
+  DollarSign,
+  TrendingUp,
   LogOut,
-  Plus,
-  Eye,
-  Edit,
-  Trash2,
   CreditCard,
   BarChart3,
-  PieChart,
-  Activity,
-  UserPlus,
   Shield,
   Target,
-  ArrowLeft
+  ArrowLeft,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAdminContext } from '@/contexts/AdminContext';
 import { useAuth } from '@/hooks/useAuth';
@@ -34,6 +27,7 @@ import { AdminUsers } from '@/components/admin/AdminUsers';
 import { AdminBookings } from '@/components/admin/AdminBookings';
 import { AdminTokens } from '@/components/admin/AdminTokens';
 import { AdminProperties } from '@/components/admin/AdminProperties';
+import { AdminDataReconciliation } from '@/components/admin/AdminDataReconciliation';
 
 export const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -41,13 +35,6 @@ export const AdminDashboard = () => {
   const { isAdmin, isLoading, dashboardData, adminRole } = useAdminContext();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
-
-  // TODO: Réimplémenter loadDashboardData dans le contexte si nécessaire
-  // useEffect(() => {
-  //   if (isAdmin) {
-  //     loadDashboardData();
-  //   }
-  // }, [isAdmin]);
 
   const handleSignOut = async () => {
     try {
@@ -72,23 +59,6 @@ export const AdminDashboard = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Chargement du dashboard administrateur...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md mx-auto p-6">
-          <Shield className="h-16 w-16 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Accès refusé</h1>
-          <p className="text-gray-600 mb-4">
-            Vous n'avez pas les permissions nécessaires pour accéder au dashboard administrateur.
-          </p>
-          <Button onClick={() => navigate('/dashboard')}>
-            Retour au dashboard
-          </Button>
         </div>
       </div>
     );
@@ -141,7 +111,7 @@ export const AdminDashboard = () => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="overview" className="flex items-center space-x-2">
               <BarChart3 className="h-4 w-4" />
               <span>Vue d'ensemble</span>
@@ -166,6 +136,10 @@ export const AdminDashboard = () => {
               <CreditCard className="h-4 w-4" />
               <span>Tokens</span>
             </TabsTrigger>
+            <TabsTrigger value="reconciliation" className="flex items-center space-x-2">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Contrôle Qualité</span>
+            </TabsTrigger>
           </TabsList>
 
           {/* Vue d'ensemble */}
@@ -178,9 +152,7 @@ export const AdminDashboard = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{dashboardData?.stats.totalUsers || 0}</div>
-                  <p className="text-xs text-muted-foreground">
-                    +12% par rapport au mois dernier
-                  </p>
+                  <p className="text-xs text-muted-foreground">Utilisateurs inscrits</p>
                 </CardContent>
               </Card>
 
@@ -191,9 +163,7 @@ export const AdminDashboard = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{dashboardData?.stats.totalProperties || 0}</div>
-                  <p className="text-xs text-muted-foreground">
-                    +5% par rapport au mois dernier
-                  </p>
+                  <p className="text-xs text-muted-foreground">Logements enregistrés</p>
                 </CardContent>
               </Card>
 
@@ -205,7 +175,7 @@ export const AdminDashboard = () => {
                 <CardContent>
                   <div className="text-2xl font-bold">{dashboardData?.stats.totalBookings || 0}</div>
                   <p className="text-xs text-muted-foreground">
-                    +8% par rapport au mois dernier
+                    {dashboardData?.stats.pendingBookings || 0} en attente
                   </p>
                 </CardContent>
               </Card>
@@ -223,7 +193,7 @@ export const AdminDashboard = () => {
                     }).format(dashboardData?.stats.totalRevenue || 0)}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    +15% par rapport au mois dernier
+                    Revenus totaux enregistrés
                   </p>
                 </CardContent>
               </Card>
@@ -245,7 +215,7 @@ export const AdminDashboard = () => {
                         <div>
                           <p className="font-medium">{booking.booking_reference || booking.bookingReference || '—'}</p>
                           <p className="text-sm text-gray-500">
-                            {booking.properties?.name || booking.property?.name || 'Propriété inconnue'}
+                            {booking.properties?.name || 'Propriété inconnue'}
                           </p>
                         </div>
                         <Badge variant={booking.status === 'completed' ? 'default' : 'secondary'}>
@@ -306,6 +276,11 @@ export const AdminDashboard = () => {
           {/* Tokens */}
           <TabsContent value="tokens">
             <AdminTokens />
+          </TabsContent>
+
+          {/* Contrôle Qualité — Fiches & Contrats */}
+          <TabsContent value="reconciliation">
+            <AdminDataReconciliation />
           </TabsContent>
         </Tabs>
       </main>
