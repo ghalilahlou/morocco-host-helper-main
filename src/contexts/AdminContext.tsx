@@ -79,67 +79,111 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const loadDashboardData = async () => {
     if (!isAdmin) return;
-    
+
     try {
-      // 🚀 OPTIMISATION: Requêtes parallèles optimisées avec sélections limitées
-      // ✅ CORRECTION: Utiliser property:properties(name) pour la jointure et gérer les erreurs
-      const [usersRes, propertiesRes, bookingsRes, recentBookingsRes] = await Promise.all([
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const [usersRes, propertiesRes, allBookingsRes, recentBookingsRes] = await Promise.all([
         supabase.rpc('get_users_for_admin'),
         supabase.from('properties').select('id, name, user_id, created_at'),
-        supabase.from('bookings').select('id, status, total_amount, created_at'),
-        supabase.from('bookings')
-          .select(`
-            id,
-            booking_reference,
-            check_in_date,
-            check_out_date,
-            status,
-            created_at,
-            property_id,
-            properties(name)
-          `)
+        supabase
+          .from('bookings')
+          .select('id, status, total_amount, created_at, property_id, check_in_date, check_out_date')
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('bookings')
+          .select('id, booking_reference, check_in_date, check_out_date, status, created_at, property_id, properties(name)')
           .order('created_at', { ascending: false })
-          .limit(10)
+          .limit(10),
       ]);
-      
-      // Calculer les statistiques - usersRes.data est maintenant un JSON
+
       const usersArray = Array.isArray(usersRes.data) ? usersRes.data : [];
-      const totalUsers = usersArray.length || 0;
-      const totalProperties = propertiesRes.data?.length || 0;
-      const totalBookings = bookingsRes.data?.length || 0;
-      
-      // Calculer le revenu total (simulation)
-      const totalRevenue = bookingsRes.data?.reduce((sum, booking) => {
-        return sum + (booking.total_amount || 0);
-      }, 0) || 0;
-      
-      // 🚀 OPTIMISATION: Données déjà triées et limitées par la requête
-      const recentBookings = recentBookingsRes.data || [];
-      
-      // Utilisateurs récents (top 10 les plus récents)
+      const allBookings = allBookingsRes.data || [];
+
+      // ── Stats globales ──────────────────────────────────────────────
+      const totalRevenue = allBookings.reduce((sum, b) => sum + (Number(b.total_amount) || 0), 0);
+
+      // ── bookingAnalytics : 30 jours glissants ───────────────────────
+      const dayMap = new Map<string, { bookings: number; revenue: number; cancellations: number }>();
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        dayMap.set(d.toISOString().split('T')[0], { bookings: 0, revenue: 0, cancellations: 0 });
+      }
+      allBookings
+        .filter(b => b.created_at >= thirtyDaysAgo.toISOString())
+        .forEach(b => {
+          const day = b.created_at.split('T')[0];
+          const curr = dayMap.get(day);
+          if (curr) {
+            curr.bookings++;
+            curr.revenue += Number(b.total_amount) || 0;
+            if (b.status === 'cancelled') curr.cancellations++;
+          }
+        });
+      const bookingAnalytics = Array.from(dayMap.entries()).map(([date, v]) => ({ date, ...v }));
+
+      // ── userAnalytics : 30 jours glissants ─────────────────────────
+      const userDayMap = new Map<string, { newUsers: number; activeUsers: number }>();
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        userDayMap.set(d.toISOString().split('T')[0], { newUsers: 0, activeUsers: 0 });
+      }
+      usersArray.forEach((u: any) => {
+        const day = u.created_at?.split('T')[0];
+        const curr = userDayMap.get(day);
+        if (curr) curr.newUsers++;
+      });
+      const userAnalytics = Array.from(userDayMap.entries()).map(([date, v]) => ({ date, ...v }));
+
+      // ── propertyAnalytics : aggrégat par propriété ──────────────────
+      const propMap = new Map<string, {
+        propertyId: string; propertyName: string;
+        totalBookings: number; totalRevenue: number;
+        occupancyRate: number; averageRating: number;
+      }>();
+      (propertiesRes.data || []).forEach(p => {
+        propMap.set(p.id, {
+          propertyId: p.id, propertyName: p.name,
+          totalBookings: 0, totalRevenue: 0,
+          occupancyRate: 0, averageRating: 0,
+        });
+      });
+      allBookings.forEach(b => {
+        if (!b.property_id) return;
+        const prop = propMap.get(b.property_id);
+        if (!prop) return;
+        prop.totalBookings++;
+        if (b.status !== 'cancelled') prop.totalRevenue += Number(b.total_amount) || 0;
+      });
+      const propertyAnalytics = Array.from(propMap.values())
+        .sort((a, b) => b.totalBookings - a.totalBookings);
+
       const recentUsers = usersArray
-        ?.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 10) || [];
-      
+        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 10);
+
       const data: AdminDashboardData = {
         stats: {
-          totalUsers,
-          totalProperties,
-          totalBookings,
+          totalUsers: usersArray.length,
+          totalProperties: propertiesRes.data?.length || 0,
+          totalBookings: allBookings.length,
           totalRevenue,
-          activeTokens: 0, // À calculer si nécessaire
-          pendingBookings: bookingsRes.data?.filter(b => b.status === 'pending').length || 0,
-          completedBookings: bookingsRes.data?.filter(b => b.status === 'completed').length || 0,
-          cancelledBookings: bookingsRes.data?.filter(b => b.status === 'cancelled').length || 0
+          activeTokens: 0,
+          pendingBookings: allBookings.filter(b => b.status === 'pending').length,
+          completedBookings: allBookings.filter(b => b.status === 'completed').length,
+          cancelledBookings: allBookings.filter(b => b.status === 'cancelled').length,
         },
-        bookingAnalytics: [], // À implémenter si nécessaire
-        userAnalytics: [], // À implémenter si nécessaire
-        propertyAnalytics: [], // À implémenter si nécessaire
-        recentBookings,
+        bookingAnalytics,
+        userAnalytics,
+        propertyAnalytics,
+        recentBookings: recentBookingsRes.data || [],
         recentUsers,
-        tokenAllocations: [] // À implémenter si nécessaire
+        tokenAllocations: [],
       };
-      
+
       setDashboardData(data);
     } catch (error) {
       log.error('❌ [Context] Erreur chargement dashboard:', error);
