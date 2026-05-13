@@ -130,6 +130,21 @@ function formatDocExtractSummary(doc: UploadedDocument, guestAtIndex: Guest | un
   return parts.join(' · ') || '—';
 }
 
+/**
+ * Signature stable des paramètres « réservation » pour le flux ICS.
+ * Exclut `lang` (ajouté par GuestLocaleProvider via replaceState) pour éviter
+ * un second passage qui efface les dates / bloque sur isCheckingICSRef.
+ */
+const GUEST_VERIFICATION_ICS_QUERY_KEYS = ['startDate', 'endDate', 'guests', 'airbnbCode', 'guestName'] as const;
+function bookingQuerySignatureFromSearch(search: string): string {
+  try {
+    const sp = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+    return GUEST_VERIFICATION_ICS_QUERY_KEYS.map((k) => `${k}=${sp.get(k) ?? ''}`).join('&');
+  } catch {
+    return '';
+  }
+}
+
 // Animation variants
 const fadeInUp = {
   initial: { opacity: 0, y: 30 },
@@ -158,7 +173,7 @@ export const GuestVerification = () => {
     airbnbBookingId?: string; 
   }>();
   const location = useLocation();
-  
+  const icsBookingQuerySig = bookingQuerySignatureFromSearch(location.search ?? '');
 
   // ✅ FONCTION UTILITAIRE: Validation des dates
   const validateDates = (checkIn: Date, checkOut: Date): { isValid: boolean; error?: string } => {
@@ -319,9 +334,9 @@ export const GuestVerification = () => {
   const hasInitializedBookingRef = useRef(false); // ✅ Garde pour le matching booking
   
   // ✅ CRITIQUE : Utiliser sessionStorage pour persister entre les navigations (Vercel)
-  // Pour `ics`, inclure la query (dates / code) afin qu’un même token avec une autre URL relise les bons paramètres.
+  // Pour `ics`, n'utiliser que les paramètres réservation (sans `lang`).
   const getSessionKey = (key: string) => {
-    const qs = key === 'ics' ? (location.search || '') : '';
+    const qs = key === 'ics' ? icsBookingQuerySig : '';
     return `guest_verification_${key}_${propertyId}_${token}${qs}`;
   };
   const hasInitializedInSession = (key: string) => {
@@ -391,7 +406,7 @@ export const GuestVerification = () => {
   useEffect(() => {
     if (!token || !propertyId) return;
 
-    const icsRouteKey = `${propertyId}\0${token}\0${location.search ?? ''}`;
+    const icsRouteKey = `${propertyId}\0${token}\0${icsBookingQuerySig}`;
     if (lastIcsRouteKeyRef.current !== icsRouteKey) {
       lastIcsRouteKeyRef.current = icsRouteKey;
       hasInitializedICSRef.current = false;
@@ -733,7 +748,7 @@ export const GuestVerification = () => {
     return () => {
       isCheckingICSRef.current = false;
     };
-  }, [token, propertyId, location.search]);
+  }, [token, propertyId, icsBookingQuerySig]);
 
   const [checkInDate, setCheckInDate] = useState<Date | undefined>();
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
