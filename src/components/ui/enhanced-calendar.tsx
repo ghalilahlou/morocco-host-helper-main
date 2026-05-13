@@ -7,6 +7,7 @@ import {
   subMonths,
   startOfMonth,
   endOfMonth,
+  startOfDay,
   eachDayOfInterval,
   isSameMonth,
   isSameDay,
@@ -92,6 +93,12 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
     }
   }, [rangeStart, selected, mode, currentMonth]);
 
+  // Nouveau lien / nouvelles dates parentes : repartir d’une sélection propre (évite calendrier « bloqué »)
+  useEffect(() => {
+    setSelectionInProgress(null);
+    setHoveredDate(null);
+  }, [mode, rangeStart?.getTime(), rangeEnd?.getTime()]);
+
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
 
@@ -112,16 +119,20 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
   const isDateDisabled = (date: Date) => {
-    if (minDate && date < minDate) return true;
-    if (maxDate && date > maxDate) return true;
-    if (!showWeekends && isWeekend(date)) return true;
-    return disabledDates.some(disabledDate => isSameDay(date, disabledDate));
+    const d = startOfDay(date);
+    if (minDate && d < startOfDay(minDate)) return true;
+    if (maxDate && d > startOfDay(maxDate)) return true;
+    if (!showWeekends && isWeekend(d)) return true;
+    return disabledDates.some(disabledDate => isSameDay(d, startOfDay(disabledDate)));
   };
 
   const isDateInRange = (date: Date) => {
     if (mode !== 'range') return false;
     if (!rangeStart || !rangeEnd) return false;
-    return date >= rangeStart && date <= rangeEnd;
+    const d = startOfDay(date).getTime();
+    const a = startOfDay(rangeStart).getTime();
+    const b = startOfDay(rangeEnd).getTime();
+    return d >= a && d <= b;
   };
 
   const isRangeStart = (date: Date) => {
@@ -141,33 +152,35 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
 
   // 🎯 LOGIQUE COMPLÈTEMENT REFAITE - CLAIRE ET DYNAMIQUE
   const handleDateClick = (date: Date) => {
-    if (isDateDisabled(date)) return;
+    const day = startOfDay(date);
+
+    if (isDateDisabled(day)) return;
 
     if (mode === 'single') {
-      onSelect?.(date);
+      onSelect?.(day);
       return;
     }
 
     if (mode === 'range') {
       // CAS 1: Aucune sélection en cours - Démarrer une nouvelle sélection
       if (!selectionInProgress) {
-        setSelectionInProgress(date);
+        setSelectionInProgress(day);
         setHoveredDate(null);
-        console.log('📅 Date de début:', date.toLocaleDateString());
+        console.log('📅 Date de début:', day.toLocaleDateString());
         return;
       }
 
       // CAS 2: Une sélection est en cours - Finaliser la plage
       if (selectionInProgress) {
         // Ne pas permettre de sélectionner la même date
-        if (isSameDay(selectionInProgress, date)) {
+        if (isSameDay(selectionInProgress, day)) {
           console.log('⚠️ Veuillez sélectionner une date différente');
           return;
         }
 
         // Créer la plage (toujours start < end)
-        const start = selectionInProgress <= date ? selectionInProgress : date;
-        const end = selectionInProgress <= date ? date : selectionInProgress;
+        const start = selectionInProgress <= day ? selectionInProgress : day;
+        const end = selectionInProgress <= day ? day : selectionInProgress;
 
         console.log('✅ Plage sélectionnée:', {
           checkIn: start.toLocaleDateString(),
@@ -427,7 +440,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
                 transition={{ delay: index * 0.01, duration: 0.2 }}
                 className="relative w-10 h-10 flex items-center justify-center text-base font-normal transition-all duration-200 cursor-pointer"
                 onClick={() => handleDateClick(date)}
-                onMouseEnter={() => mode === 'range' && selectionInProgress && setHoveredDate(date)}
+                onMouseEnter={() => mode === 'range' && selectionInProgress && setHoveredDate(startOfDay(date))}
                 onMouseLeave={() => setHoveredDate(null)}
                 whileHover={{ scale: isDateDisabled(date) ? 1 : 1.05 }}
                 whileTap={{ scale: isDateDisabled(date) ? 1 : 0.95 }}

@@ -395,6 +395,7 @@ export default {
   // Calendario – títulos del panel de selección de fechas
   'guest.calendar.selectTitle': 'Selecciona tus fechas',
   'guest.calendar.selectSubtitle': 'Elige tus fechas de llegada y salida',
+  'guest.calendar.rangeHowto': 'Para cambiar: toca primero la nueva fecha de entrada y luego la de salida (dos toques).',
 
   // Página de firma del contrato
   'contractSigning.sidebarSummaryTitle': 'Resumen',

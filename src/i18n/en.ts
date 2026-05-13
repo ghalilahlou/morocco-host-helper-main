@@ -428,6 +428,7 @@ export default {
   // Calendar – date picker panel titles
   'guest.calendar.selectTitle': 'Select your dates',
   'guest.calendar.selectSubtitle': 'Choose your check-in and check-out dates',
+  'guest.calendar.rangeHowto': 'To change dates: tap your new check-in day first, then your check-out day (two taps).',
 
   // Contract signing page
   'contractSigning.sidebarSummaryTitle': 'Summary',

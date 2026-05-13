@@ -429,6 +429,7 @@ export default {
   // Calendrier – titres du panneau de sélection de dates
   'guest.calendar.selectTitle': 'Sélectionnez vos dates',
   'guest.calendar.selectSubtitle': "Choisissez vos dates d'arrivée et de départ",
+  'guest.calendar.rangeHowto': "Pour modifier : touchez d'abord la nouvelle date d'arrivée, puis la date de départ (deux choix).",
 
   // Contract signing page
   'contractSigning.sidebarSummaryTitle': 'Récapitulatif',

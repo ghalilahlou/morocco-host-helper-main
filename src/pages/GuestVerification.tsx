@@ -319,7 +319,11 @@ export const GuestVerification = () => {
   const hasInitializedBookingRef = useRef(false); // ✅ Garde pour le matching booking
   
   // ✅ CRITIQUE : Utiliser sessionStorage pour persister entre les navigations (Vercel)
-  const getSessionKey = (key: string) => `guest_verification_${key}_${propertyId}_${token}`;
+  // Pour `ics`, inclure la query (dates / code) afin qu’un même token avec une autre URL relise les bons paramètres.
+  const getSessionKey = (key: string) => {
+    const qs = key === 'ics' ? (location.search || '') : '';
+    return `guest_verification_${key}_${propertyId}_${token}${qs}`;
+  };
   const hasInitializedInSession = (key: string) => {
     if (typeof window === 'undefined') return false;
     return sessionStorage.getItem(getSessionKey(key)) === 'true';
@@ -378,10 +382,24 @@ export const GuestVerification = () => {
   // ✅ NOUVEAU : Refs pour tracker les derniers paramètres traités
   const lastProcessedTokenRef = useRef<string | null>(null);
   const lastProcessedPropertyIdRef = useRef<string | null>(null);
+  /** Réinitialise les gardes « déjà initialisé » quand on change de lien (SPA) — sinon dates/token figés. */
+  const lastIcsRouteKeyRef = useRef<string>('');
+  const lastTokenRouteKeyRef = useRef<string>('');
+  const lastBookingMatchKeyRef = useRef<string>('');
 
   // ✅ NOUVEAU : Vérifier si c'est un lien ICS direct et pré-remplir les données
   useEffect(() => {
     if (!token || !propertyId) return;
+
+    const icsRouteKey = `${propertyId}\0${token}\0${location.search ?? ''}`;
+    if (lastIcsRouteKeyRef.current !== icsRouteKey) {
+      lastIcsRouteKeyRef.current = icsRouteKey;
+      hasInitializedICSRef.current = false;
+      lastProcessedTokenRef.current = null;
+      lastProcessedPropertyIdRef.current = null;
+      setCheckInDate(undefined);
+      setCheckOutDate(undefined);
+    }
     
     // ✅ CRITIQUE : Garde global pour éviter les doubles exécutions (Strict Mode / Hydratation SSR)
     if (hasInitializedICSRef.current) {
@@ -715,7 +733,7 @@ export const GuestVerification = () => {
     return () => {
       isCheckingICSRef.current = false;
     };
-  }, [token, propertyId]);
+  }, [token, propertyId, location.search]);
 
   const [checkInDate, setCheckInDate] = useState<Date | undefined>();
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
@@ -981,6 +999,12 @@ export const GuestVerification = () => {
         setCheckingToken(false);
         return;
       }
+
+      const tokenRouteKey = `${propertyId}\0${token}`;
+      if (lastTokenRouteKeyRef.current !== tokenRouteKey) {
+        lastTokenRouteKeyRef.current = tokenRouteKey;
+        hasInitializedTokenRef.current = false;
+      }
       
       // ✅ CRITIQUE : Garde global pour éviter les doubles exécutions (Strict Mode / Hydratation SSR)
       if (hasInitializedTokenRef.current) {
@@ -1112,6 +1136,12 @@ export const GuestVerification = () => {
 
   // Effect to handle Airbnb booking ID matching and date pre-filling
   useEffect(() => {
+    const bookingRouteKey = `${propertyId ?? ''}\0${token ?? ''}\0${airbnbBookingId ?? ''}`;
+    if (lastBookingMatchKeyRef.current !== bookingRouteKey) {
+      lastBookingMatchKeyRef.current = bookingRouteKey;
+      hasInitializedBookingRef.current = false;
+    }
+
     const matchAirbnbBooking = async () => {
       if (!isValidToken || !propertyId || !airbnbBookingId) {
         return;
@@ -1188,7 +1218,7 @@ export const GuestVerification = () => {
     };
 
     matchAirbnbBooking();
-  }, [airbnbBookingId, isValidToken, propertyId]);
+  }, [airbnbBookingId, isValidToken, propertyId, token]);
 
   const addGuest = () => {
     setGuests([...guests, {
@@ -3378,6 +3408,7 @@ export const GuestVerification = () => {
                               ? 'fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top)] z-[61] bg-white rounded-t-2xl shadow-2xl overflow-y-auto safe-area-bottom' 
                               : 'absolute top-full left-0 right-0 mt-3 flex justify-center z-50'
                             }
+                            onClick={(e) => e.stopPropagation()}
                           >
                             <div className={isMobile ? 'p-4 pb-8' : 'bg-white rounded-xl shadow-2xl p-6'}>
                               {isMobile && (
@@ -3403,10 +3434,19 @@ export const GuestVerification = () => {
                                   <p className="text-sm text-gray-600">
                                     {t('guest.calendar.selectSubtitle')}
                                   </p>
+                                  <p className="text-xs text-gray-500 mt-2 max-w-sm mx-auto">
+                                    {t('guest.calendar.rangeHowto')}
+                                  </p>
                                 </div>
+                              )}
+                              {isMobile && (
+                                <p className="text-xs text-gray-500 mb-3">
+                                  {t('guest.calendar.rangeHowto')}
+                                </p>
                               )}
                               
                               <EnhancedCalendar
+                                key={`cal-${token ?? 't'}-${checkInDate?.getTime() ?? 'ci'}-${checkOutDate?.getTime() ?? 'co'}`}
                                 mode="range"
                                 rangeStart={checkInDate}
                                 rangeEnd={checkOutDate}
