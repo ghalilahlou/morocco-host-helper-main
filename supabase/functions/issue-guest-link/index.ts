@@ -265,29 +265,32 @@ serve(async (req) => {
       if (permissionError) {
         // Vérifier si c'est une erreur PGRST202 (fonction non trouvée)
         if (permissionError.code === 'PGRST202' || permissionError.message?.includes('function') || permissionError.message?.includes('not found')) {
-          console.warn('⚠️ check_reservation_allowed RPC not found – proceeding with allowed=true (fallback)');
+          console.warn('⚠️ check_reservation_allowed RPC not found – proceeding with allowed=true (fallback). Appliquer la migration 20260513150000_ensure_check_reservation_allowed_service_role.sql sur le projet.');
           permissionAllowed = true;
         } else {
           console.error('❌ Erreur lors de la vérification des permissions:', permissionError);
           console.warn('⚠️ Permission check failed – proceeding with allowed=true (fallback)');
           permissionAllowed = true;
         }
-      } else if (permissionCheck) {
-        // Si la fonction existe et retourne des données, honorer la réponse
-        permissionAllowed = permissionCheck.allowed === true;
-        if (!permissionAllowed) {
-          console.log('🚫 Génération de tokens non autorisée:', permissionCheck);
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'Génération de tokens non autorisée',
-            details: {
-              reason: permissionCheck?.reason || 'Contrôle administrateur actif',
-              control_type: permissionCheck?.control_type || 'blocked'
-            }
-          }), {
-            status: 403,
-            headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
-          });
+      } else if (permissionCheck != null) {
+        // PostgREST : RETURNS TABLE → souvent un tableau d’objets (une ligne)
+        const row = Array.isArray(permissionCheck) ? permissionCheck[0] : permissionCheck;
+        if (row && typeof row === 'object' && 'allowed' in row) {
+          permissionAllowed = (row as { allowed?: boolean }).allowed === true;
+          if (!permissionAllowed) {
+            console.log('🚫 Génération de tokens non autorisée:', row);
+            return new Response(JSON.stringify({
+              success: false,
+              error: 'Génération de tokens non autorisée',
+              details: {
+                reason: (row as { reason?: string })?.reason || 'Contrôle administrateur actif',
+                control_type: (row as { control_type?: string })?.control_type || 'blocked'
+              }
+            }), {
+              status: 403,
+              headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
         }
       }
     } catch (permissionError) {

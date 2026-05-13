@@ -189,19 +189,27 @@ export function VerifyToken() {
             devLog('📦 [VerifyToken] Métadonnées récupérées:', metadata);
 
             const reservationData = metadata.reservationData || metadata;
+            const rawAc = reservationData?.airbnbCode;
+            const isIndependentMeta =
+              rawAc == null ||
+              String(rawAc).trim() === '' ||
+              String(rawAc).toUpperCase() === 'INDEPENDENT_BOOKING';
 
-            if (reservationData?.startDate && reservationData?.endDate) {
+            // Réservation indépendante : pas de dates dans l’URL — le voyageur les saisit sur GuestVerification
+            if (reservationData?.startDate && reservationData?.endDate && !isIndependentMeta) {
               const startDate = extractDateOnly(reservationData.startDate);
               const endDate = extractDateOnly(reservationData.endDate);
               const guests = reservationData.numberOfGuests || 1;
-              const airbnbCode = reservationData.airbnbCode || 'INDEPENDENT_BOOKING';
+              const airbnbCode = String(rawAc);
               const guestName = reservationData.guestName || '';
 
-              urlParams = `?startDate=${startDate}&endDate=${endDate}&guests=${guests}&airbnbCode=${airbnbCode}`;
+              urlParams = `?startDate=${startDate}&endDate=${endDate}&guests=${guests}&airbnbCode=${encodeURIComponent(airbnbCode)}`;
               if (guestName && guestName.trim() !== '') {
                 urlParams += `&guestName=${encodeURIComponent(guestName)}`;
               }
               devLog('✅ [VerifyToken] Dates extraites des métadonnées:', { startDate, endDate, guests });
+            } else if (reservationData?.startDate && reservationData?.endDate && isIndependentMeta) {
+              devLog('⏭️ [VerifyToken] Métadonnées indépendantes : pas de query dates (choix voyageur)');
             }
           }
         } catch (e) {

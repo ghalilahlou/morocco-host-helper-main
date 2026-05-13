@@ -1,5 +1,5 @@
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 
 // ✅ NOUVEAU : Fonction pour nettoyer le nom du guest récupéré depuis l'URL
 function cleanGuestNameFromUrl(guestName: string): string {
@@ -402,6 +402,45 @@ export const GuestVerification = () => {
   const lastTokenRouteKeyRef = useRef<string>('');
   const lastBookingMatchKeyRef = useRef<string>('');
 
+  /**
+   * Réservation indépendante : ne pas garder startDate/endDate/guests/airbnbCode/guestName dans l’URL.
+   * Sinon anciens liens / VerifyToken / session figent l’étape « Réservation » avant tout effet ICS.
+   * On nettoie aussi sessionStorage (brouillon) pour ce propertyId+token.
+   */
+  useLayoutEffect(() => {
+    if (!token || !propertyId || typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search || '');
+    const ac = (sp.get('airbnbCode') || '').trim();
+    const isIndependent =
+      !ac || ac.toUpperCase() === 'INDEPENDENT_BOOKING';
+    const hasLegacyBookingParams = GUEST_VERIFICATION_ICS_QUERY_KEYS.some((k) => {
+      const v = sp.get(k);
+      return v != null && String(v).length > 0;
+    });
+    if (!isIndependent || !hasLegacyBookingParams) return;
+
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const k = sessionStorage.key(i);
+      if (!k) continue;
+      if (k.startsWith('guest_verification_form_') && k.includes(`_${propertyId}_${token}`)) {
+        sessionStorage.removeItem(k);
+      }
+      if (k.startsWith(`guest_verification_ics_${propertyId}_${token}`)) {
+        sessionStorage.removeItem(k);
+      }
+    }
+
+    const qs = new URLSearchParams();
+    const lang = sp.get('lang');
+    if (lang) qs.set('lang', lang);
+    const qstr = qs.toString();
+    const pathSuffix = airbnbBookingId ? `/${airbnbBookingId}` : '';
+    navigate(
+      `/guest-verification/${propertyId}/${token}${pathSuffix}${qstr ? `?${qstr}` : ''}`,
+      { replace: true }
+    );
+  }, [token, propertyId, airbnbBookingId, navigate, location.search]);
+
   // ✅ NOUVEAU : Vérifier si c'est un lien ICS direct et pré-remplir les données
   useEffect(() => {
     if (!token || !propertyId) return;
@@ -464,8 +503,12 @@ export const GuestVerification = () => {
         const guestNameParam = urlParams.get('guestName');
         const guestsParam = urlParams.get('guests');
         const airbnbCodeParam = urlParams.get('airbnbCode');
+        const isIndependentFromUrl =
+          !airbnbCodeParam ||
+          String(airbnbCodeParam).trim() === '' ||
+          String(airbnbCodeParam).toUpperCase() === 'INDEPENDENT_BOOKING';
 
-        if (startDateParam && endDateParam) {
+        if (startDateParam && endDateParam && !isIndependentFromUrl) {
           console.log('✅ Dates trouvées dans l\'URL, pré-remplissage direct:', {
             startDate: startDateParam,
             endDate: endDateParam,
@@ -607,6 +650,9 @@ export const GuestVerification = () => {
           return; // Sortir si les dates sont dans l'URL
         }
 
+        if (startDateParam && endDateParam && isIndependentFromUrl) {
+          console.log('⏭️ [ICS] Dates dans l’URL ignorées (INDEPENDENT_BOOKING — saisie par le voyageur)');
+        }
 
         // Fallback : Vérifier le token si pas de paramètres d'URL
         // ✅ VALIDATION : Vérifier que propertyId et token sont valides avant l'appel
@@ -665,7 +711,17 @@ export const GuestVerification = () => {
 
         if (data?.success && data?.metadata?.linkType === 'ics_direct') {
           const reservationData = data.metadata.reservationData;
-          if (reservationData) {
+          const rawAc = reservationData?.airbnbCode;
+          const isIndependentIcs =
+            rawAc == null ||
+            String(rawAc).trim() === '' ||
+            String(rawAc).toUpperCase() === 'INDEPENDENT_BOOKING';
+
+          if (reservationData && isIndependentIcs) {
+            console.log('⏭️ [ICS] Métadonnées indépendantes : pas de pré-remplissage depuis le token');
+          }
+
+          if (reservationData && !isIndependentIcs) {
             console.log('✅ Données ICS détectées via token, pré-remplissage des dates:', reservationData);
             
             // Pré-remplir les dates depuis les métadonnées du token
@@ -748,7 +804,7 @@ export const GuestVerification = () => {
     return () => {
       isCheckingICSRef.current = false;
     };
-  }, [token, propertyId, icsBookingQuerySig]);
+  }, [token, propertyId, icsBookingQuerySig, navigate, airbnbBookingId]);
 
   const [checkInDate, setCheckInDate] = useState<Date | undefined>();
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
