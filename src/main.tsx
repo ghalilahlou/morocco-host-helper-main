@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 import './styles/mobile.css'
+import { registerDeploymentUpdateCheck } from '@/lib/registerDeploymentUpdateCheck'
 
 // ✅ Intercepteur Portal global AVANT le render de React
 // Cela garantit que l'intercepteur est actif dès le début, avant que React ne charge
@@ -158,5 +159,7 @@ import './styles/mobile.css'
   window.addEventListener('error', errorHandler, true); // Capture phase
   window.addEventListener('error', errorHandler, false); // Bubble phase aussi
 })();
+
+registerDeploymentUpdateCheck();
 
 createRoot(document.getElementById("root")!).render(<App />);
