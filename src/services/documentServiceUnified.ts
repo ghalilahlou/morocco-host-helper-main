@@ -41,6 +41,9 @@ export interface DocumentGenerationRequest {
     checkIn: string;
     checkOut: string;
     numberOfGuests: number;
+    /** Si absent : adultes = numberOfGuests, enfants = 0 (comportement strict hérité). */
+    adults?: number;
+    children?: number;
   };
   signature?: {
     data: string;

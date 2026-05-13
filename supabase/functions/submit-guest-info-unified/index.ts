@@ -63,6 +63,15 @@ interface UnifiedRequest {
   guests?: GuestInfo[];
   idDocuments: IdDocument[];
   signature?: SignatureData;
+  /** Données séjour invité (indépendant / ICS direct) — adults & children pour règles pièces d’identité. */
+  bookingData?: {
+    checkIn: string;
+    checkOut: string;
+    numberOfGuests: number;
+    adults?: number;
+    children?: number;
+    propertyId?: string;
+  };
   // Options supplémentaires
   skipEmail?: boolean;
   skipPolice?: boolean;
@@ -97,6 +106,19 @@ interface ValidationResult {
   isValid: boolean;
   errors: string[];
   warnings: string[];
+}
+
+/** UUID (booking_id token ou métadonnées) — format permissif */
+const BOOKING_UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isBookingUuidString(s: unknown): s is string {
+  return typeof s === 'string' && BOOKING_UUID_REGEX.test(s.trim());
+}
+
+/** PostgREST : token sans expiration OU date future */
+function filterTokenNotExpired(): string {
+  return `expires_at.is.null,expires_at.gt.${new Date().toISOString()}`;
 }
 
 // =====================================================
@@ -251,6 +273,62 @@ function validateRequest(request: UnifiedRequest): ValidationResult {
     });
   }
 
+  // Cohérence effectif / fiches / pièces (indépendant, ICS direct, ou sans code avec bookingData)
+  const isGuestIndependentFlow =
+    !request.airbnbCode ||
+    request.airbnbCode === 'INDEPENDENT_BOOKING' ||
+    request.airbnbCode === 'ICS_DIRECT';
+  if (isGuestIndependentFlow && request.bookingData) {
+    const bd = request.bookingData;
+    const children =
+      typeof bd.children === 'number' && !Number.isNaN(bd.children)
+        ? Math.max(0, Math.floor(bd.children))
+        : 0;
+    let adults: number | undefined =
+      typeof bd.adults === 'number' && !Number.isNaN(bd.adults)
+        ? Math.max(1, Math.floor(bd.adults))
+        : undefined;
+    const ng =
+      typeof bd.numberOfGuests === 'number' && !Number.isNaN(bd.numberOfGuests)
+        ? Math.max(1, Math.floor(bd.numberOfGuests))
+        : undefined;
+    if (adults === undefined && ng !== undefined) {
+      adults = Math.max(1, ng - children);
+    }
+    if (adults === undefined) {
+      adults = request.guests && request.guests.length > 0 ? request.guests.length : 1;
+    }
+    if (ng !== undefined && adults + children !== ng) {
+      errors.push(
+        `Nombre de voyageurs (${ng}) incohérent avec adultes (${adults}) + enfants (${children}).`
+      );
+    }
+    const expectedHeadcount = ng ?? adults + children;
+    const guestSlotCount =
+      request.guests && request.guests.length > 0 ? request.guests.length : 1;
+    if (children === 0 && guestSlotCount !== expectedHeadcount) {
+      errors.push(
+        `Nombre de fiches invité (${guestSlotCount}) doit correspondre au nombre de personnes (${expectedHeadcount}).`
+      );
+    }
+    const idDocs = request.idDocuments || [];
+    const looksIdentity = (d: IdDocument) =>
+      !d.type?.trim() ||
+      /identity|passport|national|cni|carte|permis|id-document|visa|id_card|idcard/i.test(
+        String(d.type)
+      );
+    const typedCount = idDocs.filter(looksIdentity).length;
+    const docCountForRule = typedCount > 0 ? typedCount : idDocs.length;
+    const requiredMin = children > 0 ? adults : adults + children;
+    if (docCountForRule < requiredMin) {
+      errors.push(
+        children > 0
+          ? `Pièces d'identité : au moins une par adulte requise (reçu ${docCountForRule}, minimum ${requiredMin}).`
+          : `Pièces d'identité : une par personne requise (reçu ${docCountForRule}, minimum ${requiredMin}).`
+      );
+    }
+  }
+
   // Validation signature si présente
   if (request.signature) {
     if (!request.signature.data || !request.signature.timestamp) {
@@ -332,7 +410,7 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
       `)
       .eq('token', token)
       .eq('is_active', true)
-      .gt('expires_at', new Date().toISOString())
+      .or(filterTokenNotExpired())
       .order('created_at', { ascending: false }) // ✅ Prendre le plus récent si plusieurs
       .limit(1)
       .maybeSingle(); // ✅ maybeSingle() au lieu de single()
@@ -473,6 +551,7 @@ async function getExistingICSBooking(token: string, guestInfo: GuestInfo): Promi
         property_id,
         token,
         expires_at,
+        booking_id,
         is_active,
         metadata,
         property:properties!inner(
@@ -485,7 +564,7 @@ async function getExistingICSBooking(token: string, guestInfo: GuestInfo): Promi
       `)
       .eq('token', token)
       .eq('is_active', true)
-      .gt('expires_at', new Date().toISOString())
+      .or(filterTokenNotExpired())
       .order('created_at', { ascending: false}) // ✅ Prendre le plus récent si plusieurs
       .limit(1)
       .maybeSingle(); // ✅ maybeSingle() au lieu de single()
@@ -499,16 +578,21 @@ async function getExistingICSBooking(token: string, guestInfo: GuestInfo): Promi
       throw new Error('Propriété inactive');
     }
 
-    // 2. Extraire l'ID de la réservation depuis les métadonnées
+    // 2. Extraire l'ID de la réservation : métadonnées d'abord, sinon colonne booking_id (UUID)
     const metadata = tokenData.metadata || {};
     const reservationData = metadata.reservationData;
-    const bookingId = reservationData?.bookingId;
+    const bookingIdFromMeta = reservationData?.bookingId;
+    const bookingIdFromColumn = isBookingUuidString((tokenData as { booking_id?: string }).booking_id)
+      ? String((tokenData as { booking_id?: string }).booking_id).trim()
+      : undefined;
+    const bookingId = bookingIdFromMeta || bookingIdFromColumn;
 
     log('info', 'Métadonnées du token récupérées', { 
       metadataKeys: Object.keys(metadata),
       hasReservationData: !!reservationData,
       reservationDataKeys: reservationData ? Object.keys(reservationData) : [],
-      bookingId: bookingId
+      bookingId: bookingId,
+      source: bookingIdFromMeta ? 'metadata' : bookingIdFromColumn ? 'booking_id_column' : 'none'
     });
 
     if (!bookingId) {
@@ -611,7 +695,7 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
       `)
       .eq('token', token)
       .eq('is_active', true)
-      .gt('expires_at', new Date().toISOString())
+      .or(filterTokenNotExpired())
       .order('created_at', { ascending: false}) // ✅ Prendre le plus récent si plusieurs
       .limit(1)
       .maybeSingle(); // ✅ maybeSingle() au lieu de single()
@@ -805,23 +889,24 @@ async function saveGuestDataInternal(
     // Si pas trouvé par bookingId, chercher par booking_reference
     if (!existingBooking) {
       if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
-        // Pour les réservations indépendantes, chercher par property_id + guest_name + check_in_date
-        const fullGuestName = `${primaryGuest.firstName} ${primaryGuest.lastName}`;
+        // Aligné sur idx_bookings_unique_independent_stay : (property_id, check_in_date, check_out_date)
         const { data } = await supabase
           .from('bookings')
           .select('id')
           .eq('property_id', booking.propertyId)
           .eq('booking_reference', 'INDEPENDENT_BOOKING')
-          .eq('guest_name', fullGuestName)
           .eq('check_in_date', booking.checkIn)
+          .eq('check_out_date', booking.checkOut)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         existingBooking = data;
         
         if (existingBooking) {
-          log('info', 'Réservation indépendante existante trouvée par guest_name + check_in_date', { 
+          log('info', 'Réservation indépendante existante trouvée par bien + dates de séjour', { 
             bookingId: existingBooking.id,
-            guestName: fullGuestName,
-            checkIn: booking.checkIn
+            checkIn: booking.checkIn,
+            checkOut: booking.checkOut
           });
         }
       } else {
@@ -1000,16 +1085,15 @@ async function saveGuestDataInternal(
         .order('updated_at', { ascending: false })
         .limit(1);
       
-      // ✅ FIX CRITIQUE : Pour les réservations indépendantes, ajouter les critères supplémentaires
-      // Sinon TOUTES les réservations indépendantes de la même propriété seraient considérées comme doublons !
+      // ✅ FIX CRITIQUE : Pour les réservations indépendantes, cibler le même créneau que l'index unique Postgres
       if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
         lastCheckQuery = lastCheckQuery
-          .eq('guest_name', bookingData.guest_name)
-          .eq('check_in_date', booking.checkIn);
+          .eq('check_in_date', booking.checkIn)
+          .eq('check_out_date', booking.checkOut);
         log('info', '🔍 Vérification doublon pour réservation indépendante', {
           propertyId: booking.propertyId,
-          guestName: bookingData.guest_name,
-          checkIn: booking.checkIn
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut
         });
       }
       
@@ -1066,11 +1150,11 @@ async function saveGuestDataInternal(
               .order('updated_at', { ascending: false })
               .limit(1);
             
-            // ✅ FIX CRITIQUE : Pour les réservations indépendantes, ajouter les critères supplémentaires
+            // Pour INDEPENDENT_BOOKING : même clé que l'index unique (property + dates)
             if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
               existingQuery = existingQuery
-                .eq('guest_name', bookingData.guest_name)
-                .eq('check_in_date', booking.checkIn);
+                .eq('check_in_date', booking.checkIn)
+                .eq('check_out_date', booking.checkOut);
             }
             
             const { data: existingData } = await existingQuery.maybeSingle();
@@ -3709,7 +3793,7 @@ serve(async (req) => {
         const supabase = await getServerClient();
         const { data: tokenData, error: tokenError } = await supabase
           .from('property_verification_tokens')
-          .select('metadata')
+          .select('metadata, booking_id')
           .eq('token', requestBody.token)
           .single();
 
@@ -3719,7 +3803,10 @@ serve(async (req) => {
 
         const metadata = tokenData.metadata || {};
         const reservationData = metadata.reservationData;
-        const bookingId = reservationData?.bookingId;
+        const colBid = (tokenData as { booking_id?: string }).booking_id;
+        const bookingId =
+          reservationData?.bookingId ||
+          (isBookingUuidString(colBid) ? String(colBid).trim() : undefined);
 
         if (!bookingId) {
           throw new Error('ID de réservation manquant dans le token');
@@ -3747,7 +3834,8 @@ serve(async (req) => {
           guestName: existingBooking.guest_name,
           numberOfGuests: existingBooking.number_of_guests,
           totalPrice: existingBooking.total_price,
-          currency: 'EUR'
+          currency: 'EUR',
+          bookingId
         };
         
         log('info', 'Réservation ICS existante récupérée avec succès', {
@@ -3787,7 +3875,7 @@ serve(async (req) => {
       try {
         const { data: tokenData } = await supabaseClient
           .from('property_verification_tokens')
-          .select('metadata')
+          .select('metadata, booking_id')
           .eq('token', requestBody.token)
           .eq('is_active', true)
           .maybeSingle();
@@ -3799,17 +3887,39 @@ serve(async (req) => {
       
       const metadata = tokenDataWithMetadata?.metadata || {};
       const reservationData = metadata?.reservationData;
-      const existingBookingIdFromToken = reservationData?.bookingId;
+      const bookingIdFromMeta = reservationData?.bookingId;
+      const colBid = (tokenDataWithMetadata as { booking_id?: string } | null)?.booking_id;
+      const bookingIdFromColumn = isBookingUuidString(colBid) ? String(colBid).trim() : undefined;
+      const existingBookingIdFromToken = bookingIdFromMeta || bookingIdFromColumn;
       const linkType = metadata?.linkType;
       
       // ✅ CORRIGÉ : Utiliser le bookingId du token si disponible (réservation ICS créée lors de la génération du lien)
       if (existingBookingIdFromToken && linkType === 'ics_direct') {
         log('info', 'Utilisation de la réservation ICS existante depuis le token', { 
           bookingId: existingBookingIdFromToken,
-          linkType 
+          linkType,
+          bookingIdSource: bookingIdFromMeta ? 'metadata' : 'column'
         });
-        booking = await getExistingICSBooking(requestBody.token, primaryGuestInfo);
-        log('info', 'Réservation ICS existante récupérée avec succès', {
+        try {
+          booking = await getExistingICSBooking(requestBody.token, primaryGuestInfo);
+        } catch (icsErr) {
+          const msg = icsErr instanceof Error ? icsErr.message : String(icsErr);
+          log('warn', 'Réservation ICS depuis token introuvable ou invalide, fallback indépendant', { error: msg });
+          const canFallbackIndependent =
+            requestBody.airbnbCode === 'INDEPENDENT_BOOKING' ||
+            !requestBody.airbnbCode ||
+            !!requestBody.bookingData;
+          if (canFallbackIndependent && requestBody.bookingData) {
+            booking = await createIndependentBooking(
+              requestBody.token,
+              primaryGuestInfo,
+              requestBody.bookingData
+            );
+          } else {
+            throw icsErr;
+          }
+        }
+        log('info', 'Réservation prête après résolution ICS / fallback', {
           bookingId: booking.bookingId,
           airbnbCode: booking.airbnbCode,
           dates: `${booking.checkIn} → ${booking.checkOut}`
@@ -3860,14 +3970,15 @@ serve(async (req) => {
           .maybeSingle();
         existingBooking = data;
       } else if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
-        // Pour les réservations indépendantes, vérifier par property_id + guest_name + check_in_date
         const { data } = await supabaseClient
           .from('bookings')
           .select('id, status')
           .eq('property_id', booking.propertyId)
           .eq('booking_reference', 'INDEPENDENT_BOOKING')
-          .eq('guest_name', `${primaryGuestInfo.firstName} ${primaryGuestInfo.lastName}`)
           .eq('check_in_date', booking.checkIn)
+          .eq('check_out_date', booking.checkOut)
+          .order('updated_at', { ascending: false })
+          .limit(1)
           .maybeSingle();
         existingBooking = data;
       } else {

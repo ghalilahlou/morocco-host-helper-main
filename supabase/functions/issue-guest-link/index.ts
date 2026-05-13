@@ -782,6 +782,31 @@ serve(async (req) => {
 
     let newToken;
     try {
+      // Lien ICS direct + booking_id connu mais sans reservation_metadata (tokens legacy / parcours indépendant)
+      if (linkType === 'ics_direct' && !reservation_metadata && finalBookingId) {
+        try {
+          const { data: bmeta } = await server
+            .from('bookings')
+            .select('id, booking_reference, check_in_date, check_out_date, number_of_guests, guest_name')
+            .eq('id', finalBookingId)
+            .maybeSingle();
+          if (bmeta) {
+            reservation_metadata = {
+              type: 'ics_direct',
+              airbnbCode: bmeta.booking_reference || 'INDEPENDENT_BOOKING',
+              startDate: bmeta.check_in_date,
+              endDate: bmeta.check_out_date,
+              guestName: bmeta.guest_name,
+              numberOfGuests: bmeta.number_of_guests || 1,
+              bookingId: bmeta.id,
+            };
+            console.log('✅ reservation_metadata backfilled depuis bookings', { bookingId: bmeta.id });
+          }
+        } catch (e) {
+          console.warn('⚠️ Backfill reservation_metadata ignoré:', (e as Error)?.message);
+        }
+      }
+
       // Créer le token avec ou sans sécurité Airbnb
       const tokenData = {
         property_id: propertyId,
