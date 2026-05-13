@@ -2554,25 +2554,30 @@ export const GuestVerification = () => {
         <div className="mobile-header guest-verification-mobile-header safe-area-top">
           {/* Barre noire pleine largeur : logo à gauche, langue à droite uniquement */}
           <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-2 min-w-0">
-              <img
-                src="/lovable-uploads/imagecheckcalendar.png"
-                alt=""
-                className="h-8 w-8 shrink-0 object-contain"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-              <span
-                style={{
-                  fontFamily: 'Fira Sans Condensed, sans-serif',
-                  fontWeight: 700,
-                  fontSize: '20px',
-                  color: '#FFFFFF',
-                }}
-              >
-                CHECKY
-              </span>
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+                <img
+                  src="/lovable-uploads/imagecheckcalendar.png"
+                  alt=""
+                  className="block max-h-full max-w-full object-contain"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              </div>
+              <div className="flex h-8 items-center">
+                <span
+                  style={{
+                    fontFamily: 'Fira Sans Condensed, sans-serif',
+                    fontWeight: 700,
+                    fontSize: '20px',
+                    lineHeight: 1,
+                    color: '#FFFFFF',
+                  }}
+                >
+                  CHECKY
+                </span>
+              </div>
             </div>
             <div className="language-switcher-in-header">
               <LanguageSwitcher />
@@ -2597,25 +2602,29 @@ export const GuestVerification = () => {
         {/* Logo Section - CENTRÉ */}
         <div className="flex flex-col items-center" style={{ marginBottom: '72px' }}>
           <div className="mb-4 flex w-full items-center justify-center gap-3 px-1">
-            <img
-              src="/lovable-uploads/imagecheckcalendar.png"
-              alt=""
-              className="h-12 w-12 shrink-0 object-contain"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-            />
-            <span
-              style={{
-                fontFamily: 'Fira Sans Condensed, sans-serif',
-                fontWeight: 700,
-                fontSize: '32px',
-                lineHeight: '36px',
-                color: '#FFFFFF',
-              }}
-            >
-              CHECKY
-            </span>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center">
+              <img
+                src="/lovable-uploads/imagecheckcalendar.png"
+                alt=""
+                className="block max-h-full max-w-full object-contain"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            </div>
+            <div className="flex h-12 items-center">
+              <span
+                style={{
+                  fontFamily: 'Fira Sans Condensed, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '32px',
+                  lineHeight: 1,
+                  color: '#FFFFFF',
+                }}
+              >
+                CHECKY
+              </span>
+            </div>
           </div>
           <p style={{ 
             fontFamily: 'Inter, sans-serif',
