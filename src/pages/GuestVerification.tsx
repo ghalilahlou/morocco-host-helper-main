@@ -2554,15 +2554,25 @@ export const GuestVerification = () => {
         <div className="mobile-header guest-verification-mobile-header safe-area-top">
           {/* Barre noire pleine largeur : logo à gauche, langue à droite uniquement */}
           <div className="flex items-center justify-between w-full">
-            <div className="flex items-center min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               <img
-                src="/lovable-uploads/spfront.png"
-                alt="Checky"
-                className="h-9 w-auto max-w-[min(220px,55vw)] object-contain object-left"
+                src="/lovable-uploads/imagecheckcalendar.png"
+                alt=""
+                className="h-8 w-8 shrink-0 object-contain"
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }}
               />
+              <span
+                style={{
+                  fontFamily: 'Fira Sans Condensed, sans-serif',
+                  fontWeight: 700,
+                  fontSize: '20px',
+                  color: '#FFFFFF',
+                }}
+              >
+                CHECKY
+              </span>
             </div>
             <div className="language-switcher-in-header">
               <LanguageSwitcher />
@@ -2586,15 +2596,26 @@ export const GuestVerification = () => {
       >
         {/* Logo Section - CENTRÉ */}
         <div className="flex flex-col items-center" style={{ marginBottom: '72px' }}>
-          <div className="flex justify-center w-full mb-4 px-1">
+          <div className="mb-4 flex w-full items-center justify-center gap-3 px-1">
             <img
-              src="/lovable-uploads/spfront.png"
-              alt="Checky"
-              className="max-h-[52px] w-auto max-w-full object-contain"
+              src="/lovable-uploads/imagecheckcalendar.png"
+              alt=""
+              className="h-12 w-12 shrink-0 object-contain"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
               }}
             />
+            <span
+              style={{
+                fontFamily: 'Fira Sans Condensed, sans-serif',
+                fontWeight: 700,
+                fontSize: '32px',
+                lineHeight: '36px',
+                color: '#FFFFFF',
+              }}
+            >
+              CHECKY
+            </span>
           </div>
           <p style={{ 
             fontFamily: 'Inter, sans-serif',
