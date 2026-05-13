@@ -95,6 +95,44 @@ export const CalendarHeader = ({
       {/* ✅ MOBILE : Design optimisé selon Figma */}
       {isMobile ? (
         <>
+          {/* Vue calendrier / cartes en premier : accessible en portrait sans paysage */}
+          {onViewModeChange && (
+            <div
+              className="flex w-full max-w-md mx-auto gap-2"
+              role="toolbar"
+              aria-label={`${t('dashboard.viewCalendar')} / ${t('dashboard.viewGrid')}`}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(
+                  'flex-1 min-h-11 h-11 rounded-xl border-2 text-sm font-semibold gap-2 shadow-none',
+                  viewMode === 'calendar'
+                    ? 'border-[#55BA9F] bg-[#55BA9F]/10 text-[#55BA9F] hover:bg-[#55BA9F]/15'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                )}
+                onClick={() => onViewModeChange('calendar')}
+              >
+                <Calendar className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                <span className="truncate">{t('dashboard.calendar')}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(
+                  'flex-1 min-h-11 h-11 rounded-xl border-2 text-sm font-semibold gap-2 shadow-none',
+                  viewMode === 'cards'
+                    ? 'border-[#55BA9F] bg-[#55BA9F]/10 text-[#55BA9F] hover:bg-[#55BA9F]/15'
+                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                )}
+                onClick={() => onViewModeChange('cards')}
+              >
+                <Grid3X3 className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                <span className="truncate">{t('dashboard.cards')}</span>
+              </Button>
+            </div>
+          )}
+
           {/* Bouton "+ Ajouter" en haut */}
           {onCreateBooking && (
             <Button 

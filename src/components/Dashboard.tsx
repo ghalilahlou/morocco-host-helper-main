@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, memo, lazy, Suspense } from 'react';
-import { Plus, Search, Filter, Grid, CalendarDays } from 'lucide-react';
+import { Plus, Search, Filter, Grid3X3, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -12,6 +12,7 @@ import { debug } from '@/lib/logger';
 import { useGuestLocale, useT } from '@/i18n/GuestLocaleProvider';
 import { bookingOverlapsYearMonth, buildCardMonthFilterValues } from '@/utils/bookingMonthFilter';
 import { CardMonthFilterPicker } from '@/components/CardMonthFilterPicker';
+import { cn } from '@/lib/utils';
 
 // ✅ OPTIMISATION : Lazy loading pour CalendarView (composant lourd)
 const CalendarView = lazy(() => import('./CalendarView'));
@@ -132,26 +133,48 @@ export const Dashboard = memo(({
         </p>
       </div>
 
-      {/* Navigation Tabs - masqués en vue calendrier (icônes dans CalendarHeader à droite de la date) */}
+      {/* Vue cartes : bascule + Ajouter (aligné sur CalendarHeader mobile) */}
       {viewMode === 'cards' && (
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setViewMode('calendar')}
-            data-tutorial="calendar"
-            className="hover:bg-gray-100 border-gray-300"
+        <div className="flex flex-col gap-3 w-full max-w-md mx-auto sm:max-w-none sm:mx-0">
+          <div
+            className="flex w-full gap-2"
+            role="toolbar"
+            aria-label={`${t('dashboard.viewCalendar')} / ${t('dashboard.viewGrid')}`}
           >
-            <CalendarDays className="w-4 h-4 mr-2" />
-            {t('dashboard.calendar')}
-          </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setViewMode('calendar')}
+              data-tutorial="calendar"
+              className={cn(
+                'flex-1 min-h-11 h-11 rounded-xl border-2 text-sm font-semibold gap-2 shadow-none',
+                'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+              )}
+            >
+              <Calendar className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+              <span className="truncate">{t('dashboard.calendar')}</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setViewMode('cards')}
+              className={cn(
+                'flex-1 min-h-11 h-11 rounded-xl border-2 text-sm font-semibold gap-2 shadow-none',
+                'border-[#55BA9F] bg-[#55BA9F]/10 text-[#55BA9F] hover:bg-[#55BA9F]/15'
+              )}
+            >
+              <Grid3X3 className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+              <span className="truncate">{t('dashboard.cards')}</span>
+            </Button>
+          </div>
           <Button
-            variant="default"
-            size="sm"
-            className="bg-[#55BA9F] hover:bg-[#55BA9F]/90 text-white"
+            type="button"
+            onClick={onNewBooking}
+            data-tutorial="add-booking"
+            className="w-full h-12 bg-[#55BA9F] hover:bg-[#55BA9F]/90 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
           >
-            <Grid className="w-4 h-4 mr-2" />
-            {t('dashboard.cards')}
+            <Plus className="h-5 w-5" />
+            <span>{t('dashboard.add')}</span>
           </Button>
         </div>
       )}
