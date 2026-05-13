@@ -2500,7 +2500,7 @@ export const GuestVerification = () => {
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2">
               <img 
-                src="/lovable-uploads/Checky simple - fond transparent.png" 
+                src="/og-checky.png" 
                 alt="CHECKY" 
                 className="h-8 w-8 object-contain"
                 onError={(e) => {
@@ -2538,11 +2538,10 @@ export const GuestVerification = () => {
         <div className="flex flex-col items-center" style={{ marginBottom: '72px' }}>
           <div className="flex items-center gap-3 mb-4">
             <img 
-              src="/lovable-uploads/Checky simple - fond transparent.png" 
+              src="/og-checky.png" 
               alt="CHECKY Logo" 
               className="h-12 w-12 object-contain"
               onError={(e) => {
-                console.log('Logo Checky not found');
                 e.currentTarget.style.display = 'none';
               }}
             />

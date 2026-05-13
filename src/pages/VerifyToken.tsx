@@ -16,6 +16,10 @@ import { AlertCircle, RefreshCw, Home } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { extractDateOnly } from '@/utils/dateUtils';
 
+const devLog = (...args: unknown[]) => {
+  if (import.meta.env.DEV) console.log(...args);
+};
+
 export function VerifyToken() {
   const { token, reservationCode } = useParams<{ token: string; reservationCode?: string }>();
   const navigate = useNavigate();
@@ -33,14 +37,14 @@ export function VerifyToken() {
 
   // ✅ Debug : Log au chargement
   useEffect(() => {
-    console.log('🔍 [VerifyToken] Composant monté', { token, url: window.location.href });
+    devLog('🔍 [VerifyToken] Composant monté', { token, url: window.location.href });
     setDebugInfo(`Token: ${token || 'N/A'}, URL: ${window.location.href}`);
   }, [token]);
 
   // ✅ Redirection automatique vers GuestVerification avec dates pré-remplies
   useEffect(() => {
     if (fatalErrorRef.current) return; // token inexistant, ne pas relancer
-    console.log('🔄 [VerifyToken] useEffect déclenché', { token, retryCount });
+    devLog('🔄 [VerifyToken] useEffect déclenché', { token, retryCount });
     
     if (!token) {
       console.error('❌ [VerifyToken] Token manquant');
@@ -55,8 +59,8 @@ export function VerifyToken() {
       setError(null);
 
       try {
-        console.log('🔄 [VerifyToken] Résolution automatique du token et redirection vers GuestVerification...');
-        console.log('🔗 [VerifyToken] Token reçu:', token);
+        devLog('🔄 [VerifyToken] Résolution automatique du token et redirection vers GuestVerification...');
+        devLog('🔗 [VerifyToken] Token reçu:', token);
 
         // Tentative 1 : RPC resolve_guest_token (anon-safe)
         let tokenData: any = null;
@@ -65,7 +69,7 @@ export function VerifyToken() {
         const { data: tokenRows, error: tokenError } = await (supabase as any)
           .rpc('resolve_guest_token', { p_token: token });
 
-        console.log('📦 [VerifyToken] Résultat RPC:', { tokenRows, tokenError });
+        devLog('📦 [VerifyToken] Résultat RPC:', { tokenRows, tokenError });
 
         if (tokenError) {
           // RPC manquant (PGRST202) ou erreur réseau → fallback Edge Function
@@ -87,7 +91,7 @@ export function VerifyToken() {
 
         // Tentative 2 : Edge Function issue-guest-link action=resolve (fallback si RPC absent)
         if (rpcFailed || (!tokenData && !tokenError)) {
-          console.log('🔄 [VerifyToken] Fallback : appel issue-guest-link resolve...');
+          devLog('🔄 [VerifyToken] Fallback : appel issue-guest-link resolve...');
           try {
             const decodedReservationCode = reservationCode ? decodeURIComponent(reservationCode.trim()) : undefined;
             const { data: efData, error: efError } = await supabase.functions.invoke('issue-guest-link', {
@@ -101,7 +105,7 @@ export function VerifyToken() {
                 expires_at: null,
                 metadata: null
               };
-              console.log('✅ [VerifyToken] Fallback Edge Function réussi:', efData.propertyId);
+              devLog('✅ [VerifyToken] Fallback Edge Function réussi:', efData.propertyId);
             } else {
               const reason = efData?.error || efError?.message || 'unknown';
               if (reason === 'expired' || reason === 'inactive') {
@@ -175,14 +179,14 @@ export function VerifyToken() {
               if (guestName && guestName.trim() !== '') {
                 urlParams += `&guestName=${encodeURIComponent(guestName)}`;
               }
-              console.log('✅ [VerifyToken] Dates extraites du booking (code résa):', { startDate, endDate, guests });
+              devLog('✅ [VerifyToken] Dates extraites du booking (code résa):', { startDate, endDate, guests });
             }
           }
 
           // Fallback : métadonnées du token (déjà incluses dans tokenData via RPC)
           if (!urlParams && tokenData?.metadata) {
             const metadata = tokenData.metadata as any;
-            console.log('📦 [VerifyToken] Métadonnées récupérées:', metadata);
+            devLog('📦 [VerifyToken] Métadonnées récupérées:', metadata);
 
             const reservationData = metadata.reservationData || metadata;
 
@@ -197,14 +201,14 @@ export function VerifyToken() {
               if (guestName && guestName.trim() !== '') {
                 urlParams += `&guestName=${encodeURIComponent(guestName)}`;
               }
-              console.log('✅ [VerifyToken] Dates extraites des métadonnées:', { startDate, endDate, guests });
+              devLog('✅ [VerifyToken] Dates extraites des métadonnées:', { startDate, endDate, guests });
             }
           }
         } catch (e) {
           console.warn('⚠️ [VerifyToken] Erreur récupération dates (non bloquante):', e);
         }
 
-        console.log('✅ [VerifyToken] Token résolu, redirection vers GuestVerification:', propertyId);
+        devLog('✅ [VerifyToken] Token résolu, redirection vers GuestVerification:', propertyId);
         
         // ✅ REDIRECTION AVEC DATES
         const redirectUrl = `/guest-verification/${propertyId}/${token}${urlParams}`;
