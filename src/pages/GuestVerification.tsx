@@ -57,7 +57,7 @@ import { Upload, FileText, X, CheckCircle, Users, Calendar as CalendarLucide, Ar
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { parseLocalDate, formatLocalDate, extractDateOnly } from '@/utils/dateUtils';
+import { parseLocalDate, formatLocalDate, extractDateOnly, parseStayDateForCalendar } from '@/utils/dateUtils';
 import { OpenAIDocumentService } from '@/services/openaiDocumentService';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { EnhancedInput } from '@/components/ui/enhanced-input';
@@ -854,10 +854,35 @@ export const GuestVerification = () => {
   const identityUnlockedForGuest = useCallback(
     (guestIndex: number) => {
       const doc = uploadedDocuments[guestIndex];
-      return Boolean(doc && !doc.processing);
+      if (doc && !doc.processing) return true;
+
+      const guest = guests[guestIndex];
+      if (!guest?.fullName?.trim()) return false;
+
+      // L'OCR peut remplir un autre index que l'ordre d'upload : déverrouiller si un doc
+      // traité correspond à ce voyageur (nom ou n° de document).
+      return uploadedDocuments.some((d) => {
+        if (!d || d.processing || !d.extractedData) return false;
+        const ext = d.extractedData as Partial<Guest>;
+        const sameName =
+          ext.fullName &&
+          guest.fullName &&
+          ext.fullName.trim().toLowerCase() === guest.fullName.trim().toLowerCase();
+        const sameDoc =
+          ext.documentNumber &&
+          guest.documentNumber &&
+          ext.documentNumber.trim() === guest.documentNumber.trim();
+        return Boolean(sameName || sameDoc);
+      });
     },
-    [uploadedDocuments]
+    [uploadedDocuments, guests]
   );
+
+  const guestDateForPicker = (raw: Date | string | undefined): Date | undefined => {
+    if (raw == null || raw === '') return undefined;
+    const parsed = parseStayDateForCalendar(raw);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  };
 
   const [currentStep, setCurrentStep] = useState<'booking' | 'documents' | 'signature'>('booking');
   
@@ -950,8 +975,8 @@ export const GuestVerification = () => {
       if (savedGuests) {
         const parsedGuests = JSON.parse(savedGuests).map((g: any) => ({
           ...g,
-          dateOfBirth: g.dateOfBirth ? new Date(g.dateOfBirth) : undefined,
-          documentIssueDate: g.documentIssueDate ? new Date(g.documentIssueDate) : undefined
+          dateOfBirth: g.dateOfBirth ? guestDateForPicker(g.dateOfBirth) : undefined,
+          documentIssueDate: g.documentIssueDate ? guestDateForPicker(g.documentIssueDate) : undefined
         }));
         setGuests(parsedGuests);
         console.log('✅ [Persistance] Guests restaurés:', parsedGuests.length);
@@ -3797,11 +3822,7 @@ export const GuestVerification = () => {
                                     <GuestHybridDateField
                                       id={`guest-dob-${rowIndex}`}
                                       variant="birth"
-                                      value={
-                                        guest.dateOfBirth
-                                          ? new Date(guest.dateOfBirth)
-                                          : undefined
-                                      }
+                                      value={guestDateForPicker(guest.dateOfBirth)}
                                       onChange={(date) => updateGuest(rowIndex, 'dateOfBirth', date)}
                                       ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
                                       disabled={fieldsLocked}
@@ -3874,11 +3895,7 @@ export const GuestVerification = () => {
                                     <GuestHybridDateField
                                       id={`guest-doc-expiry-${rowIndex}`}
                                       variant="expiry"
-                                      value={
-                                        guest.documentIssueDate
-                                          ? new Date(guest.documentIssueDate)
-                                          : undefined
-                                      }
+                                      value={guestDateForPicker(guest.documentIssueDate)}
                                       onChange={(date) => updateGuest(rowIndex, 'documentIssueDate', date)}
                                       ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
                                       disabled={fieldsLocked}

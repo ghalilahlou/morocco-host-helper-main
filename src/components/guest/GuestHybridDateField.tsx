@@ -1,4 +1,4 @@
-import { formatLocalDate, parseLocalDate } from '@/utils/dateUtils';
+import { formatLocalDate, parseLocalDate, parseStayDateForCalendar } from '@/utils/dateUtils';
 
 export type GuestHybridDateVariant = 'birth' | 'expiry';
 
@@ -21,9 +21,40 @@ function safeParseYmd(s: string): Date | undefined {
   }
 }
 
-function toSafeDate(v: Date | undefined): Date | undefined {
-  if (!v || !(v instanceof Date) || isNaN(v.getTime())) return undefined;
-  return v;
+function toSafeDate(v: Date | string | undefined): Date | undefined {
+  if (v == null || v === '') return undefined;
+  if (v instanceof Date) {
+    return isNaN(v.getTime()) ? undefined : v;
+  }
+  const parsed = parseStayDateForCalendar(v);
+  return isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+/** Étend min/max pour inclure une valeur OCR hors plage (sinon le champ date natif est figé). */
+function boundsIncludingValue(
+  variant: GuestHybridDateVariant,
+  safeValue: Date | undefined
+): { minYmd: string; maxYmd: string } {
+  const yNow = new Date().getFullYear();
+  const birthFromYear = 1900;
+  const birthToYear = yNow;
+  const expiryFromYear = yNow - 35;
+  const expiryToYear = yNow + 30;
+
+  let minYmd =
+    variant === 'birth' ? `${birthFromYear}-01-01` : `${expiryFromYear}-01-01`;
+  let maxYmd =
+    variant === 'birth'
+      ? formatLocalDate(new Date())
+      : `${expiryToYear}-12-31`;
+
+  if (safeValue) {
+    const ymd = formatLocalDate(safeValue);
+    if (ymd < minYmd) minYmd = ymd;
+    if (ymd > maxYmd) maxYmd = ymd;
+  }
+
+  return { minYmd, maxYmd };
 }
 
 /**
@@ -32,19 +63,7 @@ function toSafeDate(v: Date | undefined): Date | undefined {
  */
 export function GuestHybridDateField({ value, onChange, variant, id, ariaLabel, disabled }: Props) {
   const safeValue = toSafeDate(value);
-
-  const yNow = new Date().getFullYear();
-  const birthFromYear = 1920;
-  const birthToYear = yNow;
-  const expiryFromYear = yNow - 35;
-  const expiryToYear = yNow + 25;
-
-  const fromYear = variant === 'birth' ? birthFromYear : expiryFromYear;
-  const toYear = variant === 'birth' ? birthToYear : expiryToYear;
-
-  const minYmd = `${fromYear}-01-01`;
-  const maxYmd =
-    variant === 'birth' ? formatLocalDate(new Date()) : `${expiryToYear}-12-31`;
+  const { minYmd, maxYmd } = boundsIncludingValue(variant, safeValue);
 
   const isBirthFutureDisabled = (date: Date) => {
     const end = new Date();
