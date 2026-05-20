@@ -3,7 +3,12 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
-import fontkit from "https://esm.sh/@pdf-lib/fontkit@1.1.1";
+import {
+  embedPdfUnicodeFonts,
+  textForPdfDraw,
+  hasArabicScript,
+  pickPdfFont,
+} from '../_shared/pdfUnicodeFonts.ts';
 
 // =====================================================
 // CONFIGURATION ET CONSTANTS
@@ -5464,15 +5469,15 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   // Créer le document PDF
   const pdfDoc = await PDFDocument.create();
   
-  // Fonts (fallback to Helvetica for simplicity)
-  let fontRegular, fontBold;
-  try {
-    fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  } catch (e) {
-    log('warn', 'Font loading failed, using defaults');
-    fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const pdfFonts = await embedPdfUnicodeFonts(pdfDoc);
+  const fontRegular = pdfFonts.fontRegular;
+  const fontBold = pdfFonts.fontBold;
+  const usesUnicodeFonts = pdfFonts.usesUnicode;
+  const pdfText = (t: string) => textForPdfDraw(String(t ?? ''), usesUnicodeFonts);
+  if (!usesUnicodeFonts) {
+    log('warn', '[CONTRACT] Polices Unicode indisponibles — translittération WinAnsi activée');
+  } else {
+    log('info', '[CONTRACT] Polices Noto Sans chargées (support İ, caractères étendus)');
   }
 
   let pages: any[] = [];
@@ -5495,14 +5500,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   }
 
   function drawHeader() {
-    currentPage.drawText(property.name || L.title, {
+    currentPage.drawText(pdfText(property.name || L.title), {
       x: margin,
       y: pageHeight - 30,
       size: 10,
       font: fontBold
     });
     
-    currentPage.drawText(`Ref: ${booking.ref}`, {
+    currentPage.drawText(pdfText(`Ref: ${booking.ref}`), {
       x: pageWidth - margin - 100,
       y: pageHeight - 30,
       size: 9,
@@ -5519,7 +5524,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   }
 
   function wrapText(text: string, width: number, size: number, font: any = fontRegular): string[] {
-    const words = text.split(/\s+/);
+    const words = pdfText(text).split(/\s+/);
     const lines = [];
     let line = "";
     
@@ -5539,7 +5544,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
 
   function drawParagraph(text: string, size: number = bodySize, bold: boolean = false) {
     const font = bold ? fontBold : fontRegular;
-    const lines = wrapText(text, maxWidth, size, font);
+    const lines = wrapText(pdfText(text), maxWidth, size, font);
     
     for (const l of lines) {
       ensureSpace(size + 2);
@@ -5555,7 +5560,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
 
   /** Paragraphe avec retrait (puces / listes) */
   function drawParagraphIndented(text: string, indent: number, size: number = bodySize) {
-    const lines = wrapText(text, maxWidth - indent, size, fontRegular);
+    const lines = wrapText(pdfText(text), maxWidth - indent, size, fontRegular);
     for (const l of lines) {
       ensureSpace(size + 2);
       currentPage.drawText(l, {
@@ -5570,7 +5575,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
 
   function drawIntroSectionTitle(text: string) {
     ensureSpace(sectionSize + 10);
-    currentPage.drawText(text, {
+    currentPage.drawText(pdfText(text), {
       x: margin,
       y,
       size: sectionSize,
@@ -5592,7 +5597,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
       color: accentArticle,
       borderWidth: 0
     });
-    currentPage.drawText(text, {
+    currentPage.drawText(pdfText(text), {
       x: titleX,
       y,
       size: sectionSize,
@@ -5617,16 +5622,16 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
 
   // Titre principal (traduit), centré comme l’aperçu HTML
   ensureSpace(titleSize + 10);
-  const tw1 = fontBold.widthOfTextAtSize(L.titleLine1, titleSize);
-  currentPage.drawText(L.titleLine1, {
+  const tw1 = fontBold.widthOfTextAtSize(pdfText(L.titleLine1), titleSize);
+  currentPage.drawText(pdfText(L.titleLine1), {
     x: (pageWidth - tw1) / 2,
     y,
     size: titleSize,
     font: fontBold
   });
   y -= titleSize + 4;
-  const tw2 = fontBold.widthOfTextAtSize(L.titleLine2, titleSize);
-  currentPage.drawText(L.titleLine2, {
+  const tw2 = fontBold.widthOfTextAtSize(pdfText(L.titleLine2), titleSize);
+  currentPage.drawText(pdfText(L.titleLine2), {
     x: (pageWidth - tw2) / 2,
     y,
     size: titleSize,
@@ -5806,13 +5811,13 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     try {
       if (isHostSigSvg) {
         // Pour SVG, afficher le nom avec mention "signature électronique"
-        currentPage.drawText(hostName, {
+        currentPage.drawText(pdfText(hostName), {
           x: col1 + 10,
           y: y - signatureBoxHeight + 30,
           size: bodySize,
           font: fontRegular
         });
-        currentPage.drawText(L.electronicSignature, {
+        currentPage.drawText(pdfText(L.electronicSignature), {
           x: col1 + 10,
           y: y - signatureBoxHeight + 15,
           size: bodySize - 2,
@@ -5848,7 +5853,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
         
         log('info', 'Signature du bailleur (image) intégrée au PDF');
       } else {
-        currentPage.drawText(hostName, {
+        currentPage.drawText(pdfText(hostName), {
           x: col1 + 10,
           y: y - signatureBoxHeight + 30,
           size: bodySize,
@@ -5857,7 +5862,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
       }
     } catch (e) {
       log('warn', 'Échec intégration signature bailleur:', e);
-      currentPage.drawText(hostName, {
+      currentPage.drawText(pdfText(hostName), {
         x: col1 + 10,
         y: y - signatureBoxHeight + 30,
         size: bodySize,
@@ -5865,7 +5870,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
       });
     }
   } else {
-    currentPage.drawText(hostName, {
+    currentPage.drawText(pdfText(hostName), {
       x: col1 + 10,
       y: y - signatureBoxHeight + 30,
       size: bodySize,
@@ -6005,14 +6010,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   }
   
   y -= signatureBoxHeight + 5;
-  currentPage.drawText(L.signatureLandlordLabel, {
+  currentPage.drawText(pdfText(L.signatureLandlordLabel), {
     x: col1,
     y,
     size: bodySize,
     font: fontBold
   });
   
-  currentPage.drawText(L.signatureTenantLabel, {
+  currentPage.drawText(pdfText(L.signatureTenantLabel), {
     x: col2,
     y,
     size: bodySize,
@@ -6020,14 +6025,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   });
 
   y -= 15;
-  currentPage.drawText(hostName, {
+  currentPage.drawText(pdfText(hostName), {
     x: col1,
     y,
     size: bodySize - 1,
     font: fontRegular
   });
   
-  currentPage.drawText(locataireName, {
+  currentPage.drawText(pdfText(locataireName), {
     x: col2,
     y,
     size: bodySize - 1,
@@ -6036,7 +6041,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
 
   const dateLocale = locale === 'en' ? 'en-GB' : locale === 'es' ? 'es-ES' : 'fr-FR';
   y -= 15;
-  currentPage.drawText(`${L.dateLabel} ${new Date().toLocaleDateString(dateLocale)}`, {
+  currentPage.drawText(pdfText(`${L.dateLabel} ${new Date().toLocaleDateString(dateLocale)}`), {
     x: col1,
     y,
     size: bodySize - 1,
@@ -6044,14 +6049,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   });
   
   if (guestSignedAt) {
-    currentPage.drawText(`${L.dateLabel} ${fmtFR(guestSignedAt)}`, {
+    currentPage.drawText(pdfText(`${L.dateLabel} ${fmtFR(guestSignedAt)}`), {
       x: col2,
       y,
       size: bodySize - 1,
       font: fontRegular
     });
   } else {
-    currentPage.drawText(`${L.dateLabel} ____/____/______`, {
+    currentPage.drawText(pdfText(`${L.dateLabel} ____/____/______`), {
       x: col2,
       y,
       size: bodySize - 1,
@@ -6062,7 +6067,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   if (guestSignatureData) {
     y -= 20;
     const validatedText = guestSignedAt ? `${L.signatureValidated} ${fmtFR(guestSignedAt)}` : L.signatureValidated;
-    currentPage.drawText(`* ${validatedText}`, {
+    currentPage.drawText(pdfText(`* ${validatedText}`), {
       x: col2,
       y,
       size: bodySize - 2,
@@ -6071,7 +6076,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   }
 
   pages.forEach((p, i) => {
-    p.drawText(`${L.pageLabel} ${i + 1}/${pages.length}`, {
+    p.drawText(pdfText(`${L.pageLabel} ${i + 1}/${pages.length}`), {
       x: pageWidth - margin - 60,
       y: margin - 20,
       size: 9,
@@ -6178,39 +6183,20 @@ async function generatePoliceFormsPDF(
   // Créer le document PDF
   const pdfDoc = await PDFDocument.create();
   
-  // ✅ SOLUTION : Charger une police qui supporte l'arabe (Noto Sans Arabic)
-  let font, boldFont, arabicFont;
-  try {
-    // Police latine standard
-    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    
-    // ✅ Charger une police arabe depuis Google Fonts
-    log('info', 'Loading Arabic font from Google Fonts...');
-    const arabicFontUrl = 'https://fonts.gstatic.com/s/notosansarabic/v18/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyvu3CBFQLaig.ttf';
-    
-    const fontBytes = await fetch(arabicFontUrl).then(res => res.arrayBuffer());
-    
-    // Enregistrer fontkit pour permettre l'embedding de polices custom
-    pdfDoc.registerFontkit(fontkit);
-    arabicFont = await pdfDoc.embedFont(fontBytes);
-    
-    log('info', 'Arabic font loaded successfully!');
-  } catch (e) {
-    log('warn', 'Arabic font loading failed, falling back to Helvetica', { error: String(e) });
-    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    arabicFont = font; // Fallback
+  const policePdfFonts = await embedPdfUnicodeFonts(pdfDoc);
+  const font = policePdfFonts.fontRegular;
+  const boldFont = policePdfFonts.fontBold;
+  const arabicFont = policePdfFonts.arabicFont;
+  const policeUsesUnicode = policePdfFonts.usesUnicode;
+  const policePdfText = (t: string) => textForPdfDraw(String(t ?? ''), policeUsesUnicode);
+  if (!policeUsesUnicode) {
+    log('warn', '[Police] Polices Unicode indisponibles — translittération WinAnsi activée');
+  } else {
+    log('info', '[Police] Polices Noto Sans chargées (support İ, caractères étendus)');
   }
   
-  // Helper pour détecter si du texte contient de l'arabe
-  function hasArabic(text: string): boolean {
-    return /[\u0600-\u06FF]/.test(text);
-  }
-  
-  // Helper pour choisir la bonne police selon le texte
   function getFont(text: string) {
-    return hasArabic(text) ? arabicFont : font;
+    return pickPdfFont(text, policePdfFonts);
   }
 
   // ✅ SOLUTION AMÉLIORÉE : Helper function to draw bilingual field avec support arabe et multi-lignes pour longues adresses
@@ -6221,8 +6207,9 @@ async function generatePoliceFormsPDF(
     const lineSpacing = 11; // ✅ RÉDUIT de 14 à 11
     
     // Draw French label (left aligned)
-    const frenchLabelWidth = font.widthOfTextAtSize(frenchLabel, fontSize);
-    page.drawText(frenchLabel, {
+    const safeFrenchLabel = policePdfText(frenchLabel);
+    const frenchLabelWidth = font.widthOfTextAtSize(safeFrenchLabel, fontSize);
+    page.drawText(safeFrenchLabel, {
       x,
       y,
       size: fontSize,
@@ -6257,15 +6244,15 @@ async function generatePoliceFormsPDF(
     // ✅ NOUVEAU : Gérer les valeurs multi-lignes pour les longues adresses
     if (value && value.trim()) {
       try {
+        const safeValue = hasArabicScript(value) ? value : policePdfText(value);
         const valueFont = getFont(value);
         let valueSize = fontSize - 1;
-        let valueWidth = valueFont.widthOfTextAtSize(value, valueSize);
+        let valueWidth = valueFont.widthOfTextAtSize(safeValue, valueSize);
         
         // ✅ OPTION 1 : Si la valeur est trop longue, essayer de réduire la taille
-        let finalValue = value;
         while (valueWidth > availableWidth && valueSize > 6) {
           valueSize -= 0.3;
-          valueWidth = valueFont.widthOfTextAtSize(value, valueSize);
+          valueWidth = valueFont.widthOfTextAtSize(safeValue, valueSize);
         }
         
         // ✅ OPTION 2 : Si toujours trop long même à taille minimale, découper en lignes
@@ -6297,7 +6284,7 @@ async function generatePoliceFormsPDF(
             return lines;
           };
           
-          const lines = splitTextIntoLines(value, availableWidth, valueFont, valueSize);
+          const lines = splitTextIntoLines(safeValue, availableWidth, valueFont, valueSize);
           
           // Dessiner chaque ligne
           lines.forEach((line, index) => {
@@ -6345,7 +6332,7 @@ async function generatePoliceFormsPDF(
             )
           );
           
-          page.drawText(value, {
+          page.drawText(safeValue, {
             x: valueX,
             y: y - 2,
             size: valueSize,
