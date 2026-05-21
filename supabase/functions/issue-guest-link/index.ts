@@ -301,33 +301,11 @@ serve(async (req) => {
 
     console.log('✅ Génération de tokens autorisée (ou fallback).');
 
-    // If no bookingId is provided, try to find the most recent active booking for this property
+    // ✅ Un lien = un séjour : ne plus rattacher automatiquement la « prochaine » résa de la propriété.
+    // Sans bookingId, la réservation est créée/résolue uniquement via reservationData (dates + bien) plus bas.
     let finalBookingId = bookingId;
     if (!bookingId) {
-      console.log('📅 No bookingId provided, searching for recent bookings...');
-      try {
-        const { data: recentBooking, error: bookingError } = await server
-          .from('bookings')
-          .select('id')
-          .eq('property_id', propertyId)
-          .gte('check_out_date', new Date().toISOString().split('T')[0]) // Future or current bookings
-          .order('check_in_date', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-
-        if (bookingError) {
-          console.error('❌ Error searching for recent bookings:', bookingError);
-          // Don't fail, just continue without bookingId
-        } else if (recentBooking) {
-          finalBookingId = recentBooking.id;
-          console.log('✅ Found recent booking:', finalBookingId);
-        } else {
-          console.log('⚠️ No recent booking found for property');
-        }
-      } catch (bookingSearchError) {
-        console.error('❌ Unexpected error during booking search:', bookingSearchError);
-        // Don't fail, just continue without bookingId
-      }
+      console.log('📅 No bookingId on issue — will resolve stay from reservationData or leave unset until guest submits');
     }
 
     // ✅ NOUVEAU : Vérifier d'abord si un token actif récent existe déjà (idempotence)
@@ -570,17 +548,41 @@ serve(async (req) => {
             resolvedIcsBookingId = targetedRow.id;
             console.log('📝 Mise à jour réservation (par bookingId):', resolvedIcsBookingId);
 
+            const { data: bookingBeforeUpdate } = await server
+              .from('bookings')
+              .select('check_in_date, check_out_date')
+              .eq('id', resolvedIcsBookingId)
+              .single();
+
+            const datesDiffer =
+              bookingBeforeUpdate &&
+              (bookingBeforeUpdate.check_in_date !== checkInDate ||
+                bookingBeforeUpdate.check_out_date !== checkOutDate);
+
+            if (datesDiffer) {
+              console.warn(
+                '⚠️ Dates du lien différentes de la réservation existante — pas d’écrasement des dates en base',
+                {
+                  bookingId: resolvedIcsBookingId,
+                  existing: `${bookingBeforeUpdate.check_in_date} → ${bookingBeforeUpdate.check_out_date}`,
+                  requested: `${checkInDate} → ${checkOutDate}`,
+                },
+              );
+            }
+
+            const bookingPatch: Record<string, unknown> = {
+              guest_name: reservationData.guestName?.trim() || null,
+              number_of_guests: reservationData.numberOfGuests || 1,
+              updated_at: new Date().toISOString(),
+            };
+            if (!datesDiffer) {
+              bookingPatch.check_in_date = checkInDate;
+              bookingPatch.check_out_date = checkOutDate;
+            }
+
             const { error: updateByIdError } = await server
               .from('bookings')
-              .update({
-                check_in_date: checkInDate,
-                check_out_date: checkOutDate,
-                // ✅ Plus de placeholder 'Guest' : NULL si pas de nom fourni à l'émission du lien.
-                // `submit-guest-info-unified` remplira le vrai nom dans `saveGuestDataInternal`.
-                guest_name: reservationData.guestName?.trim() || null,
-                number_of_guests: reservationData.numberOfGuests || 1,
-                updated_at: new Date().toISOString(),
-              })
+              .update(bookingPatch)
               .eq('id', resolvedIcsBookingId);
 
             if (updateByIdError) {
@@ -600,34 +602,61 @@ serve(async (req) => {
               throw new Error(`Erreur mise à jour réservation: ${updateByIdError.message}`);
             }
           } else {
-          // Vérifier si une réservation existe déjà pour ce code Airbnb
-          // ✅ CORRIGÉ : .order().limit(1) avant .maybeSingle() pour éviter l'erreur
-          // quand des doublons existent déjà (maybeSingle échoue si >1 résultat)
-          const { data: existingBooking } = await server
-            .from('bookings')
-            .select('id, status')
-            .eq('property_id', propertyId)
-            .eq('booking_reference', reservationData.airbnbCode)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+          // Résolution du séjour : INDEPENDENT = bien + dates (pas « dernière résa INDEPENDENT »)
+          let existingBooking: { id: string; status: string } | null = null;
+          if (reservationData.airbnbCode === 'INDEPENDENT_BOOKING') {
+            const { data } = await server
+              .from('bookings')
+              .select('id, status')
+              .eq('property_id', propertyId)
+              .eq('booking_reference', 'INDEPENDENT_BOOKING')
+              .eq('check_in_date', checkInDate)
+              .eq('check_out_date', checkOutDate)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            existingBooking = data;
+          } else {
+            const { data } = await server
+              .from('bookings')
+              .select('id, status')
+              .eq('property_id', propertyId)
+              .eq('booking_reference', reservationData.airbnbCode)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            existingBooking = data;
+          }
 
           if (existingBooking) {
             // Mettre à jour la réservation existante
             console.log('📝 Mise à jour réservation existante:', existingBooking.id);
             resolvedIcsBookingId = existingBooking.id;
 
+            const { data: bookingBeforeRefUpdate } = await server
+              .from('bookings')
+              .select('check_in_date, check_out_date')
+              .eq('id', resolvedIcsBookingId)
+              .single();
+
+            const refDatesDiffer =
+              bookingBeforeRefUpdate &&
+              (bookingBeforeRefUpdate.check_in_date !== checkInDate ||
+                bookingBeforeRefUpdate.check_out_date !== checkOutDate);
+
+            const refBookingPatch: Record<string, unknown> = {
+              guest_name: reservationData.guestName?.trim() || null,
+              number_of_guests: reservationData.numberOfGuests || 1,
+              updated_at: new Date().toISOString(),
+            };
+            if (!refDatesDiffer) {
+              refBookingPatch.check_in_date = checkInDate;
+              refBookingPatch.check_out_date = checkOutDate;
+            }
+
             const { error: updateError } = await server
               .from('bookings')
-              .update({
-                check_in_date: checkInDate,
-                check_out_date: checkOutDate,
-                // ✅ Plus de placeholder 'Guest' : NULL si pas de nom fourni à l'émission du lien.
-                // `submit-guest-info-unified` remplira le vrai nom dans `saveGuestDataInternal`.
-                guest_name: reservationData.guestName?.trim() || null,
-                number_of_guests: reservationData.numberOfGuests || 1,
-                updated_at: new Date().toISOString()
-              })
+              .update(refBookingPatch)
               .eq('id', resolvedIcsBookingId);
 
             if (updateError) {
@@ -932,6 +961,22 @@ serve(async (req) => {
 
         newToken = tokenResult;
         console.log('✅ Token normal créé avec succès:', newToken.id);
+      }
+
+      // ✅ Un seul lien actif par séjour (INDEPENDENT / ICS sans code Airbnb) : désactiver les anciens tokens du même booking_id
+      if (finalBookingId && !hasAirbnbCode && newToken?.id) {
+        const { error: deactivateErr } = await server
+          .from('property_verification_tokens')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('booking_id', finalBookingId)
+          .eq('is_active', true)
+          .neq('id', newToken.id);
+
+        if (deactivateErr) {
+          console.warn('⚠️ Impossible de désactiver les anciens tokens du séjour:', deactivateErr.message);
+        } else {
+          console.log('✅ Anciens tokens désactivés pour booking_id:', finalBookingId);
+        }
       }
     } catch (createError) {
       console.error('❌ Unexpected error during token creation:', createError);

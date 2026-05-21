@@ -231,6 +231,19 @@ function filterTokenNotExpired(): string {
   return `expires_at.is.null,expires_at.gt.${new Date().toISOString()}`;
 }
 
+/** Normalise une date en YYYY-MM-DD (évite décalages fuseau). */
+function extractDateOnly(dateValue: string | Date | unknown): string {
+  if (!dateValue) return '';
+  if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateValue)) {
+    return dateValue.slice(0, 10);
+  }
+  const dateObj = dateValue instanceof Date ? dateValue : new Date(String(dateValue));
+  const year = dateObj.getUTCFullYear();
+  const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // =====================================================
 // UTILITAIRES ET HELPERS
 // =====================================================
@@ -961,7 +974,8 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
 async function saveGuestDataInternal(
   booking: ResolvedBooking, 
   guestInfos: GuestInfo[], 
-  idDocuments: IdDocument[]
+  idDocuments: IdDocument[],
+  verificationToken?: string
 ): Promise<string> {
   log('info', 'ÉTAPE 2: Démarrage de la sauvegarde des données', {
     guestsCount: guestInfos.length,
@@ -1914,14 +1928,27 @@ async function saveGuestDataInternal(
     // ✅ CORRECTION CRITIQUE : Utiliser upsert avec clé unique booking_id + document_number pour éviter les doublons
     log('info', 'Création/mise à jour de l\'entrée de suivi');
     
-    // Trouver le token_id correspondant - on utilise le premier token actif pour cette propriété
-    const { data: tokenData } = await supabase
-      .from('property_verification_tokens')
-      .select('id')
-      .eq('property_id', booking.propertyId)
-      .eq('is_active', true)
-      .limit(1)
-      .single();
+    // ✅ Token de la soumission en cours (pas « premier token actif de la propriété »)
+    let tokenRowId: string | null = null;
+    if (verificationToken && verificationToken.length >= 10) {
+      const { data: tokByString } = await supabase
+        .from('property_verification_tokens')
+        .select('id')
+        .eq('token', verificationToken)
+        .maybeSingle();
+      tokenRowId = tokByString?.id ?? null;
+    }
+    if (!tokenRowId && booking.bookingId) {
+      const { data: tokByBooking } = await supabase
+        .from('property_verification_tokens')
+        .select('id')
+        .eq('booking_id', booking.bookingId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      tokenRowId = tokByBooking?.id ?? null;
+    }
 
     const guestsPayload = guestInfos.map((g) => {
       const s = sanitizeGuestInfo(g);
@@ -1942,7 +1969,7 @@ async function saveGuestDataInternal(
       .maybeSingle();
 
     const submissionData = {
-      token_id: tokenData?.id || crypto.randomUUID(), // Fallback si pas de token trouvé
+      token_id: tokenRowId || crypto.randomUUID(),
       booking_id: bookingId,
       booking_data: {
         checkIn: booking.checkIn,
@@ -3739,13 +3766,12 @@ serve(async (req) => {
       };
       
       try {
-        // Générer le contrat si demandé
+        // Générer le contrat si demandé (signature optionnelle — brouillon si absente)
         if (!requestBody.documentTypes || requestBody.documentTypes.includes('contract')) {
-          if (requestBody.signature) {
-            results.contractUrl = await generateContractInternal(requestBody.bookingId, requestBody.signature);
-          } else {
-            log('warn', 'Signature manquante pour le contrat');
-          }
+          results.contractUrl = await generateContractInternal(
+            requestBody.bookingId,
+            requestBody.signature
+          );
         }
         
         // Générer les fiches de police si demandé
@@ -4063,6 +4089,52 @@ serve(async (req) => {
       
       // ✅ CORRIGÉ : Utiliser le bookingId du token si disponible (réservation ICS créée lors de la génération du lien)
       if (existingBookingIdFromToken && linkType === 'ics_direct') {
+        const formCheckIn = requestBody.bookingData?.checkIn
+          ? extractDateOnly(requestBody.bookingData.checkIn)
+          : null;
+        const formCheckOut = requestBody.bookingData?.checkOut
+          ? extractDateOnly(requestBody.bookingData.checkOut)
+          : null;
+        let useFormDatesInsteadOfTokenBooking = false;
+
+        if (formCheckIn && formCheckOut) {
+          const { data: tokenBookingRow } = await supabaseClient
+            .from('bookings')
+            .select('check_in_date, check_out_date')
+            .eq('id', existingBookingIdFromToken)
+            .maybeSingle();
+
+          if (
+            tokenBookingRow &&
+            (tokenBookingRow.check_in_date !== formCheckIn ||
+              tokenBookingRow.check_out_date !== formCheckOut)
+          ) {
+            useFormDatesInsteadOfTokenBooking = true;
+            log('warn', 'Dates formulaire invité ≠ dates du booking_id du token — nouveau séjour par dates invité', {
+              tokenBookingId: existingBookingIdFromToken,
+              tokenDates: `${tokenBookingRow.check_in_date} → ${tokenBookingRow.check_out_date}`,
+              formDates: `${formCheckIn} → ${formCheckOut}`,
+            });
+          }
+        }
+
+        if (
+          useFormDatesInsteadOfTokenBooking &&
+          requestBody.bookingData &&
+          (requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode)
+        ) {
+          booking = await createIndependentBooking(
+            requestBody.token,
+            primaryGuestInfo,
+            {
+              checkIn: formCheckIn!,
+              checkOut: formCheckOut!,
+              numberOfGuests:
+                requestBody.bookingData.numberOfGuests || guestInfosForSave.length,
+            }
+          );
+          booking.bookingId = undefined;
+        } else {
         log('info', 'Utilisation de la réservation ICS existante depuis le token', { 
           bookingId: existingBookingIdFromToken,
           linkType,
@@ -4086,6 +4158,7 @@ serve(async (req) => {
           } else {
             throw icsErr;
           }
+        }
         }
         log('info', 'Réservation prête après résolution ICS / fallback', {
           bookingId: booking.bookingId,
@@ -4260,7 +4333,12 @@ serve(async (req) => {
         log('info', 'Booking ID existant passé à saveGuestDataInternal', { bookingId: existingBooking.id });
       }
       
-      bookingId = await saveGuestDataInternal(booking, guestInfosForSave, requestBody.idDocuments);
+      bookingId = await saveGuestDataInternal(
+        booking,
+        guestInfosForSave,
+        requestBody.idDocuments,
+        requestBody.token
+      );
       
       log('info', 'Booking ID sauvegardé avec succès', { bookingId });
       }
