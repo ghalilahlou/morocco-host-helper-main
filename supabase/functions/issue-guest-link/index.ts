@@ -348,13 +348,13 @@ serve(async (req) => {
         }
       }
       
-      // Réutiliser le token existant selon le type :
-      // - Tokens avec code Airbnb : TOUJOURS réutiliser (évite que l'upsert remplace le token et invalide les anciens liens)
-      // - Tokens sans code : réutiliser seulement dans la fenêtre de 5s (idempotence)
+      // ✅ Règle : 1 lien = 1 séjour = 1 token permanent.
+      // Dès qu'un token actif valide existe pour ce booking/propriété, on le réutilise TOUJOURS.
+      // Cela évite la prolifération de tokens (128K observée) et garantit que l'hôte peut
+      // partager le lien autant de fois qu'il veut sans créer de nouveau token ni invalider
+      // les liens déjà envoyés aux invités.
       if (existingActiveToken) {
-        const shouldReuse = hasAirbnbCode
-          ? true // Pour les codes Airbnb : toujours réutiliser le token existant
-          : (Date.now() - new Date(existingActiveToken.created_at).getTime()) < 5000;
+        const shouldReuse = true; // Toujours réutiliser : le token est permanent tant que is_active
 
         if (shouldReuse) {
           console.log('✅ Token actif trouvé, réutilisation:', existingActiveToken.id, hasAirbnbCode ? '(Airbnb stable)' : '(idempotence 5s)');

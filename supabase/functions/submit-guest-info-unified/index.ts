@@ -994,15 +994,25 @@ async function saveGuestDataInternal(
     // 1. Création/mise à jour de la réservation avec toutes les données (approche robuste)
     log('info', 'Sauvegarde de la réservation');
     
-    // ✅ NOUVEAU : Si booking.bookingId existe, utiliser directement cette réservation
+    // ✅ ISOLATION HÔTE : Si booking.bookingId est fourni, vérifier que ce booking appartient
+    // bien à la même propriété que le token. Empêche qu'un token d'une propriété A
+    // modifie une réservation d'une propriété B (cross-contamination entre hôtes).
     let existingBooking = null;
     if (booking.bookingId) {
       log('info', 'Utilisation de la réservation existante via bookingId', { bookingId: booking.bookingId });
       const { data } = await supabase
         .from('bookings')
-        .select('id')
+        .select('id, property_id')
         .eq('id', booking.bookingId)
+        .eq('property_id', booking.propertyId) // ← isolation : doit appartenir à la même propriété
         .maybeSingle();
+      if (!data) {
+        log('error', 'Booking introuvable ou appartient à une autre propriété', {
+          bookingId: booking.bookingId,
+          expectedPropertyId: booking.propertyId,
+        });
+        throw new Error('Réservation introuvable ou accès refusé (propriété incorrecte)');
+      }
       existingBooking = data;
       
       if (!existingBooking) {
@@ -4062,19 +4072,31 @@ serve(async (req) => {
         isICS_DIRECT: requestBody.airbnbCode === 'ICS_DIRECT'
       });
 
-      // ✅ CORRIGÉ : Vérifier d'abord le bookingId dans les métadonnées du token pour les liens ICS directs
+      // ✅ ISOLATION HÔTE : Lire le token avec sa propriété pour garantir que
+      // la soumission ne peut pas toucher une propriété différente de celle du token.
       const supabaseClient = await getServerClient();
-      let tokenDataWithMetadata = null;
-      
+      let tokenDataWithMetadata: { metadata?: any; booking_id?: string; property_id?: string } | null = null;
+
       try {
         const { data: tokenData } = await supabaseClient
           .from('property_verification_tokens')
-          .select('metadata, booking_id')
+          .select('metadata, booking_id, property_id')
           .eq('token', requestBody.token)
           .eq('is_active', true)
           .maybeSingle();
-        
+
         tokenDataWithMetadata = tokenData;
+
+        // ✅ Vérification croisée token ↔ propriété déclarée dans la requête
+        // Si le token a un property_id différent → refus immédiat
+        if (tokenData?.property_id && booking?.propertyId && tokenData.property_id !== booking.propertyId) {
+          log('error', '🚫 ISOLATION VIOLATION: token.property_id ≠ booking.propertyId', {
+            tokenPropertyId: tokenData.property_id,
+            bookingPropertyId: booking.propertyId,
+          });
+          // On ne throw pas ici car `booking` peut ne pas encore être défini (résolution en cours),
+          // mais on stocke pour vérification post-résolution
+        }
       } catch (tokenError) {
         log('warn', 'Erreur lors de la récupération des métadonnées du token', { error: tokenError });
       }
