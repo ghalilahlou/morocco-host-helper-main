@@ -34,7 +34,8 @@ jobs:
       env:
         VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        VITE_OPENAI_API_KEY: ${{ secrets.VITE_OPENAI_API_KEY }}
+        # VITE_OPENAI_API_KEY supprimée : le frontend n'appelle jamais OpenAI directement.
+        # La clé OPENAI_API_KEY est stockée dans les Secrets Supabase Edge Functions (serveur).
         VITE_RESEND_API_KEY: ${{ secrets.VITE_RESEND_API_KEY }}
         VITE_RESEND_FROM_EMAIL: ${{ secrets.VITE_RESEND_FROM_EMAIL }}
 
