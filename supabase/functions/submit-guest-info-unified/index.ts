@@ -4075,7 +4075,10 @@ serve(async (req) => {
       // ✅ ISOLATION HÔTE : Lire le token avec sa propriété pour garantir que
       // la soumission ne peut pas toucher une propriété différente de celle du token.
       const supabaseClient = await getServerClient();
-      let tokenDataWithMetadata: { metadata?: any; booking_id?: string; property_id?: string } | null = null;
+      // Note : `booking` n'est pas encore défini ici (il sera résolu juste en dessous).
+      // La vérification croisée token.property_id ↔ booking.property_id se fait dans
+      // saveGuestDataInternal (après résolution). Ici on lit seulement les métadonnées.
+      let tokenDataWithMetadata: any = null;
 
       try {
         const { data: tokenData } = await supabaseClient
@@ -4086,17 +4089,11 @@ serve(async (req) => {
           .maybeSingle();
 
         tokenDataWithMetadata = tokenData;
-
-        // ✅ Vérification croisée token ↔ propriété déclarée dans la requête
-        // Si le token a un property_id différent → refus immédiat
-        if (tokenData?.property_id && booking?.propertyId && tokenData.property_id !== booking.propertyId) {
-          log('error', '🚫 ISOLATION VIOLATION: token.property_id ≠ booking.propertyId', {
-            tokenPropertyId: tokenData.property_id,
-            bookingPropertyId: booking.propertyId,
-          });
-          // On ne throw pas ici car `booking` peut ne pas encore être défini (résolution en cours),
-          // mais on stocke pour vérification post-résolution
-        }
+        log('info', 'Token metadata récupéré', {
+          hasPropertyId: !!tokenData?.property_id,
+          hasBookingId: !!tokenData?.booking_id,
+          linkType: tokenData?.metadata?.linkType,
+        });
       } catch (tokenError) {
         log('warn', 'Erreur lors de la récupération des métadonnées du token', { error: tokenError });
       }
