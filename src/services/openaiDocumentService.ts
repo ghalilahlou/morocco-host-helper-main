@@ -55,11 +55,31 @@ function cleanExtractedName(name: string): string {
   return cleanedName;
 }
 
+// ✅ Cache session-level : hash SHA-256 → résultat OCR
+// Evite de rappeler l'API si le même fichier est uploadé plusieurs fois
+// (rechargement de page, double-clic, retry guest).
+// Stocké en mémoire (pas localStorage) → vidé à fermeture de l'onglet.
+const _ocrCache = new Map<string, ExtractedGuestData>();
+
+async function hashFile(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export class OpenAIDocumentService {
   static async extractDocumentData(imageFile: File): Promise<ExtractedGuestData> {
     try {
       console.log('🤖 Starting OpenAI-powered document extraction for:', imageFile.name);
       console.log('📄 File size:', (imageFile.size / 1024 / 1024).toFixed(2), 'MB');
+
+      // ✅ Vérifier le cache avant d'appeler l'API
+      const fileHash = await hashFile(imageFile);
+      const cached = _ocrCache.get(fileHash);
+      if (cached) {
+        console.log('⚡ Cache hit — OCR déjà réalisé pour ce fichier, 0 appel API');
+        return cached;
+      }
 
       const formData = new FormData();
       formData.append('image', imageFile);
@@ -122,6 +142,8 @@ export class OpenAIDocumentService {
       });
 
       console.log('🎯 Final cleaned extraction result:', cleanedData);
+      // ✅ Stocker dans le cache pour éviter les re-appels sur le même fichier
+      _ocrCache.set(fileHash, cleanedData);
       return cleanedData;
 
     } catch (error) {
