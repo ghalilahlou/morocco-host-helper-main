@@ -11,6 +11,9 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Claude Code MCP config (peut contenir un PAT Supabase)
+.mcp.json
+
 # Build outputs
 dist/
 build/

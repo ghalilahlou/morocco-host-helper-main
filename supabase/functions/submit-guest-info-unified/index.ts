@@ -2,13 +2,118 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
-import {
-  embedPdfUnicodeFonts,
-  textForPdfDraw,
-  hasArabicScript,
-  pickPdfFont,
-} from '../_shared/pdfUnicodeFonts.ts';
+import { PDFDocument, StandardFonts, rgb, type PDFFont } from "https://esm.sh/pdf-lib@1.17.1";
+import fontkit from 'https://esm.sh/@pdf-lib/fontkit@1.1.1';
+
+// =============================================================================
+// INLINE : contenu de _shared/pdfUnicodeFonts.ts
+// Inliné ici pour permettre le déploiement via le Dashboard Supabase web,
+// qui n'inclut pas le dossier _shared dans le bundle.
+// Source : supabase/functions/_shared/pdfUnicodeFonts.ts
+// =============================================================================
+const NOTO_SANS_REGULAR_URLS = [
+  'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosans/NotoSans-Regular.ttf',
+  'https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans-Regular.ttf',
+];
+const NOTO_SANS_BOLD_URLS = [
+  'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosans/NotoSans-Bold.ttf',
+  'https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans-Bold.ttf',
+];
+const NOTO_SANS_ARABIC_URLS = [
+  'https://fonts.gstatic.com/s/notosansarabic/v18/nwpxtLGrOAZMl5nJ_wfgRg3DrWFZWsnVBJ_sS6tlqHHFlhQ5l3sQWIHPqzCfyGyvu3CBFQLaig.ttf',
+];
+
+const fontCache: {
+  regular?: ArrayBuffer;
+  bold?: ArrayBuffer;
+  arabic?: ArrayBuffer;
+} = {};
+
+async function fetchFirstOk(urls: string[]): Promise<ArrayBuffer> {
+  let lastErr: Error | null = null;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        lastErr = new Error(`${url} → HTTP ${res.status}`);
+        continue;
+      }
+      return await res.arrayBuffer();
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastErr ?? new Error('Aucune URL de police accessible');
+}
+
+type PdfUnicodeFonts = {
+  fontRegular: PDFFont;
+  fontBold: PDFFont;
+  arabicFont: PDFFont;
+  usesUnicode: boolean;
+};
+
+async function embedPdfUnicodeFonts(pdfDoc: PDFDocument): Promise<PdfUnicodeFonts> {
+  pdfDoc.registerFontkit(fontkit);
+
+  try {
+    if (!fontCache.regular) {
+      fontCache.regular = await fetchFirstOk(NOTO_SANS_REGULAR_URLS);
+    }
+    if (!fontCache.bold) {
+      fontCache.bold = await fetchFirstOk(NOTO_SANS_BOLD_URLS);
+    }
+    if (!fontCache.arabic) {
+      try {
+        fontCache.arabic = await fetchFirstOk(NOTO_SANS_ARABIC_URLS);
+      } catch {
+        fontCache.arabic = fontCache.regular;
+      }
+    }
+
+    const fontRegular = await pdfDoc.embedFont(fontCache.regular);
+    const fontBold = await pdfDoc.embedFont(fontCache.bold);
+    const arabicFont = await pdfDoc.embedFont(fontCache.arabic);
+
+    return { fontRegular, fontBold, arabicFont, usesUnicode: true };
+  } catch (e) {
+    console.warn('[pdfUnicodeFonts] Noto Sans indisponible, repli Helvetica:', e);
+    const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    return { fontRegular, fontBold, arabicFont: fontRegular, usesUnicode: false };
+  }
+}
+
+function textForPdfDraw(text: string, usesUnicode: boolean): string {
+  if (!text || usesUnicode) return text ?? '';
+
+  return text
+    .replace(/İ/g, 'I')
+    .replace(/ı/g, 'i')
+    .replace(/Ğ/g, 'G')
+    .replace(/ğ/g, 'g')
+    .replace(/Ş/g, 'S')
+    .replace(/ş/g, 's')
+    .replace(/Œ/g, 'OE')
+    .replace(/œ/g, 'oe')
+    .replace(/[Ā-￿]/g, (ch) => {
+      const n = ch.normalize('NFD');
+      const stripped = n.replace(/[̀-ͯ]/g, '');
+      if (stripped && /^[\x00-\xFF]$/.test(stripped)) return stripped;
+      return '?';
+    });
+}
+
+function hasArabicScript(text: string): boolean {
+  return /[؀-ۿ]/.test(text);
+}
+
+function pickPdfFont(text: string, fonts: PdfUnicodeFonts): PDFFont {
+  return hasArabicScript(text) ? fonts.arabicFont : fonts.fontRegular;
+}
+// =============================================================================
+// FIN inline _shared/pdfUnicodeFonts.ts
+// =============================================================================
 
 // =====================================================
 // CONFIGURATION ET CONSTANTS
@@ -1277,6 +1382,17 @@ async function saveGuestDataInternal(
     log('info', 'Sauvegarde des informations invité', { count: guestInfos.length });
     const effectiveMaxGuests = Math.max(booking.numberOfGuests || 1, guestInfos.length);
 
+    // ✅ Patch D : snapshot des guests existants AVANT cette soumission (pour purge des fantômes après)
+    const submissionStartedAt = new Date().toISOString();
+    const { data: guestsBeforeSubmission } = await supabase
+      .from('guests')
+      .select('id, full_name, document_number, updated_at')
+      .eq('booking_id', bookingId);
+    log('info', 'Guests existants avant soumission', {
+      count: guestsBeforeSubmission?.length || 0,
+      snapshotAt: submissionStartedAt
+    });
+
     for (let gi = 0; gi < guestInfos.length; gi++) {
       await (async () => {
         const sanitizedGuest = sanitizeGuestInfo(guestInfos[gi]);
@@ -1529,6 +1645,53 @@ async function saveGuestDataInternal(
     }
 
       })();
+    }
+
+    // ✅ Patch D : purge des "guests fantômes" — lignes guests non touchées par cette soumission.
+    // Identifiés comme : present avant la soumission ET non updated pendant (updated_at < submissionStartedAt).
+    // Évite que d'anciens voyageurs apparaissent dans l'article occupants du PDF.
+    try {
+      const ghosts = (guestsBeforeSubmission || []).filter((g: any) =>
+        !g.updated_at || g.updated_at < submissionStartedAt
+      );
+      if (ghosts.length > 0) {
+        log('warn', '🧹 Guests fantômes détectés (non touchés par soumission) — suppression', {
+          count: ghosts.length,
+          ghostNames: ghosts.map((g: any) => g.full_name)
+        });
+        const { error: deleteError } = await supabase
+          .from('guests')
+          .delete()
+          .in('id', ghosts.map((g: any) => g.id));
+        if (deleteError) {
+          log('warn', 'Erreur suppression guests fantômes (non bloquant)', { error: deleteError });
+        }
+      }
+    } catch (sweepError) {
+      log('warn', 'Erreur durant sweep des guests fantômes', { error: sweepError });
+    }
+
+    // ✅ Patch D bis : re-sync bookings.guest_name depuis le 1er guest réel (jamais "Guest" ou NULL si on a un vrai nom)
+    try {
+      const { data: firstGuestNow } = await supabase
+        .from('guests')
+        .select('full_name')
+        .eq('booking_id', bookingId)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (firstGuestNow?.full_name && firstGuestNow.full_name.trim() !== '') {
+        await supabase
+          .from('bookings')
+          .update({ guest_name: firstGuestNow.full_name, updated_at: new Date().toISOString() })
+          .eq('id', bookingId);
+        log('info', '✅ bookings.guest_name re-synchronisé depuis guests.full_name', {
+          bookingId,
+          newName: firstGuestNow.full_name
+        });
+      }
+    } catch (syncError) {
+      log('warn', 'Erreur re-sync guest_name (non bloquant)', { error: syncError });
     }
 
     // 3. Sauvegarde des documents d'identité avec métadonnées
@@ -2948,11 +3111,11 @@ serve(async (req) => {
       
       const contractLocale = requestBody.locale && ['fr', 'en', 'es'].includes(requestBody.locale) ? requestBody.locale : 'fr';
       const contractUrl = await generateContractInternal(requestBody.bookingId, signatureToUse, { locale: contractLocale });
-      
+
       if (contractUrl) {
-        // Sauvegarder le document en base (signé si signature disponible)
-        await saveDocumentToDatabase(supabaseClient, requestBody.bookingId, 'contract', contractUrl, !!signatureToUse);
-        
+        // ⚠️ NE PAS rappeler saveDocumentToDatabase ici : generateContractInternal le fait déjà en interne.
+        // Le double appel historique créait un doublon systématique dans generated_documents (bursts visibles à <200ms).
+
         // ✅ CORRECTION CRITIQUE : Si on a une signature, régénérer aussi la fiche de police avec signature
         let policeUrl: string | null = null;
         if (signatureToUse) {
@@ -4979,8 +5142,16 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
         
         if (isSigned) {
           if (signedContract) {
-            // ✅ Un contrat signé existe déjà - créer une nouvelle VERSION (ne pas écraser)
-            log('info', 'Signed contract exists, creating new version', {
+            // ✅ GARDE ANTI-DOUBLON : même URL exacte → no-op (le contrat actuel est identique).
+            // Sans ce garde, chaque resoumission/re-signature créait un doublon dans generated_documents.
+            if (signedContract.document_url === documentUrl) {
+              log('info', 'Signed contract with identical URL already exists, skipping duplicate insert', {
+                existingId: signedContract.id
+              });
+              return signedContract;
+            }
+            // URL différente → vraie nouvelle version signée (re-signature avec contenu modifié)
+            log('info', 'Signed contract exists with different URL, creating new version', {
               existingId: signedContract.id,
               newUrl: documentUrl.substring(0, 50)
             });

@@ -575,7 +575,9 @@ serve(async (req) => {
               .update({
                 check_in_date: checkInDate,
                 check_out_date: checkOutDate,
-                guest_name: reservationData.guestName || 'Guest',
+                // ✅ Plus de placeholder 'Guest' : NULL si pas de nom fourni à l'émission du lien.
+                // `submit-guest-info-unified` remplira le vrai nom dans `saveGuestDataInternal`.
+                guest_name: reservationData.guestName?.trim() || null,
                 number_of_guests: reservationData.numberOfGuests || 1,
                 updated_at: new Date().toISOString(),
               })
@@ -620,7 +622,9 @@ serve(async (req) => {
               .update({
                 check_in_date: checkInDate,
                 check_out_date: checkOutDate,
-                guest_name: reservationData.guestName || 'Guest',
+                // ✅ Plus de placeholder 'Guest' : NULL si pas de nom fourni à l'émission du lien.
+                // `submit-guest-info-unified` remplira le vrai nom dans `saveGuestDataInternal`.
+                guest_name: reservationData.guestName?.trim() || null,
                 number_of_guests: reservationData.numberOfGuests || 1,
                 updated_at: new Date().toISOString()
               })
@@ -669,7 +673,9 @@ serve(async (req) => {
                   property_id: propertyId,
                   check_in_date: checkInDate,
                   check_out_date: checkOutDate,
-                  guest_name: reservationData.guestName || 'Guest',
+                  // ✅ Plus de placeholder 'Guest' : NULL si pas de nom fourni à l'émission du lien.
+                  // `submit-guest-info-unified` remplira le vrai nom dans `saveGuestDataInternal`.
+                  guest_name: reservationData.guestName?.trim() || null,
                   number_of_guests: reservationData.numberOfGuests || 1,
                   booking_reference: reservationData.airbnbCode,
                   status: 'pending',
