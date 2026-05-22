@@ -53,7 +53,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, FileText, X, CheckCircle, Users, Calendar as CalendarLucide, ArrowRight, ArrowLeft, Sparkles, RefreshCw, RotateCcw, Check, PenTool, Home, CloudUpload } from 'lucide-react';
+import { Upload, FileText, X, CheckCircle, Users, Calendar as CalendarLucide, ArrowRight, ArrowLeft, Sparkles, RefreshCw, RotateCcw, Check, PenTool, Home, CloudUpload, AlertTriangle } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { MOTIF_STAY_OPTIONS } from '@/constants/guestMotif';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -84,7 +95,8 @@ function createEmptyGuestForm(): Guest {
     profession: '',
     motifSejour: 'TOURISME',
     adressePersonnelle: '',
-    email: ''
+    email: '',
+    placeOfBirth: undefined,
   };
 }
 
@@ -96,6 +108,7 @@ interface UploadedDocument {
   processing: boolean;
   extractedData?: any;
   isInvalid?: boolean;
+  ocrFailed?: boolean;
 }
 
 /** Parse une date extraite par l’IA en évitant `new Date('YYYY-MM-DD')` (décalage UTC / jour manquant). */
@@ -208,6 +221,8 @@ export const GuestVerification = () => {
   const [checkingToken, setCheckingToken] = useState(true);
   const [propertyName, setPropertyName] = useState('');
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [manualUnlockGuests, setManualUnlockGuests] = useState<Set<number>>(() => new Set());
+  const [pastDateDialogOpen, setPastDateDialogOpen] = useState(false);
   const [guests, setGuests] = useState<Guest[]>([{
     fullName: '',
     dateOfBirth: undefined,
@@ -878,6 +893,20 @@ export const GuestVerification = () => {
     [uploadedDocuments, guests]
   );
 
+  const isIdentityFieldsLocked = useCallback(
+    (guestIndex: number) =>
+      !identityUnlockedForGuest(guestIndex) && !manualUnlockGuests.has(guestIndex),
+    [identityUnlockedForGuest, manualUnlockGuests]
+  );
+
+  const unlockGuestManual = useCallback((guestIndex: number) => {
+    setManualUnlockGuests((prev) => {
+      const next = new Set(prev);
+      next.add(guestIndex);
+      return next;
+    });
+  }, []);
+
   const guestDateForPicker = (raw: Date | string | undefined): Date | undefined => {
     if (raw == null || raw === '') return undefined;
     const parsed = parseStayDateForCalendar(raw);
@@ -1331,24 +1360,6 @@ export const GuestVerification = () => {
     }]);
   };
 
-  // ✅ TEST: Fonction pour tester manuellement la date de naissance
-  const testDateOfBirth = () => {
-    console.log('🧪 TEST - Ajout manuel de date de naissance');
-    const updatedGuests = [...guests];
-    if (updatedGuests[0]) {
-      updatedGuests[0].dateOfBirth = new Date('1990-07-13');
-      updatedGuests[0].fullName = 'Test User';
-      updatedGuests[0].nationality = 'FRANÇAIS';
-      updatedGuests[0].documentNumber = 'TEST123456';
-      setGuests(updatedGuests);
-      console.log('🧪 TEST - Date de naissance ajoutée manuellement:', {
-        dateOfBirth: updatedGuests[0].dateOfBirth,
-        typeOfDateOfBirth: typeof updatedGuests[0].dateOfBirth,
-        isDateObject: updatedGuests[0].dateOfBirth instanceof Date
-      });
-    }
-  };
-
   /** Index réel dans `guests` (le formulaire affiche `deduplicatedGuests`, indices différents si doublons filtrés). */
   const rowIndexForGuest = (guest: Guest) => {
     const i = guests.findIndex((g) => g === guest);
@@ -1448,16 +1459,17 @@ export const GuestVerification = () => {
         });
 
         // ✅ SIMPLIFIÉ : Mettre à jour les documents (SANS manipulation de Portals)
+        const ocrSucceeded = Boolean(extractedData && Object.keys(extractedData).length > 0);
         setUploadedDocuments(prev => 
           prev.map(doc => 
             doc.url === url 
-              ? { ...doc, processing: false, extractedData }
+              ? { ...doc, processing: false, extractedData, ocrFailed: !ocrSucceeded }
               : doc
           )
         );
 
         // ✅ AMÉLIORÉ : Accepter le document même si certains champs manquent
-        if (extractedData && Object.keys(extractedData).length > 0) {
+        if (ocrSucceeded) {
           const hasRequiredIdFields = extractedData.fullName && 
                                     extractedData.documentNumber && 
                                     extractedData.nationality && 
@@ -1600,6 +1612,11 @@ export const GuestVerification = () => {
             description: "Document d'identité valide. Informations extraites automatiquement.",
           });
         } else {
+          setUploadedDocuments(prev =>
+            prev.map(doc =>
+              doc.url === url ? { ...doc, processing: false, ocrFailed: true } : doc
+            )
+          );
           toast({
             title: t('upload.docNotRecognized.title'),
             description: t('upload.docNotRecognized.desc'),
@@ -1617,7 +1634,7 @@ export const GuestVerification = () => {
           setUploadedDocuments(prev => 
             prev.map(doc => 
               doc.url === url 
-                ? { ...doc, processing: false }
+                ? { ...doc, processing: false, ocrFailed: true }
                 : doc
             )
           );
@@ -1639,7 +1656,7 @@ export const GuestVerification = () => {
     }
   }, [toast, t]); // ✅ Dépendances simplifiées (plus de manipulation de Portals)
 
-  const removeDocument = (url: string) => {
+  const removeDocument = useCallback((url: string) => {
     console.log('🗑️ Removing document:', url);
     
     const docToRemove = uploadedDocuments.find(doc => doc.url === url);
@@ -1657,29 +1674,33 @@ export const GuestVerification = () => {
         
         const updatedGuests = [...guests];
         updatedGuests[guestToResetIndex] = {
-          fullName: '',
-          dateOfBirth: undefined,
-          nationality: '',
-          documentNumber: '',
-          documentType: 'passport',
-          documentIssueDate: undefined,
-          profession: '',
-          motifSejour: 'TOURISME',
-          adressePersonnelle: '',
-          email: ''
+          ...createEmptyGuestForm(),
         };
         setGuests(updatedGuests);
         
         toast({
-          title: t('removeDoc.deleted.title'),
-          description: t('removeDoc.deleted.desc'),
+          title: t('guestVerification.docRemovedTitle'),
+          description: t('guestVerification.docRemovedDesc'),
         });
       }
     }
     
     setUploadedDocuments(prev => prev.filter(doc => doc.url !== url));
     URL.revokeObjectURL(url);
-  };
+  }, [guests, toast, t, uploadedDocuments]);
+
+  const retryDocumentOcr = useCallback(
+    async (docUrl: string) => {
+      const doc = uploadedDocuments.find((d) => d.url === docUrl);
+      if (!doc || doc.processing) return;
+      const file = doc.file;
+      removeDocument(docUrl);
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      await handleFileUpload(dt.files);
+    },
+    [uploadedDocuments, removeDocument, handleFileUpload]
+  );
 
   const handleSubmit = async () => {
     // ✅ CRITIQUE : Protection renforcée contre les soumissions multiples
@@ -1959,7 +1980,8 @@ export const GuestVerification = () => {
           documentIssueDate: guest.documentIssueDate ? format(guest.documentIssueDate, 'yyyy-MM-dd') : undefined,
           profession: professionInput?.value || guest.profession || '',
           motifSejour,
-          adressePersonnelle: adresseInput?.value || guest.adressePersonnelle || ''
+          adressePersonnelle: adresseInput?.value || guest.adressePersonnelle || '',
+          placeOfBirth: guest.placeOfBirth || '',
         };
       });
 
@@ -2184,8 +2206,8 @@ export const GuestVerification = () => {
       }
 
       toast({
-        title: "Documents générés avec succès !",
-        description: "Contrat et fiche de police créés. Vous pouvez maintenant les consulter et signer.",
+        title: t('guestVerification.submissionSaved'),
+        description: t('guestVerification.submissionSavedDesc'),
       });
 
       // ✅ CORRIGÉ : Préparer la navigation avec cleanup pour éviter les erreurs DOM
@@ -2251,13 +2273,6 @@ export const GuestVerification = () => {
         await saveFormDataToSession();
         console.log('✅ [Navigation] Données du formulaire sauvegardées avant navigation vers signature');
         
-        // ✅ CORRIGÉ : Petit délai pour s'assurer que localStorage est bien écrit (important pour Vercel)
-        await new Promise(resolve => setTimeout(resolve, 50));
-        
-        // ✅ CRITIQUE : Délai supplémentaire pour laisser les Portals Radix UI se nettoyer
-        // Les Popover et Calendar utilisent des Portals qui peuvent causer des erreurs insertBefore
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
         // Navigation directe
         try {
           navigate(url, { 
@@ -2287,8 +2302,8 @@ export const GuestVerification = () => {
       console.error('Error submitting guest information:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
       
-      // ✅ NOUVEAU : Afficher l'erreur sur la page au lieu de rediriger
       setSubmissionError(`Erreur lors de l'envoi des informations: ${errorMessage}`);
+      goToStep('documents');
       
       toast({
         title: "Erreur",
@@ -2400,7 +2415,20 @@ export const GuestVerification = () => {
       return;
     }
 
-    goToStep('documents'); // ✅ CORRIGÉ : Utiliser goToStep pour marquer comme visitée
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkInStart = new Date(checkInDate);
+    checkInStart.setHours(0, 0, 0, 0);
+    if (checkInStart < today) {
+      setPastDateDialogOpen(true);
+      return;
+    }
+    goToStep('documents');
+  };
+
+  const proceedToDocumentsAfterPastDateWarning = () => {
+    setPastDateDialogOpen(false);
+    goToStep('documents');
   };
 
   const handlePrevStep = () => {
@@ -2410,73 +2438,6 @@ export const GuestVerification = () => {
       goToStep('booking'); // ✅ CORRIGÉ : Utiliser goToStep
     }
   };
-
-  // ✅ NOUVEAU : Afficher l'erreur de soumission au lieu de rediriger
-  if (submissionError) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: "spring", stiffness: 300 }}
-        >
-          <Card className="p-8 max-w-md border-red-200 shadow-2xl">
-            <CardContent className="text-center space-y-6">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2, type: "spring", stiffness: 300 }}
-              >
-                <X className="w-20 h-20 text-red-500 mx-auto" />
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-              >
-                <h2 className="text-3xl font-bold text-red-800">Interruption de la procédure</h2>
-                <p className="text-red-600 mt-2">
-                  {submissionError}
-                </p>
-                <p className="text-gray-600 mt-4 text-sm">
-                  Veuillez réessayer ou contacter votre hôte pour obtenir de l'aide.
-                </p>
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                className="space-y-3"
-              >
-                <Button 
-                  onClick={() => {
-                    setSubmissionError(null);
-                    goToStep('booking'); // ✅ CORRIGÉ : Utiliser goToStep
-                  }}
-                  className="w-full bg-red-600 hover:bg-red-700"
-                  size="lg"
-                >
-                  <RefreshCw className="w-5 h-5 mr-2" />
-                  Réessayer
-                </Button>
-                <Button 
-                  onClick={() => {
-                    window.location.reload();
-                  }}
-                  variant="outline"
-                  className="w-full"
-                  size="lg"
-                >
-                  <RotateCcw className="w-5 h-5 mr-2" />
-                  Recharger la page
-                </Button>
-              </motion.div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-    );
-  }
 
   if (submissionComplete) {
     return (
@@ -2537,7 +2498,7 @@ export const GuestVerification = () => {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row items-start" style={{ backgroundColor: '#FDFDF9' }}>
-      {DEV_GUEST_VERIFICATION_URL ? (
+      {import.meta.env.DEV && DEV_GUEST_VERIFICATION_URL ? (
         <div
           className="w-full border-b border-dashed border-amber-300/80 bg-amber-50/90 px-4 py-3 text-sm text-amber-950"
           role="region"
@@ -2783,14 +2744,14 @@ export const GuestVerification = () => {
                     lineHeight: '17px',
                     color: '#B0B2BC',
                     marginBottom: '4px'
-                  }}>Glissez-déposez vos documents</p>
+                  }}>{t('guestVerification.uploadDropzoneTitle')}</p>
                   <p style={{
                     fontFamily: 'Inter, sans-serif',
                     fontWeight: 400,
                     fontSize: '12px',
                     lineHeight: '15px',
                     color: 'rgba(176, 178, 188, 0.5)'
-                  }}>Carte d'identité ou passeport en format PDF, PNG, JPG (5MB max par fichier)</p>
+                  }}>{t('guestVerification.uploadDropzoneHint')}</p>
                 </div>
               </div>
 
@@ -2837,27 +2798,23 @@ export const GuestVerification = () => {
                   <h3 className="text-sm font-medium mb-3 text-white">{t('guestVerification.docsUploadedCount', { count: uploadedDocuments.length })}</h3>
                   <div className="space-y-2">
                     {uploadedDocuments.map((doc, index) => (
-                      <div key={index} className="flex items-center gap-3 p-3 rounded-lg relative group" style={{ backgroundColor: '#1E1E1E' }}>
-                        {/* ✅ NOUVEAU : Bouton de suppression */}
+                      <div
+                        key={doc.url}
+                        className={`flex flex-col gap-2 p-3 rounded-lg relative group ${doc.ocrFailed ? 'ring-2 ring-red-500/60' : ''}`}
+                        style={{ backgroundColor: '#1E1E1E' }}
+                      >
+                        <div className="flex items-center gap-3">
                         <button
-                          onClick={() => {
-                            // Supprimer le document de la liste
-                            setUploadedDocuments(prev => prev.filter((_, i) => i !== index));
-                            // Supprimer le guest correspondant
-                            setGuests(prev => prev.filter((_, i) => i !== index));
-                            // Décrémenter le nombre de guests
-                            setNumberOfGuests(prev => Math.max(1, prev - 1));
-                            toast({
-                              title: "Document supprimé",
-                              description: "Le document a été retiré de la liste",
-                            });
-                          }}
+                          type="button"
+                          onClick={() => removeDocument(doc.url)}
                           className="absolute top-2 right-2 p-1 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Supprimer ce document"
+                          title={t('guestVerification.docRemovedTitle')}
                         >
                           <X className="w-4 h-4" />
                         </button>
-                        
+                        {doc.ocrFailed && !doc.processing && (
+                          <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" aria-hidden />
+                        )}
                         {doc.processing ? (
                           <div className="w-12 h-12 flex items-center justify-center">
                             <div className="w-8 h-8 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
@@ -2880,6 +2837,25 @@ export const GuestVerification = () => {
                             {formatDocExtractSummary(doc, guests[index])}
                           </p>
                         </div>
+                        </div>
+                        {doc.ocrFailed && !doc.processing && (
+                          <div className="flex flex-wrap gap-2 pl-1">
+                            <button
+                              type="button"
+                              className="text-xs text-teal-300 underline"
+                              onClick={() => void retryDocumentOcr(doc.url)}
+                            >
+                              {t('guestVerification.retryOcr')}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-xs text-amber-200 underline"
+                              onClick={() => unlockGuestManual(index)}
+                            >
+                              {t('guestVerification.manualEntryCta')}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -3625,6 +3601,21 @@ export const GuestVerification = () => {
                     exit={{ opacity: 0, x: -20 }}
                     className="max-w-4xl mx-auto"
                   >
+                    {submissionError && (
+                      <div
+                        role="alert"
+                        className="mb-6 flex flex-col gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
+                      >
+                        <p>{t('guestVerification.retryBanner', { message: submissionError })}</p>
+                        <button
+                          type="button"
+                          className="self-start text-red-700 underline text-xs"
+                          onClick={() => setSubmissionError(null)}
+                        >
+                          {t('guestVerification.dismissError')}
+                        </button>
+                      </div>
+                    )}
                     {/* Zone d'upload des pièces d'identité - visible sur mobile (sur desktop elle est dans la sidebar) */}
                     {isMobile && (
                       <div className="guest-verification-upload-mobile mb-6">
@@ -3661,10 +3652,10 @@ export const GuestVerification = () => {
                         >
                           <CloudUpload className="w-8 h-8 text-gray-400 mb-2" />
                           <p className="text-sm font-medium text-gray-700 mb-1">
-                            Appuyez pour importer vos documents
+                            {t('guestVerification.uploadTapTitle')}
                           </p>
                           <p className="text-xs text-gray-500">
-                            Carte d'identité ou passeport • PDF, PNG, JPG (5 Mo max)
+                            {t('guestVerification.uploadTapHint')}
                           </p>
                         </div>
                         {uploadedDocuments.length > 0 && (
@@ -3674,21 +3665,25 @@ export const GuestVerification = () => {
                             </p>
                             <div className="space-y-2">
                               {uploadedDocuments.map((doc, index) => (
-                                <div key={index} className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-white shadow-sm relative group">
+                                <div
+                                  key={doc.url}
+                                  className={`flex flex-col gap-2 p-3 rounded-xl border bg-white shadow-sm relative group ${doc.ocrFailed ? 'border-red-400' : 'border-gray-200'}`}
+                                >
+                                  <div className="flex items-center gap-3">
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setUploadedDocuments(prev => prev.filter((_, i) => i !== index));
-                                      setGuests(prev => prev.filter((_, i) => i !== index));
-                                      setNumberOfGuests(prev => Math.max(1, prev - 1));
-                                      toast({ title: 'Document supprimé', description: 'Le document a été retiré de la liste' });
+                                      removeDocument(doc.url);
                                     }}
                                     className="absolute top-2 right-2 p-1.5 rounded-full bg-red-50 text-red-500 hover:bg-red-100 touch-target"
-                                    aria-label="Supprimer"
+                                    aria-label={t('guestVerification.docRemovedTitle')}
                                   >
                                     <X className="w-4 h-4" />
                                   </button>
+                                  {doc.ocrFailed && !doc.processing && (
+                                    <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" aria-hidden />
+                                  )}
                                   {doc.processing ? (
                                     <div className="w-10 h-10 flex items-center justify-center">
                                       <div className="w-6 h-6 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
@@ -3704,6 +3699,25 @@ export const GuestVerification = () => {
                                       {formatDocExtractSummary(doc, guests[index])}
                                     </p>
                                   </div>
+                                  </div>
+                                  {doc.ocrFailed && !doc.processing && (
+                                    <div className="flex flex-wrap gap-3 pl-1">
+                                      <button
+                                        type="button"
+                                        className="text-xs text-teal-700 underline"
+                                        onClick={() => void retryDocumentOcr(doc.url)}
+                                      >
+                                        {t('guestVerification.retryOcr')}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="text-xs text-amber-800 underline"
+                                        onClick={() => unlockGuestManual(index)}
+                                      >
+                                        {t('guestVerification.manualEntryCta')}
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -3739,9 +3753,11 @@ export const GuestVerification = () => {
                         <div className="space-y-6">
                           {deduplicatedGuests.map((guest, displayIndex) => {
                             const rowIndex = rowIndexForGuest(guest);
-                            const fieldsLocked = !identityUnlockedForGuest(rowIndex);
+                            const identityFieldsLocked = isIdentityFieldsLocked(rowIndex);
                             const docAt = uploadedDocuments[rowIndex];
                             const showProcessingBanner = Boolean(docAt?.processing);
+                            const showOcrFailedBanner =
+                              Boolean(docAt?.ocrFailed && !docAt?.processing) && identityFieldsLocked;
                             return (
                             <div
                               key={`guest-form-${rowIndex}-${displayIndex}`}
@@ -3761,7 +3777,7 @@ export const GuestVerification = () => {
                                     fontSize: '16px',
                                     lineHeight: '36px',
                                     color: '#040404'
-                                  }}>Voyageur {displayIndex + 1}</span>
+                                  }}>{t('guestVerification.travelerLabel', { n: displayIndex + 1 })}</span>
                                   {deduplicatedGuests.length > 1 && (
                                     <button 
                                       onClick={() => removeGuest(rowIndex)} 
@@ -3777,9 +3793,10 @@ export const GuestVerification = () => {
                                   )}
                                 </div>
 
-                                {(fieldsLocked || showProcessingBanner) && (
+                                {(showProcessingBanner || identityFieldsLocked) && (
                                   <div
                                     role="status"
+                                    aria-live="polite"
                                     className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
                                       showProcessingBanner
                                         ? 'border-blue-200 bg-blue-50 text-blue-900'
@@ -3787,7 +3804,7 @@ export const GuestVerification = () => {
                                     }`}
                                   >
                                     {showProcessingBanner
-                                      ? t('guestVerification.formLockedProcessing')
+                                      ? t('guestVerification.ocrInProgressHint')
                                       : t(
                                           isMobile
                                             ? 'guestVerification.formLockedHintMobile'
@@ -3795,6 +3812,15 @@ export const GuestVerification = () => {
                                           { n: displayIndex + 1 }
                                         )}
                                   </div>
+                                )}
+                                {showOcrFailedBanner && (
+                                  <button
+                                    type="button"
+                                    className="mb-4 text-sm text-teal-700 underline"
+                                    onClick={() => unlockGuestManual(rowIndex)}
+                                  >
+                                    {t('guestVerification.manualEntryCta')}
+                                  </button>
                                 )}
                                 
                                 {/* Form Grid - 2 columns desktop, 1 column mobile */}
@@ -3810,7 +3836,7 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'fullName', e.target.value)}
                                       placeholder=""
                                       required
-                                      disabled={fieldsLocked}
+                                      disabled={identityFieldsLocked}
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
@@ -3825,7 +3851,7 @@ export const GuestVerification = () => {
                                       value={guestDateForPicker(guest.dateOfBirth)}
                                       onChange={(date) => updateGuest(rowIndex, 'dateOfBirth', date)}
                                       ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
-                                      disabled={fieldsLocked}
+                                      disabled={identityFieldsLocked}
                                     />
                                   </div>
                                   
@@ -3840,7 +3866,7 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'nationality', e.target.value)}
                                       placeholder=""
                                       required
-                                      disabled={fieldsLocked}
+                                      disabled={identityFieldsLocked}
                                       list={`nationalities-list-${rowIndex}`}
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
@@ -3849,6 +3875,20 @@ export const GuestVerification = () => {
                                         <option key={nationality} value={nationality} />
                                       ))}
                                     </datalist>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <Label className="text-sm font-semibold text-gray-900">
+                                      {t('guest.clients.placeOfBirth')}
+                                    </Label>
+                                    <input
+                                      type="text"
+                                      id={`placeOfBirth-${rowIndex}`}
+                                      value={guest.placeOfBirth || ''}
+                                      onChange={(e) => updateGuest(rowIndex, 'placeOfBirth', e.target.value)}
+                                      disabled={identityFieldsLocked}
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                    />
                                   </div>
                                   
                                   <div className="space-y-2">
@@ -3860,7 +3900,7 @@ export const GuestVerification = () => {
                                         id={`documentType-${rowIndex}`}
                                         value={guest.documentType} 
                                         onChange={(e) => updateGuest(rowIndex, 'documentType', e.target.value)}
-                                        disabled={fieldsLocked}
+                                        disabled={identityFieldsLocked}
                                         className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                                       >
                                         <option value="passport">{t('guest.clients.passport')}</option>
@@ -3883,7 +3923,7 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'documentNumber', e.target.value)}
                                       placeholder=""
                                       required
-                                      disabled={fieldsLocked}
+                                      disabled={identityFieldsLocked}
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
@@ -3898,13 +3938,13 @@ export const GuestVerification = () => {
                                       value={guestDateForPicker(guest.documentIssueDate)}
                                       onChange={(date) => updateGuest(rowIndex, 'documentIssueDate', date)}
                                       ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
-                                      disabled={fieldsLocked}
+                                      disabled={identityFieldsLocked}
                                     />
                                   </div>
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
-                                      Profession
+                                      {t('guest.clients.profession')}
                                     </Label>
                                     <input
                                       type="text"
@@ -3916,14 +3956,13 @@ export const GuestVerification = () => {
                                         updateGuest(rowIndex, 'profession', target.value);
                                       }}
                                       placeholder=""
-                                      disabled={fieldsLocked}
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
                                   </div>
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
-                                      Motif du séjour <span className="text-red-500">*</span>
+                                      {t('guest.clients.motifSejour')} <span className="text-red-500">*</span>
                                     </Label>
                                     <div className="relative">
                                       <select
@@ -3933,17 +3972,15 @@ export const GuestVerification = () => {
                                         onChange={(e) => {
                                           updateGuest(rowIndex, 'motifSejour', e.target.value);
                                         }}
-                                        disabled={fieldsLocked}
-                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
                                         required
                                       >
-                                        <option value="">Sélectionnez un motif</option>
-                                        <option value="TOURISME">Tourisme</option>
-                                        <option value="AFFAIRES">Affaires</option>
-                                        <option value="FAMILLE">Famille</option>
-                                        <option value="ÉTUDES">Études</option>
-                                        <option value="MÉDICAL">Médical</option>
-                                        <option value="AUTRE">Autre</option>
+                                        <option value="">{t('guest.clients.motifSelect')}</option>
+                                        {MOTIF_STAY_OPTIONS.map((opt) => (
+                                          <option key={opt.value} value={opt.value}>
+                                            {t(opt.labelKey)}
+                                          </option>
+                                        ))}
                                       </select>
                                       <svg className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -3953,7 +3990,7 @@ export const GuestVerification = () => {
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
-                                      Adresse personnelle
+                                      {t('guest.clients.personalAddress')}
                                     </Label>
                                     <input
                                       type="text"
@@ -3965,14 +4002,14 @@ export const GuestVerification = () => {
                                         updateGuest(rowIndex, 'adressePersonnelle', target.value);
                                       }}
                                       placeholder=""
-                                      disabled={fieldsLocked}
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
                                   </div>
                                   
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
-                                      Courriel <span className="text-gray-500 font-normal">(optionnel)</span>
+                                      {t('guest.clients.email')}{' '}
+                                      <span className="text-gray-500 font-normal">{t('guest.clients.emailOptional')}</span>
                                     </Label>
                                     <input
                                       type="email"
@@ -3984,8 +4021,7 @@ export const GuestVerification = () => {
                                         updateGuest(rowIndex, 'email', target.value);
                                       }}
                                       placeholder=""
-                                      disabled={fieldsLocked}
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
                                   </div>
                                 </div>
@@ -4077,7 +4113,7 @@ export const GuestVerification = () => {
                           e.currentTarget.style.background = 'rgba(85, 186, 159, 0.8)';
                         }}
                       >
-                        {t('guest.navigation.next')}
+                        {t('guestVerification.submitAndContinue')}
                         <ArrowRight className="w-4 h-4" />
                       </button>
                     </div>
@@ -4178,6 +4214,23 @@ export const GuestVerification = () => {
           </p>
         </footer>
       </div>
+
+      <AlertDialog open={pastDateDialogOpen} onOpenChange={setPastDateDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('guestVerification.pastDateWarning.title')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('guestVerification.pastDateWarning.description')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('guestVerification.pastDateWarning.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={proceedToDocumentsAfterPastDateWarning}>
+              {t('guestVerification.pastDateWarning.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

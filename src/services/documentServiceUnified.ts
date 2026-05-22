@@ -21,6 +21,7 @@ export interface GuestInfo {
   profession?: string;
   motifSejour?: string;
   adressePersonnelle?: string;
+  placeOfBirth?: string;
 }
 
 export interface IdDocument {
