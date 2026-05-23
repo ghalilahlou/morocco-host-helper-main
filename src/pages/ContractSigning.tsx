@@ -640,8 +640,8 @@ export const ContractSigning: React.FC = () => {
         {/* Logo Checky centré AU-DESSUS du titre - remonté pour ne pas chevaucher */}
         <div style={{ position: 'absolute', top: isMobile ? 'max(24px, calc(env(safe-area-inset-top) + 12px))' : '60px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
           <img 
-            src="/og-checky.png" 
-            alt="Checky Logo" 
+            src="/lovable-uploads/imagecheckcalendar.png" 
+            alt="CHECKY" 
             style={{ 
               width: '120px', 
               height: 'auto', 

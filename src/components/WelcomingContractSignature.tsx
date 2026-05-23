@@ -1062,7 +1062,7 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2">
               <img
-                src="/og-checky.png"
+                src="/lovable-uploads/imagecheckcalendar.png"
                 alt="CHECKY"
                 className="h-8 w-8 object-contain"
                 onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -1092,8 +1092,8 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
         <div className="flex flex-col items-center gap-2 mb-6">
           <div className="flex items-center gap-3">
             <img 
-              src="/og-checky.png" 
-              alt="CHECKY Logo" 
+              src="/lovable-uploads/imagecheckcalendar.png" 
+              alt="CHECKY" 
               className="h-10 w-10 object-contain"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
@@ -1753,8 +1753,8 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
               {/* Logo Checky centré proche du titre */}
               <div style={{ position: 'absolute', top: isMobile ? 'max(80px, calc(env(safe-area-inset-top) + 40px))' : '140px', left: '50%', transform: 'translateX(-50%)', display: 'flex', justifyContent: 'center', width: '100%' }}>
                 <img 
-                  src="/og-checky.png" 
-                  alt="Checky Logo" 
+                  src="/lovable-uploads/imagecheckcalendar.png" 
+                  alt="CHECKY" 
                   style={{ 
                     width: '150px', 
                     height: 'auto', 
