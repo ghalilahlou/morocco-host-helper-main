@@ -1,4 +1,5 @@
 import { formatLocalDate, parseLocalDate, parseStayDateForCalendar } from '@/utils/dateUtils';
+import { parseGuestIdentityDate } from '@/utils/guestIdentityDateParse';
 
 export type GuestHybridDateVariant = 'birth' | 'expiry';
 
@@ -26,6 +27,8 @@ function toSafeDate(v: Date | string | undefined): Date | undefined {
   if (v instanceof Date) {
     return isNaN(v.getTime()) ? undefined : v;
   }
+  const fromOcr = parseGuestIdentityDate(v);
+  if (fromOcr) return fromOcr;
   const parsed = parseStayDateForCalendar(v);
   return isNaN(parsed.getTime()) ? undefined : parsed;
 }

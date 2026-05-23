@@ -373,12 +373,7 @@ export const GuestVerification = () => {
   
   const deduplicatedGuests = useMemo(() => {
     const currentHash = getGuestsArrayHash(guests);
-    
-    // ✅ Si le hash n'a pas changé, retourner LA MÊME RÉFÉRENCE (pas guests, mais lastDeduplicatedGuestsRef)
-    if (currentHash === lastGuestsHashRef.current) {
-      return lastDeduplicatedGuestsRef.current;
-    }
-    
+
     // ✅ NOUVEAU : Éviter de traiter si on a plus de 10 guests (probablement un bug)
     if (guests.length > 10) {
       console.error('🚨 ALERTE: Plus de 10 guests détectés! Réinitialisation forcée.', {
@@ -976,9 +971,16 @@ export const GuestVerification = () => {
     });
   }, []);
 
-  // P35 — Utilise parseAndNormalizeStayDate qui retourne null (pas Date(NaN)) pour le picker
-  const guestDateForPicker = (raw: Date | string | undefined): Date | undefined =>
-    parseAndNormalizeStayDate(raw) ?? undefined;
+  // P35 — ISO, timestamptz, DD/MM/YYYY (OCR) pour le picker natif
+  const guestDateForPicker = (raw: Date | string | undefined): Date | undefined => {
+    if (raw == null || raw === '') return undefined;
+    if (raw instanceof Date) {
+      return Number.isNaN(raw.getTime())
+        ? undefined
+        : new Date(raw.getFullYear(), raw.getMonth(), raw.getDate());
+    }
+    return parseGuestIdentityDate(raw) ?? parseAndNormalizeStayDate(raw) ?? undefined;
+  };
 
   const [currentStep, setCurrentStep] = useState<'booking' | 'documents' | 'signature'>('booking');
   
