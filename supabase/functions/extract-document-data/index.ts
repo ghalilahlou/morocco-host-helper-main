@@ -41,7 +41,7 @@ Réponds UNIQUEMENT en JSON valide avec ces champs (null si non visible) :
   "fullName": "Prénom(s) Nom -- uniquement le nom, pas les numéros ni adresses",
   "dateOfBirth": "YYYY-MM-DD -- date de NAISSANCE uniquement",
   "documentNumber": "numéro du document",
-  "nationality": "en français majuscules (FRANÇAIS, AMÉRICAIN, MAROCAIN...)",
+  "nationality": "nationalité du titulaire en français majuscules (ex: passeport USA → AMÉRICAIN, France → FRANÇAIS — pas le lieu de naissance)",
   "placeOfBirth": "lieu de naissance si visible",
   "documentType": "passport | national_id",
   "documentExpiryDate": "YYYY-MM-DD -- date D'EXPIRATION uniquement (pas la date de délivrance/issue/émission)",
@@ -107,20 +107,23 @@ function mergeExtractedWithMrz(data: Record<string, unknown>): Record<string, un
   return out;
 }
 
-// Resize image si > 512 KB
+/** Modèle vision : gpt-4o (précision OCR) — surcharge via OPENAI_OCR_MODEL si besoin. */
+const OCR_VISION_MODEL = Deno.env.get('OPENAI_OCR_MODEL') ?? 'gpt-4o';
+
+// Resize uniquement les très grosses images — garder la MRZ lisible (max 1536px)
 async function resizeIfNeeded(bytes: ArrayBuffer, mime: string): Promise<{ bytes: ArrayBuffer; mime: string }> {
-  if (bytes.byteLength <= 512_000) return { bytes, mime };
+  if (bytes.byteLength <= 900_000) return { bytes, mime };
   try {
     const { createImageBitmap } = globalThis as any;
     if (typeof createImageBitmap !== 'function') return { bytes, mime };
     const blob = new Blob([bytes], { type: mime });
     const bmp = await createImageBitmap(blob);
-    const ratio = Math.min(1024 / bmp.width, 1024 / bmp.height, 1);
+    const ratio = Math.min(1536 / bmp.width, 1536 / bmp.height, 1);
     const w = Math.round(bmp.width * ratio);
     const h = Math.round(bmp.height * ratio);
     const canvas = new OffscreenCanvas(w, h);
     (canvas.getContext('2d') as any).drawImage(bmp, 0, 0, w, h);
-    const resized = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+    const resized = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.92 });
     const resizedBytes = await resized.arrayBuffer();
     console.log(`Resize: ${Math.round(bytes.byteLength / 1024)}KB -> ${Math.round(resizedBytes.byteLength / 1024)}KB (${w}x${h})`);
     return { bytes: resizedBytes, mime: 'image/jpeg' };
@@ -137,11 +140,11 @@ function toBase64(buffer: ArrayBuffer): string {
   return btoa(bin);
 }
 
-// S16 -- Appel OpenAI avec retry exponentiel sur 429 et 5xx
+// S16 -- Appel OpenAI Vision (gpt-4o) avec retry exponentiel sur 429 et 5xx
 async function callOpenAI(
   apiKey: string,
   imageUrl: string,
-  detail: 'low' | 'high',
+  detail: 'high' | 'auto' = 'high',
   maxRetries = 3
 ): Promise<{ data: Record<string, unknown>; usage: Record<string, number> | null }> {
   const delays = [1000, 2000, 4000];
@@ -151,20 +154,20 @@ async function callOpenAI(
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: OCR_VISION_MODEL,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Extrais les données de ce document :' },
+              { type: 'text', text: 'Extrais les données de ce document d\'identité. Priorité MRZ pour les dates et le numéro.' },
               { type: 'image_url', image_url: { url: imageUrl, detail } },
             ],
           },
         ],
         temperature: 0,
-        max_tokens: 300,
+        max_tokens: 450,
       }),
     });
 
@@ -244,23 +247,28 @@ async function handleRequest(req: Request): Promise<Response> {
     const { bytes, mime } = await resizeIfNeeded(raw, imageFile.type || 'image/jpeg');
     const imageUrl = `data:${mime};base64,${toBase64(bytes)}`;
 
-    // S15 -- Première passe en detail:low (coût minimal)
-    const { data: firstPass, usage } = await callOpenAI(apiKey, imageUrl, 'low');
+    console.log(`OCR model: ${OCR_VISION_MODEL}, detail: high`);
+
+    // Une passe haute résolution (gpt-4o) — meilleure précision pays / dates / MRZ
+    const { data: firstPass, usage } = await callOpenAI(apiKey, imageUrl, 'high');
 
     let extractedData = mergeExtractedWithMrz(firstPass);
 
-    // S15 -- Retry en detail:high si champs critiques manquants (ex : CIN petits caractères)
     if (!hasCriticalFields(extractedData)) {
-      console.log('Champs critiques manquants (low) -- retry en detail:high');
-      const { data: highPass } = await callOpenAI(apiKey, imageUrl, 'high', 2);
-      extractedData = mergeExtractedWithMrz(highPass);
-      console.log('Retry high -- résultat:', JSON.stringify(extractedData));
+      console.log('Champs critiques manquants — retry OCR');
+      const { data: retryPass } = await callOpenAI(apiKey, imageUrl, 'high', 2);
+      extractedData = mergeExtractedWithMrz(retryPass);
+      console.log('Retry OCR — résultat:', JSON.stringify(extractedData));
     }
 
-    // Log usage tokens
     if (usage) {
-      const cost = ((usage.prompt_tokens * 0.00000015) + (usage.completion_tokens * 0.0000006)).toFixed(6);
-      console.log(`Tokens: ${usage.total_tokens} (~$${cost})`);
+      const inCost = OCR_VISION_MODEL.includes('mini') ? 0.15e-6 : 2.5e-6;
+      const outCost = OCR_VISION_MODEL.includes('mini') ? 0.6e-6 : 10e-6;
+      const cost = (
+        (usage.prompt_tokens ?? 0) * inCost +
+        (usage.completion_tokens ?? 0) * outCost
+      ).toFixed(6);
+      console.log(`Tokens: ${usage.total_tokens} (~$${cost}, model=${OCR_VISION_MODEL})`);
     }
 
     // S17 -- Validation basique du schéma retourné (types attendus)
