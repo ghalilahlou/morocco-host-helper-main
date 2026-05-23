@@ -118,6 +118,141 @@ function bookingQuerySignatureFromSearch(search: string): string {
   }
 }
 
+/** TTL du cache check-in invité dans le navigateur (4 h). */
+const CHECKIN_BROWSER_CACHE_TTL_MS = 4 * 3600 * 1000;
+
+type CompletedCheckInCache = {
+  bookingId: string;
+  contractUrl: string | null;
+};
+
+function readCompletedCheckInFromBrowser(
+  propertyId: string | undefined,
+  token: string | undefined
+): CompletedCheckInCache | null {
+  if (!propertyId || !token || typeof window === 'undefined') return null;
+
+  const ns = `${propertyId}:${token}`;
+
+  try {
+    const flagRaw = localStorage.getItem(`checkInCompleted:${ns}`);
+    if (flagRaw) {
+      const parsed = JSON.parse(flagRaw) as {
+        bookingId?: string;
+        contractUrl?: string | null;
+        at?: number;
+      };
+      if (
+        parsed.bookingId &&
+        parsed.at &&
+        Date.now() - parsed.at < CHECKIN_BROWSER_CACHE_TTL_MS
+      ) {
+        return {
+          bookingId: parsed.bookingId,
+          contractUrl:
+            parsed.contractUrl ??
+            localStorage.getItem(`contractUrl:${ns}`) ??
+            null,
+        };
+      }
+    }
+
+    const bookingId = localStorage.getItem(`currentBookingId:${ns}`);
+    if (!bookingId) return null;
+
+    const submittedAtRaw = localStorage.getItem(`submittedAt:${bookingId}`);
+    if (submittedAtRaw) {
+      const age = Date.now() - Number(submittedAtRaw);
+      if (age >= CHECKIN_BROWSER_CACHE_TTL_MS) return null;
+    }
+
+    const contractUrl = localStorage.getItem(`contractUrl:${ns}`);
+    const guestData = localStorage.getItem(`currentGuestData:${ns}`);
+    const bookingData = localStorage.getItem(`currentBookingData:${ns}`);
+
+    if (!contractUrl && !guestData && !bookingData) return null;
+
+    return { bookingId, contractUrl: contractUrl ?? null };
+  } catch {
+    return null;
+  }
+}
+
+function hasSessionFormCache(sessionKey: (key: string) => string): boolean {
+  if (typeof window === 'undefined') return false;
+  if (sessionStorage.getItem(sessionKey('form_data_saved')) !== 'true') return false;
+
+  try {
+    const guestsRaw = sessionStorage.getItem(sessionKey('form_guests'));
+    if (guestsRaw) {
+      const guests = JSON.parse(guestsRaw) as Array<{ fullName?: string }>;
+      if (guests.some((g) => (g.fullName ?? '').trim().length > 0)) return true;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const bookingRaw = sessionStorage.getItem(sessionKey('form_booking'));
+    if (bookingRaw) {
+      const booking = JSON.parse(bookingRaw) as {
+        checkInDate?: string;
+        checkOutDate?: string;
+      };
+      if (booking.checkInDate && booking.checkOutDate) return true;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const docsRaw = sessionStorage.getItem(sessionKey('form_documents'));
+    if (docsRaw) {
+      const docs = JSON.parse(docsRaw);
+      if (Array.isArray(docs) && docs.length > 0) return true;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return false;
+}
+
+function clearCheckInBrowserCache(
+  propertyId: string,
+  token: string,
+  sessionKey: (key: string) => string,
+  bookingId?: string | null
+): void {
+  if (typeof window === 'undefined') return;
+  const ns = `${propertyId}:${token}`;
+  const localKeys = [
+    'checkInCompleted',
+    'currentBookingId',
+    'currentBookingData',
+    'currentGuestData',
+    'contractUrl',
+    'currentPropertyName',
+    'policeUrl',
+  ];
+  for (const k of localKeys) {
+    localStorage.removeItem(`${k}:${ns}`);
+  }
+  if (bookingId) {
+    localStorage.removeItem(`submittedAt:${bookingId}`);
+  }
+  const sessionKeys = [
+    'form_data_saved',
+    'form_guests',
+    'form_booking',
+    'form_numberOfGuests',
+    'form_documents',
+  ];
+  for (const k of sessionKeys) {
+    sessionStorage.removeItem(sessionKey(k));
+  }
+}
+
 // Animation variants
 const fadeInUp = {
   initial: { opacity: 0, y: 30 },
@@ -194,6 +329,7 @@ export const GuestVerification = () => {
   // P29 — bookingId détecté en localStorage au montage (soumission précédente)
   const [previousBookingId, setPreviousBookingId] = useState<string | null>(null);
   const [showPreviousSubmissionBanner, setShowPreviousSubmissionBanner] = useState(false);
+  const [cachedContractUrl, setCachedContractUrl] = useState<string | null>(null);
   const [isValidToken, setIsValidToken] = useState(false);
   const [checkingToken, setCheckingToken] = useState(true);
   const [propertyName, setPropertyName] = useState('');
@@ -420,32 +556,36 @@ export const GuestVerification = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [airbnbPrefill]);
 
-  // P29 — Détecter une soumission précédente dès le montage.
-  // Si un bookingId namespacé ou legacy existe en localStorage et a moins de 4 h,
-  // afficher un banner proposant d'aller directement à la signature.
+  // P29 — Bandeau si check-in déjà enregistré dans le cache navigateur (localStorage / session).
   useEffect(() => {
-    try {
-      const ns = propertyId && token ? `${propertyId}:${token}` : null;
-      const storedId =
-        (ns ? localStorage.getItem(`currentBookingId:${ns}`) : null) ??
-        localStorage.getItem('currentBookingId');
-      const storedUrl =
-        (ns ? localStorage.getItem(`contractUrl:${ns}`) : null) ??
-        localStorage.getItem('contractUrl');
-      if (storedId && storedUrl) {
-        // TTL 4 heures — passé ce délai, la soumission est trop ancienne pour être reprise
-        const storedAt = localStorage.getItem(`submittedAt:${storedId}`) ?? '';
-        const age = storedAt ? Date.now() - Number(storedAt) : 0;
-        if (!storedAt || age < 4 * 3600 * 1000) {
-          setPreviousBookingId(storedId);
-          setShowPreviousSubmissionBanner(true);
-        }
-      }
-    } catch {
-      // localStorage indisponible — pas de banner
+    if (!propertyId || !token) {
+      setShowPreviousSubmissionBanner(false);
+      setPreviousBookingId(null);
+      setCachedContractUrl(null);
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    const completed = readCompletedCheckInFromBrowser(propertyId, token);
+    const sessionHasForm = hasSessionFormCache(getSessionKey);
+
+    if (completed) {
+      setPreviousBookingId(completed.bookingId);
+      setCachedContractUrl(completed.contractUrl);
+      setShowPreviousSubmissionBanner(true);
+      return;
+    }
+
+    if (sessionHasForm) {
+      setPreviousBookingId(null);
+      setCachedContractUrl(null);
+      setShowPreviousSubmissionBanner(true);
+      return;
+    }
+
+    setShowPreviousSubmissionBanner(false);
+    setPreviousBookingId(null);
+    setCachedContractUrl(null);
+  }, [propertyId, token, getSessionKey]);
 
   // ✅ Log de debug supprimé pour éviter le spam dans la console
 
@@ -1970,11 +2110,19 @@ export const GuestVerification = () => {
         set('currentBookingId', bookingId);
         set('currentBookingData', JSON.stringify(bookingData));
         set('currentGuestData', JSON.stringify({ ...guestInfo, guests: guestsPayload }));
-        set('contractUrl', result.contractUrl);
+        set('contractUrl', result.contractUrl ?? '');
         if (propertyName) set('currentPropertyName', propertyName);
         if (result.policeUrl) set('policeUrl', result.policeUrl);
-        // TTL pour le banner P29
-        localStorage.setItem(`submittedAt:${bookingId}`, String(Date.now()));
+        const submittedAt = Date.now();
+        localStorage.setItem(`submittedAt:${bookingId}`, String(submittedAt));
+        localStorage.setItem(
+          `checkInCompleted:${ns}`,
+          JSON.stringify({
+            bookingId,
+            contractUrl: result.contractUrl ?? null,
+            at: submittedAt,
+          })
+        );
         console.log('✅ Données sauvegardées dans localStorage (clés namespacées + legacy)');
       } catch (storageError) {
         console.warn('⚠️ Erreur localStorage:', storageError);
@@ -2673,33 +2821,70 @@ export const GuestVerification = () => {
         }}
       >
         {/* P29 — Banner soumission précédente (dans la zone principale, pas à côté de la sidebar) */}
-        {showPreviousSubmissionBanner && previousBookingId && (
+        {showPreviousSubmissionBanner && (
           <div
             role="alert"
             className="mx-6 mt-4 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900 flex flex-col gap-2"
           >
-            <p className="font-semibold">{t('guestVerification.previousSubmission.title')}</p>
-            <p className="text-teal-700">{t('guestVerification.previousSubmission.desc')}</p>
+            <p className="font-semibold">
+              {previousBookingId
+                ? t('guestVerification.previousSubmission.title')
+                : t('guestVerification.previousSubmission.titleSession')}
+            </p>
+            <p className="text-teal-700">
+              {previousBookingId
+                ? t('guestVerification.previousSubmission.desc')
+                : t('guestVerification.previousSubmission.descSession')}
+            </p>
             <div className="flex gap-2 flex-wrap">
-              <button
-                type="button"
-                className="px-4 py-2 rounded-lg bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 transition-colors"
-                onClick={() => {
-                  const ns = propertyId && token ? `${propertyId}:${token}` : null;
-                  const url =
-                    (ns ? localStorage.getItem(`contractUrl:${ns}`) : null) ??
-                    localStorage.getItem('contractUrl') ?? '';
-                  const base = `/contract-signing/${propertyId}/${token}`;
-                  const dest = airbnbBookingId ? `${base}/${airbnbBookingId}` : base;
-                  navigate(dest, { state: { bookingId: previousBookingId, contractUrl: url } });
-                }}
-              >
-                {t('guestVerification.previousSubmission.goSign')}
-              </button>
+              {previousBookingId && (
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 transition-colors"
+                  onClick={() => {
+                    const ns = `${propertyId}:${token}`;
+                    const url =
+                      cachedContractUrl ??
+                      localStorage.getItem(`contractUrl:${ns}`) ??
+                      '';
+                    const base = `/contract-signing/${propertyId}/${token}`;
+                    const dest = airbnbBookingId ? `${base}/${airbnbBookingId}` : base;
+                    navigate(dest, {
+                      state: { bookingId: previousBookingId, contractUrl: url },
+                    });
+                  }}
+                >
+                  {t('guestVerification.previousSubmission.goSign')}
+                </button>
+              )}
+              {!previousBookingId && (
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 transition-colors"
+                  onClick={() => {
+                    restoreFormDataFromSession();
+                    setShowPreviousSubmissionBanner(false);
+                  }}
+                >
+                  {t('guestVerification.previousSubmission.resume')}
+                </button>
+              )}
               <button
                 type="button"
                 className="px-4 py-2 rounded-lg border border-teal-400 text-teal-800 text-xs font-medium hover:bg-teal-100 transition-colors"
-                onClick={() => setShowPreviousSubmissionBanner(false)}
+                onClick={() => {
+                  if (propertyId && token) {
+                    clearCheckInBrowserCache(
+                      propertyId,
+                      token,
+                      getSessionKey,
+                      previousBookingId
+                    );
+                  }
+                  setShowPreviousSubmissionBanner(false);
+                  setPreviousBookingId(null);
+                  setCachedContractUrl(null);
+                }}
               >
                 {t('guestVerification.previousSubmission.restart')}
               </button>
