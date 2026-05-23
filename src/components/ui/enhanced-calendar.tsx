@@ -85,10 +85,14 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   const [selectionInProgress, setSelectionInProgress] = useState<Date | null>(null);
   const [hoveredDate, setHoveredDate] = useState<Date | null>(null);
 
-  // Réinitialiser la sélection en cours quand les bornes externes changent
+  // Réinitialiser uniquement quand la plage est complète côté parent (les deux bornes).
+  // Ne pas réagir à rangeStart seul : sinon le 1er clic efface selectionInProgress
+  // et le 2e clic est traité comme une nouvelle arrivée.
   useEffect(() => {
-    setSelectionInProgress(null);
-    setHoveredDate(null);
+    if (rangeStart && rangeEnd) {
+      setSelectionInProgress(null);
+      setHoveredDate(null);
+    }
   }, [mode, rangeStart?.getTime(), rangeEnd?.getTime()]);
 
   const monthStart = startOfMonth(currentMonth);
@@ -119,15 +123,30 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
 
   const isDateInRange = (date: Date) => {
     if (mode !== 'range') return false;
-    if (!rangeStart || !rangeEnd) return false;
     const d = startOfDay(date).getTime();
-    const a = startOfDay(rangeStart).getTime();
-    const b = startOfDay(rangeEnd).getTime();
-    return d >= a && d <= b;
+    if (rangeStart && rangeEnd) {
+      const a = startOfDay(rangeStart).getTime();
+      const b = startOfDay(rangeEnd).getTime();
+      return d >= a && d <= b;
+    }
+    if (rangeAnchor && hoveredDate) {
+      const a = rangeAnchor.getTime();
+      const b = startOfDay(hoveredDate).getTime();
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      return d >= lo && d <= hi;
+    }
+    return false;
   };
 
+  const rangeAnchor =
+    selectionInProgress ??
+    (rangeStart && !rangeEnd ? startOfDay(rangeStart) : null);
+
   const isRangeStart = (date: Date) => {
-    return mode === 'range' && rangeStart && isSameDay(date, rangeStart);
+    if (mode !== 'range') return false;
+    if (rangeAnchor && isSameDay(date, rangeAnchor)) return true;
+    return !!(rangeStart && rangeEnd && isSameDay(date, rangeStart));
   };
 
   const isRangeEnd = (date: Date) => {
@@ -135,9 +154,9 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   };
 
   const isDateInHoverRange = (date: Date) => {
-    if (mode !== 'range' || !selectionInProgress || !hoveredDate) return false;
-    const start = selectionInProgress <= hoveredDate ? selectionInProgress : hoveredDate;
-    const end = selectionInProgress <= hoveredDate ? hoveredDate : selectionInProgress;
+    if (mode !== 'range' || !rangeAnchor || !hoveredDate) return false;
+    const start = rangeAnchor <= hoveredDate ? rangeAnchor : hoveredDate;
+    const end = rangeAnchor <= hoveredDate ? hoveredDate : rangeAnchor;
     return date >= start && date <= end;
   };
 
@@ -151,16 +170,20 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
     }
 
     if (mode === 'range') {
-      if (!selectionInProgress) {
+      const anchor =
+        selectionInProgress ??
+        (rangeStart && !rangeEnd ? startOfDay(rangeStart) : null);
+
+      if (!anchor) {
         setSelectionInProgress(day);
         setHoveredDate(null);
         onRangeProgress?.(day, null);
         return;
       }
-      if (isSameDay(selectionInProgress, day)) return;
+      if (isSameDay(anchor, day)) return;
 
-      const start = selectionInProgress <= day ? selectionInProgress : day;
-      const end = selectionInProgress <= day ? day : selectionInProgress;
+      const start = anchor <= day ? anchor : day;
+      const end = anchor <= day ? day : anchor;
       onRangeProgress?.(start, end);
       onRangeSelect?.(start, end);
       setSelectionInProgress(null);
@@ -207,7 +230,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
       color = '#2C2C2C';
     }
 
-    if (selectionInProgress && isSameDay(date, selectionInProgress)) {
+    if (rangeAnchor && !rangeEnd && isSameDay(date, rangeAnchor)) {
       border = '2px solid #55BA9F';
       backgroundColor = 'transparent';
       color = '#55BA9F';
@@ -372,7 +395,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
                 handleDateClick(date);
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              onMouseEnter={() => mode === 'range' && selectionInProgress && setHoveredDate(startOfDay(date))}
+              onMouseEnter={() => mode === 'range' && rangeAnchor && setHoveredDate(startOfDay(date))}
               onMouseLeave={() => setHoveredDate(null)}
               whileHover={{ scale: isDateDisabled(date) ? 1 : 1.05 }}
               whileTap={{ scale: isDateDisabled(date) ? 1 : 0.95 }}

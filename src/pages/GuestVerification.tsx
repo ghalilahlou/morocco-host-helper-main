@@ -776,6 +776,8 @@ export const GuestVerification = () => {
 
   const [showCalendarPanel, setShowCalendarPanel] = useState(false);
   const [showGuestsPanel, setShowGuestsPanel] = useState(false);
+  /** Arrivée choisie dans le calendrier, affichée avant validation du départ (n’écrit pas checkInDate). */
+  const [rangeDraftStart, setRangeDraftStart] = useState<Date | undefined>();
   /** Barre réservation + panneaux calendrier / voyageurs (clic extérieur). */
   const bookingPanelsRef = useRef<HTMLDivElement>(null);
   
@@ -786,6 +788,7 @@ export const GuestVerification = () => {
       if (bookingPanelsRef.current && !bookingPanelsRef.current.contains(event.target as Node)) {
         setShowCalendarPanel(false);
         setShowGuestsPanel(false);
+        setRangeDraftStart(undefined);
       }
     };
 
@@ -2989,20 +2992,28 @@ export const GuestVerification = () => {
                               : 'min-w-0 hover:bg-gray-50 rounded-lg p-2 -m-2'
                           }`}
                           onClick={() => {
-                            setShowCalendarPanel(!showCalendarPanel);
+                            const opening = !showCalendarPanel;
+                            setShowCalendarPanel(opening);
                             setShowGuestsPanel(false);
+                            if (opening) setRangeDraftStart(undefined);
                           }}
                         >
                           <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWhen')}</Label>
                           <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>
-                            {checkInDate && checkOutDate
-                              ? isMobile
-                                ? `${format(checkInDate, 'dd/MM')} → ${format(checkOutDate, 'dd/MM/yy')}`
-                                : `${format(checkInDate, 'dd/MM/yyyy')} - ${format(checkOutDate, 'dd/MM/yyyy')}`
-                              : checkInDate
-                                ? `${format(checkInDate, isMobile ? 'dd/MM' : 'dd/MM/yyyy')} → …`
-                                : t('guestVerification.selectDates')
-                            }
+                            {(() => {
+                              const pendingStart =
+                                rangeDraftStart ??
+                                (checkInDate && !checkOutDate ? checkInDate : undefined);
+                              if (checkInDate && checkOutDate) {
+                                return isMobile
+                                  ? `${format(checkInDate, 'dd/MM')} → ${format(checkOutDate, 'dd/MM/yy')}`
+                                  : `${format(checkInDate, 'dd/MM/yyyy')} - ${format(checkOutDate, 'dd/MM/yyyy')}`;
+                              }
+                              if (pendingStart) {
+                                return `${format(pendingStart, isMobile ? 'dd/MM' : 'dd/MM/yyyy')} → …`;
+                              }
+                              return t('guestVerification.selectDates');
+                            })()}
                           </div>
                         </div>
                         
@@ -3341,15 +3352,17 @@ export const GuestVerification = () => {
                               )}
                               
                               <EnhancedCalendar
-                                key={`cal-${token ?? 't'}-${checkInDate?.getTime() ?? 'ci'}-${checkOutDate?.getTime() ?? 'co'}-${showCalendarPanel}`}
+                                key={`cal-${token ?? 't'}-${showCalendarPanel ? 'open' : 'closed'}`}
                                 mode="range"
-                                rangeStart={checkInDate}
+                                rangeStart={rangeDraftStart ?? checkInDate}
                                 rangeEnd={checkOutDate}
                                 onRangeProgress={(start, end) => {
                                   if (start && !end) {
-                                    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-                                    setCheckInDate(d);
-                                    setCheckOutDate(undefined);
+                                    setRangeDraftStart(
+                                      new Date(start.getFullYear(), start.getMonth(), start.getDate())
+                                    );
+                                  } else {
+                                    setRangeDraftStart(undefined);
                                   }
                                 }}
                                 onRangeSelect={(checkIn, checkOut) => {
@@ -3357,6 +3370,7 @@ export const GuestVerification = () => {
                                   const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
                                   setCheckInDate(normalizedCheckIn);
                                   setCheckOutDate(normalizedCheckOut);
+                                  setRangeDraftStart(undefined);
                                   setShowCalendarPanel(false);
                                 }}
                                 className="mx-auto"
