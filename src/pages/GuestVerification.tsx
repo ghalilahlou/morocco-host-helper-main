@@ -40,7 +40,8 @@ import { validateTokenDirect } from '@/utils/tokenValidation';
 import { Guest } from '@/types/booking'; // ✅ Importer le type centralisé
 import { DEV_GUEST_VERIFICATION_URL, DEV_PRESET_GUEST } from '@/config/devGuestVerification';
 import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
-import { GuestDateSelectField } from '@/components/guest/GuestDateSelectField';
+import { GuestHybridDateField } from '@/components/guest/GuestHybridDateField';
+import { parseGuestIdentityDate } from '@/utils/guestIdentityDateParse';
 import { NATIONALITIES } from '@/data/nationalities';
 import { AnimatePresence } from 'framer-motion';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -71,25 +72,9 @@ interface UploadedDocument {
   ocrFailed?: boolean;
 }
 
-/** Parse une date extraite par l'IA en évitant `new Date('YYYY-MM-DD')` (décalage UTC / jour manquant). */
+/** @deprecated Utiliser parseGuestIdentityDate — conservé pour compat interne. */
 function parseGuestDateFromExtraction(value: string | undefined): Date | null {
-  if (!value || typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  const isoStrict = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
-  if (isoStrict) {
-    try {
-      return parseLocalDate(trimmed);
-    } catch {
-      return null;
-    }
-  }
-  const direct = new Date(trimmed);
-  if (!isNaN(direct.getTime())) return direct;
-  const ddmmyyyy = trimmed.match(/^(\d{2})[\/\-.](\d{2})[\/\-.](\d{4})$/);
-  if (ddmmyyyy) {
-    return new Date(parseInt(ddmmyyyy[3], 10), parseInt(ddmmyyyy[2], 10) - 1, parseInt(ddmmyyyy[1], 10));
-  }
-  return null;
+  return parseGuestIdentityDate(value);
 }
 
 function formatDocExtractSummary(doc: UploadedDocument, guestAtIndex: Guest | undefined): string {
@@ -447,7 +432,9 @@ export const GuestVerification = () => {
   // ✅ Refs pour la gestion de l'état et des flags
   const isMountedRef = useRef(true); // ✅ Réf pour suivre si le composant est monté
   const navigationInProgressRef = useRef(false); // ✅ Réf pour éviter les navigations multiples
-  const processingFilesRef = useRef<Set<string>>(new Set()); // ✅ Réf pour éviter les traitements multiples du même fichier
+  const processingFilesRef = useRef<Set<string>>(new Set());
+  /** Champs modifiés manuellement par l'invité — l'OCR ne doit pas les écraser. */
+  const guestFieldsTouchedRef = useRef<Map<number, Set<keyof Guest>>>(new Map()); // ✅ Réf pour éviter les traitements multiples du même fichier
   const isProcessingRef = useRef(false); // ✅ Réf pour éviter les appels multiples simultanés
   const isCheckingICSRef = useRef(false); // ✅ Réf pour éviter les vérifications ICS multiples parallèles
   const isVerifyingTokenRef = useRef(false); // ✅ Réf pour éviter les vérifications token multiples parallèles
@@ -1453,7 +1440,9 @@ export const GuestVerification = () => {
   };
 
   const updateGuest = (rowIndex: number, field: keyof Guest, value: any) => {
-    console.log('🔄 updateGuest appelé:', { rowIndex, field, value });
+    const touched = guestFieldsTouchedRef.current.get(rowIndex) ?? new Set<keyof Guest>();
+    touched.add(field);
+    guestFieldsTouchedRef.current.set(rowIndex, touched);
 
     setGuests((prevGuests) => {
       const updatedGuests = [...prevGuests];
@@ -1595,13 +1584,18 @@ export const GuestVerification = () => {
             if (extractedData.documentType && tg.documentType !== extractedData.documentType) tg.documentType = extractedData.documentType as 'passport' | 'national_id';
             if (extractedData.placeOfBirth && tg.placeOfBirth !== extractedData.placeOfBirth) tg.placeOfBirth = extractedData.placeOfBirth;
 
-            if (extractedData.dateOfBirth) {
-              const parsed = parseGuestDateFromExtraction(extractedData.dateOfBirth);
-              if (parsed && !isNaN(parsed.getTime()) && parsed >= new Date(1900, 0, 1)) tg.dateOfBirth = parsed;
+            const touchedFields = guestFieldsTouchedRef.current.get(targetIndex) ?? new Set<keyof Guest>();
+            if (extractedData.dateOfBirth && !touchedFields.has('dateOfBirth')) {
+              const parsed = parseGuestIdentityDate(extractedData.dateOfBirth);
+              if (parsed && !isNaN(parsed.getTime()) && parsed >= new Date(1900, 0, 1)) {
+                tg.dateOfBirth = parsed;
+              }
             }
-            if (extractedData.documentIssueDate) {
-              const parsed = parseGuestDateFromExtraction(extractedData.documentIssueDate);
-              if (parsed && !isNaN(parsed.getTime()) && parsed >= new Date(1990, 0, 1) && parsed <= new Date(2050, 11, 31)) tg.documentIssueDate = parsed;
+            if (extractedData.documentIssueDate && !touchedFields.has('documentIssueDate')) {
+              const parsed = parseGuestIdentityDate(extractedData.documentIssueDate);
+              if (parsed && !isNaN(parsed.getTime()) && parsed >= new Date(1990, 0, 1) && parsed <= new Date(2050, 11, 31)) {
+                tg.documentIssueDate = parsed;
+              }
             }
             return updatedGuests;
           });
@@ -3859,9 +3853,10 @@ export const GuestVerification = () => {
                                     <Label htmlFor={`guest-dob-${rowIndex}`} className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.dateOfBirth')} <span className="text-red-500">*</span>
                                     </Label>
-                                    <GuestDateSelectField
+                                    <GuestHybridDateField
                                       id={`guest-dob-${rowIndex}`}
                                       variant="birth"
+                                      ariaLabel={t('guest.clients.dateOfBirth')}
                                       value={guestDateForPicker(guest.dateOfBirth)}
                                       onChange={(date) => updateGuest(rowIndex, 'dateOfBirth', date)}
                                       disabled={identityFieldsLocked}
@@ -3949,9 +3944,10 @@ export const GuestVerification = () => {
                                     <Label htmlFor={`guest-doc-expiry-${rowIndex}`} className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.documentExpiryDate')}
                                     </Label>
-                                    <GuestDateSelectField
+                                    <GuestHybridDateField
                                       id={`guest-doc-expiry-${rowIndex}`}
                                       variant="expiry"
+                                      ariaLabel={t('guest.clients.documentExpiryDate')}
                                       value={guestDateForPicker(guest.documentIssueDate)}
                                       onChange={(date) => updateGuest(rowIndex, 'documentIssueDate', date)}
                                       disabled={identityFieldsLocked}

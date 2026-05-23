@@ -44,15 +44,68 @@ Réponds UNIQUEMENT en JSON valide avec ces champs (null si non visible) :
   "nationality": "en français majuscules (FRANÇAIS, AMÉRICAIN, MAROCAIN...)",
   "placeOfBirth": "lieu de naissance si visible",
   "documentType": "passport | national_id",
-  "documentExpiryDate": "YYYY-MM-DD -- date D'EXPIRATION uniquement (pas la date de délivrance/issue/émission)"
+  "documentExpiryDate": "YYYY-MM-DD -- date D'EXPIRATION uniquement (pas la date de délivrance/issue/émission)",
+  "mrzLine2": "ligne MRZ du bas (2e ligne) recopiée EXACTEMENT si visible, sans espaces ajoutés"
 }
 RÈGLES CRITIQUES :
-1. MRZ (zone texte en bas) → PRIORITÉ absolue pour les dates : positions 13-18 = naissance (AAMMJJ), positions 21-26 = expiration (AAMMJJ).
-2. documentExpiryDate = la date la PLUS FUTURE (ex: 2027, jamais 2017 pour un passeport récent).
-3. Pour un passeport, l'expiration est typiquement 10 ans après l'émission. Si tu vois deux dates proches (ex: 2017 et 2027), l'expiration est 2027.
-4. dateOfBirth = TOUJOURS antérieure à la date d'émission. Ne jamais confondre avec une date d'émission.
+1. MRZ (zone texte en bas) → PRIORITÉ absolue pour les dates : sur la 2e ligne, caractères 14-19 = naissance YYMMDD, caractères 22-27 = expiration YYMMDD (index 1-based).
+2. documentExpiryDate = la date la PLUS FUTURE visible (ex: 2027-03-12, jamais 2017-03-13 pour un passeport encore valide).
+3. dateOfBirth = date de naissance (ex: 1999-09-22), JAMAIS la date d'émission (Date of Issue).
+4. Ne confonds pas le jour du mois visuel avec un autre champ : vérifie la MRZ si présente.
 5. fullName = noms concaténés (ex: "RAB SAIMA RADYAH"), jamais de chiffres.
 6. Convertir JAN/FEB/MAR/APR/MAY/JUN/JUL/AUG/SEP/OCT/NOV/DEC → YYYY-MM-DD.`;
+
+function yymmddMrzToIso(yymmdd: string): string | null {
+  if (!/^\d{6}$/.test(yymmdd)) return null;
+  const yy = parseInt(yymmdd.slice(0, 2), 10);
+  const mm = parseInt(yymmdd.slice(2, 4), 10);
+  const dd = parseInt(yymmdd.slice(4, 6), 10);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  const year = yy >= 40 ? 1900 + yy : 2000 + yy;
+  return `${year}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
+
+/** 2e ligne MRZ TD3 (passeport) : naissance positions 13-18, expiration 21-26 (index 0). */
+function parseTd3MrzLine2Dates(mrzLine2: string): { dateOfBirth?: string; documentExpiryDate?: string } {
+  const s = mrzLine2.replace(/\s/g, '').toUpperCase().replace(/</g, '');
+  if (s.length < 27) return {};
+  const dob = yymmddMrzToIso(s.substring(13, 19));
+  const exp = yymmddMrzToIso(s.substring(21, 27));
+  return {
+    ...(dob ? { dateOfBirth: dob } : {}),
+    ...(exp ? { documentExpiryDate: exp } : {}),
+  };
+}
+
+function parseYmdLocal(ymd: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim());
+  if (!m) return null;
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10) - 1;
+  const d = parseInt(m[3], 10);
+  const dt = new Date(y, mo, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo || dt.getDate() !== d) return null;
+  return dt;
+}
+
+/** Fusionne les dates MRZ (prioritaires) avec la vision OpenAI. */
+function mergeExtractedWithMrz(data: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...data };
+  const mrzRaw = String(out.mrzLine2 ?? out.mrz_line2 ?? '').trim();
+  const candidates = [mrzRaw];
+  for (const v of Object.values(data)) {
+    if (typeof v === 'string' && v.length >= 27 && /[A-Z]{3}\d{6}/.test(v)) {
+      candidates.push(v.replace(/\s/g, '').toUpperCase());
+    }
+  }
+  for (const line of candidates) {
+    const fromMrz = parseTd3MrzLine2Dates(line);
+    if (fromMrz.dateOfBirth) out.dateOfBirth = fromMrz.dateOfBirth;
+    if (fromMrz.documentExpiryDate) out.documentExpiryDate = fromMrz.documentExpiryDate;
+    if (fromMrz.dateOfBirth && fromMrz.documentExpiryDate) break;
+  }
+  return out;
+}
 
 // Resize image si > 512 KB
 async function resizeIfNeeded(bytes: ArrayBuffer, mime: string): Promise<{ bytes: ArrayBuffer; mime: string }> {
@@ -141,18 +194,20 @@ async function callOpenAI(
 function hasCriticalFields(data: Record<string, unknown>): boolean {
   if (!data.documentNumber || !data.dateOfBirth) return false;
 
-  // Vérification de cohérence : si une date d'expiration est présente,
-  // elle doit être postérieure à la date de naissance et à aujourd'hui.
   const expiry = String(data.documentExpiryDate || '');
   const dob = String(data.dateOfBirth || '');
   if (expiry && dob) {
-    const expiryDate = new Date(expiry);
-    const dobDate = new Date(dob);
+    const expiryDate = parseYmdLocal(expiry);
+    const dobDate = parseYmdLocal(dob);
     const today = new Date();
-    // Si l'expiration est dans le passé ou avant la DOB → dates incohérentes → retry
-    if (!isNaN(expiryDate.getTime()) && (expiryDate < today || expiryDate < dobDate)) {
-      console.warn('Dates incohérentes détectées -- expiry < today ou expiry < DOB:', { expiry, dob });
-      return false; // forcer retry detail:high
+    today.setHours(0, 0, 0, 0);
+    if (
+      expiryDate &&
+      dobDate &&
+      (expiryDate < today || expiryDate <= dobDate)
+    ) {
+      console.warn('Dates incohérentes — retry high:', { expiry, dob });
+      return false;
     }
   }
 
@@ -192,13 +247,13 @@ async function handleRequest(req: Request): Promise<Response> {
     // S15 -- Première passe en detail:low (coût minimal)
     const { data: firstPass, usage } = await callOpenAI(apiKey, imageUrl, 'low');
 
-    let extractedData = firstPass;
+    let extractedData = mergeExtractedWithMrz(firstPass);
 
     // S15 -- Retry en detail:high si champs critiques manquants (ex : CIN petits caractères)
-    if (!hasCriticalFields(firstPass)) {
+    if (!hasCriticalFields(extractedData)) {
       console.log('Champs critiques manquants (low) -- retry en detail:high');
       const { data: highPass } = await callOpenAI(apiKey, imageUrl, 'high', 2);
-      extractedData = highPass;
+      extractedData = mergeExtractedWithMrz(highPass);
       console.log('Retry high -- résultat:', JSON.stringify(extractedData));
     }
 
@@ -226,11 +281,22 @@ async function handleRequest(req: Request): Promise<Response> {
       delete extractedData.documentType;
     }
 
-    // Nettoyer les null/vides
+    // Nettoyer les null/vides (mrzLine2 = métadonnée interne, non exposée au client)
     const clean: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(extractedData)) {
+      if (k === 'mrzLine2' || k === 'mrz_line2') continue;
       if (v !== null && v !== '' && v !== 'null' && v !== undefined) clean[k] = v;
     }
+
+    if (clean.documentExpiryDate && clean.dateOfBirth) {
+      const exp = parseYmdLocal(String(clean.documentExpiryDate));
+      const dob = parseYmdLocal(String(clean.dateOfBirth));
+      if (exp && dob && exp <= dob) {
+        delete clean.documentExpiryDate;
+      }
+    }
+
+    console.log('OCR final (MRZ fusionné):', JSON.stringify(clean));
 
     return new Response(
       JSON.stringify({ success: true, extractedData: clean }),
