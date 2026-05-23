@@ -77,6 +77,24 @@ function parseGuestDateFromExtraction(value: string | undefined): Date | null {
   return parseGuestIdentityDate(value);
 }
 
+/** Index du voyageur cible pour appliquer un résultat OCR. */
+function resolveGuestIndexForOcr(
+  guestList: Guest[],
+  extracted: { fullName?: string; documentNumber?: string }
+): number {
+  if (extracted.documentNumber) {
+    const byDoc = guestList.findIndex(
+      (g) =>
+        g.documentNumber?.trim() &&
+        g.documentNumber.trim() === extracted.documentNumber!.trim()
+    );
+    if (byDoc >= 0) return byDoc;
+  }
+  const empty = guestList.findIndex((g) => !g.fullName?.trim() && !g.documentNumber?.trim());
+  if (empty >= 0) return empty;
+  return guestList.length > 0 ? 0 : -1;
+}
+
 function formatDocExtractSummary(doc: UploadedDocument, guestAtIndex: Guest | undefined): string {
   const ext = doc.extractedData as Partial<Guest> | undefined;
   const parts: string[] = [];
@@ -929,45 +947,25 @@ export const GuestVerification = () => {
   const uploadedDocumentsRef = useRef<UploadedDocument[]>([]);
   useEffect(() => { uploadedDocumentsRef.current = uploadedDocuments; }, [uploadedDocuments]);
 
-  /** Pièce d'identité importée et OCR terminé pour ce voyageur (index aligné documents ↔ guests). */
-  const identityUnlockedForGuest = useCallback(
-    (guestIndex: number) => {
-      // 1. Document à l'index exact — déverrouiller dès que le traitement est terminé
-      //    (que l'OCR ait réussi ou échoué, l'invité doit pouvoir corriger manuellement).
-      const doc = uploadedDocuments[guestIndex];
-      if (doc && !doc.processing) return true;
-
-      // 2. Avec le traitement parallèle (P8), un document peut être à un index différent
-      //    (ordre d'arrivée vs ordre des guests). On cherche UN document traité qui
-      //    correspond à ce voyageur par nom ou n° de document.
-      const guest = guests[guestIndex];
-      if (uploadedDocuments.some((d) => {
-        if (!d || d.processing) return false;
-        if (!d.extractedData) return true; // doc traité sans extractedData (OCR échoué) → déverrouiller
-        const ext = d.extractedData as Partial<Guest>;
-        const sameName =
-          ext.fullName && guest?.fullName &&
-          ext.fullName.trim().toLowerCase() === guest.fullName.trim().toLowerCase();
-        const sameDoc =
-          ext.documentNumber && guest?.documentNumber &&
-          ext.documentNumber.trim() === guest.documentNumber.trim();
-        return Boolean(sameName || sameDoc);
-      })) return true;
-
-      // 3. Fallback : si au moins UN document a fini de traiter et que ce voyageur
-      //    a été rempli (fullName non vide), déverrouiller (l'OCR a travaillé sur lui).
-      const hasAnyProcessedDoc = uploadedDocuments.some(d => d && !d.processing);
-      if (hasAnyProcessedDoc && guest?.fullName?.trim()) return true;
-
-      return false;
-    },
-    [uploadedDocuments, guests]
-  );
-
+  /**
+   * Champs identité modifiables dès que l'OCR a rempli le formulaire (ou document traité).
+   * Verrouillés uniquement : avant tout import, ou pendant l'analyse en cours.
+   */
   const isIdentityFieldsLocked = useCallback(
-    (guestIndex: number) =>
-      !identityUnlockedForGuest(guestIndex) && !manualUnlockGuests.has(guestIndex),
-    [identityUnlockedForGuest, manualUnlockGuests]
+    (guestIndex: number) => {
+      if (manualUnlockGuests.has(guestIndex)) return false;
+
+      const guest = guests[guestIndex];
+
+      if (uploadedDocuments[guestIndex]?.processing) return true;
+
+      if (guest?.fullName?.trim() && guest?.documentNumber?.trim()) return false;
+
+      if (uploadedDocuments.some((d) => d && !d.processing)) return false;
+
+      return uploadedDocuments.length === 0;
+    },
+    [uploadedDocuments, guests, manualUnlockGuests]
   );
 
   const unlockGuestManual = useCallback((guestIndex: number) => {
@@ -1141,6 +1139,21 @@ export const GuestVerification = () => {
     }
   }, [getSessionKey]);
   
+  // Déverrouiller les formulaires déjà préremplis (session / OCR précédent)
+  useEffect(() => {
+    if (currentStep !== 'documents') return;
+    setManualUnlockGuests((prev) => {
+      const next = new Set(prev);
+      guests.forEach((g, i) => {
+        if (g.fullName?.trim() || g.documentNumber?.trim()) next.add(i);
+      });
+      uploadedDocuments.forEach((d, i) => {
+        if (d && !d.processing) next.add(i);
+      });
+      return next;
+    });
+  }, [currentStep, guests, uploadedDocuments]);
+
   // ✅ NOUVEAU : Gérer la navigation depuis la page de signature
   useEffect(() => {
     const navState = (location as any)?.state;
@@ -1533,58 +1546,45 @@ export const GuestVerification = () => {
             });
           }
 
-          // Les mises à jour fonctionnelles sont toujours séquencées par React —
-          // sans risque de race condition même en traitement parallèle.
-          setGuests(prevGuests => {
+          let ocrTargetIndex = 0;
+
+          setGuests((prevGuests) => {
             const updatedGuests = [...prevGuests];
-            let targetIndex = -1;
+            const resolved = resolveGuestIndexForOcr(updatedGuests, extractedData);
+            const idx =
+              resolved >= 0 && resolved < updatedGuests.length
+                ? resolved
+                : updatedGuests.findIndex((g) => !g.fullName && !g.documentNumber);
 
-            if (extractedData.fullName || extractedData.documentNumber) {
-              targetIndex = updatedGuests.findIndex(guest => {
-                const sameDocNumber = extractedData.documentNumber && guest.documentNumber &&
-                                      extractedData.documentNumber.trim() === guest.documentNumber.trim();
-                return sameDocNumber;
-              });
+            ocrTargetIndex = idx >= 0 ? idx : updatedGuests.length;
 
-              if (targetIndex !== -1) {
-                const existingGuest = updatedGuests[targetIndex];
-                const isAlreadyComplete =
-                  existingGuest.fullName?.trim().toLowerCase() === extractedData.fullName?.trim().toLowerCase() &&
-                  existingGuest.documentNumber?.trim() === extractedData.documentNumber?.trim() &&
-                  existingGuest.nationality === extractedData.nationality;
-                if (isAlreadyComplete) return prevGuests;
-              }
+            if (idx === -1) {
+              return [
+                ...updatedGuests,
+                {
+                  fullName: extractedData.fullName || '',
+                  dateOfBirth: parseGuestIdentityDate(extractedData.dateOfBirth) ?? undefined,
+                  nationality: extractedData.nationality || '',
+                  documentNumber: extractedData.documentNumber || '',
+                  documentType: (extractedData.documentType as 'passport' | 'national_id') || 'passport',
+                  documentIssueDate: parseGuestIdentityDate(extractedData.documentIssueDate) ?? undefined,
+                  profession: '',
+                  motifSejour: 'TOURISME',
+                  adressePersonnelle: '',
+                  email: '',
+                  placeOfBirth: extractedData.placeOfBirth || undefined,
+                },
+              ];
             }
 
-            if (targetIndex === -1) {
-              targetIndex = updatedGuests.findIndex(guest => !guest.fullName && !guest.documentNumber);
-            }
-            if (targetIndex === -1 && updatedGuests.length > 0) targetIndex = 0;
+            const tg = { ...updatedGuests[idx] };
+            if (extractedData.fullName) tg.fullName = extractedData.fullName;
+            if (extractedData.nationality) tg.nationality = extractedData.nationality;
+            if (extractedData.documentNumber) tg.documentNumber = extractedData.documentNumber;
+            if (extractedData.documentType) tg.documentType = extractedData.documentType as 'passport' | 'national_id';
+            if (extractedData.placeOfBirth) tg.placeOfBirth = extractedData.placeOfBirth;
 
-            if (targetIndex === -1) {
-              return [...updatedGuests, {
-                fullName: extractedData.fullName || '',
-                dateOfBirth: parseGuestDateFromExtraction(extractedData.dateOfBirth) ?? undefined,
-                nationality: extractedData.nationality || '',
-                documentNumber: extractedData.documentNumber || '',
-                documentType: (extractedData.documentType as 'passport' | 'national_id') || 'passport',
-                documentIssueDate: parseGuestDateFromExtraction(extractedData.documentIssueDate) ?? undefined,
-                profession: '',
-                motifSejour: 'TOURISME',
-                adressePersonnelle: '',
-                email: '',
-                placeOfBirth: extractedData.placeOfBirth || undefined,
-              }];
-            }
-
-            const tg = updatedGuests[targetIndex];
-            if (extractedData.fullName && tg.fullName !== extractedData.fullName) tg.fullName = extractedData.fullName;
-            if (extractedData.nationality && tg.nationality !== extractedData.nationality) tg.nationality = extractedData.nationality;
-            if (extractedData.documentNumber && tg.documentNumber !== extractedData.documentNumber) tg.documentNumber = extractedData.documentNumber;
-            if (extractedData.documentType && tg.documentType !== extractedData.documentType) tg.documentType = extractedData.documentType as 'passport' | 'national_id';
-            if (extractedData.placeOfBirth && tg.placeOfBirth !== extractedData.placeOfBirth) tg.placeOfBirth = extractedData.placeOfBirth;
-
-            const touchedFields = guestFieldsTouchedRef.current.get(targetIndex) ?? new Set<keyof Guest>();
+            const touchedFields = guestFieldsTouchedRef.current.get(idx) ?? new Set<keyof Guest>();
             if (extractedData.dateOfBirth && !touchedFields.has('dateOfBirth')) {
               const parsed = parseGuestIdentityDate(extractedData.dateOfBirth);
               if (parsed && !isNaN(parsed.getTime()) && parsed >= new Date(1900, 0, 1)) {
@@ -1597,14 +1597,22 @@ export const GuestVerification = () => {
                 tg.documentIssueDate = parsed;
               }
             }
+            updatedGuests[idx] = tg;
             return updatedGuests;
           });
 
-          toast({ title: 'Document traité', description: 'Informations extraites automatiquement.' });
+          setManualUnlockGuests((prev) => new Set(prev).add(ocrTargetIndex));
+
+          toast({
+            title: t('guestVerification.ocrDoneTitle'),
+            description: t('guestVerification.ocrDoneDesc'),
+          });
         } else {
           setUploadedDocuments(prev =>
             prev.map(doc => doc.url === url ? { ...doc, processing: false, ocrFailed: true } : doc)
           );
+          const failIdx = guests.findIndex((g) => !g.fullName && !g.documentNumber);
+          setManualUnlockGuests((prev) => new Set(prev).add(failIdx >= 0 ? failIdx : 0));
           toast({ title: t('upload.docNotRecognized.title'), description: t('upload.docNotRecognized.desc'), variant: 'destructive' });
         }
       } catch (error) {
@@ -1615,6 +1623,11 @@ export const GuestVerification = () => {
           setUploadedDocuments(prev =>
             prev.map(doc => doc.url === url ? { ...doc, processing: false, ocrFailed: true } : doc)
           );
+          setManualUnlockGuests((prev) => {
+            const next = new Set(prev);
+            guests.forEach((_, i) => next.add(i));
+            return next;
+          });
           toast({ title: t('upload.warning.title'), description: t('upload.warning.desc'), variant: 'destructive' });
         }
       } finally {
@@ -3800,25 +3813,32 @@ export const GuestVerification = () => {
                                   )}
                                 </div>
 
-                                {(showProcessingBanner || identityFieldsLocked) && (
+                                {showProcessingBanner && (
                                   <div
                                     role="status"
                                     aria-live="polite"
-                                    className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
-                                      showProcessingBanner
-                                        ? 'border-blue-200 bg-blue-50 text-blue-900'
-                                        : 'border-amber-200 bg-amber-50 text-amber-950'
-                                    }`}
+                                    className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900"
                                   >
-                                    {showProcessingBanner
-                                      ? t('guestVerification.ocrInProgressHint')
-                                      : t(
-                                          isMobile
-                                            ? 'guestVerification.formLockedHintMobile'
-                                            : 'guestVerification.formLockedHintDesktop',
-                                          { n: displayIndex + 1 }
-                                        )}
+                                    {t('guestVerification.ocrInProgressHint')}
                                   </div>
+                                )}
+                                {identityFieldsLocked && !showProcessingBanner && (
+                                  <div
+                                    role="status"
+                                    className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                                  >
+                                    {t(
+                                      isMobile
+                                        ? 'guestVerification.formLockedHintMobile'
+                                        : 'guestVerification.formLockedHintDesktop',
+                                      { n: displayIndex + 1 }
+                                    )}
+                                  </div>
+                                )}
+                                {!identityFieldsLocked && guest.fullName?.trim() && (
+                                  <p className="mb-4 text-xs text-teal-700">
+                                    {t('guestVerification.formEditableHint')}
+                                  </p>
                                 )}
                                 {showOcrFailedBanner && (
                                   <button
