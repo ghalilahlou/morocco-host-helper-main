@@ -57,11 +57,17 @@ export const ContractSigning: React.FC = () => {
         // ✅ PRIORITÉ 1 : Vérifier localStorage immédiatement (même si location.state existe)
         // Car location.state peut être perdu sur Vercel même s'il était présent initialement
         try {
-          const storedBookingId = localStorage.getItem('currentBookingId');
-          const storedBookingData = localStorage.getItem('currentBookingData');
-          const storedGuestData = localStorage.getItem('currentGuestData');
-          const storedContractUrl = localStorage.getItem('contractUrl');
-          const storedPoliceUrl = localStorage.getItem('policeUrl');
+          // M5 — Lire d'abord la clé namespacée (si écrite par une version récente),
+          // sinon fallback vers la clé legacy pour compatibilité descendante.
+          const ns = propertyId && token ? `${propertyId}:${token}` : null;
+          const lsGet = (k: string) =>
+            (ns ? localStorage.getItem(`${k}:${ns}`) : null) ?? localStorage.getItem(k);
+
+          const storedBookingId = lsGet('currentBookingId');
+          const storedBookingData = lsGet('currentBookingData');
+          const storedGuestData = lsGet('currentGuestData');
+          const storedContractUrl = lsGet('contractUrl');
+          const storedPoliceUrl = lsGet('policeUrl');
           
           if (storedBookingId && storedContractUrl) {
             navigationState = {
@@ -246,9 +252,10 @@ export const ContractSigning: React.FC = () => {
         let guestDocs = null;
         let submissionError = null;
         
-        // ✅ NOUVEAU : Essayer de récupérer depuis localStorage d'abord (bookingId si disponible)
-        const storedBookingId = localStorage.getItem('currentBookingId');
-        const storedContractUrl = localStorage.getItem('contractUrl');
+        const _lsGet = (k: string) =>
+          (propertyId && token ? localStorage.getItem(`${k}:${propertyId}:${token}`) : null) ?? localStorage.getItem(k);
+        const storedBookingId = _lsGet('currentBookingId');
+        const storedContractUrl = _lsGet('contractUrl');
         
         try {
           const response = await supabase.functions.invoke('get-guest-documents-unified', {
@@ -335,9 +342,10 @@ export const ContractSigning: React.FC = () => {
           }
         } else {
           // ✅ CORRECTION : Créer des données minimales plus robustes
-          // ✅ NOUVEAU : Essayer d'utiliser les données depuis localStorage si disponibles
-          const storedBookingData = localStorage.getItem('currentBookingData');
-          const storedGuestData = localStorage.getItem('currentGuestData');
+          const _lsGet2 = (k: string) =>
+            (propertyId && token ? localStorage.getItem(`${k}:${propertyId}:${token}`) : null) ?? localStorage.getItem(k);
+          const storedBookingData = _lsGet2('currentBookingData');
+          const storedGuestData = _lsGet2('currentGuestData');
           
           let bookingDataFromStorage = null;
           let guestDataFromStorage = null;
@@ -423,15 +431,13 @@ export const ContractSigning: React.FC = () => {
       return locationContractUrl;
     }
     
-    // 2. Essayer localStorage (fallback pour Vercel où location.state peut être perdu)
+    // 2. Essayer localStorage namespacé puis legacy (fallback Vercel)
     try {
-      const storedContractUrl = localStorage.getItem('contractUrl');
-      if (storedContractUrl) {
-        return storedContractUrl;
-      }
-    } catch (e) {
-      // Ignorer les erreurs localStorage silencieusement
-    }
+      const ns = propertyId && token ? `${propertyId}:${token}` : null;
+      const storedContractUrl =
+        (ns ? localStorage.getItem(`contractUrl:${ns}`) : null) ?? localStorage.getItem('contractUrl');
+      if (storedContractUrl) return storedContractUrl;
+    } catch (e) { /* ignore */ }
     
     // 3. Essayer submissionData
     if (submissionContractUrl) {
@@ -528,11 +534,12 @@ export const ContractSigning: React.FC = () => {
     let storedPropertyName = '';
     let storedGuestName = '';
     try {
-      storedPropertyName = localStorage.getItem('currentPropertyName') || '';
-      // Priorité: nom sauvegardé par la page signature (sidebar) juste avant la confirmation
-      storedGuestName = localStorage.getItem('currentGuestName') || '';
-      const storedGuestData = localStorage.getItem('currentGuestData');
-      const storedBookingData = localStorage.getItem('currentBookingData');
+      const _lsGetCfm = (k: string) =>
+        (propertyId && token ? localStorage.getItem(`${k}:${propertyId}:${token}`) : null) ?? localStorage.getItem(k);
+      storedPropertyName = _lsGetCfm('currentPropertyName') || '';
+      storedGuestName = _lsGetCfm('currentGuestName') || '';
+      const storedGuestData = _lsGetCfm('currentGuestData');
+      const storedBookingData = _lsGetCfm('currentBookingData');
       if (!storedGuestName && storedGuestData) {
         const parsed = JSON.parse(storedGuestData);
         storedGuestName = parsed?.guests?.[0]?.fullName || parsed?.guests?.[0]?.full_name || parsed?.fullName || parsed?.full_name || parsed?.name || '';

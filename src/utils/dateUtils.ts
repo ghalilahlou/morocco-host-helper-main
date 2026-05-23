@@ -81,6 +81,46 @@ export function formatLocalDate(date: Date): string {
 }
 
 /**
+ * P35 — Helper unifié pour parser une date de séjour depuis n'importe quelle source
+ * (URL params, ICS metadata, Airbnb booking, saisie directe).
+ *
+ * Contrairement à {@link parseStayDateForCalendar}, retourne explicitement `null`
+ * quand la valeur est invalide — les appelants doivent gérer le `null`.
+ */
+export function parseAndNormalizeStayDate(
+  value: string | Date | null | undefined
+): Date | null {
+  if (value == null || value === '') return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? null
+      : new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  const s = value.trim();
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    try {
+      return parseLocalDate(s);
+    } catch {
+      return null;
+    }
+  }
+  // ISO avec heure (timestamptz PostgREST)
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) {
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+  // Tentative parseLocalDate en dernier recours
+  try {
+    return parseLocalDate(s);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Convertit une date en chaîne YYYY-MM-DD pour stockage en base de données
  * Utilise l'heure locale pour éviter les décalages
  * 

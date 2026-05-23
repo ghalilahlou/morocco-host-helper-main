@@ -88,24 +88,24 @@ function textForPdfDraw(text: string, usesUnicode: boolean): string {
   if (!text || usesUnicode) return text ?? '';
 
   return text
-    .replace(/İ/g, 'I')
-    .replace(/ı/g, 'i')
-    .replace(/Ğ/g, 'G')
-    .replace(/ğ/g, 'g')
-    .replace(/Ş/g, 'S')
-    .replace(/ş/g, 's')
-    .replace(/Œ/g, 'OE')
-    .replace(/œ/g, 'oe')
-    .replace(/[Ā-￿]/g, (ch) => {
+    .replace(/\u0130/g, 'I')
+    .replace(/\u0131/g, 'i')
+    .replace(/\u011E/g, 'G')
+    .replace(/\u011F/g, 'g')
+    .replace(/\u015E/g, 'S')
+    .replace(/\u015F/g, 's')
+    .replace(/\u0152/g, 'OE')
+    .replace(/\u0153/g, 'oe')
+    .replace(/[\u0100-\uFFFF]/g, (ch) => {
       const n = ch.normalize('NFD');
-      const stripped = n.replace(/[̀-ͯ]/g, '');
+      const stripped = n.replace(/[\u0300-\u036f]/g, '');
       if (stripped && /^[\x00-\xFF]$/.test(stripped)) return stripped;
       return '?';
     });
 }
 
 function hasArabicScript(text: string): boolean {
-  return /[؀-ۿ]/.test(text);
+  return /[\u0600-\u06FF]/.test(text);
 }
 
 function pickPdfFont(text: string, fonts: PdfUnicodeFonts): PDFFont {
@@ -137,7 +137,7 @@ const RETRY_DELAY_MS = 1000;
 interface GuestInfo {
   firstName: string;
   lastName: string;
-  /** Optionnel : sans email le flux continue ; pas d’email de confirmation. */
+  /** Optionnel : sans email le flux continue ; pas d'email de confirmation. */
   email?: string;
   phone?: string;
   nationality?: string;
@@ -149,6 +149,7 @@ interface GuestInfo {
   profession?: string;
   motifSejour?: string;
   adressePersonnelle?: string;
+  placeOfBirth?: string;
 }
 
 interface IdDocument {
@@ -173,7 +174,7 @@ interface UnifiedRequest {
   guests?: GuestInfo[];
   idDocuments: IdDocument[];
   signature?: SignatureData;
-  /** Données séjour invité (indépendant / ICS direct) — adults & children pour règles pièces d’identité. */
+  /** Données séjour invité (indépendant / ICS direct) -- adults & children pour règles pièces d'identité. */
   bookingData?: {
     checkIn: string;
     checkOut: string;
@@ -199,14 +200,14 @@ interface ResolvedBooking {
   numberOfGuests?: number;
   totalPrice?: number;
   currency?: string;
-  bookingId?: string; // ✅ NOUVEAU : ID de la réservation si elle existe déjà
+  bookingId?: string; //  NOUVEAU : ID de la réservation si elle existe déjà
 }
 
 interface ProcessingResult {
   bookingId: string;
   contractUrl: string;
   policeUrl?: string;
-  identityUrl?: string;  // ✅ AJOUT
+  identityUrl?: string;  //  AJOUT
   emailSent?: boolean;
   documentsCount: number;
   processingTime: number;
@@ -218,7 +219,7 @@ interface ValidationResult {
   warnings: string[];
 }
 
-/** UUID (booking_id token ou métadonnées) — format permissif */
+/** UUID (booking_id token ou métadonnées) -- format permissif */
 const BOOKING_UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -253,22 +254,22 @@ function log(level: 'info' | 'warn' | 'error', message: string, data?: any) {
   const timestamp = new Date().toISOString();
   const prefix = `[${timestamp}] [${FUNCTION_NAME}]`;
   
-  // ✅ AMÉLIORATION : Toujours logger, même sans données
+  //  AMÉLIORATION : Toujours logger, même sans données
   const logMessage = `${prefix} ${message}`;
   const logData = data ? JSON.stringify(data, null, 2) : '';
   
   switch (level) {
     case 'info':
-      console.log(`✅ ${logMessage}`, logData);
-      // ✅ FORCER l'affichage dans les logs Supabase
+      console.log(` ${logMessage}`, logData);
+      //  FORCER l'affichage dans les logs Supabase
       console.log(JSON.stringify({ level: 'info', message, data, timestamp, function: FUNCTION_NAME }));
       break;
     case 'warn':
-      console.warn(`⚠️ ${logMessage}`, logData);
+      console.warn(` ${logMessage}`, logData);
       console.warn(JSON.stringify({ level: 'warn', message, data, timestamp, function: FUNCTION_NAME }));
       break;
     case 'error':
-      console.error(`❌ ${logMessage}`, logData);
+      console.error(` ${logMessage}`, logData);
       console.error(JSON.stringify({ level: 'error', message, data, timestamp, function: FUNCTION_NAME }));
       break;
   }
@@ -303,22 +304,27 @@ async function withRetry<T>(
   throw lastError!;
 }
 
-// Création du client Supabase avec configuration optimisée
+// Client Supabase partagé -- une seule instance par worker Deno (S11).
+// Le SDK est stateless (pas de connexion persistante) donc safe à partager.
+let _cachedClient: ReturnType<typeof createClient> | null = null;
+
 async function getServerClient() {
+  if (_cachedClient) return _cachedClient;
+
   const url = Deno.env.get('SUPABASE_URL');
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  
+
   if (!url || !key) {
     throw new Error('SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont requis');
   }
-  
-  return createClient(url, key, {
-    auth: { 
+
+  _cachedClient = createClient(url, key, {
+    auth: {
       persistSession: false,
       autoRefreshToken: false
     },
     global: {
-      headers: { 
+      headers: {
         'X-Client-Info': FUNCTION_NAME,
         'User-Agent': `${FUNCTION_NAME}/1.0`
       }
@@ -327,6 +333,7 @@ async function getServerClient() {
       schema: 'public'
     }
   });
+  return _cachedClient;
 }
 
 // Validation exhaustive des données d'entrée
@@ -349,18 +356,18 @@ function validateRequest(request: UnifiedRequest): ValidationResult {
 
   const validateOneGuest = (g: GuestInfo, label: string) => {
     const { firstName, lastName, email } = g;
-    if (!firstName || firstName.trim().length < 2) {
-      errors.push(`${label}: prénom invalide (minimum 2 caractères)`);
+    if (!firstName || firstName.trim().length < 1) {
+      errors.push(`${label}: prénom requis`);
     }
-    if (!lastName || lastName.trim().length < 2) {
-      errors.push(`${label}: nom invalide (minimum 2 caractères)`);
+    if (!lastName || lastName.trim().length < 1) {
+      errors.push(`${label}: nom requis`);
     }
     if (email && email.trim()) {
       if (!emailRegex.test(email.trim())) {
         errors.push(`${label}: email invalide (format incorrect)`);
       }
     } else {
-      warnings.push(`${label}: email non fourni — confirmation par courriel désactivée`);
+      warnings.push(`${label}: email non fourni -- confirmation par courriel désactivée`);
     }
   };
 
@@ -468,7 +475,7 @@ function validateRequest(request: UnifiedRequest): ValidationResult {
 
 // Sanitisation des données
 function sanitizeGuestInfo(guestInfo: GuestInfo): GuestInfo {
-  // ✅ CRITIQUE : Préserver TOUS les champs pour la variabilisation complète
+  //  CRITIQUE : Préserver TOUS les champs pour la variabilisation complète
   const sanitized: GuestInfo = {
     firstName: guestInfo.firstName?.trim().replace(/[<>]/g, '') || '',
     lastName: guestInfo.lastName?.trim().replace(/[<>]/g, '') || '',
@@ -479,10 +486,11 @@ function sanitizeGuestInfo(guestInfo: GuestInfo): GuestInfo {
     idNumber: guestInfo.idNumber?.trim() || '',
     dateOfBirth: guestInfo.dateOfBirth?.trim() || undefined,
     documentIssueDate: guestInfo.documentIssueDate?.trim() || undefined,
-    // ✅ CRITIQUE : Préserver les champs supplémentaires pour la variabilisation complète
+    //  CRITIQUE : Préserver les champs supplémentaires pour la variabilisation complète
     profession: guestInfo.profession?.trim() || undefined,
     motifSejour: guestInfo.motifSejour?.trim() || undefined,
-    adressePersonnelle: guestInfo.adressePersonnelle?.trim() || undefined
+    adressePersonnelle: guestInfo.adressePersonnelle?.trim() || undefined,
+    placeOfBirth: guestInfo.placeOfBirth?.trim() || undefined,
   };
   
   log('info', 'Sanitisation des données invité', {
@@ -534,9 +542,9 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
       .eq('token', token)
       .eq('is_active', true)
       .or(filterTokenNotExpired())
-      .order('created_at', { ascending: false }) // ✅ Prendre le plus récent si plusieurs
+      .order('created_at', { ascending: false }) //  Prendre le plus récent si plusieurs
       .limit(1)
-      .maybeSingle(); // ✅ maybeSingle() au lieu de single()
+      .maybeSingle(); //  maybeSingle() au lieu de single()
 
     if (tokenError || !tokenData) {
       log('error', 'Token validation failed', { error: tokenError });
@@ -556,7 +564,7 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
     log('info', 'Recherche de la réservation Airbnb');
     
     // Essayer d'abord dans la table bookings (réservations créées via le système unifié)
-    // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
+    //  CORRIGÉ : .order().limit(1) pour gérer les doublons existants
     const { data: bookingReservation, error: bookingError } = await supabase
       .from('bookings')
       .select('*')
@@ -571,7 +579,7 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
     let existingBookingId: string | undefined = undefined;
     if (bookingReservation) {
       log('info', 'Réservation trouvée dans la table bookings', { bookingId: bookingReservation.id });
-      existingBookingId = bookingReservation.id; // ✅ NOUVEAU : Stocker l'ID pour éviter la double création
+      existingBookingId = bookingReservation.id; //  NOUVEAU : Stocker l'ID pour éviter la double création
       // Convertir le format bookings vers le format airbnb_reservations
       airbnbReservation = {
         property_id: bookingReservation.property_id,
@@ -642,7 +650,7 @@ async function resolveBookingInternal(token: string, airbnbCode: string): Promis
       numberOfGuests: airbnbReservation.number_of_guests || 1,
       totalPrice: airbnbReservation.total_price || undefined,
       currency: airbnbReservation.currency || 'EUR',
-      bookingId: existingBookingId // ✅ NOUVEAU : Inclure l'ID si la réservation existe déjà
+      bookingId: existingBookingId //  NOUVEAU : Inclure l'ID si la réservation existe déjà
     };
 
     log('info', 'Réservation résolue avec succès', {
@@ -688,9 +696,9 @@ async function getExistingICSBooking(token: string, guestInfo: GuestInfo): Promi
       .eq('token', token)
       .eq('is_active', true)
       .or(filterTokenNotExpired())
-      .order('created_at', { ascending: false}) // ✅ Prendre le plus récent si plusieurs
+      .order('created_at', { ascending: false}) //  Prendre le plus récent si plusieurs
       .limit(1)
-      .maybeSingle(); // ✅ maybeSingle() au lieu de single()
+      .maybeSingle(); //  maybeSingle() au lieu de single()
 
     if (tokenError || !tokenData) {
       log('error', 'Token validation failed', { error: tokenError });
@@ -772,7 +780,7 @@ async function getExistingICSBooking(token: string, guestInfo: GuestInfo): Promi
       numberOfGuests: existingBooking.number_of_guests,
       totalPrice: existingBooking.total_price,
       currency: 'EUR',
-      bookingId: bookingId // ✅ NOUVEAU : Inclure l'ID pour éviter la double création
+      bookingId: bookingId //  NOUVEAU : Inclure l'ID pour éviter la double création
     };
 
     log('info', 'Réservation ICS existante récupérée avec succès', {
@@ -819,9 +827,9 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
       .eq('token', token)
       .eq('is_active', true)
       .or(filterTokenNotExpired())
-      .order('created_at', { ascending: false}) // ✅ Prendre le plus récent si plusieurs
+      .order('created_at', { ascending: false}) //  Prendre le plus récent si plusieurs
       .limit(1)
-      .maybeSingle(); // ✅ maybeSingle() au lieu de single()
+      .maybeSingle(); //  maybeSingle() au lieu de single()
 
     if (tokenError || !tokenData) {
       log('error', 'Token validation failed', { error: tokenError });
@@ -849,7 +857,7 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
     });
 
     // 3. Créer la réservation avec les données ICS ET l'enregistrer en base
-    // ✅ CORRIGÉ : Extraire directement la date YYYY-MM-DD sans conversion timezone
+    //  CORRIGÉ : Extraire directement la date YYYY-MM-DD sans conversion timezone
     // Les dates sont maintenant normalisées dans issue-guest-link au format YYYY-MM-DD
     function extractDateOnly(dateValue: string | Date | any): string {
       if (typeof dateValue === 'string') {
@@ -883,7 +891,7 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
     log('info', 'Dates normalisées pour la réservation', { checkInDate, checkOutDate });
     
     // Vérifier si une réservation existe déjà pour ce code Airbnb
-    // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
+    //  CORRIGÉ : .order().limit(1) pour gérer les doublons existants
     const { data: existingBooking } = await supabase
       .from('bookings')
       .select('id, status')
@@ -955,7 +963,7 @@ async function createBookingFromICSData(token: string, guestInfo: GuestInfo): Pr
       numberOfGuests: reservationData.numberOfGuests || 1,
       totalPrice: undefined,
       currency: 'EUR',
-      bookingId: bookingId // ✅ NOUVEAU : Inclure l'ID de la réservation pour éviter la double création
+      bookingId: bookingId //  NOUVEAU : Inclure l'ID de la réservation pour éviter la double création
     };
 
     log('info', 'Réservation ICS créée et enregistrée en base', {
@@ -994,7 +1002,7 @@ async function saveGuestDataInternal(
     // 1. Création/mise à jour de la réservation avec toutes les données (approche robuste)
     log('info', 'Sauvegarde de la réservation');
     
-    // ✅ ISOLATION HÔTE : Si booking.bookingId est fourni, vérifier que ce booking appartient
+    //  ISOLATION HÔTE : Si booking.bookingId est fourni, vérifier que ce booking appartient
     // bien à la même propriété que le token. Empêche qu'un token d'une propriété A
     // modifie une réservation d'une propriété B (cross-contamination entre hôtes).
     let existingBooking = null;
@@ -1004,7 +1012,7 @@ async function saveGuestDataInternal(
         .from('bookings')
         .select('id, property_id')
         .eq('id', booking.bookingId)
-        .eq('property_id', booking.propertyId) // ← isolation : doit appartenir à la même propriété
+        .eq('property_id', booking.propertyId) //  isolation : doit appartenir à la même propriété
         .maybeSingle();
       if (!data) {
         log('error', 'Booking introuvable ou appartient à une autre propriété', {
@@ -1045,7 +1053,7 @@ async function saveGuestDataInternal(
         }
       } else {
         // Pour les réservations Airbnb, utiliser property_id + booking_reference
-        // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
+        //  CORRIGÉ : .order().limit(1) pour gérer les doublons existants
         const { data } = await supabase
           .from('bookings')
           .select('id')
@@ -1058,7 +1066,7 @@ async function saveGuestDataInternal(
       }
     }
 
-    // ✅ CRITIQUE : Récupérer le user_id depuis la propriété pour éviter l'erreur NULL
+    //  CRITIQUE : Récupérer le user_id depuis la propriété pour éviter l'erreur NULL
     const { data: propertyData, error: propertyError } = await supabase
       .from('properties')
       .select('user_id')
@@ -1081,7 +1089,7 @@ async function saveGuestDataInternal(
     let savedBooking;
     const bookingData = {
       property_id: booking.propertyId,
-      user_id: propertyData.user_id, // ✅ AJOUTÉ : user_id récupéré depuis properties
+      user_id: propertyData.user_id, //  AJOUTÉ : user_id récupéré depuis properties
       check_in_date: booking.checkIn,
       check_out_date: booking.checkOut,
       guest_name: `${primaryGuest.firstName} ${primaryGuest.lastName}`,
@@ -1094,7 +1102,7 @@ async function saveGuestDataInternal(
       updated_at: new Date().toISOString()
     };
 
-    // ✅ CORRIGÉ : Utiliser une approche atomique pour éviter les race conditions
+    //  CORRIGÉ : Utiliser une approche atomique pour éviter les race conditions
     // Au lieu de vérifier puis créer/mettre à jour, utiliser un upsert avec gestion des erreurs
       if (existingBooking) {
         // Mettre à jour la réservation existante
@@ -1117,23 +1125,23 @@ async function saveGuestDataInternal(
         }
         savedBooking = data;
       
-      log('info', '✅ Réservation mise à jour avec le nom du guest', {
+      log('info', ' Réservation mise à jour avec le nom du guest', {
         bookingId: existingBooking.id,
         finalGuestName: data.guest_name,
         guestEmail: data.guest_email
       });
 
-      // ✅ CORRIGÉ : Synchroniser avec la table airbnb_reservations pour le calendrier
-      // ⚠️ IMPORTANT : Toujours mettre à jour le guest_name, même si la réservation existait déjà
+      //  CORRIGÉ : Synchroniser avec la table airbnb_reservations pour le calendrier
+      //  IMPORTANT : Toujours mettre à jour le guest_name, même si la réservation existait déjà
       // Cela évite que les anciens noms de guests persistent après suppression
       if (booking.airbnbCode && booking.airbnbCode !== 'INDEPENDENT_BOOKING') {
-        log('info', '🔄 Synchronisation avec airbnb_reservations pour le calendrier', {
+        log('info', ' Synchronisation avec airbnb_reservations pour le calendrier', {
           airbnbCode: booking.airbnbCode,
           guestName: data.guest_name,
           propertyId: booking.propertyId
         });
         
-        // ✅ NOUVEAU : Vérifier d'abord si la réservation existe dans airbnb_reservations
+        //  NOUVEAU : Vérifier d'abord si la réservation existe dans airbnb_reservations
         const { data: existingAirbnbReservation, error: checkError } = await supabase
           .from('airbnb_reservations')
           .select('id, guest_name')
@@ -1142,13 +1150,13 @@ async function saveGuestDataInternal(
           .maybeSingle();
         
         if (checkError) {
-          log('warn', '⚠️ Erreur lors de la vérification airbnb_reservations', { error: checkError });
+          log('warn', ' Erreur lors de la vérification airbnb_reservations', { error: checkError });
         }
         
-        // ✅ CORRIGÉ : Mettre à jour ou créer la réservation dans airbnb_reservations
+        //  CORRIGÉ : Mettre à jour ou créer la réservation dans airbnb_reservations
         const updateData = {
-          guest_name: data.guest_name, // ✅ TOUJOURS mettre à jour le nom, même si ancien nom existait
-          summary: `Airbnb – ${data.guest_name}`,
+          guest_name: data.guest_name, //  TOUJOURS mettre à jour le nom, même si ancien nom existait
+          summary: `Airbnb - ${data.guest_name}`,
           updated_at: new Date().toISOString()
         };
         
@@ -1160,13 +1168,13 @@ async function saveGuestDataInternal(
             .eq('id', existingAirbnbReservation.id);
           
           if (airbnbUpdateError) {
-            log('error', '❌ Erreur synchronisation airbnb_reservations (mise à jour)', { 
+            log('error', ' Erreur synchronisation airbnb_reservations (mise à jour)', { 
               error: airbnbUpdateError,
               oldGuestName: existingAirbnbReservation.guest_name,
               newGuestName: data.guest_name
             });
           } else {
-            log('info', '✅ Synchronisation airbnb_reservations réussie (mise à jour)', {
+            log('info', ' Synchronisation airbnb_reservations réussie (mise à jour)', {
               oldGuestName: existingAirbnbReservation.guest_name,
               newGuestName: data.guest_name
             });
@@ -1174,7 +1182,7 @@ async function saveGuestDataInternal(
         } else {
           // Créer une nouvelle réservation dans airbnb_reservations si elle n'existe pas
           // (peut arriver si la réservation a été supprimée puis recréée)
-          log('info', '⚠️ Réservation non trouvée dans airbnb_reservations, création...', {
+          log('info', ' Réservation non trouvée dans airbnb_reservations, création...', {
             airbnbCode: booking.airbnbCode,
             propertyId: booking.propertyId
           });
@@ -1185,7 +1193,7 @@ async function saveGuestDataInternal(
               airbnb_booking_id: booking.airbnbCode,
               property_id: booking.propertyId,
               guest_name: data.guest_name,
-              summary: `Airbnb – ${data.guest_name}`,
+              summary: `Airbnb - ${data.guest_name}`,
               start_date: booking.checkIn || new Date().toISOString().split('T')[0],
               end_date: booking.checkOut || new Date().toISOString().split('T')[0],
               created_at: new Date().toISOString(),
@@ -1193,14 +1201,14 @@ async function saveGuestDataInternal(
             });
           
           if (airbnbInsertError) {
-            log('error', '❌ Erreur création airbnb_reservations', { error: airbnbInsertError });
+            log('error', ' Erreur création airbnb_reservations', { error: airbnbInsertError });
           } else {
-            log('info', '✅ Réservation créée dans airbnb_reservations');
+            log('info', ' Réservation créée dans airbnb_reservations');
           }
         }
       }
     } else {
-      // ✅ CORRIGÉ : Créer une nouvelle réservation avec gestion des doublons
+      //  CORRIGÉ : Créer une nouvelle réservation avec gestion des doublons
       // Utiliser une approche atomique pour éviter les race conditions
       log('info', 'Création nouvelle réservation');
       const newBookingData = {
@@ -1208,8 +1216,8 @@ async function saveGuestDataInternal(
         created_at: new Date().toISOString()
       };
       
-      // ✅ FIX CRITIQUE : Vérifier à nouveau juste avant l'insertion pour éviter les doublons
-      // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
+      //  FIX CRITIQUE : Vérifier à nouveau juste avant l'insertion pour éviter les doublons
+      //  CORRIGÉ : .order().limit(1) pour gérer les doublons existants
       // Pour les réservations Airbnb, booking_reference suffit car il est unique
       let lastCheckQuery = supabase
         .from('bookings')
@@ -1219,12 +1227,12 @@ async function saveGuestDataInternal(
         .order('updated_at', { ascending: false })
         .limit(1);
       
-      // ✅ FIX CRITIQUE : Pour les réservations indépendantes, cibler le même créneau que l'index unique Postgres
+      //  FIX CRITIQUE : Pour les réservations indépendantes, cibler le même créneau que l'index unique Postgres
       if (booking.airbnbCode === 'INDEPENDENT_BOOKING') {
         lastCheckQuery = lastCheckQuery
           .eq('check_in_date', booking.checkIn)
           .eq('check_out_date', booking.checkOut);
-        log('info', '🔍 Vérification doublon pour réservation indépendante', {
+        log('info', ' Vérification doublon pour réservation indépendante', {
           propertyId: booking.propertyId,
           checkIn: booking.checkIn,
           checkOut: booking.checkOut
@@ -1256,7 +1264,7 @@ async function saveGuestDataInternal(
         savedBooking = updateData;
       } else {
         // Pas de doublon, créer la réservation
-        log('info', '✅ Aucun doublon détecté, création de la nouvelle réservation', {
+        log('info', ' Aucun doublon détecté, création de la nouvelle réservation', {
           propertyId: booking.propertyId,
           airbnbCode: booking.airbnbCode,
           guestName: bookingData.guest_name,
@@ -1270,12 +1278,12 @@ async function saveGuestDataInternal(
           .single();
       
         if (insertError) {
-          // ✅ CORRIGÉ : Si erreur de contrainte unique (doublon), récupérer la réservation existante
+          //  CORRIGÉ : Si erreur de contrainte unique (doublon), récupérer la réservation existante
           if (insertError.code === '23505') { // Unique constraint violation
             log('warn', 'Violation contrainte unique détectée (doublon évité)', { error: insertError });
             
             // Récupérer la réservation existante avec les MÊMES critères
-            // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
+            //  CORRIGÉ : .order().limit(1) pour gérer les doublons existants
             let existingQuery = supabase
               .from('bookings')
               .select('id')
@@ -1307,7 +1315,7 @@ async function saveGuestDataInternal(
                 throw new Error(`Erreur lors de la mise à jour de la réservation: ${updateError?.message}`);
               }
               savedBooking = updateData;
-              log('info', '✅ Réservation existante mise à jour après détection doublon', { bookingId: existingData.id });
+              log('info', ' Réservation existante mise à jour après détection doublon', { bookingId: existingData.id });
             } else {
               throw new Error(`Erreur lors de la création de la réservation: ${insertError.message}`);
             }
@@ -1319,7 +1327,7 @@ async function saveGuestDataInternal(
           throw new Error('Erreur lors de la création de la réservation: Aucune donnée retournée');
         } else {
           savedBooking = data;
-          log('info', '✅ Nouvelle réservation créée avec succès', { 
+          log('info', ' Nouvelle réservation créée avec succès', { 
             bookingId: data.id,
             propertyId: data.property_id,
             guestName: data.guest_name
@@ -1327,17 +1335,17 @@ async function saveGuestDataInternal(
         }
       }
       
-      // ✅ CORRIGÉ : Synchroniser avec la table airbnb_reservations pour le calendrier (nouvelle réservation)
-      // ⚠️ IMPORTANT : Toujours mettre à jour le guest_name, même si la réservation existait déjà
+      //  CORRIGÉ : Synchroniser avec la table airbnb_reservations pour le calendrier (nouvelle réservation)
+      //  IMPORTANT : Toujours mettre à jour le guest_name, même si la réservation existait déjà
       // Cela évite que les anciens noms de guests persistent après suppression
       if (booking.airbnbCode && booking.airbnbCode !== 'INDEPENDENT_BOOKING' && savedBooking) {
-        log('info', '🔄 Synchronisation airbnb_reservations pour nouvelle réservation', {
+        log('info', ' Synchronisation airbnb_reservations pour nouvelle réservation', {
           airbnbCode: booking.airbnbCode,
           guestName: savedBooking.guest_name,
           propertyId: booking.propertyId
         });
         
-        // ✅ NOUVEAU : Vérifier d'abord si la réservation existe dans airbnb_reservations
+        //  NOUVEAU : Vérifier d'abord si la réservation existe dans airbnb_reservations
         const { data: existingAirbnbReservation, error: checkError } = await supabase
           .from('airbnb_reservations')
           .select('id, guest_name')
@@ -1346,13 +1354,13 @@ async function saveGuestDataInternal(
           .maybeSingle();
         
         if (checkError) {
-          log('warn', '⚠️ Erreur lors de la vérification airbnb_reservations', { error: checkError });
+          log('warn', ' Erreur lors de la vérification airbnb_reservations', { error: checkError });
         }
         
-        // ✅ CORRIGÉ : Mettre à jour ou créer la réservation dans airbnb_reservations
+        //  CORRIGÉ : Mettre à jour ou créer la réservation dans airbnb_reservations
         const updateData = {
-          guest_name: savedBooking.guest_name, // ✅ TOUJOURS mettre à jour le nom, même si ancien nom existait
-          summary: `Airbnb – ${savedBooking.guest_name}`,
+          guest_name: savedBooking.guest_name, //  TOUJOURS mettre à jour le nom, même si ancien nom existait
+          summary: `Airbnb - ${savedBooking.guest_name}`,
           updated_at: new Date().toISOString()
         };
         
@@ -1364,13 +1372,13 @@ async function saveGuestDataInternal(
             .eq('id', existingAirbnbReservation.id);
           
           if (airbnbUpdateError) {
-            log('error', '❌ Erreur synchronisation airbnb_reservations (mise à jour nouvelle réservation)', { 
+            log('error', ' Erreur synchronisation airbnb_reservations (mise à jour nouvelle réservation)', { 
               error: airbnbUpdateError,
               oldGuestName: existingAirbnbReservation.guest_name,
               newGuestName: savedBooking.guest_name
             });
           } else {
-            log('info', '✅ Synchronisation airbnb_reservations réussie (mise à jour nouvelle réservation)', {
+            log('info', ' Synchronisation airbnb_reservations réussie (mise à jour nouvelle réservation)', {
               oldGuestName: existingAirbnbReservation.guest_name,
               newGuestName: savedBooking.guest_name
             });
@@ -1383,7 +1391,7 @@ async function saveGuestDataInternal(
               airbnb_booking_id: booking.airbnbCode,
               property_id: booking.propertyId,
               guest_name: savedBooking.guest_name,
-              summary: `Airbnb – ${savedBooking.guest_name}`,
+              summary: `Airbnb - ${savedBooking.guest_name}`,
               start_date: booking.checkIn || new Date().toISOString().split('T')[0],
               end_date: booking.checkOut || new Date().toISOString().split('T')[0],
               created_at: new Date().toISOString(),
@@ -1391,9 +1399,9 @@ async function saveGuestDataInternal(
             });
           
           if (airbnbInsertError) {
-            log('error', '❌ Erreur création airbnb_reservations (nouvelle réservation)', { error: airbnbInsertError });
+            log('error', ' Erreur création airbnb_reservations (nouvelle réservation)', { error: airbnbInsertError });
           } else {
-            log('info', '✅ Réservation créée dans airbnb_reservations (nouvelle réservation)');
+            log('info', ' Réservation créée dans airbnb_reservations (nouvelle réservation)');
           }
         }
       }
@@ -1406,7 +1414,7 @@ async function saveGuestDataInternal(
     log('info', 'Sauvegarde des informations invité', { count: guestInfos.length });
     const effectiveMaxGuests = Math.max(booking.numberOfGuests || 1, guestInfos.length);
 
-    // ✅ Patch D : snapshot des guests existants AVANT cette soumission (pour purge des fantômes après)
+    //  Patch D : snapshot des guests existants AVANT cette soumission (pour purge des fantômes après)
     const submissionStartedAt = new Date().toISOString();
     const { data: guestsBeforeSubmission } = await supabase
       .from('guests')
@@ -1420,7 +1428,7 @@ async function saveGuestDataInternal(
     for (let gi = 0; gi < guestInfos.length; gi++) {
       await (async () => {
         const sanitizedGuest = sanitizeGuestInfo(guestInfos[gi]);
-    // ✅ Validation et conversion de dateOfBirth
+    //  Validation et conversion de dateOfBirth
     let processedDateOfBirth = null;
     if (sanitizedGuest.dateOfBirth) {
       try {
@@ -1441,8 +1449,8 @@ async function saveGuestDataInternal(
       }
     }
 
-    // ✅ CRITIQUE : Sauvegarder TOUTES les données du guest pour la variabilisation complète
-    // ❌ IMPORTANT : La table 'guests' n'a PAS de colonnes 'email' ni 'phone' (bookings.guest_email / guest_phone)
+    //  CRITIQUE : Sauvegarder TOUTES les données du guest pour la variabilisation complète
+    //  IMPORTANT : La table 'guests' n'a PAS de colonnes 'email' ni 'phone' (bookings.guest_email / guest_phone)
     const guestData: any = {
       booking_id: bookingId,
       full_name: `${sanitizedGuest.firstName} ${sanitizedGuest.lastName}`,
@@ -1450,9 +1458,9 @@ async function saveGuestDataInternal(
       document_type: sanitizedGuest.idType || 'passport',
       document_number: sanitizedGuest.idNumber || '',
       date_of_birth: processedDateOfBirth,
-      document_issue_date: sanitizedGuest.documentIssueDate || null, // ✅ Date d'expiration du document
-      // ✅ CRITIQUE : Ajouter tous les champs pour la variabilisation complète
-      place_of_birth: '', // Non disponible dans GuestInfo pour l'instant
+      document_issue_date: sanitizedGuest.documentIssueDate || null, //  Date d'expiration du document
+      //  CRITIQUE : Ajouter tous les champs pour la variabilisation complète
+      place_of_birth: sanitizedGuest.placeOfBirth || '',
       profession: sanitizedGuest.profession || '',
       motif_sejour: sanitizedGuest.motifSejour || 'TOURISME',
       adresse_personnelle: sanitizedGuest.adressePersonnelle || '',
@@ -1460,7 +1468,7 @@ async function saveGuestDataInternal(
       updated_at: new Date().toISOString()
     };
     
-    // ❌ SUPPRIMÉ : Ne PAS ajouter email - la colonne n'existe pas dans la table 'guests'
+    //  SUPPRIMÉ : Ne PAS ajouter email - la colonne n'existe pas dans la table 'guests'
     // L'email est stocké dans bookings.guest_email et récupéré via la relation
     
     log('info', 'Sauvegarde données invité', {
@@ -1469,13 +1477,13 @@ async function saveGuestDataInternal(
       originalDateOfBirth: sanitizedGuest.dateOfBirth,
       hasDateOfBirth: !!guestData.date_of_birth,
       processedDateOfBirth,
-      // ✅ DIAGNOSTIC : L'email est dans booking, pas dans guestData (table guests n'a pas de colonne email)
+      //  DIAGNOSTIC : L'email est dans booking, pas dans guestData (table guests n'a pas de colonne email)
       bookingEmail: booking.guestEmail || sanitizedGuest.email,
       phoneFromForm: sanitizedGuest.phone || null,
       hasPhone: !!sanitizedGuest.phone
     });
 
-    // ✅ CORRECTION : Vérifier si l'invité existe déjà pour éviter les doublons
+    //  CORRECTION : Vérifier si l'invité existe déjà pour éviter les doublons
     const { data: existingGuest } = await supabase
       .from('guests')
       .select('id')
@@ -1484,7 +1492,7 @@ async function saveGuestDataInternal(
       .eq('document_number', guestData.document_number)
       .single();
 
-    // ✅ Récupérer le nombre d'invités déjà associés à la réservation
+    //  Récupérer le nombre d'invités déjà associés à la réservation
     const { data: existingGuestsForBooking } = await supabase
       .from('guests')
       .select('id')
@@ -1492,27 +1500,27 @@ async function saveGuestDataInternal(
 
     const maxGuests = effectiveMaxGuests;
 
-    // ✅ CORRECTION MAJEURE : Logique améliorée pour éviter l'écrasement
+    //  CORRECTION MAJEURE : Logique améliorée pour éviter l'écrasement
     // L'identification d'un guest se fait par: booking_id + (full_name OU document_number)
     
     if (maxGuests === 1) {
       // Cas réservation pour 1 invité: on met à jour l'unique ligne au lieu d'insérer
       if (existingGuest && existingGuest.id) {
-        // ✅ Guest trouvé avec même nom ET document - mise à jour
+        //  Guest trouvé avec même nom ET document - mise à jour
         const updateData: any = {
           full_name: guestData.full_name,
           nationality: guestData.nationality,
           document_type: guestData.document_type,
           document_number: guestData.document_number,
           date_of_birth: guestData.date_of_birth,
-          document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
+          document_issue_date: guestData.document_issue_date, //  Date d'expiration du document
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
           motif_sejour: guestData.motif_sejour,
           adresse_personnelle: guestData.adresse_personnelle,
           updated_at: new Date().toISOString()
         };
-        // ❌ Ne PAS ajouter email / phone — colonnes inexistantes sur guests
+        //  Ne PAS ajouter email / phone -- colonnes inexistantes sur guests
         
         const { error: updateErr } = await supabase
           .from('guests')
@@ -1524,7 +1532,7 @@ async function saveGuestDataInternal(
           log('info', 'Invité mis à jour (single booking)', { guestId: existingGuest.id });
         }
       } else if (Array.isArray(existingGuestsForBooking) && existingGuestsForBooking.length > 0) {
-        // ✅ CORRECTION : Vérifier si c'est le MÊME guest (par document_number) avant d'écraser
+        //  CORRECTION : Vérifier si c'est le MÊME guest (par document_number) avant d'écraser
         // Si document_number différent, c'est un NOUVEAU guest qui remplace l'ancien
         const firstGuestId = existingGuestsForBooking[0].id;
         
@@ -1548,7 +1556,7 @@ async function saveGuestDataInternal(
             document_type: guestData.document_type,
             document_number: guestData.document_number,
             date_of_birth: guestData.date_of_birth,
-            document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
+            document_issue_date: guestData.document_issue_date, //  Date d'expiration du document
             place_of_birth: guestData.place_of_birth,
             profession: guestData.profession,
             motif_sejour: guestData.motif_sejour,
@@ -1566,7 +1574,7 @@ async function saveGuestDataInternal(
             log('info', 'Invité existant mis à jour (single booking)', { guestId: firstGuestId });
           }
         } else {
-          // ✅ NOUVEAU guest différent - supprimer l'ancien et créer le nouveau
+          //  NOUVEAU guest différent - supprimer l'ancien et créer le nouveau
           log('info', 'Nouveau guest différent détecté, remplacement', {
             oldGuest: existingGuestDetails?.full_name,
             newGuest: guestData.full_name
@@ -1597,7 +1605,7 @@ async function saveGuestDataInternal(
         }
       }
     } else {
-      // ✅ Réservations multi-invités: chaque guest est identifié par document_number
+      //  Réservations multi-invités: chaque guest est identifié par document_number
       if (existingGuest) {
         // Guest avec même nom ET document existe - mise à jour
         const updateData: any = {
@@ -1606,7 +1614,7 @@ async function saveGuestDataInternal(
           document_type: guestData.document_type,
           document_number: guestData.document_number,
           date_of_birth: guestData.date_of_birth,
-          document_issue_date: guestData.document_issue_date, // ✅ Date d'expiration du document
+          document_issue_date: guestData.document_issue_date, //  Date d'expiration du document
           place_of_birth: guestData.place_of_birth,
           profession: guestData.profession,
           motif_sejour: guestData.motif_sejour,
@@ -1671,17 +1679,33 @@ async function saveGuestDataInternal(
       })();
     }
 
-    // ✅ Patch D : purge des "guests fantômes" — lignes guests non touchées par cette soumission.
-    // Identifiés comme : present avant la soumission ET non updated pendant (updated_at < submissionStartedAt).
-    // Évite que d'anciens voyageurs apparaissent dans l'article occupants du PDF.
+    // Patch D -- purge des guests fantômes (S2) :
+    // Comparer par document_number (fiable) plutôt que par updated_at (sujet au clock drift).
+    // Un guest "fantôme" = présent avant cette soumission ET dont le n° de document
+    // n'apparaît pas dans les guestInfos soumis.
+    // Fallback sur timestamp pour les guests sans document_number (héritage).
     try {
-      const ghosts = (guestsBeforeSubmission || []).filter((g: any) =>
-        !g.updated_at || g.updated_at < submissionStartedAt
+      const submittedDocNumbers = new Set(
+        guestInfos
+          .map((g) => sanitizeGuestInfo(g).idNumber?.trim())
+          .filter(Boolean)
       );
+
+      const ghosts = (guestsBeforeSubmission || []).filter((g: any) => {
+        const docNum = String(g.document_number || '').trim();
+        if (docNum) {
+          // Si le document_number est connu : fantôme s'il n'est pas dans la soumission
+          return !submittedDocNumbers.has(docNum);
+        }
+        // Pas de document_number → fallback timestamp (moins fiable mais seule option)
+        return !g.updated_at || g.updated_at < submissionStartedAt;
+      });
+
       if (ghosts.length > 0) {
-        log('warn', '🧹 Guests fantômes détectés (non touchés par soumission) — suppression', {
+        log('warn', ' Guests fantômes détectés (non touchés par soumission) -- suppression', {
           count: ghosts.length,
-          ghostNames: ghosts.map((g: any) => g.full_name)
+          ghostNames: ghosts.map((g: any) => g.full_name),
+          method: 'document_number_comparison'
         });
         const { error: deleteError } = await supabase
           .from('guests')
@@ -1695,24 +1719,27 @@ async function saveGuestDataInternal(
       log('warn', 'Erreur durant sweep des guests fantômes', { error: sweepError });
     }
 
-    // ✅ Patch D bis : re-sync bookings.guest_name depuis le 1er guest réel (jamais "Guest" ou NULL si on a un vrai nom)
+    // Patch D bis (S12) : re-sync bookings.guest_name depuis guestInfos[0] du payload.
+    // guestInfos[0] est toujours le voyageur principal (ordre garanti par le front-end),
+    // contrairement à un ORDER BY created_at qui peut être perturbé par le traitement parallèle OCR.
     try {
-      const { data: firstGuestNow } = await supabase
-        .from('guests')
-        .select('full_name')
-        .eq('booking_id', bookingId)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (firstGuestNow?.full_name && firstGuestNow.full_name.trim() !== '') {
-        await supabase
-          .from('bookings')
-          .update({ guest_name: firstGuestNow.full_name, updated_at: new Date().toISOString() })
-          .eq('id', bookingId);
-        log('info', '✅ bookings.guest_name re-synchronisé depuis guests.full_name', {
-          bookingId,
-          newName: firstGuestNow.full_name
-        });
+      const primaryGuest = guestInfos[0];
+      if (primaryGuest) {
+        const sanitized = sanitizeGuestInfo(primaryGuest);
+        const primaryName = [sanitized.firstName, sanitized.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+        if (primaryName) {
+          await supabase
+            .from('bookings')
+            .update({ guest_name: primaryName, updated_at: new Date().toISOString() })
+            .eq('id', bookingId);
+          log('info', ' bookings.guest_name re-synchronisé depuis guestInfos[0]', {
+            bookingId,
+            newName: primaryName
+          });
+        }
       }
     } catch (syncError) {
       log('warn', 'Erreur re-sync guest_name (non bloquant)', { error: syncError });
@@ -1724,7 +1751,7 @@ async function saveGuestDataInternal(
       documents: idDocuments.map(d => ({ name: d.name, type: d.type, url: d.url.substring(0, 50) + '...' }))
     });
     
-    // ✅ CORRECTION : Sauvegarder les documents d'identité seulement s'il y en a
+    //  CORRECTION : Sauvegarder les documents d'identité seulement s'il y en a
     if (idDocuments.length > 0) {
       log('info', 'Traitement des documents d\'identité', { 
         documentsCount: idDocuments.length,
@@ -1733,7 +1760,7 @@ async function saveGuestDataInternal(
       
       const documentResults = await Promise.allSettled(
         idDocuments.map(async (doc, index) => {
-        // ✅ CORRECTION : Utiliser la fonction unifiée saveDocumentToDatabase
+        //  CORRECTION : Utiliser la fonction unifiée saveDocumentToDatabase
         try {
           // Si c'est une data: URL, la convertir en bytes et uploader vers Storage
           let documentUrl = doc.url;
@@ -1745,7 +1772,7 @@ async function saveGuestDataInternal(
             fileBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
             
             // Upload vers Storage avec le bon chemin
-            // ✅ Déterminer l'extension du fichier depuis le type MIME
+            //  Déterminer l'extension du fichier depuis le type MIME
             let extension = 'pdf';
             if (doc.type.includes('jpeg') || doc.type.includes('jpg')) {
               extension = 'jpg';
@@ -1783,16 +1810,16 @@ async function saveGuestDataInternal(
               .getPublicUrl(storagePath);
               
             documentUrl = publicUrl;
-            log('info', `✅ Document ${index + 1} uploaded to Storage successfully:`, { publicUrl });
+            log('info', ` Document ${index + 1} uploaded to Storage successfully:`, { publicUrl });
           } else if (doc.url.startsWith('blob:')) {
-            // ❌ Rejeter les blob URLs
+            //  Rejeter les blob URLs
             log('error', `Document ${index + 1} has invalid blob URL:`, doc.url);
             throw new Error('Blob URLs are not supported. Please refresh and try again.');
           } else {
             log('info', `Document ${index + 1} already has HTTP URL:`, doc.url);
           }
           
-          // ✅ CORRIGÉ : Vérification robuste pour éviter les doublons
+          //  CORRIGÉ : Vérification robuste pour éviter les doublons
           // Vérifier par file_name ET document_url pour être plus précis
           const fileNameToCheck = `identity-scan-${bookingId}-${index + 1}`;
           
@@ -1804,7 +1831,7 @@ async function saveGuestDataInternal(
             .eq('document_type', 'identity')
             .or(`file_name.eq.${fileNameToCheck},document_url.eq.${documentUrl}`);
 
-          // ✅ CORRIGÉ : Vérifier si un document similaire existe déjà
+          //  CORRIGÉ : Vérifier si un document similaire existe déjà
           // (même nom de fichier OU même URL)
           const existingDoc = existingDocs && existingDocs.length > 0 
             ? existingDocs.find(doc => 
@@ -1820,7 +1847,7 @@ async function saveGuestDataInternal(
               existingUrl: existingDoc.document_url?.substring(0, 50) + '...'
             });
             
-            // ✅ Mettre à jour l'URL si elle a changé (par exemple, data: URL → Storage URL)
+            //  Mettre à jour l'URL si elle a changé (par exemple, data: URL → Storage URL)
             if (existingDoc.document_url !== documentUrl && documentUrl && !documentUrl.startsWith('data:')) {
               log('info', 'Mise à jour de l\'URL du document existant');
               const { error: updateError } = await supabase
@@ -1836,7 +1863,7 @@ async function saveGuestDataInternal(
               }
             }
           } else {
-            // ✅ CORRIGÉ : Vérifier aussi par file_path si disponible (pour les documents uploadés via Storage)
+            //  CORRIGÉ : Vérifier aussi par file_path si disponible (pour les documents uploadés via Storage)
             const storagePathMatch = documentUrl.match(/identity\/([^\/]+)\/(.+)$/);
             if (storagePathMatch) {
               const [, bookingIdFromUrl, fileNameFromPath] = storagePathMatch;
@@ -1851,7 +1878,7 @@ async function saveGuestDataInternal(
               if (existingByPath) {
                 log('info', `Document d'identité déjà existant par file_path, pas de doublon créé`);
           } else {
-                // ✅ Sauvegarder le document seulement s'il n'existe pas
+                //  Sauvegarder le document seulement s'il n'existe pas
             const { error: uploadDocError } = await supabase
               .from('uploaded_documents')
               .insert({
@@ -1866,7 +1893,7 @@ async function saveGuestDataInternal(
               });
             
             if (uploadDocError) {
-                  // ✅ CORRIGÉ : Si erreur de contrainte unique, c'est probablement un doublon
+                  //  CORRIGÉ : Si erreur de contrainte unique, c'est probablement un doublon
                   if (uploadDocError.code === '23505' || uploadDocError.message.includes('duplicate') || uploadDocError.message.includes('unique')) {
                     log('warn', `Document d'identité déjà existant (contrainte unique), ignoré`);
                   } else {
@@ -1874,11 +1901,11 @@ async function saveGuestDataInternal(
               throw new Error(`Database save failed: ${uploadDocError.message}`);
             }
                 } else {
-                  log('info', `✅ Document ${index + 1} saved to uploaded_documents successfully`);
+                  log('info', ` Document ${index + 1} saved to uploaded_documents successfully`);
                 }
               }
             } else {
-              // ✅ Sauvegarder le document seulement s'il n'existe pas
+              //  Sauvegarder le document seulement s'il n'existe pas
               const { error: uploadDocError } = await supabase
                 .from('uploaded_documents')
                 .insert({
@@ -1893,7 +1920,7 @@ async function saveGuestDataInternal(
                 });
               
               if (uploadDocError) {
-                // ✅ CORRIGÉ : Si erreur de contrainte unique, c'est probablement un doublon
+                //  CORRIGÉ : Si erreur de contrainte unique, c'est probablement un doublon
                 if (uploadDocError.code === '23505' || uploadDocError.message.includes('duplicate') || uploadDocError.message.includes('unique')) {
                   log('warn', `Document d'identité déjà existant (contrainte unique), ignoré`);
                 } else {
@@ -1901,7 +1928,7 @@ async function saveGuestDataInternal(
                   throw new Error(`Database save failed: ${uploadDocError.message}`);
                 }
               } else {
-          log('info', `✅ Document ${index + 1} saved to uploaded_documents successfully`);
+          log('info', ` Document ${index + 1} saved to uploaded_documents successfully`);
               }
             }
           }
@@ -1935,10 +1962,10 @@ async function saveGuestDataInternal(
     }
 
     // 4. Création/mise à jour de l'entrée guest_submissions pour le suivi complet
-    // ✅ CORRECTION CRITIQUE : Utiliser upsert avec clé unique booking_id + document_number pour éviter les doublons
+    //  CORRECTION CRITIQUE : Utiliser upsert avec clé unique booking_id + document_number pour éviter les doublons
     log('info', 'Création/mise à jour de l\'entrée de suivi');
     
-    // ✅ Token de la soumission en cours (pas « premier token actif de la propriété »)
+    //  Token de la soumission en cours (pas « premier token actif de la propriété »)
     let tokenRowId: string | null = null;
     if (verificationToken && verificationToken.length >= 10) {
       const { data: tokByString } = await supabase
@@ -2003,8 +2030,8 @@ async function saveGuestDataInternal(
 
     let submissionError;
     if (existingSubmission) {
-      // ✅ Mise à jour de la soumission existante
-      log('info', '🔄 Mise à jour de la soumission existante', { 
+      //  Mise à jour de la soumission existante
+      log('info', ' Mise à jour de la soumission existante', { 
         existingId: existingSubmission.id, 
         guestName: fullName 
       });
@@ -2017,8 +2044,8 @@ async function saveGuestDataInternal(
         .eq('id', existingSubmission.id);
       submissionError = error;
     } else {
-      // ✅ Nouvelle soumission
-      log('info', '➕ Création nouvelle soumission', { guestName: fullName });
+      //  Nouvelle soumission
+      log('info', ' Création nouvelle soumission', { guestName: fullName });
       const { error } = await supabase
         .from('guest_submissions')
         .insert({
@@ -2078,7 +2105,7 @@ async function generateContractInternal(bookingId: string, signature?: Signature
 
     // 3. Sauvegarder le document en base (signé ou non)
     const isSigned = !!signature;
-    log('info', '💾 [CONTRACT] Sauvegarde du contrat en base', { 
+    log('info', ' [CONTRACT] Sauvegarde du contrat en base', { 
       bookingId,
       isSigned,
       pdfUrlLength: pdfUrl?.length || 0
@@ -2087,12 +2114,12 @@ async function generateContractInternal(bookingId: string, signature?: Signature
     await saveDocumentToDatabase(supabaseClient, bookingId, 'contract', pdfUrl, isSigned);
     
     if (isSigned) {
-      log('info', '✅ [CONTRACT] Contrat signé sauvegardé dans uploaded_documents et generated_documents');
+      log('info', ' [CONTRACT] Contrat signé sauvegardé dans uploaded_documents et generated_documents');
     } else {
-      log('info', '✅ [CONTRACT] Contrat non signé sauvegardé dans uploaded_documents et generated_documents');
+      log('info', ' [CONTRACT] Contrat non signé sauvegardé dans uploaded_documents et generated_documents');
     }
 
-    log('info', '🎉 [CONTRACT] Contrat généré avec succès', { 
+    log('info', ' [CONTRACT] Contrat généré avec succès', { 
       pdfUrl: pdfUrl.substring(0, 80) + '...',
       isSigned,
       bookingId
@@ -2106,7 +2133,7 @@ async function generateContractInternal(bookingId: string, signature?: Signature
 async function generatePoliceFormsInternal(bookingId: string, signature?: SignatureData): Promise<string> {
   log('info', 'ÉTAPE 4: Démarrage génération fiche de police', { 
     bookingId,
-    hasSignature: !!signature  // ✅ CORRECTION : Même signature que le contrat
+    hasSignature: !!signature  //  CORRECTION : Même signature que le contrat
   });
 
   return await withRetry(async () => {
@@ -2133,7 +2160,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       throw new Error('Booking non trouvé');
     }
     
-    // ✅ DIAGNOSTIC : Log détaillé de la réponse de la requête
+    //  DIAGNOSTIC : Log détaillé de la réponse de la requête
     log('info', '[Police] Booking récupéré depuis DB:', {
       bookingId: booking.id,
       hasProperty: !!booking.property,
@@ -2144,7 +2171,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       allBookingKeys: Object.keys(booking || {})
     });
     
-    // ✅ CORRECTION : Récupérer la signature depuis la base si non fournie en paramètre
+    //  CORRECTION : Récupérer la signature depuis la base si non fournie en paramètre
     let guestSignature = signature?.data || null;
     let guestSignedAt = signature?.timestamp || null;
     
@@ -2159,7 +2186,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
         .order('created_at', { ascending: false });
       
       if (signatures && signatures.length > 0) {
-        // ✅ CORRECTION : Prendre la première signature (la plus récente)
+        //  CORRECTION : Prendre la première signature (la plus récente)
         // car signer_name est toujours "Guest", on ne peut pas matcher par nom
         // On peut matcher par email si nécessaire
         
@@ -2181,7 +2208,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
           guestSignature = signatureToUse.signature_data;
           guestSignedAt = signatureToUse.signed_at;
           
-          log('info', '[Police] ✅ Signature guest trouvée dans contract_signatures', {
+          log('info', '[Police]  Signature guest trouvée dans contract_signatures', {
             signerName: signatureToUse.signer_name,
             signerEmail: signatureToUse.signer_email,
             matchMethod: matchedSignature ? 'email' : 'fallback_first',
@@ -2244,14 +2271,14 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
 
     if (submissionGuestsPolice.length > 0 && (guests.length === 0 || dbGuestSparsePolice(guests[0]))) {
       guests = submissionGuestsPolice;
-      log('info', '[Police] Guests issus de guest_submissions (priorité — PDF police)', {
+      log('info', '[Police] Guests issus de guest_submissions (priorité -- PDF police)', {
         count: guests.length,
         firstHasDob: !!guests[0]?.date_of_birth,
         firstHasDoc: !!guests[0]?.document_number,
       });
     }
   
-  // ✅ CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests
+  //  CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests
   const hasGuestName = booking.guest_name && booking.guest_name.trim().length > 0;
   log('info', '[Police] Vérification fallback final guest', {
     hasGuests: guests.length > 0,
@@ -2262,7 +2289,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
   });
   
   if (!guests.length && hasGuestName) {
-    log('warn', '[Police] ⚠️ Création guest virtuel - DONNÉES INCOMPLÈTES - La fiche police ne sera pas entièrement variabilisée');
+    log('warn', '[Police]  Création guest virtuel - DONNÉES INCOMPLÈTES - La fiche police ne sera pas entièrement variabilisée');
     guests = [{
       full_name: booking.guest_name.trim(),
       email: booking.guest_email || null,
@@ -2276,11 +2303,11 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       motif_sejour: 'TOURISME',
       adresse_personnelle: ''
     }];
-    log('info', '[Police] ✅ Guest virtuel créé depuis booking (DONNÉES INCOMPLÈTES)', { 
+    log('info', '[Police]  Guest virtuel créé depuis booking (DONNÉES INCOMPLÈTES)', { 
       name: guests[0].full_name,
       email: guests[0].email,
       phone: guests[0].phone,
-      warning: '⚠️ date_of_birth, nationality, document_number manquants - La fiche police ne sera pas entièrement variabilisée'
+      warning: ' date_of_birth, nationality, document_number manquants - La fiche police ne sera pas entièrement variabilisée'
     });
   }
     
@@ -2294,11 +2321,11 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       } : null
     });
 
-    // ✅ AJOUT : Récupérer le host profile pour avoir l'email et le téléphone
+    //  AJOUT : Récupérer le host profile pour avoir l'email et le téléphone
     let host: any = null;
     if (booking?.property?.user_id) {
       // 1. Récupérer le host profile
-      // ✅ host_profiles n'a pas de colonne email - récupéré via auth.admin.getUserById plus bas
+      //  host_profiles n'a pas de colonne email - récupéré via auth.admin.getUserById plus bas
       const { data: hp } = await supabaseClient
         .from('host_profiles')
         .select(`
@@ -2313,7 +2340,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       
       host = hp ?? null;
       
-      // 2. ✅ NOUVEAU : Récupérer l'email depuis auth.users (email d'authentification)
+      // 2.  NOUVEAU : Récupérer l'email depuis auth.users (email d'authentification)
       let authEmail: string | null = null;
       try {
         const { data: authUser } = await supabaseClient.auth.admin.getUserById(booking.property.user_id);
@@ -2364,7 +2391,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       throw new Error('Aucun invité trouvé pour générer les fiches de police');
     }
     
-    // ✅ DIAGNOSTIC : Log des données des guests récupérées depuis la DB
+    //  DIAGNOSTIC : Log des données des guests récupérées depuis la DB
     log('info', '[Police] Guests récupérés depuis DB:', {
       guestsCount: guests.length,
       guestsData: guests.map((g: any) => ({
@@ -2378,7 +2405,7 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       }))
     });
 
-    // ✅ VALIDATION ASSOUPLIE : Vérifier seulement que full_name est présent
+    //  VALIDATION ASSOUPLIE : Vérifier seulement que full_name est présent
     const invalidGuests = guests.filter((guest: any) => 
       !guest.full_name?.trim()
     );
@@ -2387,13 +2414,13 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
       throw new Error(`${invalidGuests.length} invité(s) n'ont pas de nom complet`);
     }
     
-    // ✅ NOUVEAU : Vérifier les données manquantes mais ne pas bloquer
+    //  NOUVEAU : Vérifier les données manquantes mais ne pas bloquer
     const guestsWithMissingData = guests.filter((guest: any) =>
       !guest.document_number?.trim()
     );
     
     if (guestsWithMissingData.length > 0) {
-      log('warn', `⚠️ ${guestsWithMissingData.length} invité(s) ont document_number manquant - Fiche générée avec données disponibles`, {
+      log('warn', ` ${guestsWithMissingData.length} invité(s) ont document_number manquant - Fiche générée avec données disponibles`, {
         guestsWithMissingData: guestsWithMissingData.map((g: any) => ({
           name: g.full_name,
           hasDocumentNumber: !!g.document_number
@@ -2403,11 +2430,11 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
 
     log('info', `Génération fiches de police pour ${guests.length} invités validés`);
 
-    // ✅ CORRECTION : S'assurer que booking.guests contient les guests récupérés
+    //  CORRECTION : S'assurer que booking.guests contient les guests récupérés
     booking.guests = guests;
 
-    // ✅ DIAGNOSTIC DÉTAILLÉ AVANT GÉNÉRATION PDF
-    log('info', '🔍 [POLICE] DIAGNOSTIC COMPLET AVANT GÉNÉRATION:', {
+    //  DIAGNOSTIC DÉTAILLÉ AVANT GÉNÉRATION PDF
+    log('info', ' [POLICE] DIAGNOSTIC COMPLET AVANT GÉNÉRATION:', {
       hasGuestSignature: !!guestSignature,
       guestSignatureLength: guestSignature?.length || 0,
       guestSignaturePreview: guestSignature ? guestSignature.substring(0, 100) + '...' : 'NULL',
@@ -2420,17 +2447,17 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
     });
 
     // 3. Générer le PDF des fiches de police
-    log('info', '📄 [POLICE] Génération PDF des fiches de police');
-    // ✅ NOUVEAU : Passer la signature du guest
+    log('info', ' [POLICE] Génération PDF des fiches de police');
+    //  NOUVEAU : Passer la signature du guest
     const policeUrl = await generatePoliceFormsPDF(supabaseClient, booking, false, guestSignature, guestSignedAt);
-    log('info', '✅ [POLICE] PDF généré', { policeUrlLength: policeUrl?.length || 0 });
+    log('info', ' [POLICE] PDF généré', { policeUrlLength: policeUrl?.length || 0 });
     
     // 4. Sauvegarder le document en base
-    log('info', '💾 [POLICE] Sauvegarde de la fiche de police en base', { bookingId });
+    log('info', ' [POLICE] Sauvegarde de la fiche de police en base', { bookingId });
     await saveDocumentToDatabase(supabaseClient, bookingId, 'police', policeUrl);
-    log('info', '✅ [POLICE] Fiche de police sauvegardée dans uploaded_documents et generated_documents');
+    log('info', ' [POLICE] Fiche de police sauvegardée dans uploaded_documents et generated_documents');
 
-    log('info', '🎉 [POLICE] Fiche de police générée avec succès', { 
+    log('info', ' [POLICE] Fiche de police générée avec succès', { 
       policeUrl: policeUrl.substring(0, 80) + '...',
       bookingId
     });
@@ -2447,7 +2474,7 @@ async function sendGuestContractInternal(
   policeUrl?: string
 ): Promise<boolean> {
   if (!guestInfo.email?.trim()) {
-    log('info', 'ÉTAPE 5: Pas d’email invité — envoi ignoré (flux non bloquant)');
+    log('info', 'ÉTAPE 5: Pas d\'email invité -- envoi ignoré (flux non bloquant)');
     return false;
   }
 
@@ -2498,7 +2525,7 @@ async function sendGuestContractInternal(
 
     log('info', 'Appel à send-guest-contract', { emailData });
 
-    // ✅ CORRECTION : Utiliser supabase.functions.invoke() avec headers explicites pour l'authentification
+    //  CORRECTION : Utiliser supabase.functions.invoke() avec headers explicites pour l'authentification
     // Comme dans sync-documents, on passe explicitement les headers Authorization et apikey
     const { data: result, error: invokeError } = await supabaseClient.functions.invoke('send-guest-contract', {
       body: emailData,
@@ -2540,7 +2567,7 @@ async function sendGuestContractInternal(
   }, 'Envoi email');
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    log('warn', 'Envoi email définitivement échoué après retries — flux invité considéré comme réussi sans email', {
+    log('warn', 'Envoi email définitivement échoué après retries -- flux invité considéré comme réussi sans email', {
       error: msg,
     });
     return false;
@@ -2570,7 +2597,7 @@ async function updateFinalStatus(
   try {
     const supabase = await getServerClient();
     
-    // ✅ CORRECTION CRITIQUE : Récupérer d'abord documents_generated existant
+    //  CORRECTION CRITIQUE : Récupérer d'abord documents_generated existant
     const { data: existingBooking } = await supabase
       .from('bookings')
       .select('documents_generated')
@@ -2579,7 +2606,7 @@ async function updateFinalStatus(
     
     const currentDocumentsGenerated = existingBooking?.documents_generated || {};
     
-    // ✅ Construire le nouvel objet documents_generated avec les URLs
+    //  Construire le nouvel objet documents_generated avec les URLs
     const documentsGenerated = {
       ...currentDocumentsGenerated,
       contract: !!contractUrl,
@@ -2591,14 +2618,14 @@ async function updateFinalStatus(
       generatedAt: new Date().toISOString()
     };
     
-    log('info', '📝 Mise à jour documents_generated', {
+    log('info', ' Mise à jour documents_generated', {
       documentsGenerated,
       hasContractUrl: !!documentsGenerated.contractUrl,
       hasPoliceUrl: !!documentsGenerated.policeUrl
     });
     
     // Only mark 'completed' when ALL required documents are present (contract + police).
-    // Having just a signature is not enough – it means 'confirmed' at best.
+    // Having just a signature is not enough - it means 'confirmed' at best.
     const hasAllDocs = !!documentsGenerated.contractUrl && !!documentsGenerated.policeUrl;
     const newStatus = hasAllDocs ? 'completed' : (hasSignature ? 'confirmed' : 'pending');
     const updateData = {
@@ -2613,10 +2640,10 @@ async function updateFinalStatus(
       .eq('id', bookingId);
     
     if (updateError) {
-      log('error', '❌ Erreur mise à jour statut et documents_generated', { error: updateError });
+      log('error', ' Erreur mise à jour statut et documents_generated', { error: updateError });
       throw updateError;
     } else {
-      log('info', '✅ Statut final et documents_generated mis à jour avec succès', {
+      log('info', ' Statut final et documents_generated mis à jour avec succès', {
         contractUrl: documentsGenerated.contractUrl,
         policeUrl: documentsGenerated.policeUrl
       });
@@ -2707,7 +2734,7 @@ async function createIndependentBooking(token: string, guestInfo: GuestInfo, boo
 
     const booking: ResolvedBooking = {
       id: crypto.randomUUID(),
-      propertyId: property.id, // ✅ CORRECTION : Ajouter le propertyId
+      propertyId: property.id, //  CORRECTION : Ajouter le propertyId
       checkIn: checkIn.toISOString().split('T')[0],
       checkOut: checkOut.toISOString().split('T')[0],
       propertyName: property.name,
@@ -2756,7 +2783,7 @@ async function createIndependentBooking(token: string, guestInfo: GuestInfo, boo
 serve(async (req) => {
   const startTime = Date.now();
   
-  log('info', '🚀 FONCTION UNIFIED DÉMARRÉE', {
+  log('info', ' FONCTION UNIFIED DÉMARRÉE', {
     timestamp: new Date().toISOString(),
     method: req.method,
     url: req.url,
@@ -2781,12 +2808,12 @@ serve(async (req) => {
 
   try {
     // 1. PARSING ET VALIDATION
-    log('info', '📥 Parsing de la requête');
+    log('info', ' Parsing de la requête');
     const requestBody: any = await req.json();
     
-    // ✅ NOUVELLE ACTION : save_host_signature (depuis dashboard hôte)
+    //  NOUVELLE ACTION : save_host_signature (depuis dashboard hôte)
     if (requestBody.action === 'save_host_signature') {
-      log('info', '🔄 Mode: Sauvegarde signature hôte');
+      log('info', ' Mode: Sauvegarde signature hôte');
       
       if (!requestBody.bookingId || !requestBody.hostSignatureData) {
         return new Response(JSON.stringify({
@@ -2822,9 +2849,9 @@ serve(async (req) => {
       });
     }
     
-    // ✅ NOUVELLE ACTION : resolve_booking_only (pour resolveBooking)
+    //  NOUVELLE ACTION : resolve_booking_only (pour resolveBooking)
     if (requestBody.action === 'resolve_booking_only') {
-      log('info', '🔄 Mode: Résolution de réservation uniquement');
+      log('info', ' Mode: Résolution de réservation uniquement');
       
       if (!requestBody.token || !requestBody.airbnbCode) {
         return new Response(JSON.stringify({
@@ -2859,11 +2886,11 @@ serve(async (req) => {
       }
     }
     
-    // ✅ NOUVELLE ACTION : generate_contract_preview & generate_police_preview (aperçu depuis wizard)
+    //  NOUVELLE ACTION : generate_contract_preview & generate_police_preview (aperçu depuis wizard)
     if (requestBody.action === 'generate_contract_preview' || requestBody.action === 'generate_police_preview') {
-      log('info', `🔄 Mode: Génération aperçu ${requestBody.action === 'generate_contract_preview' ? 'contrat' : 'police'}`);
+      log('info', ` Mode: Génération aperçu ${requestBody.action === 'generate_contract_preview' ? 'contrat' : 'police'}`);
       
-      // ✅ VALIDATION DÉTAILLÉE
+      //  VALIDATION DÉTAILLÉE
       if (!requestBody.is_preview) {
         log('error', 'is_preview manquant dans la requête');
         return new Response(JSON.stringify({
@@ -2900,12 +2927,12 @@ serve(async (req) => {
       try {
         const supabaseClient = await getServerClient();
         
-        // ✅ VALIDATION propertyId
+        //  VALIDATION propertyId
         if (!requestBody.bookingData.propertyId) {
           throw new Error('propertyId manquant dans bookingData');
         }
         
-        log('info', '📋 Données reçues pour aperçu', {
+        log('info', ' Données reçues pour aperçu', {
           propertyId: requestBody.bookingData.propertyId,
           checkIn: requestBody.bookingData.checkIn,
           checkOut: requestBody.bookingData.checkOut,
@@ -2913,7 +2940,7 @@ serve(async (req) => {
           guestsCount: requestBody.guests.length
         });
         
-        // ✅ Récupérer le user_id de la propriété (contrainte DB : user_id ne peut pas être NULL)
+        //  Récupérer le user_id de la propriété (contrainte DB : user_id ne peut pas être NULL)
         const { data: propertyRow, error: propertyErr } = await supabaseClient
           .from('properties')
           .select('user_id')
@@ -2927,10 +2954,10 @@ serve(async (req) => {
 
         const propertyUserId = propertyRow.user_id as string;
 
-        // ✅ Créer un booking temporaire EN BASE avec le service role key (contourne RLS)
+        //  Créer un booking temporaire EN BASE avec le service role key (contourne RLS)
         const tempBookingId = crypto.randomUUID();
         
-        log('info', '📝 Création booking temporaire', { tempBookingId, propertyUserId: propertyUserId.substring(0, 8) + '...' });
+        log('info', ' Création booking temporaire', { tempBookingId, propertyUserId: propertyUserId.substring(0, 8) + '...' });
         
         const { error: bookingError } = await supabaseClient
           .from('bookings')
@@ -2943,7 +2970,7 @@ serve(async (req) => {
             number_of_guests: requestBody.bookingData.numberOfGuests,
             guest_name: requestBody.guests[0]?.fullName || 'Aperçu',
             status: 'pending',
-            booking_reference: `PREVIEW-${Date.now()}`,
+            booking_reference: `PREVIEW-${crypto.randomUUID()}`,
             is_preview: true
           });
 
@@ -2952,7 +2979,7 @@ serve(async (req) => {
           throw new Error(`Erreur création booking temporaire: ${bookingError.message}`);
         }
 
-        log('info', '✅ Booking temporaire créé côté Edge Function', { tempBookingId });
+        log('info', ' Booking temporaire créé côté Edge Function', { tempBookingId });
 
         // Créer les guests temporaires
         const guestsToInsert = requestBody.guests.map((guest: any) => ({
@@ -2973,19 +3000,19 @@ serve(async (req) => {
           throw new Error(`Erreur création guests: ${guestsError.message}`);
         }
 
-        log('info', '✅ Guests temporaires créés', { count: guestsToInsert.length });
+        log('info', ' Guests temporaires créés', { count: guestsToInsert.length });
 
         // Générer le document selon le type
         let documentUrl: string;
         try {
           if (requestBody.action === 'generate_contract_preview') {
-            log('info', '📄 Génération contrat d\'aperçu...');
+            log('info', ' Génération contrat d\'aperçu...');
             documentUrl = await generateContractInternal(tempBookingId, null);
-            log('info', '✅ Contrat d\'aperçu généré', { url: documentUrl });
+            log('info', ' Contrat d\'aperçu généré', { url: documentUrl });
           } else {
-            log('info', '📄 Génération police d\'aperçu...');
+            log('info', ' Génération police d\'aperçu...');
             documentUrl = await generatePoliceFormsInternal(tempBookingId);
-            log('info', '✅ Police d\'aperçu générée', { url: documentUrl });
+            log('info', ' Police d\'aperçu générée', { url: documentUrl });
           }
         } catch (genError) {
           log('error', 'Erreur lors de la génération du document', { 
@@ -3003,11 +3030,11 @@ serve(async (req) => {
           throw genError;
         }
 
-        // ✅ Nettoyer le booking temporaire après génération réussie
+        //  Nettoyer le booking temporaire après génération réussie
         try {
           await supabaseClient.from('guests').delete().eq('booking_id', tempBookingId);
           await supabaseClient.from('bookings').delete().eq('id', tempBookingId);
-          log('info', '🗑️ Booking temporaire nettoyé', { tempBookingId });
+          log('info', ' Booking temporaire nettoyé', { tempBookingId });
         } catch (cleanupError) {
           log('warn', 'Erreur lors du nettoyage (non bloquant)', { error: cleanupError.message });
         }
@@ -3021,7 +3048,7 @@ serve(async (req) => {
         });
 
       } catch (error) {
-        log('error', '❌ Erreur génération aperçu', { 
+        log('error', ' Erreur génération aperçu', { 
           error: error.message, 
           stack: error.stack,
           action: requestBody.action,
@@ -3038,9 +3065,9 @@ serve(async (req) => {
       }
     }
     
-    // ✅ NOUVELLE ACTION : generate_contract_only (depuis dashboard hôte)
+    //  NOUVELLE ACTION : generate_contract_only (depuis dashboard hôte)
     if (requestBody.action === 'generate_contract_only') {
-      log('info', '🔄 Mode: Génération contrat uniquement (depuis dashboard)');
+      log('info', ' Mode: Génération contrat uniquement (depuis dashboard)');
       
       if (!requestBody.bookingId) {
         return new Response(JSON.stringify({
@@ -3052,7 +3079,7 @@ serve(async (req) => {
         });
       }
       
-      // ✅ CRITIQUE : Vérifier et créer les guests si nécessaire
+      //  CRITIQUE : Vérifier et créer les guests si nécessaire
       const supabaseClient = await getServerClient();
       const { data: bookingData, error: bookingError } = await supabaseClient
         .from('bookings')
@@ -3090,7 +3117,7 @@ serve(async (req) => {
           guest_phone: bookingData.guest_phone
         });
         
-        // ✅ CORRECTION CRITIQUE : La table guests n'a PAS de colonne 'email'
+        //  CORRECTION CRITIQUE : La table guests n'a PAS de colonne 'email'
         // L'email est stocké dans bookings.guest_email, pas dans guests
         const guestData: any = {
           booking_id: requestBody.bookingId,
@@ -3102,7 +3129,7 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         };
         
-        // ❌ Pas de colonne email/phone sur guests — téléphone dans bookings.guest_phone
+        //  Pas de colonne email/phone sur guests -- téléphone dans bookings.guest_phone
         
         const { error: insertError } = await supabaseClient
           .from('guests')
@@ -3115,7 +3142,7 @@ serve(async (req) => {
         }
       }
       
-      // ✅ CORRECTION : Récupérer la signature depuis contract_signatures si non fournie en paramètre
+      //  CORRECTION : Récupérer la signature depuis contract_signatures si non fournie en paramètre
       let signatureToUse: SignatureData | undefined = requestBody.signature;
       
       if (!signatureToUse) {
@@ -3136,7 +3163,7 @@ serve(async (req) => {
             timestamp: latestSignature.signed_at,
             signerName: latestSignature.signer_name
           };
-          log('info', '[generate_contract_only] ✅ Signature trouvée dans contract_signatures', {
+          log('info', '[generate_contract_only]  Signature trouvée dans contract_signatures', {
             signerName: latestSignature.signer_name,
             signedAt: latestSignature.signed_at,
             hasSignatureData: !!latestSignature.signature_data
@@ -3150,26 +3177,26 @@ serve(async (req) => {
       const contractUrl = await generateContractInternal(requestBody.bookingId, signatureToUse, { locale: contractLocale });
 
       if (contractUrl) {
-        // ⚠️ NE PAS rappeler saveDocumentToDatabase ici : generateContractInternal le fait déjà en interne.
+        //  NE PAS rappeler saveDocumentToDatabase ici : generateContractInternal le fait déjà en interne.
         // Le double appel historique créait un doublon systématique dans generated_documents (bursts visibles à <200ms).
 
-        // ✅ CORRECTION CRITIQUE : Si on a une signature, régénérer aussi la fiche de police avec signature
+        //  CORRECTION CRITIQUE : Si on a une signature, régénérer aussi la fiche de police avec signature
         let policeUrl: string | null = null;
         if (signatureToUse) {
           try {
-            log('info', '[generate_contract_only] 📋 Régénération fiche de police avec signature...');
+            log('info', '[generate_contract_only]  Régénération fiche de police avec signature...');
             policeUrl = await generatePoliceFormsInternal(requestBody.bookingId, signatureToUse);
-            log('info', '[generate_contract_only] ✅ Fiche de police régénérée avec signature', { 
+            log('info', '[generate_contract_only]  Fiche de police régénérée avec signature', { 
               policeUrl: policeUrl?.substring(0, 60) 
             });
           } catch (policeError) {
-            log('warn', '[generate_contract_only] ⚠️ Échec régénération fiche de police (non bloquant)', { 
+            log('warn', '[generate_contract_only]  Échec régénération fiche de police (non bloquant)', { 
               error: policeError instanceof Error ? policeError.message : String(policeError)
             });
           }
         }
         
-        // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings
+        //  NOUVEAU : Mettre à jour documents_generated dans la table bookings
         try {
           const { data: currentBooking } = await supabaseClient
             .from('bookings')
@@ -3184,7 +3211,7 @@ serve(async (req) => {
             contractUrl: contractUrl,
             contractCreatedAt: new Date().toISOString(),
             contractIsSigned: !!signatureToUse,
-            // ✅ Mettre à jour aussi la fiche de police si régénérée
+            //  Mettre à jour aussi la fiche de police si régénérée
             ...(policeUrl ? {
               policeForm: true,
               policeUrl: policeUrl,
@@ -3210,7 +3237,7 @@ serve(async (req) => {
           log('warn', '[generate_contract_only] Erreur mise à jour documents_generated', { error: updateError });
         }
         
-        // ✅ ENVOI EMAIL : Envoyer l'email si on a un email dans le booking
+        //  ENVOI EMAIL : Envoyer l'email si on a un email dans le booking
         let emailSent = false;
         if (bookingData.guest_email) {
           try {
@@ -3245,13 +3272,13 @@ serve(async (req) => {
                 numberOfGuests: bookingData.number_of_guests || 1
               },
               contractUrl,
-              policeUrl || undefined // ✅ Passer aussi l'URL de la fiche de police si disponible
+              policeUrl || undefined //  Passer aussi l'URL de la fiche de police si disponible
             );
             emailSent = emailResult;
             if (emailSent) {
               log('info', '[generate_contract_only] Email envoyé', { success: true });
             } else {
-              log('warn', '[generate_contract_only] Email non envoyé (Resend / domaine — voir logs)', {
+              log('warn', '[generate_contract_only] Email non envoyé (Resend / domaine -- voir logs)', {
                 guestEmail: bookingData.guest_email,
               });
             }
@@ -3266,7 +3293,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({
           success: true,
           contractUrl: contractUrl,
-          policeUrl: policeUrl,  // ✅ Inclure l'URL de la fiche de police
+          policeUrl: policeUrl,  //  Inclure l'URL de la fiche de police
           isSigned: !!signatureToUse,
           emailSent: emailSent,
           message: signatureToUse ? 'Contrat et fiche de police signés générés avec succès' : 'Contrat généré avec succès (non signé)'
@@ -3285,10 +3312,10 @@ serve(async (req) => {
       }
     }
     
-    // ✅ NOUVELLE ACTION : generate_contract_with_signature (depuis save-contract-signature)
-    // ✅ OPTIMISÉ : Génère AUSSI la fiche de police avec la signature
+    //  NOUVELLE ACTION : generate_contract_with_signature (depuis save-contract-signature)
+    //  OPTIMISÉ : Génère AUSSI la fiche de police avec la signature
     if (requestBody.action === 'generate_contract_with_signature') {
-      log('info', '🔄 Mode: Génération contrat + police avec signature invité');
+      log('info', ' Mode: Génération contrat + police avec signature invité');
       
       if (!requestBody.bookingId || !requestBody.signatureData || !requestBody.signerName) {
         return new Response(JSON.stringify({
@@ -3308,24 +3335,24 @@ serve(async (req) => {
         };
         
         // 1. Générer le contrat avec signature
-        log('info', '📄 [generate_contract_with_signature] Génération contrat...');
+        log('info', ' [generate_contract_with_signature] Génération contrat...');
         const contractUrl = await generateContractInternal(requestBody.bookingId, signatureData);
-        log('info', '✅ [generate_contract_with_signature] Contrat généré', { contractUrl: contractUrl?.substring(0, 60) });
+        log('info', ' [generate_contract_with_signature] Contrat généré', { contractUrl: contractUrl?.substring(0, 60) });
         
         // 2. Générer la fiche de police avec la MÊME signature (évite le problème de timing)
         let policeUrl: string | null = null;
         try {
-          log('info', '📋 [generate_contract_with_signature] Génération fiche de police avec signature...');
+          log('info', ' [generate_contract_with_signature] Génération fiche de police avec signature...');
           policeUrl = await generatePoliceFormsInternal(requestBody.bookingId, signatureData);
-          log('info', '✅ [generate_contract_with_signature] Fiche de police générée', { policeUrl: policeUrl?.substring(0, 60) });
+          log('info', ' [generate_contract_with_signature] Fiche de police générée', { policeUrl: policeUrl?.substring(0, 60) });
         } catch (policeError) {
           // Ne pas faire échouer si la police échoue, le contrat est l'essentiel
-          log('warn', '⚠️ [generate_contract_with_signature] Échec génération police (non bloquant)', { 
+          log('warn', ' [generate_contract_with_signature] Échec génération police (non bloquant)', { 
             error: policeError instanceof Error ? policeError.message : String(policeError)
           });
         }
         
-        // ✅ CORRECTION CRITIQUE : Mettre à jour documents_generated avec les nouvelles URLs (avec signature)
+        //  CORRECTION CRITIQUE : Mettre à jour documents_generated avec les nouvelles URLs (avec signature)
         try {
           const { data: currentBooking } = await supabaseClient
             .from('bookings')
@@ -3356,13 +3383,13 @@ serve(async (req) => {
             })
             .eq('id', requestBody.bookingId);
           
-          log('info', '✅ [generate_contract_with_signature] documents_generated mis à jour avec URLs signées', {
+          log('info', ' [generate_contract_with_signature] documents_generated mis à jour avec URLs signées', {
             contractUrl: contractUrl?.substring(0, 60),
             policeUrl: policeUrl?.substring(0, 60),
             hasSignature: true
           });
         } catch (updateError) {
-          log('warn', '⚠️ [generate_contract_with_signature] Erreur mise à jour documents_generated', { 
+          log('warn', ' [generate_contract_with_signature] Erreur mise à jour documents_generated', { 
             error: updateError instanceof Error ? updateError.message : String(updateError)
           });
         }
@@ -3388,9 +3415,9 @@ serve(async (req) => {
       }
     }
     
-    // ✅ NOUVELLE ACTION : clean_duplicate_contracts (nettoyage des doublons)
+    //  NOUVELLE ACTION : clean_duplicate_contracts (nettoyage des doublons)
     if (requestBody.action === 'clean_duplicate_contracts') {
-      log('info', '🔄 Mode: Nettoyage des contrats dupliqués');
+      log('info', ' Mode: Nettoyage des contrats dupliqués');
       
       if (!requestBody.bookingId) {
         return new Response(JSON.stringify({
@@ -3494,13 +3521,13 @@ serve(async (req) => {
       }
     }
     
-    // ✅ NOUVELLE ACTION : generate_police_only (depuis dashboard hôte ou preview)
+    //  NOUVELLE ACTION : generate_police_only (depuis dashboard hôte ou preview)
     if (requestBody.action === 'generate_police_only') {
-      log('info', '🔄 Mode: Génération fiches police uniquement');
+      log('info', ' Mode: Génération fiches police uniquement');
       
-      // ✅ NOUVEAU : Support du mode preview avec objet booking directement
+      //  NOUVEAU : Support du mode preview avec objet booking directement
       if (requestBody.booking) {
-        log('info', '👁️ Mode preview : utilisation des données fournies directement');
+        log('info', ' Mode preview : utilisation des données fournies directement');
         
         const supabaseClient = await getServerClient();
         const booking = requestBody.booking;
@@ -3532,7 +3559,7 @@ serve(async (req) => {
           });
         }
         
-        // ✅ AMÉLIORATION : Charger la propriété avec contract_template si pas fournie
+        //  AMÉLIORATION : Charger la propriété avec contract_template si pas fournie
         let property = booking.property || {};
         if (!property.contract_template && requestBody.bookingData?.propertyId) {
           log('info', '[Police Preview] Chargement propriété avec contract_template...');
@@ -3551,7 +3578,7 @@ serve(async (req) => {
         // Normaliser les données des guests pour la compatibilité
         const normalizedBooking = {
           ...booking,
-          property: property, // ✅ S'assurer que la propriété avec contract_template est incluse
+          property: property, //  S'assurer que la propriété avec contract_template est incluse
           guests: guests.map((g: any) => ({
             full_name: g.full_name || g.fullName || '',
             date_of_birth: g.date_of_birth || g.dateOfBirth || null,
@@ -3594,12 +3621,12 @@ serve(async (req) => {
       // Générer uniquement les fiches de police
       const policeUrl = await generatePoliceFormsInternal(requestBody.bookingId);
       
-      // ✅ NOUVEAU : Mettre à jour documents_generated dans la table bookings (FUSION ATOMIQUE)
+      //  NOUVEAU : Mettre à jour documents_generated dans la table bookings (FUSION ATOMIQUE)
       if (policeUrl) {
         try {
           const supabaseClient = await getServerClient();
           
-          // ✅ CORRECTION CRITIQUE : Récupérer l'état ACTUEL (pas l'état initial)
+          //  CORRECTION CRITIQUE : Récupérer l'état ACTUEL (pas l'état initial)
           // pour éviter d'écraser les mises à jour concurrentes
           const { data: currentBooking, error: fetchError } = await supabaseClient
             .from('bookings')
@@ -3612,12 +3639,12 @@ serve(async (req) => {
             throw fetchError;
           }
           
-          // ✅ FUSION ATOMIQUE : Fusionner avec l'état actuel
+          //  FUSION ATOMIQUE : Fusionner avec l'état actuel
           const currentDocs = currentBooking?.documents_generated || {};
           const updatedDocs = {
-            ...currentDocs,  // ✅ Utiliser l'état ACTUEL
+            ...currentDocs,  //  Utiliser l'état ACTUEL
             policeForm: true,
-            policeUrl: policeUrl,  // ✅ Sauvegarder l'URL
+            policeUrl: policeUrl,  //  Sauvegarder l'URL
             policeCreatedAt: new Date().toISOString()
           };
           
@@ -3657,9 +3684,9 @@ serve(async (req) => {
       });
     }
     
-    // ✅ NOUVELLE ACTION : generate_missing_documents (depuis useBookings.ts - fallback Airbnb)
+    //  NOUVELLE ACTION : generate_missing_documents (depuis useBookings.ts - fallback Airbnb)
     if (requestBody.action === 'generate_missing_documents') {
-      log('info', '🔄 Mode: Génération documents manquants (fallback Airbnb)');
+      log('info', ' Mode: Génération documents manquants (fallback Airbnb)');
       
       if (!requestBody.bookingId) {
         return new Response(JSON.stringify({
@@ -3695,7 +3722,7 @@ serve(async (req) => {
             const contractUrl = await generateContractInternal(requestBody.bookingId, null);
             if (contractUrl) {
               results.contractUrl = contractUrl;
-              log('info', '✅ Contrat généré (missing_documents)');
+              log('info', ' Contrat généré (missing_documents)');
             }
           } catch (contractError: any) {
             log('warn', 'Échec génération contrat (missing_documents)', { error: contractError.message });
@@ -3708,7 +3735,7 @@ serve(async (req) => {
             const policeUrl = await generatePoliceFormsInternal(requestBody.bookingId);
             if (policeUrl) {
               results.policeUrl = policeUrl;
-              log('info', '✅ Fiche de police générée (missing_documents)');
+              log('info', ' Fiche de police générée (missing_documents)');
             }
           } catch (policeError: any) {
             log('warn', 'Échec génération police (missing_documents)', { error: policeError.message });
@@ -3731,32 +3758,32 @@ serve(async (req) => {
       }
     }
     
-    // ✅ NOUVELLE ACTION : resolve (alias pour resolve_booking_only - compatibilité frontend)
+    //  NOUVELLE ACTION : resolve (alias pour resolve_booking_only - compatibilité frontend)
     if (requestBody.action === 'resolve') {
-      log('info', '🔄 Mode: Résolution réservation (alias resolve)');
+      log('info', ' Mode: Résolution réservation (alias resolve)');
       // Rediriger vers resolve_booking_only
       requestBody.action = 'resolve_booking_only';
     }
     
-    // ✅ NOUVELLE ACTION : issue (pour useGuestVerification.ts)
+    //  NOUVELLE ACTION : issue (pour useGuestVerification.ts)
     if (requestBody.action === 'issue') {
-      log('info', '🔄 Mode: Émission/Issue de réservation');
+      log('info', ' Mode: Émission/Issue de réservation');
       // Traiter comme le workflow par défaut mais avec logging spécifique
       // Continue vers le traitement principal
     }
     
-    // ✅ NOUVELLE ACTION : generate (pour DebugDocVars.tsx)
+    //  NOUVELLE ACTION : generate (pour DebugDocVars.tsx)
     if (requestBody.action === 'generate') {
-      log('info', '🔄 Mode: Génération générique');
+      log('info', ' Mode: Génération générique');
       // Traiter comme generate_all_documents
       if (requestBody.bookingId) {
         requestBody.action = 'generate_all_documents';
       }
     }
     
-    // ✅ NOUVELLE ACTION : generate_all_documents (depuis dashboard hôte)
+    //  NOUVELLE ACTION : generate_all_documents (depuis dashboard hôte)
     if (requestBody.action === 'generate_all_documents') {
-      log('info', '🔄 Mode: Génération tous documents (depuis dashboard)');
+      log('info', ' Mode: Génération tous documents (depuis dashboard)');
       
       if (!requestBody.bookingId) {
         return new Response(JSON.stringify({
@@ -3776,7 +3803,7 @@ serve(async (req) => {
       };
       
       try {
-        // Générer le contrat si demandé (signature optionnelle — brouillon si absente)
+        // Générer le contrat si demandé (signature optionnelle -- brouillon si absente)
         if (!requestBody.documentTypes || requestBody.documentTypes.includes('contract')) {
           results.contractUrl = await generateContractInternal(
             requestBody.bookingId,
@@ -3821,7 +3848,7 @@ serve(async (req) => {
     });
 
     // 2. VALIDATION CONDITIONNELLE selon l'action
-    log('info', '✅ Validation des données');
+    log('info', ' Validation des données');
     
     // Pour resolve_booking_only, validation minimale
     if (requestBody.action === 'resolve_booking_only') {
@@ -3839,7 +3866,7 @@ serve(async (req) => {
           headers: corsHeaders
         });
       }
-      log('info', '✅ Validation minimale réussie pour resolve_booking_only');
+      log('info', ' Validation minimale réussie pour resolve_booking_only');
     } else if (requestBody.action === 'create_ics_booking') {
       // NOUVEAU : Action pour créer la réservation ICS dès l'accès au lien
       if (!requestBody.token) {
@@ -3855,9 +3882,9 @@ serve(async (req) => {
           headers: corsHeaders
         });
       }
-      log('info', '✅ Validation réussie pour create_ics_booking');
+      log('info', ' Validation réussie pour create_ics_booking');
     } else if (requestBody.action === 'host_direct') {
-      // ✅ Réservation créée par l'hôte (sans signature guest, tout se fait physiquement).
+      //  Réservation créée par l'hôte (sans signature guest, tout se fait physiquement).
       // Exceptionnellement : l'email n'est pas pris en compte (non requis, pas d'envoi au guest).
       if (!requestBody.bookingId) {
         log('error', 'Validation échouée pour host_direct', { 
@@ -3872,14 +3899,14 @@ serve(async (req) => {
           headers: corsHeaders
         });
       }
-      log('info', '✅ Validation réussie pour host_direct (email non requis)');
+      log('info', ' Validation réussie pour host_direct (email non requis)');
     } else {
       // Validation complète pour les autres actions
       const validation = validateRequest(requestBody);
       
       if (!validation.isValid) {
         log('error', 'Validation échouée', { errors: validation.errors });
-        // ✅ AMÉLIORATION : Message d'erreur plus explicite
+        //  AMÉLIORATION : Message d'erreur plus explicite
         const errorMessage = validation.errors.length > 0 
           ? validation.errors.join(', ') 
           : 'Données invalides';
@@ -3897,7 +3924,7 @@ serve(async (req) => {
         log('warn', 'Avertissements de validation', { warnings: validation.warnings });
       }
 
-      log('info', '✅ Validation complète réussie');
+      log('info', ' Validation complète réussie');
     }
 
     // 3. TRAITEMENT PRINCIPAL
@@ -3905,7 +3932,7 @@ serve(async (req) => {
     let bookingId: string;
     let contractUrl: string;
     let policeUrl: string = '';
-    let identityUrl: string = '';  // ✅ AJOUT
+    let identityUrl: string = '';  //  AJOUT
     let emailSent: boolean = false;
 
     try {
@@ -3915,10 +3942,25 @@ serve(async (req) => {
           : [requestBody.guestInfo];
       const primaryGuestInfo = guestInfosForSave[0];
 
+      // S7 -- Acquérir un advisory lock transactionnel pour sérialiser les soumissions
+      // concurrentes sur le même token (deux onglets / deux appareils).
+      // Non bloquant si le RPC n'est pas encore déployé (migration 20260523000005).
+      if (requestBody.token) {
+        try {
+          const lockClient = await getServerClient();
+          await lockClient.rpc('acquire_submission_lock', { p_token: requestBody.token });
+          log('info', 'S7: Advisory lock acquis', { tokenPrefix: requestBody.token.substring(0, 8) + '...' });
+        } catch (lockError) {
+          log('warn', 'S7: Advisory lock indisponible -- migration non appliquée ou erreur DB', {
+            error: String(lockError)
+          });
+        }
+      }
+
       // ÉTAPE 1: Résolution de la réservation
-      log('info', '🎯 ÉTAPE 1/5: Résolution de la réservation');
+      log('info', ' ÉTAPE 1/5: Résolution de la réservation');
       
-      // ✅ NOUVEAU : Gestion de l'action host_direct
+      //  NOUVEAU : Gestion de l'action host_direct
       if (requestBody.action === 'host_direct') {
         log('info', 'Action host_direct détectée, récupération directe de la réservation');
         
@@ -3963,11 +4005,11 @@ serve(async (req) => {
           guestName: booking.guestName
         });
         
-        // ✅ Pour host_direct, on continue avec la sauvegarde des documents et la génération
+        //  Pour host_direct, on continue avec la sauvegarde des documents et la génération
         // Les guests ont déjà été créés par le front-end, donc on va juste sauvegarder les documents uploadés
-        log('info', '🔄 [HOST_DIRECT] Continuation avec sauvegarde documents et génération contrat/police');
+        log('info', ' [HOST_DIRECT] Continuation avec sauvegarde documents et génération contrat/police');
         
-        // ✅ CRITIQUE : Vérifier que les guests sont bien en base avant de générer les documents
+        //  CRITIQUE : Vérifier que les guests sont bien en base avant de générer les documents
         const supabaseCheck = await getServerClient();
         const { data: verifyGuests, error: verifyError } = await supabaseCheck
           .from('guests')
@@ -3975,21 +4017,21 @@ serve(async (req) => {
           .eq('booking_id', bookingId);
         
         if (verifyError) {
-          log('error', '❌ [HOST_DIRECT] Erreur vérification guests:', { error: verifyError });
+          log('error', ' [HOST_DIRECT] Erreur vérification guests:', { error: verifyError });
           throw new Error(`Erreur vérification guests: ${verifyError.message}`);
         }
         
-        log('info', '✅ [HOST_DIRECT] Vérification guests en base:', {
+        log('info', ' [HOST_DIRECT] Vérification guests en base:', {
           count: verifyGuests?.length || 0,
           guests: verifyGuests?.map(g => ({ id: g.id, full_name: g.full_name }))
         });
         
         if (!verifyGuests || verifyGuests.length === 0) {
-          log('error', '❌ [HOST_DIRECT] Aucun guest trouvé en base pour ce booking!', { bookingId });
+          log('error', ' [HOST_DIRECT] Aucun guest trouvé en base pour ce booking!', { bookingId });
           throw new Error('Aucun guest trouvé en base de données. Les guests doivent être créés avant la génération des documents.');
         }
       }
-      // ✅ NOUVEAU : Gestion de l'action create_ics_booking
+      //  NOUVEAU : Gestion de l'action create_ics_booking
       else if (requestBody.action === 'create_ics_booking') {
         log('info', 'Action create_ics_booking détectée, récupération de la réservation ICS existante');
         
@@ -4064,19 +4106,19 @@ serve(async (req) => {
         });
       }
       
-      // ✅ NOUVEAU : Distinction entre trois types de réservations
-      log('info', '🔍 Détection du type de réservation', {
+      //  NOUVEAU : Distinction entre trois types de réservations
+      log('info', ' Détection du type de réservation', {
         airbnbCode: requestBody.airbnbCode,
         hasAirbnbCode: !!requestBody.airbnbCode,
         isIndependent: requestBody.airbnbCode === 'INDEPENDENT_BOOKING' || !requestBody.airbnbCode,
         isICS_DIRECT: requestBody.airbnbCode === 'ICS_DIRECT'
       });
 
-      // ✅ ISOLATION HÔTE : Lire le token avec sa propriété pour garantir que
+      //  ISOLATION HÔTE : Lire le token avec sa propriété pour garantir que
       // la soumission ne peut pas toucher une propriété différente de celle du token.
       const supabaseClient = await getServerClient();
       // Note : `booking` n'est pas encore défini ici (il sera résolu juste en dessous).
-      // La vérification croisée token.property_id ↔ booking.property_id se fait dans
+      // La vérification croisée token.property_id  booking.property_id se fait dans
       // saveGuestDataInternal (après résolution). Ici on lit seulement les métadonnées.
       let tokenDataWithMetadata: any = null;
 
@@ -4106,7 +4148,7 @@ serve(async (req) => {
       const existingBookingIdFromToken = bookingIdFromMeta || bookingIdFromColumn;
       const linkType = metadata?.linkType;
       
-      // ✅ CORRIGÉ : Utiliser le bookingId du token si disponible (réservation ICS créée lors de la génération du lien)
+      //  CORRIGÉ : Utiliser le bookingId du token si disponible (réservation ICS créée lors de la génération du lien)
       if (existingBookingIdFromToken && linkType === 'ics_direct') {
         const formCheckIn = requestBody.bookingData?.checkIn
           ? extractDateOnly(requestBody.bookingData.checkIn)
@@ -4129,7 +4171,7 @@ serve(async (req) => {
               tokenBookingRow.check_out_date !== formCheckOut)
           ) {
             useFormDatesInsteadOfTokenBooking = true;
-            log('warn', 'Dates formulaire invité ≠ dates du booking_id du token — nouveau séjour par dates invité', {
+            log('warn', 'Dates formulaire invité  dates du booking_id du token -- nouveau séjour par dates invité', {
               tokenBookingId: existingBookingIdFromToken,
               tokenDates: `${tokenBookingRow.check_in_date} → ${tokenBookingRow.check_out_date}`,
               formDates: `${formCheckIn} → ${formCheckOut}`,
@@ -4191,7 +4233,7 @@ serve(async (req) => {
         log('info', 'Réservation via lien ICS avec code détectée, résolution avec dates prédéfinies');
         booking = await resolveBookingInternal(requestBody.token, requestBody.airbnbCode);
         
-        // ✅ CORRECTION : S'assurer que les dates sont bien définies pour les liens ICS
+        //  CORRECTION : S'assurer que les dates sont bien définies pour les liens ICS
         if (!booking.checkIn || !booking.checkOut) {
           log('error', 'Dates manquantes pour réservation ICS', { 
             hasCheckIn: !!booking.checkIn, 
@@ -4215,13 +4257,13 @@ serve(async (req) => {
         typeof nFromReq === 'number' && !Number.isNaN(nFromReq) ? nFromReq : 0
       );
       
-      // ✅ CORRIGÉ : Vérifier si le booking a déjà été traité (incluant 'pending')
+      //  CORRIGÉ : Vérifier si le booking a déjà été traité (incluant 'pending')
       // Note: supabaseClient a déjà été déclaré ci-dessus
-      // ✅ IMPORTANT : Si booking.bookingId existe déjà, on l'utilise directement
+      //  IMPORTANT : Si booking.bookingId existe déjà, on l'utilise directement
       let existingBooking;
       
       if (booking.bookingId) {
-        // ✅ PRIORITÉ 1 : Utiliser le bookingId si disponible (réservation ICS créée lors de la génération du lien)
+        //  PRIORITÉ 1 : Utiliser le bookingId si disponible (réservation ICS créée lors de la génération du lien)
         log('info', 'Booking ID disponible depuis la résolution', { bookingId: booking.bookingId });
         const { data } = await supabaseClient
           .from('bookings')
@@ -4252,7 +4294,7 @@ serve(async (req) => {
         existingBooking = data;
       }
         
-      // ✅ CORRIGÉ : Vérifier TOUS les statuts actifs, pas seulement 'confirmed' et 'completed'
+      //  CORRIGÉ : Vérifier TOUS les statuts actifs, pas seulement 'confirmed' et 'completed'
       if (existingBooking) {
         log('info', 'Booking existant trouvé', {
           bookingId: existingBooking.id,
@@ -4260,28 +4302,28 @@ serve(async (req) => {
           source: booking.bookingId ? 'bookingId' : 'booking_reference'
         });
         
-        // ✅ Si le booking est en statut actif, on le réutilise
+        //  Si le booking est en statut actif, on le réutilise
         if (existingBooking.status === 'pending' || 
             existingBooking.status === 'confirmed' || 
             existingBooking.status === 'completed') {
           log('info', `Booking ${existingBooking.id} already exists (${existingBooking.status}), réutilisation et mise à jour des données`);
           
-          // ✅ CORRIGÉ : Passer le bookingId existant à saveGuestDataInternal pour synchronisation
+          //  CORRIGÉ : Passer le bookingId existant à saveGuestDataInternal pour synchronisation
           booking.bookingId = existingBooking.id;
           
-          // ✅ CORRIGÉ : Continuer quand même pour mettre à jour les données (documents, guests, etc.)
+          //  CORRIGÉ : Continuer quand même pour mettre à jour les données (documents, guests, etc.)
           // mais utiliser le bookingId existant pour éviter les doublons
           log('info', 'Continuer avec la mise à jour des données pour le booking existant', { bookingId: existingBooking.id });
         }
         
-        // ✅ Si le booking est 'cancelled' ou 'rejected', on peut en créer un nouveau
+        //  Si le booking est 'cancelled' ou 'rejected', on peut en créer un nouveau
         if (existingBooking.status === 'cancelled' || existingBooking.status === 'rejected') {
           log('info', 'Booking existant annulé/rejeté, création d\'un nouveau');
           existingBooking = null; // Réinitialiser pour permettre la création
         }
       }
       
-      // ✅ NOUVEAU : Vérifier les conflits de dates AVANT de créer le booking
+      //  NOUVEAU : Vérifier les conflits de dates AVANT de créer le booking
       try {
         const { data: conflicts } = await supabaseClient
           .rpc('check_booking_conflicts', {
@@ -4309,18 +4351,18 @@ serve(async (req) => {
       }
 
       // ÉTAPE 2: Sauvegarde des données
-      log('info', '🎯 ÉTAPE 2/5: Sauvegarde des données invité');
+      log('info', ' ÉTAPE 2/5: Sauvegarde des données invité');
       
-      // ✅ NOUVEAU : Pour host_direct, les guests et documents ont déjà été créés par le front-end
+      //  NOUVEAU : Pour host_direct, les guests et documents ont déjà été créés par le front-end
       // On saute donc saveGuestDataInternal et on passe directement à la génération des documents
       if (requestBody.action === 'host_direct') {
-        log('info', '🔄 [HOST_DIRECT] Skipping saveGuestDataInternal - guests et documents déjà créés par le front-end');
+        log('info', ' [HOST_DIRECT] Skipping saveGuestDataInternal - guests et documents déjà créés par le front-end');
         // Les documents ont déjà été uploadés via DocumentStorageService dans le front-end
         // bookingId a déjà été défini lors de la récupération de la réservation
         // On passe directement à la génération du contrat et de la fiche de police
-        log('info', '🔄 [HOST_DIRECT] BookingId déjà défini:', { bookingId });
+        log('info', ' [HOST_DIRECT] BookingId déjà défini:', { bookingId });
         
-        // ✅ Récupérer les URLs des documents d'identité déjà uploadés
+        //  Récupérer les URLs des documents d'identité déjà uploadés
         const supabase = await getServerClient();
         const { data: uploadedDocs } = await supabase
           .from('uploaded_documents')
@@ -4328,7 +4370,7 @@ serve(async (req) => {
           .eq('booking_id', bookingId)
           .in('document_type', ['identity', 'identity_upload', 'id-document', 'passport']);
         
-        log('info', '📄 [HOST_DIRECT] Recherche documents d\'identité', { 
+        log('info', ' [HOST_DIRECT] Recherche documents d\'identité', { 
           bookingId, 
           docsCount: uploadedDocs?.length || 0,
           docs: uploadedDocs 
@@ -4336,16 +4378,16 @@ serve(async (req) => {
         
         if (uploadedDocs && uploadedDocs.length > 0) {
           identityUrl = uploadedDocs[0].document_url;
-          log('info', '✅ [HOST_DIRECT] Document d\'identité récupéré', { 
+          log('info', ' [HOST_DIRECT] Document d\'identité récupéré', { 
             identityUrl,
             documentType: uploadedDocs[0].document_type,
             totalDocs: uploadedDocs.length
           });
         } else {
-          log('warn', '⚠️ [HOST_DIRECT] Aucun document d\'identité trouvé pour ce booking');
+          log('warn', ' [HOST_DIRECT] Aucun document d\'identité trouvé pour ce booking');
         }
       } else {
-      // ✅ CORRIGÉ : S'assurer que booking.bookingId est défini si une réservation existe
+      //  CORRIGÉ : S'assurer que booking.bookingId est défini si une réservation existe
       // Cela permet à saveGuestDataInternal d'utiliser directement la réservation existante
       if (existingBooking && existingBooking.status !== 'cancelled' && existingBooking.status !== 'rejected') {
         booking.bookingId = existingBooking.id;
@@ -4362,20 +4404,48 @@ serve(async (req) => {
       log('info', 'Booking ID sauvegardé avec succès', { bookingId });
       }
       
-      // ✅ VÉRIFICATION CRITIQUE : S'assurer que bookingId est défini avant de continuer
       if (!bookingId) {
-        log('error', '❌ CRITICAL: bookingId is not defined before document generation');
+        log('error', ' CRITICAL: bookingId is not defined before document generation');
         throw new Error('bookingId manquant avant la génération des documents');
       }
 
+      // S5 -- Garantir que tous les guests sont committés avant de générer les PDF.
+      // Si le count ne correspond pas, on attend 500 ms et on réessaie une fois.
+      try {
+        const s5Client = await getServerClient();
+        const expectedCount = guestInfosForSave.length;
+        const { count: committedCount } = await s5Client
+          .from('guests')
+          .select('id', { count: 'exact', head: true })
+          .eq('booking_id', bookingId);
+
+        if (committedCount !== expectedCount) {
+          log('warn', 'S5: count guests != guestInfos après saveGuestDataInternal -- attente 500 ms', {
+            expected: expectedCount,
+            actual: committedCount,
+            bookingId
+          });
+          await new Promise(r => setTimeout(r, 500));
+          const { count: retried } = await s5Client
+            .from('guests')
+            .select('id', { count: 'exact', head: true })
+            .eq('booking_id', bookingId);
+          log('info', 'S5: count après retry', { retried, expected: expectedCount });
+        } else {
+          log('info', 'S5: guests tous committés avant génération PDF', { count: committedCount });
+        }
+      } catch (s5Err) {
+        log('warn', 'S5: vérification count ignorée (non bloquant)', { error: String(s5Err) });
+      }
+
       // ÉTAPE 3, 4 & 5: Génération des documents
-      log('info', '🎯 ÉTAPE 3-5/5: Génération des documents');
+      log('info', ' ÉTAPE 3-5/5: Génération des documents');
       
       const documentPromises: Promise<string>[] = [
         generateContractInternal(bookingId, requestBody.signature)
       ];
 
-      // ✅ CORRECTION : Générer la fiche de police avec la MÊME signature que le contrat
+      //  CORRECTION : Générer la fiche de police avec la MÊME signature que le contrat
       if (!requestBody.skipPolice) {
         documentPromises.push(
           generatePoliceFormsInternal(bookingId, requestBody.signature).catch(error => {
@@ -4385,16 +4455,16 @@ serve(async (req) => {
         );
       }
 
-      // ❌ DÉSACTIVÉ : Génération automatique des documents d'identité formatés
+      //  DÉSACTIVÉ : Génération automatique des documents d'identité formatés
       // On affiche uniquement les documents uploadés par l'invité (scans/photos)
       log('info', 'Documents d\'identité uploadés seront utilisés (pas de génération automatique)');
 
       const documentResults = await Promise.all(documentPromises);
       contractUrl = documentResults[0];
       policeUrl = documentResults[1] || '';
-      identityUrl = documentResults[2] || '';  // ✅ AJOUT
+      identityUrl = documentResults[2] || '';  //  AJOUT
       
-      log('info', '✅ Documents générés:', {
+      log('info', ' Documents générés:', {
         hasContract: !!contractUrl,
         hasPolice: !!policeUrl,
         hasIdentity: !!identityUrl,
@@ -4404,21 +4474,21 @@ serve(async (req) => {
         policeUrlPreview: policeUrl ? policeUrl.substring(0, 100) + '...' : null
       });
       
-      // ✅ VALIDATION CRITIQUE : Vérifier que les documents ont bien été générés
+      //  VALIDATION CRITIQUE : Vérifier que les documents ont bien été générés
       if (!contractUrl) {
-        log('error', '❌ [CRITICAL] Contrat non généré!', { bookingId });
+        log('error', ' [CRITICAL] Contrat non généré!', { bookingId });
         throw new Error('Échec génération du contrat');
       }
       
       if (!policeUrl && !requestBody.skipPolice) {
-        log('warn', '⚠️ [WARNING] Fiche de police non générée', { bookingId });
+        log('warn', ' [WARNING] Fiche de police non générée', { bookingId });
       }
 
       // ÉTAPE 5: Envoi de l'email (optionnel et conditionnel)
-      // ✅ Cas host_direct : l'email n'est pas pris en compte, pas d'envoi au guest
+      //  Cas host_direct : l'email n'est pas pris en compte, pas d'envoi au guest
       const skipEmailForThisRequest = requestBody.skipEmail || requestBody.action === 'host_direct';
       if (!skipEmailForThisRequest && !requestBody.generateOnly) {
-        log('info', '🎯 ÉTAPE 5/5: Vérification envoi email');
+        log('info', ' ÉTAPE 5/5: Vérification envoi email');
         
         // Vérifier si l'email est fourni
         if (primaryGuestInfo?.email && primaryGuestInfo.email.trim()) {
@@ -4439,7 +4509,7 @@ serve(async (req) => {
           emailSent = false;
         }
       } else {
-        log('info', '🎯 ÉTAPE 5/5: Envoi email ignoré (options)');
+        log('info', ' ÉTAPE 5/5: Envoi email ignoré (options)');
       }
 
     } catch (stepError) {
@@ -4450,7 +4520,7 @@ serve(async (req) => {
     // 4. FINALISATION
     const processingTime = Date.now() - startTime;
     
-    log('info', '🎯 Finalisation du traitement');
+    log('info', ' Finalisation du traitement');
     await updateFinalStatus(
       bookingId,
       contractUrl,
@@ -4466,19 +4536,19 @@ serve(async (req) => {
       bookingId: bookingId,
       contractUrl: contractUrl,
       policeUrl: policeUrl,
-      identityUrl: identityUrl,  // ✅ AJOUT
+      identityUrl: identityUrl,  //  AJOUT
       emailSent: emailSent,
       documentsCount: requestBody.idDocuments.length,
       processingTime: processingTime
     };
 
-    log('info', '🎉 TRAITEMENT TERMINÉ AVEC SUCCÈS', {
+    log('info', ' TRAITEMENT TERMINÉ AVEC SUCCÈS', {
       result,
       totalTimeMs: processingTime
     });
 
-    // ✅ DEBUG : Log de la structure de result
-    log('info', '🔍 DEBUG: Structure de result', {
+    //  DEBUG : Log de la structure de result
+    log('info', ' DEBUG: Structure de result', {
       hasBookingId: !!result.bookingId,
       hasContractUrl: !!result.contractUrl,
       hasPoliceUrl: !!result.policeUrl,
@@ -4486,9 +4556,9 @@ serve(async (req) => {
       resultType: typeof result
     });
 
-    // ✅ CORRECTION : Vérifier que result a les bonnes propriétés
+    //  CORRECTION : Vérifier que result a les bonnes propriétés
     if (!result.bookingId) {
-      log('error', '❌ CRITICAL: result.bookingId is missing', {
+      log('error', ' CRITICAL: result.bookingId is missing', {
         result,
         resultKeys: Object.keys(result),
         resultType: typeof result
@@ -4502,13 +4572,13 @@ serve(async (req) => {
         bookingId: result.bookingId,
         contractUrl: result.contractUrl,
         policeUrl: result.policeUrl,
-        identityUrl: result.identityUrl,  // ✅ AJOUT
+        identityUrl: result.identityUrl,  //  AJOUT
         documentUrl: result.contractUrl, // Compatibilité
         booking: {
           ...booking,
           locked: true
         },
-        // ✅ CORRECTION : Inclure les dates de réservation pour les liens ICS
+        //  CORRECTION : Inclure les dates de réservation pour les liens ICS
         bookingDates: {
           checkIn: booking.checkIn,
           checkOut: booking.checkOut,
@@ -4522,7 +4592,7 @@ serve(async (req) => {
           documentsGenerated: {
             contract: !!result.contractUrl,
             police: !!result.policeUrl,
-            identity: !!result.identityUrl  // ✅ AJOUT
+            identity: !!result.identityUrl  //  AJOUT
           },
           processingTimeMs: result.processingTime,
           completedAt: new Date().toISOString()
@@ -4531,8 +4601,8 @@ serve(async (req) => {
       }
     };
 
-    // ✅ DEBUG : Log de la réponse finale
-    log('info', '🔍 DEBUG: Réponse finale', {
+    //  DEBUG : Log de la réponse finale
+    log('info', ' DEBUG: Réponse finale', {
       hasData: !!responseData.data,
       hasBookingId: !!responseData.data.bookingId,
       dataKeys: Object.keys(responseData.data),
@@ -4565,7 +4635,7 @@ serve(async (req) => {
       );
     }
 
-    log('error', '💥 ERREUR FATALE', {
+    log('error', ' ERREUR FATALE', {
       error: error instanceof Error ? error.message : 'Erreur inconnue',
       stack: error instanceof Error ? error.stack : undefined,
       processingTimeMs: processingTime
@@ -4591,7 +4661,7 @@ serve(async (req) => {
 // =====================================================
 
 // Helper functions for French formatting
-const fmtFR = (d: any) => d ? new Date(d).toLocaleDateString('fr-FR') : '…';
+const fmtFR = (d: any) => d ? new Date(d).toLocaleDateString('fr-FR') : '...';
 const docTypeFR = (t: any) => {
   if (!t) return 'Document';
   const s = t.toLowerCase();
@@ -4670,7 +4740,7 @@ function diffDays(a: string, b: string): number {
   return Math.max(1, Math.ceil((+d2 - +d1) / 86400000));
 }
 
-/** Données formulaire / sanitizeGuestInfo : idNumber, idType, dateOfBirth camelCase — aligné PDF contrat. */
+/** Données formulaire / sanitizeGuestInfo : idNumber, idType, dateOfBirth camelCase -- aligné PDF contrat. */
 function parseGuestDataFromSubmissionPayload(guestData: any, bookingRow: any): any[] {
   if (!guestData || typeof guestData !== 'object') return [];
   let guestsArray: any[] = [];
@@ -4784,16 +4854,16 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     checkOut: b.check_out_date,
     hasProperty: !!b.property,
     guestsCount: b.guests?.length || 0,
-    // ✅ DEBUG : Vérifier que contract_template est bien récupéré
+    //  DEBUG : Vérifier que contract_template est bien récupéré
     hasContractTemplate: !!b.property?.contract_template,
     contractTemplateType: typeof b.property?.contract_template,
     contractTemplateKeys: b.property?.contract_template ? Object.keys(b.property.contract_template) : []
   });
 
-  // ✅ VARIABILISATION COMPLÈTE : Récupération host profile avec toutes les données
+  //  VARIABILISATION COMPLÈTE : Récupération host profile avec toutes les données
   let host = null;
   if (b?.property?.user_id) {
-    // ✅ host_profiles n'a pas de colonne email (email récupéré via contract_template/contact_info)
+    //  host_profiles n'a pas de colonne email (email récupéré via contract_template/contact_info)
     const { data: hp } = await client
       .from('host_profiles')
       .select(`
@@ -4828,11 +4898,11 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
   const owner_identity = prop.owner_identity ?? {};
   const rules = Array.isArray(prop.house_rules) ? prop.house_rules.filter(Boolean) : [];
 
-  // ✅ VARIABILISATION selon la logique frontend : contract_template prioritaire
+  //  VARIABILISATION selon la logique frontend : contract_template prioritaire
   // Priorité: contract_template -> host_profiles -> contact_info -> fallback
   const contractTemplate = prop.contract_template || {};
   
-  // ✅ DEBUG : Log détaillé du contract_template pour vérifier qu'il est bien récupéré
+  //  DEBUG : Log détaillé du contract_template pour vérifier qu'il est bien récupéré
   log('info', '[buildContractContext] Contract template analysis:', {
     hasContractTemplate: !!contractTemplate,
     contractTemplateType: typeof contractTemplate,
@@ -4858,17 +4928,17 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
   const hostPhone = contractTemplate.landlord_phone || host?.phone || contact_info?.phone || null;
   const hostAddress = contractTemplate.landlord_address || host?.address || contact_info?.address || prop.address || null;
   
-  // ✅ Informations entreprise selon configuration frontend
+  //  Informations entreprise selon configuration frontend
   const hostStatus = contractTemplate.landlord_status || 'particulier'; // particulier/entreprise
   const hostCompany = contractTemplate.landlord_company || host?.company_name || contact_info?.company_name || null;
   const hostRegistration = contractTemplate.landlord_registration || host?.tax_id || owner_identity?.ice || null;
   
-  // ✅ Identités fiscales et légales (pour compatibilité)
+  //  Identités fiscales et légales (pour compatibilité)
   const hostCIN = host?.cin || owner_identity?.cin || null;
   const hostICE = hostRegistration || host?.ice || owner_identity?.ice || host?.tax_id || null;
   const hostTaxId = host?.tax_id || owner_identity?.tax_id || null;
 
-  // ✅ VARIABILISATION SIGNATURE selon logique frontend
+  //  VARIABILISATION SIGNATURE selon logique frontend
   let hostSignature = null;
   let hostSignatureType = null;
 
@@ -4896,7 +4966,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     hostSignatureType = 'image';
   }
 
-  // ✅ Signature par réservation : si le host a signé pour cette réservation (dashboard), l'utiliser en dernier recours
+  //  Signature par réservation : si le host a signé pour cette réservation (dashboard), l'utiliser en dernier recours
   if (!hostSignature) {
     const { data: hostSigRow } = await client
       .from('host_signatures')
@@ -4943,7 +5013,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       ? parseGuestDataFromSubmissionPayload(submissionRows[0].guest_data, b)
       : [];
 
-  // Relation booking → guests puis table (souvent incomplet si colonnes non remplies à l’upsert)
+  // Relation booking → guests puis table (souvent incomplet si colonnes non remplies à l'upsert)
   let guests = Array.isArray(b.guests) ? b.guests : [];
 
   if (!guests.length) {
@@ -4966,7 +5036,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     String(row.date_of_birth ?? '').trim() === '' ||
     String(row.document_number ?? '').trim() === '';
 
-  // Priorité guest_submissions : la table `guests` peut n’avoir que full_name (contrat avec placeholders sinon)
+  // Priorité guest_submissions : la table `guests` peut n'avoir que full_name (contrat avec placeholders sinon)
   if (submissionGuests.length > 0 && (guests.length === 0 || dbGuestSparse(guests[0]))) {
     guests = submissionGuests;
     log('info', '[buildContractContext] Guests issus de guest_submissions (priorité sur relation/table)', {
@@ -4980,7 +5050,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     });
   }
   
-  // ✅ CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests
+  //  CRITIQUE : Fallback final - utiliser les données du booking si toujours pas de guests
   const hasGuestName = b.guest_name && b.guest_name.trim().length > 0;
   log('info', '[buildContractContext] Vérification fallback final guest', {
     hasGuests: guests.length > 0,
@@ -4991,7 +5061,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
   });
   
   if (!guests.length && hasGuestName) {
-    log('warn', '[buildContractContext] ⚠️ Création guest virtuel - DONNÉES INCOMPLÈTES - Le contrat ne sera pas entièrement variabilisé');
+    log('warn', '[buildContractContext]  Création guest virtuel - DONNÉES INCOMPLÈTES - Le contrat ne sera pas entièrement variabilisé');
     guests = [{
       full_name: b.guest_name.trim(),
       email: b.guest_email || null,
@@ -5005,11 +5075,11 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       motif_sejour: 'TOURISME',
       adresse_personnelle: ''
     }];
-    log('info', '[buildContractContext] ✅ Guest virtuel créé depuis booking (DONNÉES INCOMPLÈTES)', { 
+    log('info', '[buildContractContext]  Guest virtuel créé depuis booking (DONNÉES INCOMPLÈTES)', { 
       name: guests[0].full_name,
       email: guests[0].email,
       phone: guests[0].phone,
-      warning: '⚠️ date_of_birth, nationality, document_number manquants - Le contrat ne sera pas entièrement variabilisé'
+      warning: ' date_of_birth, nationality, document_number manquants - Le contrat ne sera pas entièrement variabilisé'
     });
     }
   
@@ -5023,7 +5093,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     } : null
   });
 
-  // ✅ VARIABILISATION : Règles de maison avec fallback intelligent
+  //  VARIABILISATION : Règles de maison avec fallback intelligent
   const houseRules = rules.length ? rules : [
     'Aucun invité non autorisé ou fête',
     'Interdiction de fumer à l\'intérieur du bien',
@@ -5034,7 +5104,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
 
   const dDays = diffDays(b.check_in_date, b.check_out_date);
 
-  // ✅ CONTEXTE ENRICHI selon la structure frontend
+  //  CONTEXTE ENRICHI selon la structure frontend
   const ctx = {
     host: {
       // Informations principales
@@ -5126,7 +5196,7 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
       adresse_personnelle: g.adresse_personnelle || g.adressePersonnelle || '',
       email: g.email || ''
     })),
-    // ✅ Métadonnées pour le template
+    //  Métadonnées pour le template
     metadata: {
       generated_at: new Date().toISOString(),
       template_version: '2.0',
@@ -5179,48 +5249,62 @@ async function ensureBucketExists(client: any, bucket: string) {
 }
 
 // Upload PDF to Storage and return public/signed URL
-async function uploadPdfToStorage(client: any, bookingId: string, pdfBytes: Uint8Array, documentType: string = 'contract'): Promise<string> {
+// S4 -- Retourne à la fois l'URL publique/signée ET le hash SHA-256 des bytes PDF.
+// Le hash permet à saveDocumentToDatabase de détecter les doublons de contenu
+// même si l'URL Storage change (timestamp dans le chemin).
+async function uploadPdfToStorage(
+  client: any,
+  bookingId: string,
+  pdfBytes: Uint8Array,
+  documentType: string = 'contract'
+): Promise<{ url: string; contentHash: string }> {
   log('info', `Uploading ${documentType} PDF to Storage`);
-  
-  // ✅ CORRECTION : Utiliser le bucket guest-documents pour compatibilité interface hôte
+
+  // Calculer le hash SHA-256 avant l'upload (S4)
+  // pdfBytes.slice(0) crée une copie avec ArrayBuffer concret (requis par crypto.subtle en Deno strict)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', pdfBytes.slice(0));
+  const contentHash = Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
   const { name: bucket, isPublic } = await ensureBucketExists(client, 'guest-documents');
   const path = `${documentType}/${bookingId}/${documentType}-${Date.now()}.pdf`;
-  
+
   const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-  
+
   const { error: upErr } = await client.storage
     .from(bucket)
-    .upload(path, blob, {
-      upsert: true,
-      contentType: 'application/pdf'
-    });
-    
+    .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+
   if (upErr) throw upErr;
-  
+
+  let url: string;
   if (isPublic) {
     const { data: pub } = client.storage.from(bucket).getPublicUrl(path);
     if (pub?.publicUrl) {
       log('info', 'PDF uploaded, returning PUBLIC URL');
-      return pub.publicUrl;
+      url = pub.publicUrl;
+    } else {
+      throw new Error('Public URL unavailable');
     }
+  } else {
+    const { data: signed, error: signErr } = await client.storage
+      .from(bucket)
+      .createSignedUrl(path, 3600);
+    if (signErr || !signed?.signedUrl) throw signErr ?? new Error('No signed URL');
+    log('info', 'PDF uploaded, returning SIGNED URL');
+    url = signed.signedUrl;
   }
-  
-  const { data: signed, error: signErr } = await client.storage
-    .from(bucket)
-    .createSignedUrl(path, 3600);
-    
-  if (signErr || !signed?.signedUrl) throw signErr ?? new Error('No signed URL');
-  
-  log('info', 'PDF uploaded, returning SIGNED URL');
-  return signed.signedUrl;
+
+  return { url, contentHash };
 }
 
 // Save document to database with unified approach
-// ✅ CORRECTION MAJEURE : Gestion des versions pour éviter l'écrasement
+//  CORRECTION MAJEURE : Gestion des versions pour éviter l'écrasement
 async function saveDocumentToDatabase(client: any, bookingId: string, documentType: string, documentUrl: string, isSigned: boolean = false) {
   const fileName = `${documentType}-${bookingId}-${Date.now()}.pdf`;
   
-  // ✅ CORRECTION : Gestion intelligente des versions de contrats
+  //  CORRECTION : Gestion intelligente des versions de contrats
   try {
     // Pour les contrats, gérer les versions signées vs non signées
     if (documentType === 'contract') {
@@ -5239,7 +5323,7 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
         
         if (isSigned) {
           if (signedContract) {
-            // ✅ GARDE ANTI-DOUBLON : même URL exacte → no-op (le contrat actuel est identique).
+            //  GARDE ANTI-DOUBLON : même URL exacte → no-op (le contrat actuel est identique).
             // Sans ce garde, chaque resoumission/re-signature créait un doublon dans generated_documents.
             if (signedContract.document_url === documentUrl) {
               log('info', 'Signed contract with identical URL already exists, skipping duplicate insert', {
@@ -5281,7 +5365,7 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
         } else {
           // Nouveau contrat non signé
           if (signedContract) {
-            // ❌ Ne pas remplacer un contrat signé par un non signé
+            //  Ne pas remplacer un contrat signé par un non signé
             log('warn', 'Cannot replace signed contract with unsigned version, returning existing');
             return signedContract;
           } else if (latestContract.document_url === documentUrl) {
@@ -5289,7 +5373,7 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
             log('info', 'Contract with same URL already exists, skipping');
             return latestContract;
           } else {
-            // ✅ Mettre à jour le contrat non signé existant
+            //  Mettre à jour le contrat non signé existant
             log('info', 'Updating existing unsigned contract');
             await client
               .from('generated_documents')
@@ -5303,7 +5387,7 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
         }
       }
     } else if (documentType === 'police') {
-      // ✅ CORRECTION : Pour les fiches de police, REMPLACER l'existante (pas créer de doublon)
+      //  CORRECTION : Pour les fiches de police, REMPLACER l'existante (pas créer de doublon)
       const { data: allExistingPolice } = await client
         .from('generated_documents')
         .select('id, document_url, created_at')
@@ -5319,17 +5403,17 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
           return existingPolice;
         }
         
-        // ✅ CORRECTION : Supprimer TOUTES les anciennes fiches de police pour éviter les doublons
+        //  CORRECTION : Supprimer TOUTES les anciennes fiches de police pour éviter les doublons
         if (allExistingPolice.length > 1) {
           const oldPoliceIds = allExistingPolice.slice(1).map(p => p.id);
-          log('info', '🗑️ Suppression des anciennes fiches de police', { count: oldPoliceIds.length });
+          log('info', ' Suppression des anciennes fiches de police', { count: oldPoliceIds.length });
           await client
             .from('generated_documents')
             .delete()
             .in('id', oldPoliceIds);
         }
         
-        // ✅ Mettre à jour la fiche existante avec la nouvelle URL
+        //  Mettre à jour la fiche existante avec la nouvelle URL
         log('info', 'Updating existing police form with new URL (signed version)');
         await client
           .from('generated_documents')
@@ -5340,7 +5424,7 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
           })
           .eq('id', existingPolice.id);
         
-        // ✅ Mettre à jour aussi uploaded_documents
+        //  Mettre à jour aussi uploaded_documents
         await client
           .from('uploaded_documents')
           .update({
@@ -5354,7 +5438,7 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
         return existingPolice;
       }
     } else if (documentType === 'identity') {
-      // ✅ Pour identity, permettre plusieurs documents (un par invité)
+      //  Pour identity, permettre plusieurs documents (un par invité)
       // Mais vérifier si cette URL exacte existe déjà
       const { data: existingIdentity } = await client
         .from('generated_documents')
@@ -5390,11 +5474,11 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
       }
     }
 
-    // ✅ Générer un nom de fichier basé sur le type de document
+    //  Générer un nom de fichier basé sur le type de document
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const fileName = `${documentType}-${bookingId.substring(0, 8)}-${timestamp}.pdf`;
 
-    log('info', '💾 [SAVE DOCUMENT] Sauvegarde dans les tables', {
+    log('info', ' [SAVE DOCUMENT] Sauvegarde dans les tables', {
       bookingId,
       documentType,
       fileName,
@@ -5424,7 +5508,7 @@ async function saveDocumentToDatabase(client: any, bookingId: string, documentTy
     }
 
     // 2. Sauvegarder aussi dans uploaded_documents pour compatibilité interface hôte
-    // ✅ CORRECTION : Toujours synchroniser avec uploaded_documents
+    //  CORRECTION : Toujours synchroniser avec uploaded_documents
     const { data: existingUploaded } = await client
       .from('uploaded_documents')
       .select('id')
@@ -5659,14 +5743,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   const host = ctx.host;
 
   // Locataire principal (premier invité)
-  // ✅ CORRECTION : Utiliser les données du booking comme fallback si pas de guests
+  //  CORRECTION : Utiliser les données du booking comme fallback si pas de guests
   const mainGuest = guests[0] || {};
   const locataireName = mainGuest.full_name || 
     booking.guest_name || 
     booking.guestName || 
     'Locataire';
   
-  // ✅ Enrichir mainGuest avec les données du booking si manquantes
+  //  Enrichir mainGuest avec les données du booking si manquantes
   if (!mainGuest.full_name && booking.guest_name) {
     mainGuest.full_name = booking.guest_name;
   }
@@ -5699,10 +5783,10 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     bookingGuestPhone: booking.guest_phone
   });
   
-  // ✅ Nom du bailleur selon la variabilisation
+  //  Nom du bailleur selon la variabilisation
   const contractTemplate = ctx.property.contract_template || {};
   
-  // ✅ DEBUG : Log pour vérifier que contract_template est bien utilisé dans generateContractPDF
+  //  DEBUG : Log pour vérifier que contract_template est bien utilisé dans generateContractPDF
   log('info', '[generateContractPDF] Contract template usage:', {
     hasContractTemplate: !!contractTemplate,
     contractTemplateType: typeof contractTemplate,
@@ -5723,7 +5807,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     ctx.property.name || 
     'Propriétaire';
 
-  // Configuration PDF (mise en page alignée sur l’aperçu HTML : marges, barres d’article, aération)
+  // Configuration PDF (mise en page alignée sur l'aperçu HTML : marges, barres d'article, aération)
   const pageWidth = 612, pageHeight = 792;
   const margin = 50;
   const maxWidth = pageWidth - margin * 2;
@@ -5743,9 +5827,9 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   const usesUnicodeFonts = pdfFonts.usesUnicode;
   const pdfText = (t: string) => textForPdfDraw(String(t ?? ''), usesUnicodeFonts);
   if (!usesUnicodeFonts) {
-    log('warn', '[CONTRACT] Polices Unicode indisponibles — translittération WinAnsi activée');
+    log('warn', '[CONTRACT] Polices Unicode indisponibles -- translittération WinAnsi activée');
   } else {
-    log('info', '[CONTRACT] Polices Noto Sans chargées (support İ, caractères étendus)');
+    log('info', '[CONTRACT] Polices Noto Sans chargées (support , caractères étendus)');
   }
 
   let pages: any[] = [];
@@ -5852,7 +5936,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     y -= lineGap + 12;
   }
 
-  /** Titre d’article avec barre verticale (comme l’aperçu HTML) */
+  /** Titre d'article avec barre verticale (comme l'aperçu HTML) */
   function drawArticleTitle(text: string) {
     const titleX = margin + articleBarWidth + articleBarGap;
     const barHeight = sectionSize + 6;
@@ -5888,7 +5972,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   // Première page
   addPage();
 
-  // Titre principal (traduit), centré comme l’aperçu HTML
+  // Titre principal (traduit), centré comme l'aperçu HTML
   ensureSpace(titleSize + 10);
   const tw1 = fontBold.widthOfTextAtSize(pdfText(L.titleLine1), titleSize);
   currentPage.drawText(pdfText(L.titleLine1), {
@@ -6008,14 +6092,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   
   rulesToDisplay.forEach((rule: string) => {
     if (rule && rule.trim()) {
-      drawParagraphIndented(`• ${rule.trim()}`, 6);
+      drawParagraphIndented(` ${rule.trim()}`, 6);
       y -= 4;
     }
   });
   
   if (property.contact?.phone || host.phone) {
     const contactPhone = property.contact?.phone || host.phone;
-    drawParagraphIndented(`• ${L.emergencyContact} ${contactPhone}`, 6);
+    drawParagraphIndented(` ${L.emergencyContact} ${contactPhone}`, 6);
     y -= 4;
   }
 
@@ -6064,10 +6148,10 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
   const col2 = margin + signatureBoxWidth + colGap;
 
   // Boxes signatures
-  // ✅ NOUVEAU : Suppression des cadres de signature
+  //  NOUVEAU : Suppression des cadres de signature
   // Les rectangles de signature ont été supprimés pour un contrat plus propre
 
-  // ✅ SIGNATURE DU BAILLEUR - Dans le rectangle de gauche
+  //  SIGNATURE DU BAILLEUR - Dans le rectangle de gauche
   const hostSignature = ctx.host.signature;
   const hostSignatureType = ctx.host.signatureType ?? ctx.host.signature_type;
   
@@ -6146,10 +6230,10 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     });
   }
   
-  // ✅ SIGNATURE DU LOCATAIRE - Dans le rectangle de droite
+  //  SIGNATURE DU LOCATAIRE - Dans le rectangle de droite
   if (guestSignatureData) {
     try {
-      log('info', '[CONTRACT] 🔍 Début intégration signature guest...', {
+      log('info', '[CONTRACT]  Début intégration signature guest...', {
         dataLength: guestSignatureData.length,
         startsWithData: guestSignatureData.startsWith('data:'),
         startsWithHttp: guestSignatureData.startsWith('http'),
@@ -6164,14 +6248,14 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
           throw new Error('Base64 data manquante dans la signature guest');
         }
         guestImageBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-        log('info', '[CONTRACT] ✅ Signature guest décodée depuis base64', { bytesLength: guestImageBytes.length });
+        log('info', '[CONTRACT]  Signature guest décodée depuis base64', { bytesLength: guestImageBytes.length });
       } else {
         const response = await fetch(guestSignatureData);
         if (!response.ok) {
           throw new Error(`Erreur HTTP ${response.status} lors du téléchargement signature guest`);
         }
         guestImageBytes = new Uint8Array(await response.arrayBuffer());
-        log('info', '[CONTRACT] ✅ Signature guest téléchargée depuis URL', { bytesLength: guestImageBytes.length });
+        log('info', '[CONTRACT]  Signature guest téléchargée depuis URL', { bytesLength: guestImageBytes.length });
       }
       
       if (!guestImageBytes || guestImageBytes.length === 0) {
@@ -6179,7 +6263,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
       }
       
       let guestImage;
-      // ✅ CORRECTION : Meilleure détection du format PNG
+      //  CORRECTION : Meilleure détection du format PNG
       const isPng = guestSignatureData.includes('image/png') || 
                     guestSignatureData.includes('png') || 
                     guestSignatureData.includes('PNG');
@@ -6193,7 +6277,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
           log('info', '[CONTRACT] Image signature guest embedée en JPG');
         }
       } catch (embedError) {
-        // ✅ FALLBACK : Essayer l'autre format si le premier échoue
+        //  FALLBACK : Essayer l'autre format si le premier échoue
         log('warn', '[CONTRACT] Premier format échoué, tentative avec l\'autre format...', { 
           triedFormat: isPng ? 'PNG' : 'JPG',
           error: String(embedError)
@@ -6211,7 +6295,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
         }
       }
       
-      // ✅ CORRECTION : Calcul des dimensions adaptatif pour garantir visibilité
+      //  CORRECTION : Calcul des dimensions adaptatif pour garantir visibilité
       const originalWidth = guestImage.width;
       const originalHeight = guestImage.height;
       const maxWidth = signatureBoxWidth - 20;
@@ -6222,7 +6306,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
       const heightRatio = maxHeight / originalHeight;
       const scaleRatio = Math.min(widthRatio, heightRatio, 1.0); // Ne pas agrandir, juste réduire si nécessaire
       
-      // ✅ AMÉLIORATION : S'assurer que la signature a une taille minimum visible
+      //  AMÉLIORATION : S'assurer que la signature a une taille minimum visible
       const minVisibleWidth = 60;
       const minVisibleHeight = 30;
       let finalWidth = Math.max(originalWidth * scaleRatio, minVisibleWidth);
@@ -6232,7 +6316,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
       finalWidth = Math.min(finalWidth, maxWidth);
       finalHeight = Math.min(finalHeight, maxHeight);
       
-      log('info', '[CONTRACT] 📐 Dimensions signature guest calculées', {
+      log('info', '[CONTRACT]  Dimensions signature guest calculées', {
         original: { width: originalWidth, height: originalHeight },
         max: { width: maxWidth, height: maxHeight },
         scaleRatio,
@@ -6240,7 +6324,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
         boxPosition: { x: col2 + 10, y: y - signatureBoxHeight + 10 }
       });
       
-      // ✅ Centrer horizontalement dans la box
+      //  Centrer horizontalement dans la box
       const signatureX = col2 + 10 + (maxWidth - finalWidth) / 2;
       const signatureY = y - signatureBoxHeight + 10 + (maxHeight - finalHeight) / 2;
       
@@ -6251,12 +6335,12 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
         height: finalHeight
       });
       
-      log('info', '[CONTRACT] ✅ Signature du locataire intégrée au PDF', {
+      log('info', '[CONTRACT]  Signature du locataire intégrée au PDF', {
         position: { x: signatureX, y: signatureY },
         dimensions: { width: finalWidth, height: finalHeight }
       });
     } catch (e) {
-      log('error', '[CONTRACT] ❌ Échec intégration signature locataire', { 
+      log('error', '[CONTRACT]  Échec intégration signature locataire', { 
         error: e instanceof Error ? e.message : String(e),
         stack: e instanceof Error ? e.stack : undefined
       });
@@ -6268,7 +6352,7 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
       });
     }
   } else {
-    log('warn', '[CONTRACT] ⚠️ Pas de signature guest fournie, affichage ligne vide');
+    log('warn', '[CONTRACT]  Pas de signature guest fournie, affichage ligne vide');
     currentPage.drawText("_________________", {
       x: col2 + 10,
       y: y - signatureBoxHeight + 30,
@@ -6359,10 +6443,23 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
 
   const pdfBytes = await pdfDoc.save();
   
-  // Upload to Storage and return URL
-  const documentUrl = await uploadPdfToStorage(client, booking.id, pdfBytes);
-  
-  log('info', 'Contract PDF generated and uploaded successfully');
+  // Upload to Storage and return URL (S4: contentHash used by saveDocumentToDatabase)
+  const { url: documentUrl, contentHash } = await uploadPdfToStorage(client, booking.id, pdfBytes);
+  log('info', 'Contract PDF generated and uploaded', { contentHash: contentHash.substring(0, 16) + '...' });
+
+  // Persister le hash dans generated_documents pour la déduplication (S4)
+  try {
+    const hashClient = await getServerClient();
+    await hashClient
+      .from('generated_documents')
+      .update({ content_hash: contentHash })
+      .eq('booking_id', booking.id)
+      .eq('document_type', 'contract')
+      .is('content_hash', null);
+  } catch (hashErr) {
+    log('warn', 'S4: mise à jour content_hash ignorée (colonne absente?)', { error: String(hashErr) });
+  }
+
   return documentUrl;
 }
 
@@ -6376,8 +6473,8 @@ async function generatePoliceFormsPDF(
   client: any, 
   booking: any, 
   isPreview: boolean = false,
-  guestSignatureData?: string | null,  // ✅ NOUVEAU : Signature du guest
-  guestSignedAt?: string | null         // ✅ NOUVEAU : Date signature guest
+  guestSignatureData?: string | null,  //  NOUVEAU : Signature du guest
+  guestSignedAt?: string | null         //  NOUVEAU : Date signature guest
 ): Promise<string> {
   log('info', 'Création PDF fiches de police format officiel marocain...', {
     hasGuestSignature: !!guestSignatureData
@@ -6387,7 +6484,7 @@ async function generatePoliceFormsPDF(
   let property = booking.property || {};
   
   
-  // ✅ AMÉLIORATION : TOUJOURS récupérer contract_template explicitement pour debug
+  //  AMÉLIORATION : TOUJOURS récupérer contract_template explicitement pour debug
   // (Retrait de la condition !property.contract_template pour forcer la récupération)
   if (property.id) {
     log('info', '[Police] Force fetch contract_template for debug...', {
@@ -6402,14 +6499,14 @@ async function generatePoliceFormsPDF(
       .single();
     
     if (propertyError) {
-      log('error', '[Police] ❌ Erreur récupération contract_template:', { 
+      log('error', '[Police]  Erreur récupération contract_template:', { 
         error: propertyError,
         propertyId: property.id,
         message: propertyError.message,
         details: propertyError.details
       });
     } else {
-      log('info', '[Police] ✅ contract_template récupéré:', {
+      log('info', '[Police]  contract_template récupéré:', {
         hasContractTemplate: !!propertyData?.contract_template,
         contractTemplateType: typeof propertyData?.contract_template,
         contractTemplateKeys: propertyData?.contract_template ? Object.keys(propertyData.contract_template) : [],
@@ -6420,14 +6517,14 @@ async function generatePoliceFormsPDF(
       });
       
       property.contract_template = propertyData.contract_template;
-      log('info', '[Police] ✅ contract_template assigné à property');
+      log('info', '[Police]  contract_template assigné à property');
     }
   } else {
-    log('warn', '[Police] ⚠️ property.id manquant, impossible de récupérer contract_template');
+    log('warn', '[Police]  property.id manquant, impossible de récupérer contract_template');
   }
   
-  // ✅ DIAGNOSTIC : Log de la propriété avant génération
-  log('info', '[Police] 🔍 Données propriété COMPLÈTES:', {
+  //  DIAGNOSTIC : Log de la propriété avant génération
+  log('info', '[Police]  Données propriété COMPLÈTES:', {
     hasProperty: !!property,
     propertyId: property.id,
     propertyName: property.name,
@@ -6443,10 +6540,10 @@ async function generatePoliceFormsPDF(
   // Configuration PDF - Format officiel A4 identique au modèle
   const pageWidth = 595.28; // A4 width
   const pageHeight = 841.89; // A4 height
-  const margin = 40; // ✅ RÉDUIT de 50 à 40 pour gagner de l'espace
-  const fontSize = 10; // ✅ RÉDUIT de 11 à 10 pour compacter
-  const titleFontSize = 13; // ✅ RÉDUIT de 14 à 13
-  const fieldHeight = 18; // ✅ RÉDUIT de 22 à 18 pour compacter
+  const margin = 40; //  RÉDUIT de 50 à 40 pour gagner de l'espace
+  const fontSize = 10; //  RÉDUIT de 11 à 10 pour compacter
+  const titleFontSize = 13; //  RÉDUIT de 14 à 13
+  const fieldHeight = 18; //  RÉDUIT de 22 à 18 pour compacter
 
   // Créer le document PDF
   const pdfDoc = await PDFDocument.create();
@@ -6458,21 +6555,21 @@ async function generatePoliceFormsPDF(
   const policeUsesUnicode = policePdfFonts.usesUnicode;
   const policePdfText = (t: string) => textForPdfDraw(String(t ?? ''), policeUsesUnicode);
   if (!policeUsesUnicode) {
-    log('warn', '[Police] Polices Unicode indisponibles — translittération WinAnsi activée');
+    log('warn', '[Police] Polices Unicode indisponibles -- translittération WinAnsi activée');
   } else {
-    log('info', '[Police] Polices Noto Sans chargées (support İ, caractères étendus)');
+    log('info', '[Police] Polices Noto Sans chargées (support , caractères étendus)');
   }
   
   function getFont(text: string) {
     return pickPdfFont(text, policePdfFonts);
   }
 
-  // ✅ SOLUTION AMÉLIORÉE : Helper function to draw bilingual field avec support arabe et multi-lignes pour longues adresses
+  //  SOLUTION AMÉLIORÉE : Helper function to draw bilingual field avec support arabe et multi-lignes pour longues adresses
   function drawBilingualField(page: any, frenchLabel: string, arabicLabel: string, value: string, x: number, y: number): number {
-    const fontSize = 9; // ✅ RÉDUIT de 11 à 9 pour compacter
-    const baseFieldHeight = 16; // ✅ RÉDUIT de 20 à 16 pour compacter
-    const labelSpacing = 12; // ✅ RÉDUIT de 15 à 12
-    const lineSpacing = 11; // ✅ RÉDUIT de 14 à 11
+    const fontSize = 9; //  RÉDUIT de 11 à 9 pour compacter
+    const baseFieldHeight = 16; //  RÉDUIT de 20 à 16 pour compacter
+    const labelSpacing = 12; //  RÉDUIT de 15 à 12
+    const lineSpacing = 11; //  RÉDUIT de 14 à 11
     
     // Draw French label (left aligned)
     const safeFrenchLabel = policePdfText(frenchLabel);
@@ -6484,11 +6581,11 @@ async function generatePoliceFormsPDF(
       font: font
     });
     
-    // ✅ CORRECTION : Déclarer arabicX en dehors du try/catch
+    //  CORRECTION : Déclarer arabicX en dehors du try/catch
     let arabicX = pageWidth - margin; // Valeur par défaut
     let arabicLabelWidth = 0;
     
-    // ✅ Draw Arabic label (right aligned) avec la police arabe
+    //  Draw Arabic label (right aligned) avec la police arabe
     try {
       const arabicFontToUse = getFont(arabicLabel);
       arabicLabelWidth = arabicFontToUse.widthOfTextAtSize(arabicLabel, fontSize);
@@ -6504,12 +6601,12 @@ async function generatePoliceFormsPDF(
       log('warn', 'Failed to render Arabic label:', { error: String(error), label: arabicLabel });
     }
     
-    // ✅ Calculer l'espace disponible pour la valeur
+    //  Calculer l'espace disponible pour la valeur
     const startX = x + frenchLabelWidth + labelSpacing;
     const endX = Math.max(startX + 50, arabicX - labelSpacing);
     const availableWidth = endX - startX - 4; // Largeur disponible moins marge
     
-    // ✅ NOUVEAU : Gérer les valeurs multi-lignes pour les longues adresses
+    //  NOUVEAU : Gérer les valeurs multi-lignes pour les longues adresses
     if (value && value.trim()) {
       try {
         const safeValue = hasArabicScript(value) ? value : policePdfText(value);
@@ -6517,13 +6614,13 @@ async function generatePoliceFormsPDF(
         let valueSize = fontSize - 1;
         let valueWidth = valueFont.widthOfTextAtSize(safeValue, valueSize);
         
-        // ✅ OPTION 1 : Si la valeur est trop longue, essayer de réduire la taille
+        //  OPTION 1 : Si la valeur est trop longue, essayer de réduire la taille
         while (valueWidth > availableWidth && valueSize > 6) {
           valueSize -= 0.3;
           valueWidth = valueFont.widthOfTextAtSize(safeValue, valueSize);
         }
         
-        // ✅ OPTION 2 : Si toujours trop long même à taille minimale, découper en lignes
+        //  OPTION 2 : Si toujours trop long même à taille minimale, découper en lignes
         if (valueWidth > availableWidth && valueSize <= 6) {
           log('info', `Splitting long value into multiple lines: ${value.substring(0, 50)}...`);
           
@@ -6584,7 +6681,7 @@ async function generatePoliceFormsPDF(
           // Retourner la nouvelle position Y en tenant compte de toutes les lignes
           return y - baseFieldHeight - ((lines.length - 1) * lineSpacing);
         } else {
-          // ✅ OPTION 3 : Valeur sur une seule ligne
+          //  OPTION 3 : Valeur sur une seule ligne
           page.drawLine({
             start: { x: startX, y: y - 5 },
             end: { x: endX, y: y - 5 },
@@ -6646,7 +6743,7 @@ async function generatePoliceFormsPDF(
     const page = pdfDoc.addPage([pageWidth, pageHeight]);
     let yPosition = pageHeight - 50;
     
-    // ✅ EN-TÊTE OFFICIEL - Format EXACT du modèle affiché
+    //  EN-TÊTE OFFICIEL - Format EXACT du modèle affiché
     page.drawText('Fiche d\'arrivee / Arrival form', {
       x: (pageWidth - boldFont.widthOfTextAtSize('Fiche d\'arrivee / Arrival form', titleFontSize)) / 2,
       y: yPosition,
@@ -6656,7 +6753,7 @@ async function generatePoliceFormsPDF(
     yPosition -= 25;
     
     // Titre arabe centré avec la police arabe
-    const arabicTitle = 'ورقة الوصول';
+    const arabicTitle = ' ';
     try {
       const titleWidth = arabicFont.widthOfTextAtSize(arabicTitle, titleFontSize);
       page.drawText(arabicTitle, {
@@ -6670,7 +6767,7 @@ async function generatePoliceFormsPDF(
     }
     yPosition -= 50;
     
-    // ✅ SECTION LOCATAIRE / TENANT - Format EXACT du modèle
+    //  SECTION LOCATAIRE / TENANT - Format EXACT du modèle
     page.drawText('Locataire / Tenant', {
       x: margin,
       y: yPosition,
@@ -6679,7 +6776,7 @@ async function generatePoliceFormsPDF(
     });
     
     try {
-      const arabicSection = 'المستأجر';
+      const arabicSection = '';
       const arabicSectionWidth = arabicFont.widthOfTextAtSize(arabicSection, fontSize + 2);
       page.drawText(arabicSection, {
         x: pageWidth - margin - arabicSectionWidth,
@@ -6692,32 +6789,32 @@ async function generatePoliceFormsPDF(
     }
     yPosition -= 35;
     
-    // ✅ Informations du locataire - EXACT selon le modèle
+    //  Informations du locataire - EXACT selon le modèle
     const fullName = guest.full_name || '';
     const nameParts = fullName.trim().split(' ');
     const lastName = nameParts.length > 0 ? nameParts[nameParts.length - 1] : '';
     const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : '';
     
-    yPosition = drawBilingualField(page, 'Nom / Last name', 'الاسم العائلي', lastName, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Prénom / First name', 'الاسم الشخصي', firstName, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Nom / Last name', ' ', lastName, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Prénom / First name', ' ', firstName, margin, yPosition);
     
     const birthDate = formatDate(guest.date_of_birth);
-    yPosition = drawBilingualField(page, 'Date de naissance / Date of birth', 'تاريخ الولادة', birthDate, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Lieu de naissance / Place of birth', 'مكان الولادة', guest.place_of_birth || '', margin, yPosition);
-    yPosition = drawBilingualField(page, 'Nationalité / Nationality', 'الجنسية', guest.nationality || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Date de naissance / Date of birth', ' ', birthDate, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Lieu de naissance / Place of birth', ' ', guest.place_of_birth || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Nationalité / Nationality', '', guest.nationality || '', margin, yPosition);
     
     const docType = guest.document_type === 'passport' ? 'PASSEPORT / PASSPORT' : 'CNI / ID CARD';
-    yPosition = drawBilingualField(page, 'Type de document / ID type', 'نوع الوثيقة', docType, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Numéro du document / ID number', 'رقم الوثيقة', guest.document_number || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Type de document / ID type', ' ', docType, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Numéro du document / ID number', ' ', guest.document_number || '', margin, yPosition);
     
-    // ✅ Date d'expiration du document - formatée si disponible (document_expiry_date ou document_issue_date en fallback)
+    //  Date d'expiration du document - formatée si disponible (document_expiry_date ou document_issue_date en fallback)
     const expiryDate = formatDate((guest as any).document_expiry_date ?? guest.document_issue_date);
-    yPosition = drawBilingualField(page, 'Date d\'expiration / Date of expiry', 'تاريخ الانتهاء', expiryDate, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Date d\'entrée au Maroc / Date of entry in Morocco', 'تاريخ الدخول إلى المغرب', '', margin, yPosition);
-    yPosition = drawBilingualField(page, 'Profession', 'المهنة', guest.profession || '', margin, yPosition);
-    yPosition = drawBilingualField(page, 'Adresse / Home address', 'العنوان الشخصي', guest.adresse_personnelle || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Date d\'expiration / Date of expiry', ' ', expiryDate, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Date d\'entrée au Maroc / Date of entry in Morocco', '   ', '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Profession', '', guest.profession || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Adresse / Home address', ' ', guest.adresse_personnelle || '', margin, yPosition);
     
-    // ✅ DIAGNOSTIC : Log des données du guest avant affichage
+    //  DIAGNOSTIC : Log des données du guest avant affichage
     log('info', '[Police] Données guest pour fiche:', {
       guestId: guest.id,
       guestName: guest.full_name,
@@ -6728,12 +6825,12 @@ async function generatePoliceFormsPDF(
       allGuestKeys: Object.keys(guest)
     });
     
-    yPosition = drawBilingualField(page, 'Courriel / Email', 'البريد الإلكتروني', guest.email || '', margin, yPosition);
-    yPosition = drawBilingualField(page, 'Numéro de téléphone / Phone number', 'رقم الهاتف', guest.phone || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Courriel / Email', ' ', guest.email || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Numéro de téléphone / Phone number', ' ', guest.phone || '', margin, yPosition);
     
-    yPosition -= 20; // ✅ RÉDUIT de 30 à 20
+    yPosition -= 20; //  RÉDUIT de 30 à 20
     
-    // ✅ SECTION SÉJOUR / STAY - Format EXACT du modèle
+    //  SECTION SÉJOUR / STAY - Format EXACT du modèle
     page.drawText('Sejour / Stay', {
       x: margin,
       y: yPosition,
@@ -6742,7 +6839,7 @@ async function generatePoliceFormsPDF(
     });
     
     try {
-      const arabicStay = 'الإقامة';
+      const arabicStay = '';
       const arabicStayWidth = arabicFont.widthOfTextAtSize(arabicStay, fontSize + 2);
       page.drawText(arabicStay, {
         x: pageWidth - margin - arabicStayWidth,
@@ -6758,16 +6855,16 @@ async function generatePoliceFormsPDF(
     const checkInDate = formatDate(booking.check_in_date);
     const checkOutDate = formatDate(booking.check_out_date);
     
-    yPosition = drawBilingualField(page, 'Date d\'arrivée / Date of arrival', 'تاريخ الوصول', checkInDate, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Date de départ / Date of departure', 'تاريخ المغادرة', checkOutDate, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Motif du séjour / Purpose of stay', 'سبب الإقامة', guest.motif_sejour || 'TOURISME', margin, yPosition);
-    yPosition = drawBilingualField(page, 'Nombre de mineurs / Number of minors', 'عدد القاصرين', '0', margin, yPosition);
-    yPosition = drawBilingualField(page, 'Lieu de provenance / Place of prenance', 'مكان القدوم', '', margin, yPosition);
-    yPosition = drawBilingualField(page, 'Destination', 'الوجهة', property.city || property.address || '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Date d\'arrivée / Date of arrival', ' ', checkInDate, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Date de départ / Date of departure', ' ', checkOutDate, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Motif du séjour / Purpose of stay', ' ', guest.motif_sejour || 'TOURISME', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Nombre de mineurs / Number of minors', ' ', '0', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Lieu de provenance / Place of prenance', ' ', '', margin, yPosition);
+    yPosition = drawBilingualField(page, 'Destination', '', property.city || property.address || '', margin, yPosition);
     
-    yPosition -= 20; // ✅ RÉDUIT de 30 à 20
+    yPosition -= 20; //  RÉDUIT de 30 à 20
     
-    // ✅ SECTION LOUEUR / HOST - Format EXACT du modèle
+    //  SECTION LOUEUR / HOST - Format EXACT du modèle
     page.drawText('Loueur / Host', {
       x: margin,
       y: yPosition,
@@ -6776,7 +6873,7 @@ async function generatePoliceFormsPDF(
     });
     
     try {
-      const arabicHost = 'المؤجر';
+      const arabicHost = '';
       const arabicHostWidth = arabicFont.widthOfTextAtSize(arabicHost, fontSize + 2);
       page.drawText(arabicHost, {
         x: pageWidth - margin - arabicHostWidth,
@@ -6796,14 +6893,14 @@ async function generatePoliceFormsPDF(
     const hostEmail = hostData.email || '';
     const hostPhone = hostData.phone || '';
     
-    yPosition = drawBilingualField(page, 'Adress du bien loué / Rental address', 'عنوان العقار المؤجر', establishmentAddress, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Nom du loueur / Host name', 'اسم المؤجر', hostName, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Adresse email du loueur / Host email', 'البريد الإلكتروني للمؤجر', hostEmail, margin, yPosition);
-    yPosition = drawBilingualField(page, 'Numéro de téléphone du loueur / host phone number', 'رقم هاتف المؤجر', hostPhone, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Adress du bien loué / Rental address', '  ', establishmentAddress, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Nom du loueur / Host name', ' ', hostName, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Adresse email du loueur / Host email', '  ', hostEmail, margin, yPosition);
+    yPosition = drawBilingualField(page, 'Numéro de téléphone du loueur / host phone number', '  ', hostPhone, margin, yPosition);
     
-    yPosition -= 35; // ✅ RÉDUIT de 50 à 35
+    yPosition -= 35; //  RÉDUIT de 50 à 35
     
-    // ✅ SIGNATURE SECTION - Date dynamique avec lieu
+    //  SIGNATURE SECTION - Date dynamique avec lieu
     const today = new Date();
     const signatureDate = today.toLocaleDateString('fr-FR', { 
       day: 'numeric', 
@@ -6824,7 +6921,7 @@ async function generatePoliceFormsPDF(
     });
     yPosition -= 15;
     
-    // ✅ CORRECTION : La fiche de police ne comporte que la signature du LOCATAIRE (guest)
+    //  CORRECTION : La fiche de police ne comporte que la signature du LOCATAIRE (guest)
     const signaturesBaselineY = yPosition;
     
     // SIGNATURE DU LOCATAIRE - Label centré
@@ -6841,7 +6938,7 @@ async function generatePoliceFormsPDF(
     
     // Texte arabe "Signature du locataire" (à droite)
     try {
-      const arabicGuestLabel = 'توقيع المستأجر';
+      const arabicGuestLabel = ' ';
       const arabicLabelWidth = arabicFont.widthOfTextAtSize(arabicGuestLabel, fontSize);
       page.drawText(arabicGuestLabel, {
         x: pageWidth - margin - arabicLabelWidth,
@@ -6855,12 +6952,12 @@ async function generatePoliceFormsPDF(
     
     yPosition = signaturesBaselineY - 10;
     
-    // ✅ NOUVEAU : Vérifier l'espace disponible pour les signatures
+    //  NOUVEAU : Vérifier l'espace disponible pour les signatures
     const footerHeight = 40; // Espace réservé pour le footer CHECKY
     const minSpaceForSignatures = 80; // Espace minimum nécessaire pour les signatures
     const availableSpace = yPosition - footerHeight;
     
-    log('info', '[Police] 📏 Espace disponible pour signatures:', {
+    log('info', '[Police]  Espace disponible pour signatures:', {
       yPosition,
       footerHeight,
       availableSpace,
@@ -6868,19 +6965,19 @@ async function generatePoliceFormsPDF(
       hasEnoughSpace: availableSpace >= minSpaceForSignatures
     });
     
-    // ✅ Calculer la hauteur maximale des signatures en fonction de l'espace disponible
+    //  Calculer la hauteur maximale des signatures en fonction de l'espace disponible
     const maxSignatureHeight = Math.min(60, Math.max(30, availableSpace - 20)); // Entre 30 et 60px
     
-    log('info', '[Police] 📐 Hauteur maximale calculée pour signatures:', {
+    log('info', '[Police]  Hauteur maximale calculée pour signatures:', {
       maxSignatureHeight,
       calculatedFromSpace: availableSpace - 20
     });
     
-    // ✅ CORRECTION CRITIQUE : guestSignatureData est déjà un paramètre de la fonction (ligne 5133)
+    //  CORRECTION CRITIQUE : guestSignatureData est déjà un paramètre de la fonction (ligne 5133)
     // Pas besoin de le redéfinir ici
     
-    // ✅ SIGNATURE DU GUEST (centrée)
-    log('info', '[Police] 🔍 Vérification signature guest pour PDF:', {
+    //  SIGNATURE DU GUEST (centrée)
+    log('info', '[Police]  Vérification signature guest pour PDF:', {
       hasGuestSignatureData: !!guestSignatureData,
       guestSignatureDataType: typeof guestSignatureData,
       guestSignatureDataLength: guestSignatureData?.length || 0,
@@ -6889,13 +6986,13 @@ async function generatePoliceFormsPDF(
       startsWithHttp: guestSignatureData?.startsWith('http') || false
     });
     
-    // ✅ CORRECTION : Condition plus souple - accepte data: ou http
+    //  CORRECTION : Condition plus souple - accepte data: ou http
     const conditionPassed = guestSignatureData && (
       guestSignatureData.startsWith('data:image/') || 
       guestSignatureData.startsWith('data:') ||  // Accepte aussi data: sans image/
       guestSignatureData.startsWith('http')
     );
-    log('info', '[Police] 🔍 Condition d\'affichage signature:', {
+    log('info', '[Police]  Condition d\'affichage signature:', {
       conditionPassed,
       hasData: !!guestSignatureData,
       startsWithDataImage: guestSignatureData?.startsWith('data:image/'),
@@ -6906,7 +7003,7 @@ async function generatePoliceFormsPDF(
     
     if (conditionPassed) {
       try {
-        log('info', '[Police] 🎨 Intégration signature guest...', {
+        log('info', '[Police]  Intégration signature guest...', {
           dataPreview: guestSignatureData.substring(0, 100)
         });
         
@@ -6915,12 +7012,12 @@ async function generatePoliceFormsPDF(
           const base64Data = guestSignatureData.split(',')[1];
           if (!base64Data) throw new Error('Base64 data manquante après la virgule');
           guestSignatureBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-          log('info', '[Police] ✅ Signature décodée depuis base64', { bytesLength: guestSignatureBytes.length });
+          log('info', '[Police]  Signature décodée depuis base64', { bytesLength: guestSignatureBytes.length });
         } else {
           const response = await fetch(guestSignatureData);
           if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
           guestSignatureBytes = new Uint8Array(await response.arrayBuffer());
-          log('info', '[Police] ✅ Signature téléchargée depuis URL', { bytesLength: guestSignatureBytes.length });
+          log('info', '[Police]  Signature téléchargée depuis URL', { bytesLength: guestSignatureBytes.length });
         }
         
         if (guestSignatureBytes && guestSignatureBytes.length > 0) {
@@ -6949,12 +7046,12 @@ async function generatePoliceFormsPDF(
             }
           }
           
-          // ✅ OPTIMISÉ : Dimensions adaptées pour signature centrée et bien visible
+          //  OPTIMISÉ : Dimensions adaptées pour signature centrée et bien visible
           const guestAvailableWidth = pageWidth - (margin * 2);
           const maxW = Math.min(200, guestAvailableWidth * 0.6);
           const maxH = maxSignatureHeight;
           
-          // ✅ CORRECTION : S'assurer d'une taille minimum visible
+          //  CORRECTION : S'assurer d'une taille minimum visible
           const minVisibleWidth = 80;
           const minVisibleHeight = 40;
           
@@ -6966,14 +7063,14 @@ async function generatePoliceFormsPDF(
           w = Math.min(w, maxW);
           h = Math.min(h, maxH);
           
-          log('info', '[Police] 📐 Dimensions signature calculées', {
+          log('info', '[Police]  Dimensions signature calculées', {
             original: { width: guestSigImage.width, height: guestSigImage.height },
             max: { width: maxW, height: maxH },
             scale,
             final: { width: w, height: h }
           });
           
-          // ✅ CORRECTION : Position centrée
+          //  CORRECTION : Position centrée
           const guestSignatureY = signaturesBaselineY - 10 - h;
           const guestSignatureX = (pageWidth - w) / 2; // Centré horizontalement
           
@@ -6985,7 +7082,7 @@ async function generatePoliceFormsPDF(
             height: h
           });
           
-          log('info', '[Police] ✅ Signature guest intégrée avec succès', { 
+          log('info', '[Police]  Signature guest intégrée avec succès', { 
             position: { x: guestSignatureX, y: guestSignatureY }, 
             dimensions: { width: w, height: h }
           });
@@ -6999,7 +7096,7 @@ async function generatePoliceFormsPDF(
               
               page.drawText(dateText, {
                 x: dateX,
-                y: guestSignatureY - 10,  // ✅ Sous la signature du guest
+                y: guestSignatureY - 10,  //  Sous la signature du guest
                 size: fontSize - 2,
                 font: font,
                 color: rgb(0.3, 0.3, 0.3)
@@ -7008,11 +7105,11 @@ async function generatePoliceFormsPDF(
           }
         }
       } catch (err: any) {
-        log('error', '[Police] ❌ Erreur signature guest:', { error: err.message, stack: err.stack });
+        log('error', '[Police]  Erreur signature guest:', { error: err.message, stack: err.stack });
         // Continue sans la signature guest (affiche juste le label)
       }
     } else {
-      log('warn', '[Police] ⚠️ Pas de signature guest disponible ou format invalide:', {
+      log('warn', '[Police]  Pas de signature guest disponible ou format invalide:', {
         hasData: !!guestSignatureData,
         dataType: typeof guestSignatureData,
         dataLength: guestSignatureData?.length || 0,
@@ -7022,7 +7119,7 @@ async function generatePoliceFormsPDF(
       });
     }
     
-    // ✅ Footer CHECKY - Position exacte comme le modèle
+    //  Footer CHECKY - Position exacte comme le modèle
     const footerY = 30;
     const checkyText = 'CHECKY';
     const checkyX = pageWidth - margin - boldFont.widthOfTextAtSize(checkyText, fontSize + 4);
@@ -7043,9 +7140,9 @@ async function generatePoliceFormsPDF(
 
   const pdfBytes = await pdfDoc.save();
   
-  // ✅ NOUVEAU : Sauvegarder chaque fiche de police dans generated_documents
+  //  NOUVEAU : Sauvegarder chaque fiche de police dans generated_documents
   if (booking.id && !isPreview) {
-    log('info', '[Police] 💾 Sauvegarde des fiches de police dans generated_documents...');
+    log('info', '[Police]  Sauvegarde des fiches de police dans generated_documents...');
     
     try {
       // Convertir le PDF en base64
@@ -7095,14 +7192,14 @@ async function generatePoliceFormsPDF(
             .update(policeData)
             .eq('id', existingPolice.id);
           
-          log('info', `[Police] ✅ Fiche mise à jour pour ${guest.full_name}`);
+          log('info', `[Police]  Fiche mise à jour pour ${guest.full_name}`);
         } else {
           // Créer
           await client
             .from('generated_documents')
             .insert({ ...policeData, created_at: new Date().toISOString() });
           
-          log('info', `[Police] ✅ Fiche créée pour ${guest.full_name}`);
+          log('info', `[Police]  Fiche créée pour ${guest.full_name}`);
         }
       }
       
@@ -7118,10 +7215,10 @@ async function generatePoliceFormsPDF(
         })
         .eq('id', booking.id);
       
-      log('info', '[Police] ✅ Toutes les fiches sauvegardées dans generated_documents');
+      log('info', '[Police]  Toutes les fiches sauvegardées dans generated_documents');
       
     } catch (saveError: any) {
-      log('error', '[Police] ❌ Erreur sauvegarde:', {
+      log('error', '[Police]  Erreur sauvegarde:', {
         message: saveError.message,
         stack: saveError.stack
       });
@@ -7129,7 +7226,7 @@ async function generatePoliceFormsPDF(
     }
   }
   
-  // ✅ NOUVEAU : En mode preview, retourner un data URL au lieu d'uploader
+  //  NOUVEAU : En mode preview, retourner un data URL au lieu d'uploader
   if (isPreview || !booking.id) {
     log('info', 'Mode preview : retour d\'un data URL');
     let binary = '';
@@ -7142,9 +7239,8 @@ async function generatePoliceFormsPDF(
   }
   
   // Upload to Storage and return URL with correct document type
-  const documentUrl = await uploadPdfToStorage(client, booking.id, pdfBytes, 'police');
-  
-  log('info', 'Police forms PDF generated and uploaded successfully - Format officiel marocain');
+  const { url: documentUrl, contentHash: policeHash } = await uploadPdfToStorage(client, booking.id, pdfBytes, 'police');
+  log('info', 'Police forms PDF generated and uploaded', { contentHash: policeHash.substring(0, 16) + '...' });
   return documentUrl;
 }
 
@@ -7153,11 +7249,11 @@ async function generatePoliceFormsPDF(
 // =====================================================
 
 // Generate identity documents PDF - Format professionnel
-// ❌ SUPPRIMÉ : Fonction generateIdentityDocumentsPDF - Code mort (258 lignes)
+//  SUPPRIMÉ : Fonction generateIdentityDocumentsPDF - Code mort (258 lignes)
 // Cette fonction n'était jamais appelée car la génération automatique des documents d'identité
 // a été désactivée (ligne 3371). On utilise uniquement les documents uploadés par l'invité.
 //
 // NOTE : Un second `serve()` avait été ajouté ici avec un `default` appelant
 // `processGuestSubmission` (symbole inexistant), ce qui écrasait le handler principal
 // et provoquait « processGuestSubmission is not defined » pour le workflow invité sans action.
-// Le point d’entrée HTTP unique est le `serve` en tête de fichier (~l.2518).
+// Le point d'entrée HTTP unique est le `serve` en tête de fichier (~l.2518).

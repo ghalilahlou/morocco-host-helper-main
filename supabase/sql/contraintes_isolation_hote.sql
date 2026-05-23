@@ -1,3 +1,4 @@
+
 -- =============================================================================
 -- CONTRAINTES D'ISOLATION HÔTE + RÈGLES MÉTIER RÉSERVATIONS
 -- Exécuter dans Supabase SQL Editor (rôle postgres)
@@ -31,18 +32,20 @@ SELECT indexname FROM pg_indexes WHERE indexname = 'idx_one_active_token_per_boo
 CREATE OR REPLACE FUNCTION public.check_token_booking_property_match()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
-  token_prop_id text;
+  booking_prop_id uuid;
 BEGIN
-  -- Si le booking_id est défini sur le token, vérifier que la propriété correspond
+  -- Si le booking_id est défini sur le token, vérifier que la propriété correspond.
+  -- pvt.booking_id est TEXT, pvt.property_id est UUID, bookings.property_id est UUID.
   IF NEW.booking_id IS NOT NULL AND NEW.property_id IS NOT NULL THEN
-    SELECT property_id::text INTO token_prop_id
+    SELECT property_id INTO booking_prop_id
     FROM public.bookings
     WHERE id = NEW.booking_id::uuid;
 
-    IF token_prop_id IS NOT NULL AND token_prop_id <> NEW.property_id THEN
+    IF booking_prop_id IS NOT NULL AND booking_prop_id <> NEW.property_id THEN
       RAISE EXCEPTION
-        'ISOLATION VIOLATION: token.property_id (%) ≠ booking.property_id (%). Un token ne peut référencer que la propriété à laquelle il appartient.',
-        NEW.property_id, token_prop_id;
+        'ISOLATION VIOLATION: token.property_id (%) ≠ booking.property_id (%). '
+        'Un token ne peut référencer que la propriété à laquelle il appartient.',
+        NEW.property_id, booking_prop_id;
     END IF;
   END IF;
   RETURN NEW;
@@ -56,11 +59,12 @@ ON public.property_verification_tokens
 FOR EACH ROW EXECUTE FUNCTION public.check_token_booking_property_match();
 
 -- 2.2 Vérification préalable : y a-t-il des tokens actuellement incohérents ?
+-- (pvt.booking_id = TEXT → cast ::uuid ; pvt.property_id = UUID = b.property_id)
 SELECT pvt.id, pvt.property_id AS token_property, b.property_id AS booking_property
 FROM public.property_verification_tokens pvt
 JOIN public.bookings b ON b.id = pvt.booking_id::uuid
 WHERE pvt.booking_id IS NOT NULL
-  AND pvt.property_id <> b.property_id::text;
+  AND pvt.property_id <> b.property_id;
 -- Attendu : 0 lignes
 
 -- =============================================================================

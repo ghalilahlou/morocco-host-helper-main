@@ -33,30 +33,27 @@ export class EdgeClient {
 
     try {
       const response = await fetch(url, { ...options, headers });
-      const text = await response.text();
 
       let data: T | undefined;
       try {
-        data = text ? JSON.parse(text) : undefined;
-      } catch (jsonError) {
-        console.warn("EdgeClient: Failed to parse JSON response", text);
-        return { success: false, error: text || "Invalid JSON response" };
+        data = await response.json() as T;
+      } catch {
+        return { success: false, error: 'Invalid JSON response from Edge function' };
       }
 
       if (!response.ok) {
-        const errorBody: { error?: string; message?: string } = data as object;
-        return { success: false, error: errorBody.error || errorBody.message || text || "Unknown error" };
+        const errorBody = data as { error?: string; message?: string } | undefined;
+        return { success: false, error: errorBody?.error || errorBody?.message || 'Unknown error' };
       }
 
-      // ✅ CORRECTION : Si la réponse a déjà une structure { success, data }, on retourne directement
       if (data && typeof data === 'object' && 'success' in data && 'data' in data) {
         return data as EdgeFunctionResponse<T>;
       }
-      
+
       return { success: true, data };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error("EdgeClient: Network or unexpected error", errorMessage);
+      console.error('EdgeClient: Network or unexpected error', errorMessage);
       return { success: false, error: `Network Error: ${errorMessage}` };
     }
   }

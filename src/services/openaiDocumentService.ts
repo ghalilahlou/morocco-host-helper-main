@@ -1,5 +1,6 @@
 import { Guest } from '@/types/booking';
 import { supabase } from '@/integrations/supabase/client';
+import { sanitizeGuestName } from '@/utils/guestNameUtils';
 
 // ✅ Interface spécifique pour les données extraites (en string)
 interface ExtractedGuestData {
@@ -12,54 +13,18 @@ interface ExtractedGuestData {
   documentIssueDate?: string; // ✅ Date d'expiration du document (stockée sous ce champ pour compatibilité)
 }
 
-// ✅ NOUVEAU : Fonction pour nettoyer le nom extrait
-function cleanExtractedName(name: string): string {
-  if (!name || name.trim() === '') return '';
-  
-  // Une seule ligne : l’OCR regroupe parfois plusieurs lignes (nom + légende) → tests sur la 1re ligne uniquement
-  let cleanedName = name.trim().split(/[\n\r]+/).map((s) => s.trim()).find((s) => s.length > 0) || '';
-  if (!cleanedName) return '';
-  
-  // Supprimer les patterns communs qui ne sont pas des noms
-  const unwantedPatterns = [
-    /phone\s*number/i,
-    /phone/i,
-    /address/i,
-    /adresse/i,
-    /email/i,
-    /tel/i,
-    /mobile/i,
-    /fax/i,
-    /^[A-Z0-9]{6,}$/, // Codes alphanumériques longs
-    /^\d+$/, // Que des chiffres
-    /^[A-Z]{2,}\d+$/, // Combinaisons lettres+chiffres comme "JBFDPhone"
-  ];
-  
-  for (const pattern of unwantedPatterns) {
-    if (pattern.test(cleanedName)) {
-      console.log('🧹 Nom nettoyé - pattern indésirable détecté:', cleanedName);
-      return ''; // Retourner vide si le nom contient des éléments indésirables
-    }
-  }
-  
-  // Vérifier que le nom contient au moins des lettres
-  if (!/[a-zA-Z]/.test(cleanedName)) {
-    console.log('🧹 Nom nettoyé - pas de lettres détectées:', cleanedName);
-    return '';
-  }
-  
-  // Nettoyer les espaces multiples
-  cleanedName = cleanedName.replace(/\s+/g, ' ').trim();
-  
-  console.log('✅ Nom nettoyé avec succès:', cleanedName);
-  return cleanedName;
-}
-
-// ✅ Cache session-level : hash SHA-256 → résultat OCR
-// Evite de rappeler l'API si le même fichier est uploadé plusieurs fois
-// (rechargement de page, double-clic, retry guest).
-// Stocké en mémoire (pas localStorage) → vidé à fermeture de l'onglet.
+// Cache session-level : hash SHA-256 → résultat OCR.
+// LRU implicite : Map est itéré en ordre d'insertion → on supprime le premier
+// quand on dépasse OCR_CACHE_MAX (évite la croissance illimitée sur 30+ photos).
+const OCR_CACHE_MAX = 20;
 const _ocrCache = new Map<string, ExtractedGuestData>();
+
+function ocrCacheSet(key: string, value: ExtractedGuestData) {
+  if (_ocrCache.size >= OCR_CACHE_MAX) {
+    _ocrCache.delete(_ocrCache.keys().next().value as string);
+  }
+  _ocrCache.set(key, value);
+}
 
 async function hashFile(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
@@ -112,13 +77,13 @@ export class OpenAIDocumentService {
 
       // Validate and clean the extracted data
       const cleanedData: ExtractedGuestData = {
-        fullName: cleanExtractedName(extractedData.fullName || ''),
+        fullName: sanitizeGuestName(extractedData.fullName || ''),
         dateOfBirth: extractedData.dateOfBirth || '',
         documentNumber: extractedData.documentNumber || '',
         nationality: extractedData.nationality || '',
         placeOfBirth: extractedData.placeOfBirth || '',
         documentType: extractedData.documentType || 'passport',
-        documentIssueDate: typeof expiryRaw === 'string' ? expiryRaw : '' // date d’expiration (même clé que l’API)
+        documentIssueDate: typeof expiryRaw === 'string' ? expiryRaw : '' // date d'expiration (même clé que l'API)
       };
 
       // Remove empty strings and replace with undefined, but keep null values for debugging
@@ -143,7 +108,7 @@ export class OpenAIDocumentService {
 
       console.log('🎯 Final cleaned extraction result:', cleanedData);
       // ✅ Stocker dans le cache pour éviter les re-appels sur le même fichier
-      _ocrCache.set(fileHash, cleanedData);
+      ocrCacheSet(fileHash, cleanedData);
       return cleanedData;
 
     } catch (error) {

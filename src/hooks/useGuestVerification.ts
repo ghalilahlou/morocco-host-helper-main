@@ -7,50 +7,6 @@ import { useToast } from '@/hooks/use-toast';
 import { formatLocalDate } from '@/utils/dateUtils';
 import { useT } from '@/i18n/GuestLocaleProvider';
 
-// ✅ NOUVEAU : Fonction pour nettoyer le nom du guest avant de l'inclure dans l'URL
-function cleanGuestNameForUrl(guestName: string): string {
-  if (!guestName || guestName.trim() === '') return '';
-  
-  // Nettoyer le nom des éléments indésirables
-  let cleanedName = guestName.trim();
-  
-  // Supprimer les patterns communs qui ne sont pas des noms
-  const unwantedPatterns = [
-    /phone\s*number/i,
-    /phone/i,
-    /address/i,
-    /adresse/i,
-    /email/i,
-    /tel/i,
-    /mobile/i,
-    /fax/i,
-    /^[A-Z0-9]{6,}$/, // Codes alphanumériques longs
-    /^\d+$/, // Que des chiffres
-    /^[A-Z]{2,}\d+$/, // Combinaisons lettres+chiffres comme "JBFDPhone"
-    /\n/, // Retours à la ligne
-    /\r/, // Retours chariot
-  ];
-  
-  for (const pattern of unwantedPatterns) {
-    if (pattern.test(cleanedName)) {
-      // Log masqué en production
-      return ''; // Retourner vide si le nom contient des éléments indésirables
-    }
-  }
-  
-  // Vérifier que le nom contient au moins des lettres
-  if (!/[a-zA-Z]/.test(cleanedName)) {
-    // Log masqué en production
-    return '';
-  }
-  
-  // Nettoyer les espaces multiples et les retours à la ligne
-  cleanedName = cleanedName.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
-  
-  // Log masqué en production
-  return cleanedName;
-}
-
 /** UUID réservation Supabase (évite d’envoyer l’id comme `airbnbCode` racine vers issue-guest-link). */
 const BOOKING_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

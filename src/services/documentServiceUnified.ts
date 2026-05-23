@@ -68,9 +68,11 @@ export interface GeneratedDocuments {
   expiresAt: string;
 }
 
-// ✅ CORRIGÉ : Garde par réservation au lieu d'un garde global
-// Permet à un guest de remplir plusieurs réservations en parallèle
-const runningWorkflows = new Map<string, boolean>();
+// Garde par réservation : token+airbnbCode → timestamp de départ
+// TTL de 60 s : si l'onglet est rechargé ou si le finally saute (crash réseau),
+// la clé est purgée automatiquement au prochain appel.
+const WORKFLOW_TTL_MS = 60_000;
+const runningWorkflows = new Map<string, number>(); // value = Date.now() au départ
 
 /**
  * NOUVELLE FONCTION UNIFIÉE - Un seul appel pour tout faire
@@ -84,17 +86,25 @@ export async function submitDocumentsUnified(
   const workflowKey = `${request.token}-${request.airbnbCode}`;
   const requestId = `${workflowKey}-${Date.now()}`;
   
-  // ✅ CRITIQUE : Vérifier si un workflow est déjà en cours POUR CETTE RÉSERVATION
-  if (runningWorkflows.get(workflowKey)) {
+  // Purger les entrées dont le TTL est dépassé (tab reload sans finally, crash réseau)
+  const now = Date.now();
+  for (const [key, startedAt] of runningWorkflows) {
+    if (now - startedAt > WORKFLOW_TTL_MS) {
+      runningWorkflows.delete(key);
+    }
+  }
+
+  // Vérifier si un workflow est déjà en cours POUR CETTE RÉSERVATION
+  if (runningWorkflows.has(workflowKey)) {
     console.warn('⚠️ [DocumentServiceUnified] Workflow déjà en cours pour cette réservation', {
       workflowKey,
       requestId
     });
     throw new Error('Cette réservation est déjà en cours de traitement. Veuillez patienter.');
   }
-  
-  // ✅ CRITIQUE : Marquer cette réservation comme en cours
-  runningWorkflows.set(workflowKey, true);
+
+  // Marquer cette réservation comme en cours (avec timestamp pour le TTL)
+  runningWorkflows.set(workflowKey, Date.now());
   
   console.log('🚀 [DocumentServiceUnified] Starting unified submission...', {
     workflowKey,

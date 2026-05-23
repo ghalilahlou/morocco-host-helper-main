@@ -14,14 +14,14 @@ const ALLOWED_ORIGINS = [
   'http://192.168.1.1:3000',
   'http://127.0.0.1:3000',
   
-  // Production - ✅ DOMAINE PRINCIPAL
+  // Production -  DOMAINE PRINCIPAL
   'https://checky.ma',
   'https://www.checky.ma',
   // Fallback Vercel (preview deployments uniquement)
   'https://morocco-host-helper.vercel.app',
 ];
 
-// ✅ Base URL des liens invités - TOUJOURS checky.ma (évite cheki typo / mauvaise config env)
+//  Base URL des liens invités - TOUJOURS checky.ma (évite cheki typo / mauvaise config env)
 const GUEST_LINK_BASE_URL = 'https://checky.ma';
 
 // Headers CORS dynamiques basés sur l'origine
@@ -74,7 +74,7 @@ async function getServerClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-// ✅ NOUVEAU : Fonction utilitaire pour extraire la partie date (YYYY-MM-DD) sans décalage timezone
+//  NOUVEAU : Fonction utilitaire pour extraire la partie date (YYYY-MM-DD) sans décalage timezone
 // Évite les problèmes de décalage d'un jour lors de la conversion de dates
 function extractDateOnly(dateValue: string | Date | any): string {
   if (typeof dateValue === 'string') {
@@ -143,8 +143,8 @@ type IssueReq = {
   linkType?: 'ics_direct' | 'ics_with_code' | 'independent';
   reservationData?: {
     airbnbCode: string;
-    startDate: Date | string; // ✅ CORRIGÉ : Accepter Date ou string YYYY-MM-DD
-    endDate: Date | string; // ✅ CORRIGÉ : Accepter Date ou string YYYY-MM-DD
+    startDate: Date | string; //  CORRIGÉ : Accepter Date ou string YYYY-MM-DD
+    endDate: Date | string; //  CORRIGÉ : Accepter Date ou string YYYY-MM-DD
     guestName?: string;
     numberOfGuests?: number;
   };
@@ -165,8 +165,8 @@ serve(async (req) => {
     return handleOptions(req);
   }
 
-  console.log('🚀 Issue guest link function called');
-  console.log('📅 Timestamp:', new Date().toISOString());
+  console.log(' Issue guest link function called');
+  console.log(' Timestamp:', new Date().toISOString());
 
   // Obtenir les headers CORS dynamiques basés sur l'origine
   const dynamicCorsHeaders = getCorsHeaders(req);
@@ -177,7 +177,7 @@ serve(async (req) => {
     try {
       requestBody = await req.json();
     } catch (parseError) {
-      console.error('❌ Failed to parse request body:', parseError);
+      console.error(' Failed to parse request body:', parseError);
       return new Response(JSON.stringify({
         success: false,
         error: 'Invalid JSON in request body',
@@ -207,7 +207,7 @@ serve(async (req) => {
 
     // Validate required fields
     if (!propertyId || typeof propertyId !== 'string') {
-      console.error('❌ Missing or invalid propertyId:', propertyId);
+      console.error(' Missing or invalid propertyId:', propertyId);
       return new Response(JSON.stringify({
         success: false,
         error: 'Property ID is required and must be a string',
@@ -220,7 +220,7 @@ serve(async (req) => {
 
     // Validate optional bookingId if provided
     if (bookingId && typeof bookingId !== 'string') {
-      console.error('❌ Invalid bookingId type:', typeof bookingId);
+      console.error(' Invalid bookingId type:', typeof bookingId);
       return new Response(JSON.stringify({
         success: false,
         error: 'Booking ID must be a string if provided',
@@ -231,14 +231,15 @@ serve(async (req) => {
       });
     }
 
-    // expiresIn : uniquement si l'appelant impose une durée (sinon illimité côté date)
+    // expiresIn : durée explicite, 0/unlimited = illimité, absent = défaut 90 jours (S23)
+    const DEFAULT_EXPIRY_DAYS = 90;
     let expiresAtIso: string | null = null;
-    if (expiresInRaw === 0) {
-      expiresAtIso = null;
-    } else if (expiresInRaw !== undefined && expiresInRaw !== null && expiresInRaw !== 'unlimited') {
+    if (expiresInRaw === 0 || expiresInRaw === 'unlimited') {
+      expiresAtIso = null; // Illimité explicite
+    } else if (expiresInRaw !== undefined && expiresInRaw !== null) {
       const n = typeof expiresInRaw === 'number' ? expiresInRaw : Number(expiresInRaw);
       if (Number.isNaN(n) || n < 1 || n > 365) {
-        console.error('❌ Invalid expiresIn:', expiresInRaw);
+        console.error(' Invalid expiresIn:', expiresInRaw);
         return new Response(JSON.stringify({
           success: false,
           error: 'expiresIn doit être omis ou 0 (illimité), ou un nombre de jours entre 1 et 365',
@@ -251,34 +252,49 @@ serve(async (req) => {
       const d = new Date();
       d.setDate(d.getDate() + n);
       expiresAtIso = d.toISOString();
+    } else {
+      // S23 -- Défaut 90 jours si l'appelant ne précise rien
+      const d = new Date();
+      d.setDate(d.getDate() + DEFAULT_EXPIRY_DAYS);
+      expiresAtIso = d.toISOString();
+      console.log(` expiresIn non fourni -- expiration par défaut : ${DEFAULT_EXPIRY_DAYS}j (${expiresAtIso})`);
     }
 
-    console.log('📥 Request validated:', { propertyId, bookingId, airbnbCode, expiresIn: expiresInRaw, expiresAtIso });
+    console.log(' Request validated:', { propertyId, bookingId, airbnbCode, expiresIn: expiresInRaw, expiresAtIso });
 
-    // ✅ NOUVEAU : Vérifier les permissions de génération de tokens (avec fallback permissif)
-    console.log('🔐 Vérification des permissions de génération de tokens...');
-    let permissionAllowed = true; // Fallback permissif par défaut
+    // S30 -- Vérification des permissions (fallback DENY pour les erreurs inattendues).
+    // Exception : PGRST202 = RPC non déployé → on autorise avec avertissement pour ne pas
+    // casser la prod si la migration n'est pas encore appliquée.
+    console.log(' Vérification des permissions de génération de tokens...');
+    let permissionAllowed = false;
     try {
       const { data: permissionCheck, error: permissionError } = await server.rpc('check_reservation_allowed', {
         property_uuid: propertyId
       });
       if (permissionError) {
-        // Vérifier si c'est une erreur PGRST202 (fonction non trouvée)
-        if (permissionError.code === 'PGRST202' || permissionError.message?.includes('function') || permissionError.message?.includes('not found')) {
-          console.warn('⚠️ check_reservation_allowed RPC not found – proceeding with allowed=true (fallback). Appliquer la migration 20260513150000_ensure_check_reservation_allowed_service_role.sql sur le projet.');
+        const isRpcMissing = permissionError.code === 'PGRST202' ||
+          permissionError.message?.includes('function') ||
+          permissionError.message?.includes('not found');
+
+        if (isRpcMissing) {
+          // Migration non encore appliquée -- on autorise avec avertissement
+          console.warn(' check_reservation_allowed introuvable -- migration 20260513150000 non appliquée. Autorisation par défaut.');
           permissionAllowed = true;
         } else {
-          console.error('❌ Erreur lors de la vérification des permissions:', permissionError);
-          console.warn('⚠️ Permission check failed – proceeding with allowed=true (fallback)');
-          permissionAllowed = true;
+          // Erreur DB inattendue → DENY (S30)
+          console.error(' Erreur permission check:', permissionError);
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Erreur lors de la vérification des permissions',
+            details: { code: permissionError.code, message: permissionError.message }
+          }), { status: 503, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } });
         }
       } else if (permissionCheck != null) {
-        // PostgREST : RETURNS TABLE → souvent un tableau d’objets (une ligne)
         const row = Array.isArray(permissionCheck) ? permissionCheck[0] : permissionCheck;
         if (row && typeof row === 'object' && 'allowed' in row) {
           permissionAllowed = (row as { allowed?: boolean }).allowed === true;
           if (!permissionAllowed) {
-            console.log('🚫 Génération de tokens non autorisée:', row);
+            console.log(' Génération de tokens non autorisée:', row);
             return new Response(JSON.stringify({
               success: false,
               error: 'Génération de tokens non autorisée',
@@ -286,31 +302,42 @@ serve(async (req) => {
                 reason: (row as { reason?: string })?.reason || 'Contrôle administrateur actif',
                 control_type: (row as { control_type?: string })?.control_type || 'blocked'
               }
-            }), {
-              status: 403,
-              headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' }
-            });
+            }), { status: 403, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } });
           }
+        } else {
+          // RPC retourne sans objet valide → autoriser (comportement conservateur)
+          permissionAllowed = true;
         }
+      } else {
+        // permissionCheck null → RPC existe mais pas de restriction → autoriser
+        permissionAllowed = true;
       }
     } catch (permissionError) {
-      console.error('❌ Unexpected error during permission check:', permissionError);
-      console.warn('⚠️ Permission check failed – proceeding with allowed=true (fallback)');
-      permissionAllowed = true;
+      // Erreur réseau/inattendue → DENY (S30)
+      console.error(' Erreur inattendue permission check:', permissionError);
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Erreur interne lors de la vérification des permissions'
+      }), { status: 500, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    console.log('✅ Génération de tokens autorisée (ou fallback).');
+    if (!permissionAllowed) {
+      return new Response(JSON.stringify({ success: false, error: 'Génération de tokens non autorisée' }),
+        { status: 403, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } });
+    }
 
-    // ✅ Un lien = un séjour : ne plus rattacher automatiquement la « prochaine » résa de la propriété.
+    console.log(' Génération de tokens autorisée.');
+
+    //  Un lien = un séjour : ne plus rattacher automatiquement la « prochaine » résa de la propriété.
     // Sans bookingId, la réservation est créée/résolue uniquement via reservationData (dates + bien) plus bas.
     let finalBookingId = bookingId;
     if (!bookingId) {
-      console.log('📅 No bookingId on issue — will resolve stay from reservationData or leave unset until guest submits');
+      console.log(' No bookingId on issue -- will resolve stay from reservationData or leave unset until guest submits');
     }
 
-    // ✅ NOUVEAU : Vérifier d'abord si un token actif récent existe déjà (idempotence)
+    //  NOUVEAU : Vérifier d'abord si un token actif récent existe déjà (idempotence)
     // Cela évite de créer des tokens en double si la fonction est appelée deux fois
-    console.log('🔍 Vérification d\'un token existant récent...');
+    console.log(' Vérification d\'un token existant récent...');
     let existingActiveToken = null;
     let hasAirbnbCode = false;
     try {
@@ -331,24 +358,24 @@ serve(async (req) => {
         if (tokenWithCode && guestTokenDateValid(tokenWithCode.expires_at)) {
           existingActiveToken = tokenWithCode;
         }
-      } else {
-        const tokenQuery = server
+      } else if (finalBookingId) {
+        // S25 -- On ne réutilise un token existant QUE si on a un bookingId explicite.
+        // Sans bookingId, maybeSingle() pourrait retourner le token d'un AUTRE séjour
+        // de la même propriété (bug Magno). Toujours créer un nouveau token dans ce cas.
+        const { data: tokenResult } = await server
           .from('property_verification_tokens')
           .select('id, token, expires_at, created_at, metadata')
           .eq('property_id', propertyId)
-          .eq('is_active', true);
-
-        if (finalBookingId) {
-          tokenQuery.eq('booking_id', finalBookingId);
-        }
-
-        const { data: tokenResult } = await tokenQuery.maybeSingle();
+          .eq('is_active', true)
+          .eq('booking_id', finalBookingId)
+          .maybeSingle();
         if (tokenResult && guestTokenDateValid(tokenResult.expires_at)) {
           existingActiveToken = tokenResult;
         }
       }
+      // else (!hasAirbnbCode && !finalBookingId) → pas de recherche, créer un nouveau token
       
-      // ✅ Règle : 1 lien = 1 séjour = 1 token permanent.
+      //  Règle : 1 lien = 1 séjour = 1 token permanent.
       // Dès qu'un token actif valide existe pour ce booking/propriété, on le réutilise TOUJOURS.
       // Cela évite la prolifération de tokens (128K observée) et garantit que l'hôte peut
       // partager le lien autant de fois qu'il veut sans créer de nouveau token ni invalider
@@ -357,7 +384,7 @@ serve(async (req) => {
         const shouldReuse = true; // Toujours réutiliser : le token est permanent tant que is_active
 
         if (shouldReuse) {
-          console.log('✅ Token actif trouvé, réutilisation:', existingActiveToken.id, hasAirbnbCode ? '(Airbnb stable)' : '(idempotence 5s)');
+          console.log(' Token actif trouvé, réutilisation:', existingActiveToken.id, hasAirbnbCode ? '(Airbnb stable)' : '(idempotence 5s)');
           const baseUrl = GUEST_LINK_BASE_URL;
           const rdEarly = (requestBody as IssueReq).reservationData;
           const codeEarly = rdEarly?.airbnbCode && rdEarly.airbnbCode !== 'INDEPENDENT_BOOKING' ? rdEarly.airbnbCode : null;
@@ -380,18 +407,18 @@ serve(async (req) => {
         }
       }
     } catch (idempotencyCheckError) {
-      console.warn('⚠️ Erreur lors de la vérification d\'idempotence (continuera):', idempotencyCheckError);
+      console.warn(' Erreur lors de la vérification d\'idempotence (continuera):', idempotencyCheckError);
       // Continue avec la création d'un nouveau token
     }
 
     // Ne pas désactiver les anciens tokens : le lien /v/{token} reste valide tant que is_active et
     // (expires_at IS NULL OU expires_at future). Pas d'expiration automatique par défaut.
 
-    // ✅ CORRECTION : Générer un nouveau token unique
-    console.log('🆕 Génération d\'un nouveau token...');
+    //  CORRECTION : Générer un nouveau token unique
+    console.log(' Génération d\'un nouveau token...');
     const token = generateUniqueToken();
 
-    // ✅ NOUVEAU : Gestion des codes Airbnb sécurisés avec support des liens directs
+    //  NOUVEAU : Gestion des codes Airbnb sécurisés avec support des liens directs
     let requiresCode = false;
     let airbnb_confirmation_code: string | null = null;
     let access_code_hash: string | null = null;
@@ -402,18 +429,18 @@ serve(async (req) => {
     
     if (linkType === 'ics_direct') {
       // Lien direct : pas de validation de code, créer la réservation immédiatement
-      console.log('🔗 Création d\'un lien ICS direct (sans validation de code)');
+      console.log(' Création d\'un lien ICS direct (sans validation de code)');
       requiresCode = false;
       
       let reservationData = (requestBody as IssueReq).reservationData;
       
-      // ✅ DÉSACTIVÉ : Ne plus créer de données par défaut automatiquement
+      //  DÉSACTIVÉ : Ne plus créer de données par défaut automatiquement
       // Pour les réservations indépendantes, le guest choisira ses propres dates
       // Seules les réservations ICS/Airbnb auront reservationData fourni explicitement
       /*
-      // ✅ ANCIEN : Si reservationData est manquant, créer des données par défaut
+      //  ANCIEN : Si reservationData est manquant, créer des données par défaut
       if (!reservationData) {
-        console.warn('⚠️ reservationData manquant, création de données par défaut');
+        console.warn(' reservationData manquant, création de données par défaut');
         
         // Créer des données minimales basées sur le booking trouvé
         if (finalBookingId) {
@@ -432,10 +459,10 @@ serve(async (req) => {
                 guestName: bookingData.guest_name,
                 numberOfGuests: bookingData.number_of_guests || 1
               };
-              console.log('✅ Données de réservation créées depuis booking:', reservationData);
+              console.log(' Données de réservation créées depuis booking:', reservationData);
             }
           } catch (err) {
-            console.error('❌ Erreur lors de la récupération du booking:', err);
+            console.error(' Erreur lors de la récupération du booking:', err);
           }
         }
         
@@ -451,18 +478,18 @@ serve(async (req) => {
             endDate: tomorrow.toISOString().split('T')[0],
             numberOfGuests: 1
           };
-          console.log('✅ Données de réservation par défaut créées:', reservationData);
+          console.log(' Données de réservation par défaut créées:', reservationData);
         }
       }
       */
       
       
-      // ✅ MODIFIÉ : Ne créer de réservation QUE si reservationData est fourni
+      //  MODIFIÉ : Ne créer de réservation QUE si reservationData est fourni
       // Si pas de reservationData, c'est une réservation indépendante (guest choisit ses dates)
       if (reservationData) {
         // Validate reservationData structure
         if (!reservationData.airbnbCode || typeof reservationData.airbnbCode !== 'string') {
-          console.error('❌ Missing or invalid airbnbCode in reservationData:', reservationData);
+          console.error(' Missing or invalid airbnbCode in reservationData:', reservationData);
           return new Response(JSON.stringify({
             success: false,
             error: 'airbnbCode is required in reservationData',
@@ -474,7 +501,7 @@ serve(async (req) => {
         }
         
         if (!reservationData.startDate || !reservationData.endDate) {
-          console.error('❌ Missing startDate or endDate in reservationData:', reservationData);
+          console.error(' Missing startDate or endDate in reservationData:', reservationData);
           return new Response(JSON.stringify({
             success: false,
             error: 'startDate and endDate are required in reservationData',
@@ -485,10 +512,10 @@ serve(async (req) => {
           });
         }
         
-        // ✅ Créer la réservation immédiatement lors de la génération du lien
+        //  Créer la réservation immédiatement lors de la génération du lien
       try {
-        console.log('🏗️ Création de la réservation ICS en base de données...');
-        console.log('📥 reservationData reçu:', {
+        console.log(' Création de la réservation ICS en base de données...');
+        console.log(' reservationData reçu:', {
           airbnbCode: reservationData.airbnbCode,
           startDate: reservationData.startDate,
           endDate: reservationData.endDate,
@@ -496,8 +523,8 @@ serve(async (req) => {
           endDateType: typeof reservationData.endDate
         });
         
-        // ✅ CRITIQUE : Récupérer le user_id de la propriété AVANT de créer la réservation
-        console.log('🔍 Récupération du user_id de la propriété...');
+        //  CRITIQUE : Récupérer le user_id de la propriété AVANT de créer la réservation
+        console.log(' Récupération du user_id de la propriété...');
         const { data: propertyData, error: propertyError } = await server
           .from('properties')
           .select('user_id')
@@ -505,24 +532,24 @@ serve(async (req) => {
           .single();
         
         if (propertyError || !propertyData || !propertyData.user_id) {
-          console.error('❌ Impossible de récupérer le user_id de la propriété:', propertyError);
+          console.error(' Impossible de récupérer le user_id de la propriété:', propertyError);
           throw new Error('Property owner (user_id) not found - cannot create booking');
         }
         
         const propertyOwnerId = propertyData.user_id;
-        console.log('✅ user_id de la propriété récupéré:', propertyOwnerId.substring(0, 8) + '...');
+        console.log(' user_id de la propriété récupéré:', propertyOwnerId.substring(0, 8) + '...');
         
-        // ✅ CORRIGÉ : Utiliser extractDateOnly pour éviter le décalage timezone
+        //  CORRIGÉ : Utiliser extractDateOnly pour éviter le décalage timezone
         // Les dates peuvent être des objets Date JavaScript ou des chaînes ISO
         const checkInDate = extractDateOnly(reservationData.startDate);
         const checkOutDate = extractDateOnly(reservationData.endDate);
           
-          console.log('📅 Dates normalisées pour la réservation:', { checkInDate, checkOutDate });
+          console.log(' Dates normalisées pour la réservation:', { checkInDate, checkOutDate });
 
           let resolvedIcsBookingId: string;
 
           if (finalBookingId) {
-            console.log('🎯 ICS direct : réservation ciblée par bookingId (client)', finalBookingId);
+            console.log(' ICS direct : réservation ciblée par bookingId (client)', finalBookingId);
             const { data: targetedRow, error: targetedErr } = await server
               .from('bookings')
               .select('id')
@@ -531,7 +558,7 @@ serve(async (req) => {
               .maybeSingle();
 
             if (targetedErr) {
-              console.error('❌ Lecture réservation par bookingId:', targetedErr);
+              console.error(' Lecture réservation par bookingId:', targetedErr);
               throw new Error(`Réservation introuvable: ${targetedErr.message}`);
             }
             if (!targetedRow) {
@@ -546,7 +573,7 @@ serve(async (req) => {
             }
 
             resolvedIcsBookingId = targetedRow.id;
-            console.log('📝 Mise à jour réservation (par bookingId):', resolvedIcsBookingId);
+            console.log(' Mise à jour réservation (par bookingId):', resolvedIcsBookingId);
 
             const { data: bookingBeforeUpdate } = await server
               .from('bookings')
@@ -561,7 +588,7 @@ serve(async (req) => {
 
             if (datesDiffer) {
               console.warn(
-                '⚠️ Dates du lien différentes de la réservation existante — pas d’écrasement des dates en base',
+                ' Dates du lien différentes de la réservation existante -- pas d\'écrasement des dates en base',
                 {
                   bookingId: resolvedIcsBookingId,
                   existing: `${bookingBeforeUpdate.check_in_date} → ${bookingBeforeUpdate.check_out_date}`,
@@ -586,7 +613,7 @@ serve(async (req) => {
               .eq('id', resolvedIcsBookingId);
 
             if (updateByIdError) {
-              console.error('❌ Erreur mise à jour réservation (par bookingId):', updateByIdError);
+              console.error(' Erreur mise à jour réservation (par bookingId):', updateByIdError);
               if (updateByIdError.code === '23505') {
                 return new Response(
                   JSON.stringify({
@@ -630,7 +657,7 @@ serve(async (req) => {
 
           if (existingBooking) {
             // Mettre à jour la réservation existante
-            console.log('📝 Mise à jour réservation existante:', existingBooking.id);
+            console.log(' Mise à jour réservation existante:', existingBooking.id);
             resolvedIcsBookingId = existingBooking.id;
 
             const { data: bookingBeforeRefUpdate } = await server
@@ -660,7 +687,7 @@ serve(async (req) => {
               .eq('id', resolvedIcsBookingId);
 
             if (updateError) {
-              console.error('❌ Erreur mise à jour réservation:', updateError);
+              console.error(' Erreur mise à jour réservation:', updateError);
               if (updateError.code === '23505') {
                 return new Response(
                   JSON.stringify({
@@ -677,10 +704,10 @@ serve(async (req) => {
             }
           } else {
             // Créer une nouvelle réservation
-            console.log('🆕 Création nouvelle réservation ICS');
+            console.log(' Création nouvelle réservation ICS');
 
-            // ✅ PROTECTION : Dernière vérification avant insertion pour éviter les doublons
-            // ✅ CORRIGÉ : .order().limit(1) pour gérer les doublons existants
+            //  PROTECTION : Dernière vérification avant insertion pour éviter les doublons
+            //  CORRIGÉ : .order().limit(1) pour gérer les doublons existants
             const { data: lastCheckBooking } = await server
               .from('bookings')
               .select('id, status')
@@ -692,17 +719,17 @@ serve(async (req) => {
 
             if (lastCheckBooking) {
               // Une réservation a été créée entre-temps (race condition), la réutiliser
-              console.log('⚠️ Réservation trouvée lors de la dernière vérification (race condition évitée):', lastCheckBooking.id);
+              console.log(' Réservation trouvée lors de la dernière vérification (race condition évitée):', lastCheckBooking.id);
               resolvedIcsBookingId = lastCheckBooking.id;
             } else {
               const { data: newBooking, error: createError } = await server
                 .from('bookings')
                 .insert({
-                  user_id: propertyOwnerId, // ✅ CORRECTION CRITIQUE : Ajouter le user_id du propriétaire
+                  user_id: propertyOwnerId, //  CORRECTION CRITIQUE : Ajouter le user_id du propriétaire
                   property_id: propertyId,
                   check_in_date: checkInDate,
                   check_out_date: checkOutDate,
-                  // ✅ Plus de placeholder 'Guest' : NULL si pas de nom fourni à l'émission du lien.
+                  //  Plus de placeholder 'Guest' : NULL si pas de nom fourni à l'émission du lien.
                   // `submit-guest-info-unified` remplira le vrai nom dans `saveGuestDataInternal`.
                   guest_name: reservationData.guestName?.trim() || null,
                   number_of_guests: reservationData.numberOfGuests || 1,
@@ -729,7 +756,7 @@ serve(async (req) => {
                       { status: 409, headers: { ...dynamicCorsHeaders, 'Content-Type': 'application/json' } },
                     );
                   }
-                  console.log('⚠️ Contrainte unique violée, récupération de la réservation existante...');
+                  console.log(' Contrainte unique violée, récupération de la réservation existante...');
                   const { data: existingBookingAfterError } = await server
                     .from('bookings')
                     .select('id')
@@ -741,12 +768,12 @@ serve(async (req) => {
 
                   if (existingBookingAfterError) {
                     resolvedIcsBookingId = existingBookingAfterError.id;
-                    console.log('✅ Réservation existante récupérée:', resolvedIcsBookingId);
+                    console.log(' Réservation existante récupérée:', resolvedIcsBookingId);
                   } else {
                     throw new Error(`Erreur création réservation: ${createError.message}`);
                   }
                 } else {
-                  console.error('❌ Erreur création réservation:', createError);
+                  console.error(' Erreur création réservation:', createError);
                   throw new Error(`Erreur création réservation: ${createError.message}`);
                 }
               } else {
@@ -756,29 +783,29 @@ serve(async (req) => {
           }
           }
 
-          console.log('✅ Réservation ICS créée/mise à jour avec ID:', resolvedIcsBookingId);
+          console.log(' Réservation ICS créée/mise à jour avec ID:', resolvedIcsBookingId);
           
-          // ✅ CORRIGÉ : Stocker les dates normalisées (YYYY-MM-DD) dans les métadonnées
+          //  CORRIGÉ : Stocker les dates normalisées (YYYY-MM-DD) dans les métadonnées
           // Cela évite les problèmes de décalage lors de la récupération dans VerifyToken.tsx
           reservation_metadata = {
             type: 'ics_direct',
             airbnbCode: reservationData.airbnbCode,
-            startDate: checkInDate, // ✅ CORRIGÉ : Utiliser la date normalisée
-            endDate: checkOutDate, // ✅ CORRIGÉ : Utiliser la date normalisée
+            startDate: checkInDate, //  CORRIGÉ : Utiliser la date normalisée
+            endDate: checkOutDate, //  CORRIGÉ : Utiliser la date normalisée
             guestName: reservationData.guestName,
             numberOfGuests: reservationData.numberOfGuests,
-            bookingId: resolvedIcsBookingId // ✅ ID de la réservation créée / mise à jour
+            bookingId: resolvedIcsBookingId //  ID de la réservation créée / mise à jour
           };
           
-          console.log('✅ Métadonnées de réservation normalisées:', {
+          console.log(' Métadonnées de réservation normalisées:', {
             startDate: checkInDate,
             endDate: checkOutDate,
             bookingId: resolvedIcsBookingId
           });
           
-          console.log('✅ Données de réservation et ID stockés dans le token');
+          console.log(' Données de réservation et ID stockés dans le token');
         } catch (error) {
-          console.error('❌ Erreur lors de la création de la réservation ICS:', error);
+          console.error(' Erreur lors de la création de la réservation ICS:', error);
           return new Response(JSON.stringify({
             success: false,
             error: 'Failed to create ICS reservation',
@@ -789,9 +816,9 @@ serve(async (req) => {
           });
         }
       } else {
-        // ✅ RÉSERVATION INDÉPENDANTE : Pas de reservationData fourni
+        //  RÉSERVATION INDÉPENDANTE : Pas de reservationData fourni
         // Le guest choisira ses propres dates dans le formulaire
-        console.log('📝 Réservation indépendante - Pas de dates pré-remplies');
+        console.log(' Réservation indépendante - Pas de dates pré-remplies');
       }
     } else {
       // Logique existante pour les liens avec validation de code
@@ -801,11 +828,11 @@ serve(async (req) => {
         airbnb_confirmation_code = candidate;
         try {
           access_code_hash = await hashAccessCode(candidate);
-          console.log('✅ Code Airbnb détecté et hashé avec succès (code non loggé pour sécurité)');
+          console.log(' Code Airbnb détecté et hashé avec succès (code non loggé pour sécurité)');
         } catch (error) {
-          console.error('❌ Failed to hash access code (not logging code for security)');
-          console.error('❌ Error details:', error.message);
-          console.error('❌ Vérifiez que ACCESS_CODE_PEPPER est configuré');
+          console.error(' Failed to hash access code (not logging code for security)');
+          console.error(' Error details:', error.message);
+          console.error(' Vérifiez que ACCESS_CODE_PEPPER est configuré');
           return new Response(JSON.stringify({
             success: false,
             error: 'MISSING_ACCESS_CODE_PEPPER',
@@ -838,10 +865,10 @@ serve(async (req) => {
               numberOfGuests: bmeta.number_of_guests || 1,
               bookingId: bmeta.id,
             };
-            console.log('✅ reservation_metadata backfilled depuis bookings', { bookingId: bmeta.id });
+            console.log(' reservation_metadata backfilled depuis bookings', { bookingId: bmeta.id });
           }
         } catch (e) {
-          console.warn('⚠️ Backfill reservation_metadata ignoré:', (e as Error)?.message);
+          console.warn(' Backfill reservation_metadata ignoré:', (e as Error)?.message);
         }
       }
 
@@ -881,7 +908,7 @@ serve(async (req) => {
         createError = upsert.error;
 
         if (createError?.code === '42P10') {
-          console.warn('⚠️ Contrainte unique manquante, utilisation du fallback manual');
+          console.warn(' Contrainte unique manquante, utilisation du fallback manual');
           
           // Fallback sans ON CONFLICT : sélectionner puis update/insert
           const existing = await server
@@ -892,7 +919,7 @@ serve(async (req) => {
             .maybeSingle();
 
           if (existing.data?.id) {
-            console.log('📝 Mise à jour du token existant');
+            console.log(' Mise à jour du token existant');
             const upd = await server
               .from('property_verification_tokens')
               .update({
@@ -911,7 +938,7 @@ serve(async (req) => {
             tokenResult = upd.data;
             createError = upd.error;
           } else {
-            console.log('➕ Création d\'un nouveau token');
+            console.log(' Création d\'un nouveau token');
             const ins = await server
               .from('property_verification_tokens')
               .insert(tokenData)
@@ -924,7 +951,7 @@ serve(async (req) => {
         }
 
         if (createError) {
-          console.error('❌ Erreur lors de la création du token sécurisé:', createError);
+          console.error(' Erreur lors de la création du token sécurisé:', createError);
           return new Response(JSON.stringify({
             success: false,
             error: createError.code === '42P10'
@@ -938,7 +965,7 @@ serve(async (req) => {
         }
 
         newToken = tokenResult;
-        console.log('✅ Token sécurisé Airbnb créé avec succès:', newToken.id);
+        console.log(' Token sécurisé Airbnb créé avec succès:', newToken.id);
       } else {
         // Token normal sans sécurité Airbnb
         const { data: tokenResult, error: createError } = await server
@@ -948,7 +975,7 @@ serve(async (req) => {
           .single();
 
         if (createError) {
-          console.error('❌ Erreur lors de la création du token:', createError);
+          console.error(' Erreur lors de la création du token:', createError);
           return new Response(JSON.stringify({
             success: false,
             error: 'Failed to create guest verification token',
@@ -960,10 +987,10 @@ serve(async (req) => {
         }
 
         newToken = tokenResult;
-        console.log('✅ Token normal créé avec succès:', newToken.id);
+        console.log(' Token normal créé avec succès:', newToken.id);
       }
 
-      // ✅ Un seul lien actif par séjour (INDEPENDENT / ICS sans code Airbnb) : désactiver les anciens tokens du même booking_id
+      //  Un seul lien actif par séjour (INDEPENDENT / ICS sans code Airbnb) : désactiver les anciens tokens du même booking_id
       if (finalBookingId && !hasAirbnbCode && newToken?.id) {
         const { error: deactivateErr } = await server
           .from('property_verification_tokens')
@@ -973,13 +1000,13 @@ serve(async (req) => {
           .neq('id', newToken.id);
 
         if (deactivateErr) {
-          console.warn('⚠️ Impossible de désactiver les anciens tokens du séjour:', deactivateErr.message);
+          console.warn(' Impossible de désactiver les anciens tokens du séjour:', deactivateErr.message);
         } else {
-          console.log('✅ Anciens tokens désactivés pour booking_id:', finalBookingId);
+          console.log(' Anciens tokens désactivés pour booking_id:', finalBookingId);
         }
       }
     } catch (createError) {
-      console.error('❌ Unexpected error during token creation:', createError);
+      console.error(' Unexpected error during token creation:', createError);
       return new Response(JSON.stringify({
         success: false,
         error: 'Unexpected error during token creation',
@@ -990,44 +1017,44 @@ serve(async (req) => {
       });
     }
 
-    // ✅ NOUVEAU : Incrémenter le compteur de réservations (seulement si la fonction existe)
-    // ✅ CORRIGÉ : Gestion silencieuse de l'erreur si la fonction n'existe pas
+    //  NOUVEAU : Incrémenter le compteur de réservations (seulement si la fonction existe)
+    //  CORRIGÉ : Gestion silencieuse de l'erreur si la fonction n'existe pas
     try {
       const { error: incrementError } = await server.rpc('increment_reservation_count', {
         property_uuid: propertyId
       });
       if (incrementError) {
-        // ✅ CORRIGÉ : Ignorer complètement si c'est une erreur PGRST202 (fonction non trouvée)
+        //  CORRIGÉ : Ignorer complètement si c'est une erreur PGRST202 (fonction non trouvée)
         // Cette erreur est attendue si la migration n'a pas été appliquée
         if (incrementError.code === 'PGRST202' || incrementError.message?.includes('not found') || incrementError.message?.includes('schema cache')) {
           // Fonction non disponible - ignorer silencieusement (pas de log)
         } else {
           // Autres erreurs - logger seulement en mode développement
           if (Deno.env.get('ENVIRONMENT') === 'development') {
-            console.error('⚠️ Erreur lors de l\'incrémentation du compteur:', incrementError);
+            console.error(' Erreur lors de l\'incrémentation du compteur:', incrementError);
           }
         }
         // Don't fail token creation for this error
       } else {
         // Succès - logger seulement si nécessaire
         if (Deno.env.get('ENVIRONMENT') === 'development') {
-          console.log('✅ Compteur de réservations incrémenté');
+          console.log(' Compteur de réservations incrémenté');
         }
       }
     } catch (incrementError: any) {
-      // ✅ CORRIGÉ : Ignorer complètement si la fonction n'existe pas
+      //  CORRIGÉ : Ignorer complètement si la fonction n'existe pas
       if (incrementError?.code === 'PGRST202' || incrementError?.message?.includes('not found') || incrementError?.message?.includes('schema cache')) {
         // Fonction non disponible - ignorer silencieusement (pas de log)
       } else {
         // Autres erreurs inattendues - logger seulement en mode développement
         if (Deno.env.get('ENVIRONMENT') === 'development') {
-          console.error('❌ Unexpected error during counter increment:', incrementError);
+          console.error(' Unexpected error during counter increment:', incrementError);
         }
       }
       // Don't fail token creation for this error
     }
 
-    // ✅ URLs : format lien unique selon type (synchronisé vs non synchronisé)
+    //  URLs : format lien unique selon type (synchronisé vs non synchronisé)
     // - Non synchronisé : https://checky.ma/v/{token}
     // - Synchronisé : https://checky.ma/v/{token}/{reservationCode} → dates pré-remplies
     const baseUrl = GUEST_LINK_BASE_URL;
@@ -1039,8 +1066,8 @@ serve(async (req) => {
       ? `${baseUrl}/v/${newToken.token}/${encodeURIComponent(reservationCode)}`
       : `${baseUrl}/v/${newToken.token}`;
 
-    console.log('🔗 Lien invité généré:', guestLink, reservationCode ? `(synced: ${reservationCode})` : '(non-synced)');
-    console.log('📅 Token expires at:', newToken.expires_at);
+    console.log(' Lien invité généré:', guestLink, reservationCode ? `(synced: ${reservationCode})` : '(non-synced)');
+    console.log(' Token expires at:', newToken.expires_at);
 
     return new Response(JSON.stringify({
       success: true,
@@ -1058,7 +1085,7 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('❌ Unexpected error in issue-guest-link:', error);
+    console.error(' Unexpected error in issue-guest-link:', error);
     return new Response(JSON.stringify({
       success: false,
       error: 'Internal server error',
@@ -1156,13 +1183,38 @@ async function handleResolve(server: any, args: ResolveReq) {
     }
   }
 
+  // S22 -- Vérifier que le booking référencé par le token existe toujours en base.
+  // Cas réel observé : booking supprimé → token orphelin actif retourne un bookingId invalide.
+  if (tokenRow.booking_id) {
+    try {
+      const { data: bookingCheck } = await server
+        .from('bookings')
+        .select('id')
+        .eq('id', tokenRow.booking_id)
+        .maybeSingle();
+
+      if (!bookingCheck) {
+        console.warn('S22: booking_id orphelin détecté, désactivation du token', { token, bookingId: tokenRow.booking_id });
+        await server
+          .from('property_verification_tokens')
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq('token', token);
+        return { status: 410, body: { success: false, error: 'BOOKING_NOT_FOUND', reason: 'booking_deleted' } };
+      }
+    } catch (bookingCheckError) {
+      console.warn('S22: Impossible de vérifier le booking (non bloquant):', bookingCheckError);
+      // Non bloquant : on continue avec le booking_id tel quel
+    }
+  }
+
+  // S21 -- used_count incrémenté dans submit-guest-info-unified (soumission finale uniquement).
+  // On met à jour last_used_at pour l'audit sans consommer de quota.
   try {
     await server
       .from('property_verification_tokens')
-      .update({ 
-        used_count: (tokenRow.used_count ?? 0) + 1, 
+      .update({
         last_used_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq('token', token)
       .eq('property_id', propertyId)
@@ -1172,7 +1224,7 @@ async function handleResolve(server: any, args: ResolveReq) {
   return { status: 200, body: { success: true, requiresCode, propertyId, bookingId: tokenRow.booking_id } };
 }
 
-// ✅ CORRECTION : Fonction améliorée pour générer un token unique crypto-secure
+//  CORRECTION : Fonction améliorée pour générer un token unique crypto-secure
 function generateUniqueToken(): string {
   const bytes = new Uint8Array(24); // 192 bits aléatoires crypto-secure
   crypto.getRandomValues(bytes);

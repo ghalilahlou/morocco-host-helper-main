@@ -1,49 +1,9 @@
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-
-// ✅ NOUVEAU : Fonction pour nettoyer le nom du guest récupéré depuis l'URL
-function cleanGuestNameFromUrl(guestName: string): string {
-  if (!guestName || guestName.trim() === '') return '';
-  
-  // Nettoyer le nom des éléments indésirables
-  let cleanedName = guestName.trim();
-  
-  // Supprimer les patterns communs qui ne sont pas des noms
-  const unwantedPatterns = [
-    /phone\s*number/i,
-    /phone/i,
-    /address/i,
-    /adresse/i,
-    /email/i,
-    /tel/i,
-    /mobile/i,
-    /fax/i,
-    /^[A-Z0-9]{6,}$/, // Codes alphanumériques longs
-    /^\d+$/, // Que des chiffres
-    /^[A-Z]{2,}\d+$/, // Combinaisons lettres+chiffres comme "JBFDPhone"
-    /\n/, // Retours à la ligne
-    /\r/, // Retours chariot
-  ];
-  
-  for (const pattern of unwantedPatterns) {
-    if (pattern.test(cleanedName)) {
-      console.log('🧹 Nom nettoyé depuis URL - pattern indésirable détecté:', cleanedName);
-      return ''; // Retourner vide si le nom contient des éléments indésirables
-    }
-  }
-  
-  // Vérifier que le nom contient au moins des lettres
-  if (!/[a-zA-Z]/.test(cleanedName)) {
-    console.log('🧹 Nom nettoyé depuis URL - pas de lettres détectées:', cleanedName);
-    return '';
-  }
-  
-  // Nettoyer les espaces multiples et les retours à la ligne
-  cleanedName = cleanedName.replace(/[\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
-  
-  console.log('✅ Nom nettoyé depuis URL avec succès:', cleanedName);
-  return cleanedName;
-}
+import { sanitizeGuestName } from '@/utils/guestNameUtils';
+import { useGuestPrefillFromUrl } from '@/hooks/useGuestPrefillFromUrl';
+import { useGuestPrefillFromIcsToken } from '@/hooks/useGuestPrefillFromIcsToken';
+import { useGuestPrefillFromAirbnbBooking } from '@/hooks/useGuestPrefillFromAirbnbBooking';
 import { motion } from 'framer-motion';
 // ✅ CORRIGÉ : flushSync retiré car il cause des erreurs Portal
 // import { flushSync } from 'react-dom';
@@ -68,7 +28,7 @@ import { MOTIF_STAY_OPTIONS } from '@/constants/guestMotif';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { parseLocalDate, formatLocalDate, extractDateOnly, parseStayDateForCalendar } from '@/utils/dateUtils';
+import { parseLocalDate, formatLocalDate, extractDateOnly, parseStayDateForCalendar, parseAndNormalizeStayDate } from '@/utils/dateUtils';
 import { OpenAIDocumentService } from '@/services/openaiDocumentService';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import { EnhancedInput } from '@/components/ui/enhanced-input';
@@ -80,7 +40,7 @@ import { validateTokenDirect } from '@/utils/tokenValidation';
 import { Guest } from '@/types/booking'; // ✅ Importer le type centralisé
 import { DEV_GUEST_VERIFICATION_URL, DEV_PRESET_GUEST } from '@/config/devGuestVerification';
 import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
-import { GuestHybridDateField } from '@/components/guest/GuestHybridDateField';
+import { GuestDateSelectField } from '@/components/guest/GuestDateSelectField';
 import { NATIONALITIES } from '@/data/nationalities';
 import { AnimatePresence } from 'framer-motion';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -111,7 +71,7 @@ interface UploadedDocument {
   ocrFailed?: boolean;
 }
 
-/** Parse une date extraite par l’IA en évitant `new Date('YYYY-MM-DD')` (décalage UTC / jour manquant). */
+/** Parse une date extraite par l'IA en évitant `new Date('YYYY-MM-DD')` (décalage UTC / jour manquant). */
 function parseGuestDateFromExtraction(value: string | undefined): Date | null {
   if (!value || typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -181,12 +141,24 @@ const stagger = {
 
 export const GuestVerification = () => {
   const { propertyId, token, airbnbBookingId } = useParams<{
-    propertyId: string; 
-    token: string; 
-    airbnbBookingId?: string; 
+    propertyId: string;
+    token: string;
+    airbnbBookingId?: string;
   }>();
   const location = useLocation();
   const icsBookingQuerySig = bookingQuerySignatureFromSearch(location.search ?? '');
+
+  // P14 — Stratégie de priorité URL > ICS > Airbnb
+  const urlPrefill = useGuestPrefillFromUrl(location.search ?? '');
+  const { prefill: icsPrefill } = useGuestPrefillFromIcsToken(
+    urlPrefill ? undefined : token,   // Court-circuit si URL a déjà fourni les données
+    urlPrefill ? undefined : propertyId
+  );
+  const { prefill: airbnbPrefill } = useGuestPrefillFromAirbnbBooking(
+    propertyId,
+    airbnbBookingId,
+    !urlPrefill && !icsPrefill         // Court-circuit si une priorité supérieure a répondu
+  );
 
   // ✅ FONCTION UTILITAIRE: Validation des dates
   const validateDates = (checkIn: Date, checkOut: Date): { isValid: boolean; error?: string } => {
@@ -216,7 +188,12 @@ export const GuestVerification = () => {
   const t = useT();
   const isMobile = useIsMobile(); // ✅ NOUVEAU: Détection mobile pour UI responsive
   const [isLoading, setIsLoading] = useState(false);
+  const [submissionStep, setSubmissionStep] = useState<string | null>(null);
+  const submissionStepTimerRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [submissionComplete, setSubmissionComplete] = useState(false);
+  // P29 — bookingId détecté en localStorage au montage (soumission précédente)
+  const [previousBookingId, setPreviousBookingId] = useState<string | null>(null);
+  const [showPreviousSubmissionBanner, setShowPreviousSubmissionBanner] = useState(false);
   const [isValidToken, setIsValidToken] = useState(false);
   const [checkingToken, setCheckingToken] = useState(true);
   const [propertyName, setPropertyName] = useState('');
@@ -291,15 +268,12 @@ export const GuestVerification = () => {
         return acc;
       }
       
-      // Chercher si un guest avec les mêmes données existe déjà
+      // Doublon uniquement si même numéro de document non vide (le nom seul ne suffit pas —
+      // une famille peut avoir plusieurs voyageurs du même nom).
       const isDuplicate = acc.some(existingGuest => {
-        const sameFullName = guest.fullName && existingGuest.fullName && 
-                             guest.fullName.trim().toLowerCase() === existingGuest.fullName.trim().toLowerCase();
-        const sameDocNumber = guest.documentNumber && existingGuest.documentNumber && 
-                             guest.documentNumber.trim() === existingGuest.documentNumber.trim();
-        
-        // C'est un doublon si au moins un identifiant correspond
-        return sameFullName || sameDocNumber;
+        const docA = guest.documentNumber?.trim();
+        const docB = existingGuest.documentNumber?.trim();
+        return !!docA && !!docB && docA === docB;
       });
       
       if (!isDuplicate) {
@@ -388,10 +362,89 @@ export const GuestVerification = () => {
     isMountedRef.current = true;
     
     return () => {
-      // Cleanup lors du démontage
+      // Réinitialiser tous les refs de garde (M8) — évite les flags figés sur navigation SPA
       isMountedRef.current = false;
       navigationInProgressRef.current = false;
+      isSubmittingRef.current = false;
+      isProcessingRef.current = false;
+      isCheckingICSRef.current = false;
+      isVerifyingTokenRef.current = false;
+      hasInitializedICSRef.current = false;
+      hasInitializedTokenRef.current = false;
+      hasInitializedBookingRef.current = false;
+      processingFilesRef.current.clear();
+      // Nettoyer les timers de progression (P21)
+      submissionStepTimerRef.current.forEach(clearTimeout);
+      submissionStepTimerRef.current = [];
+      // Révoquer toutes les blob URLs restantes (P26)
+      uploadedDocumentsRef.current.forEach((doc) => {
+        if (doc.url?.startsWith('blob:')) URL.revokeObjectURL(doc.url);
+      });
     };
+  }, []);
+
+  // P14 — Appliquer icsPrefill quand disponible (chemin ICS, priorité 2)
+  useEffect(() => {
+    if (!icsPrefill) return;
+    setCheckInDate(icsPrefill.checkInDate);
+    setCheckOutDate(icsPrefill.checkOutDate);
+    setNumberOfAdults(Math.max(1, icsPrefill.guestCount));
+    setNumberOfChildren(0);
+    if (icsPrefill.guestName) {
+      setGuests(prev => {
+        const next = Array.from({ length: icsPrefill.guestCount }, (_, i) => ({
+          ...createEmptyGuestForm(),
+          fullName: i === 0 ? icsPrefill.guestName! : '',
+        }));
+        return next;
+      });
+    }
+    toast({ title: 'Reservation loaded', description: `${icsPrefill.checkInDate.toLocaleDateString()} - ${icsPrefill.checkOutDate.toLocaleDateString()}` });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [icsPrefill]);
+
+  // P14 — Appliquer airbnbPrefill quand disponible (chemin Airbnb, priorité 3)
+  useEffect(() => {
+    if (!airbnbPrefill) return;
+    setCheckInDate(airbnbPrefill.checkInDate);
+    setCheckOutDate(airbnbPrefill.checkOutDate);
+    setNumberOfAdults(Math.max(1, airbnbPrefill.guestCount));
+    setNumberOfChildren(0);
+    if (airbnbPrefill.guestName) {
+      setGuests(prev => {
+        const updated = [...prev];
+        if (updated[0]) updated[0] = { ...updated[0], fullName: airbnbPrefill.guestName! };
+        return updated;
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [airbnbPrefill]);
+
+  // P29 — Détecter une soumission précédente dès le montage.
+  // Si un bookingId namespacé ou legacy existe en localStorage et a moins de 4 h,
+  // afficher un banner proposant d'aller directement à la signature.
+  useEffect(() => {
+    try {
+      const ns = propertyId && token ? `${propertyId}:${token}` : null;
+      const storedId =
+        (ns ? localStorage.getItem(`currentBookingId:${ns}`) : null) ??
+        localStorage.getItem('currentBookingId');
+      const storedUrl =
+        (ns ? localStorage.getItem(`contractUrl:${ns}`) : null) ??
+        localStorage.getItem('contractUrl');
+      if (storedId && storedUrl) {
+        // TTL 4 heures — passé ce délai, la soumission est trop ancienne pour être reprise
+        const storedAt = localStorage.getItem(`submittedAt:${storedId}`) ?? '';
+        const age = storedAt ? Date.now() - Number(storedAt) : 0;
+        if (!storedAt || age < 4 * 3600 * 1000) {
+          setPreviousBookingId(storedId);
+          setShowPreviousSubmissionBanner(true);
+        }
+      }
+    } catch {
+      // localStorage indisponible — pas de banner
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ✅ Log de debug supprimé pour éviter le spam dans la console
@@ -418,8 +471,8 @@ export const GuestVerification = () => {
   const lastBookingMatchKeyRef = useRef<string>('');
 
   /**
-   * Réservation indépendante : ne pas garder startDate/endDate/guests/airbnbCode/guestName dans l’URL.
-   * Sinon anciens liens / VerifyToken / session figent l’étape « Réservation » avant tout effet ICS.
+   * Réservation indépendante : ne pas garder startDate/endDate/guests/airbnbCode/guestName dans l'URL.
+   * Sinon anciens liens / VerifyToken / session figent l'étape « Réservation » avant tout effet ICS.
    * On nettoie aussi sessionStorage (brouillon) pour ce propertyId+token.
    */
   useLayoutEffect(() => {
@@ -511,162 +564,42 @@ export const GuestVerification = () => {
       try {
         console.log('🔍 Vérification des données ICS pour lien direct...');
         
-        // ✅ NOUVEAU : Vérifier d'abord les paramètres d'URL pour les dates
-        const urlParams = new URLSearchParams(window.location.search);
-        const startDateParam = urlParams.get('startDate');
-        const endDateParam = urlParams.get('endDate');
-        const guestNameParam = urlParams.get('guestName');
-        const guestsParam = urlParams.get('guests');
-        const airbnbCodeParam = urlParams.get('airbnbCode');
-        const isIndependentFromUrl =
-          !airbnbCodeParam ||
-          String(airbnbCodeParam).trim() === '' ||
-          String(airbnbCodeParam).toUpperCase() === 'INDEPENDENT_BOOKING';
-
-        if (startDateParam && endDateParam && !isIndependentFromUrl) {
-          console.log('✅ Dates trouvées dans l\'URL, pré-remplissage direct:', {
-            startDate: startDateParam,
-            endDate: endDateParam,
-            guestName: guestNameParam,
-            guests: guestsParam,
-            airbnbCode: airbnbCodeParam
+        // P14 — Pré-remplissage URL via useGuestPrefillFromUrl (hook dédié, propre, sans try/catch).
+        // Le hook parse, valide et normalise les dates en amont.
+        if (urlPrefill) {
+          console.log('✅ [URL prefill] Dates et invités depuis URL:', {
+            checkIn: urlPrefill.checkInDate.toLocaleDateString('fr-FR'),
+            checkOut: urlPrefill.checkOutDate.toLocaleDateString('fr-FR'),
+            guestCount: urlPrefill.guestCount,
+            guestName: urlPrefill.guestName,
           });
 
-          // ✅ CORRIGÉ : Pré-remplir directement depuis l'URL en utilisant parseLocalDate
-          // pour éviter le décalage d'un jour causé par l'interprétation UTC de new Date()
-          // ✅ AJOUT : Gestion d'erreurs robuste pour éviter page blanche
-          // ✅ CORRIGÉ : Utiliser extractDateOnly pour éviter les décalages de timezone
-          try {
-            // Extraire la partie date (YYYY-MM-DD) depuis n'importe quel format
-            const startDateStr = extractDateOnly(startDateParam);
-            const endDateStr = extractDateOnly(endDateParam);
-            
-            // ✅ CORRIGÉ : Parser les dates et normaliser à minuit local pour éviter les problèmes de comparaison
-            const startDateParsed = parseLocalDate(startDateStr);
-            const endDateParsed = parseLocalDate(endDateStr);
-            
-            // ✅ CRITIQUE : Normaliser les dates à minuit local (sans heures/minutes/secondes)
-            // Cela évite les problèmes de comparaison dans le calendrier
-            const startDate = new Date(startDateParsed.getFullYear(), startDateParsed.getMonth(), startDateParsed.getDate());
-            const endDate = new Date(endDateParsed.getFullYear(), endDateParsed.getMonth(), endDateParsed.getDate());
-            
-            console.log('📅 Dates récupérées depuis l\'URL (normalisées à minuit local):', {
-              startDateParam,
-              endDateParam,
-              startDateStr,
-              endDateStr,
-              // ✅ CORRIGÉ : Afficher les valeurs réelles utilisées (format local) au lieu de toISOString()
-              startDateLocal: startDate.toLocaleDateString('fr-FR'),
-              endDateLocal: endDate.toLocaleDateString('fr-FR'),
-              startDateFormatted: formatLocalDate(startDate),
-              endDateFormatted: formatLocalDate(endDate),
-              // ✅ DEBUG : Afficher aussi les composants de date pour vérification
-              startDateComponents: {
-                year: startDate.getFullYear(),
-                month: startDate.getMonth() + 1,
-                day: startDate.getDate()
-              },
-              endDateComponents: {
-                year: endDate.getFullYear(),
-                month: endDate.getMonth() + 1,
-                day: endDate.getDate()
-              },
-              isValidStart: startDate.getTime() > 0,
-              isValidEnd: endDate.getTime() > 0
-            });
-            
-            setCheckInDate(startDate);
-            setCheckOutDate(endDate);
-            const guestsCount = Math.max(1, Math.min(10, parseInt(guestsParam || '1', 10) || 1));
-            setNumberOfGuests(guestsCount);
-            setNumberOfAdults(Math.max(1, guestsCount));
-            setNumberOfChildren(0);
-            
-            // ✅ CORRIGÉ CRITIQUE : NE PAS recréer le tableau guests si déjà initialisé
-            // Cela évite de créer des doublons lors des re-renders
-            setGuests(prevGuests => {
-              console.log('📊 Synchronisation guests depuis URL:', {
-                guestsCount,
-                prevGuestsCount: prevGuests.length,
-                guestNameParam: guestNameParam || '(vide)'
-              });
-              
-              // Si le nombre est déjà bon ET qu'on n'a pas de nom à ajouter, ne rien faire
-              if (prevGuests.length === guestsCount) {
-              // ✅ RÉACTIVÉ : Le pré-remplissage fonctionne maintenant avec des select natifs (pas de Portals)
-              // Vérifier si on a un nom à ajouter
-              if (guestNameParam && guestNameParam.trim()) {
-                const cleanGuestName = cleanGuestNameFromUrl(decodeURIComponent(guestNameParam));
-                if (cleanGuestName && prevGuests[0] && !prevGuests[0].fullName) {
-                  const updated = [...prevGuests];
-                  updated[0] = { ...updated[0], fullName: cleanGuestName };
-                  console.log('✅ Nom du guest ajouté depuis URL:', cleanGuestName);
-                  return updated;
-                }
+          setCheckInDate(urlPrefill.checkInDate);
+          setCheckOutDate(urlPrefill.checkOutDate);
+          setNumberOfAdults(Math.max(1, urlPrefill.guestCount));
+          setNumberOfChildren(0);
+
+          setGuests(prevGuests => {
+            const target = urlPrefill.guestCount;
+            if (prevGuests.length === target) {
+              if (urlPrefill.guestName && prevGuests[0] && !prevGuests[0].fullName) {
+                const updated = [...prevGuests];
+                updated[0] = { ...updated[0], fullName: urlPrefill.guestName };
+                return updated;
               }
-              console.log('✅ Nombre de guests déjà correct, pas de modification');
               return prevGuests;
             }
-            
-            // Sinon, créer le bon nombre de guests
-            const newGuests: Guest[] = [];
-            for (let i = 0; i < guestsCount; i++) {
-              newGuests.push({
-                fullName: '',
-                dateOfBirth: undefined,
-                nationality: '',
-                documentNumber: '',
-                documentType: 'passport',
-                documentIssueDate: undefined,
-                profession: '',
-                motifSejour: 'TOURISME',
-                adressePersonnelle: '',
-                email: ''
-              });
-            }
-
-            // Pré-remplir le nom du guest si disponible (nettoyé) - seulement pour le premier guest
-            if (guestNameParam && guestNameParam.trim() && newGuests.length > 0) {
-              const cleanGuestName = cleanGuestNameFromUrl(decodeURIComponent(guestNameParam));
-              if (cleanGuestName) {
-                newGuests[0].fullName = cleanGuestName;
-                console.log('✅ Nouveau tableau guests créé avec nom:', cleanGuestName);
-              }
-            }
-            
-            console.log('✅ Nouveau tableau guests créé:', newGuests.length);
-            return newGuests;
+            return Array.from({ length: target }, (_, i) => ({
+              ...createEmptyGuestForm(),
+              fullName: i === 0 ? (urlPrefill.guestName || '') : '',
+            }));
           });
-          } catch (dateError) {
-            console.error('❌ Erreur lors du parsing des dates depuis l\'URL:', dateError);
-            // ✅ FALLBACK : Utiliser new Date() si parseLocalDate échoue
-            try {
-              const startDate = new Date(startDateParam);
-              const endDate = new Date(endDateParam);
-              if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-                const guestsCount = Math.max(1, Math.min(10, parseInt(guestsParam || '1', 10) || 1));
-                setCheckInDate(startDate);
-                setCheckOutDate(endDate);
-                setNumberOfGuests(guestsCount);
-                setNumberOfAdults(Math.max(1, guestsCount));
-                setNumberOfChildren(0);
-                console.warn('⚠️ Utilisation fallback new Date() pour les dates');
-              }
-            } catch (fallbackError) {
-              console.error('❌ Erreur même avec fallback new Date():', fallbackError);
-            }
-          }
 
           toast({
-            title: "Dates de réservation chargées",
-            description: `Réservation ${airbnbCodeParam || 'Airbnb'} du ${new Date(startDateParam).toLocaleDateString('fr-FR')} au ${new Date(endDateParam).toLocaleDateString('fr-FR')}`
+            title: 'Dates de réservation chargées',
+            description: `Du ${urlPrefill.checkInDate.toLocaleDateString('fr-FR')} au ${urlPrefill.checkOutDate.toLocaleDateString('fr-FR')}`
           });
-
-          return; // Sortir si les dates sont dans l'URL
-        }
-
-        if (startDateParam && endDateParam && isIndependentFromUrl) {
-          console.log('⏭️ [ICS] Dates dans l’URL ignorées (INDEPENDENT_BOOKING — saisie par le voyageur)');
+          return; // Pré-remplissage URL terminé
         }
 
         // Fallback : Vérifier le token si pas de paramètres d'URL
@@ -750,7 +683,6 @@ export const GuestVerification = () => {
               setCheckOutDate(parseLocalDate(endDateStr));
               {
                 const ng = Math.max(1, Math.min(10, reservationData.numberOfGuests || 1));
-                setNumberOfGuests(ng);
                 setNumberOfAdults(Math.max(1, ng));
                 setNumberOfChildren(0);
               }
@@ -762,7 +694,6 @@ export const GuestVerification = () => {
                 setCheckOutDate(new Date(reservationData.endDate));
                 {
                   const ng = Math.max(1, Math.min(10, reservationData.numberOfGuests || 1));
-                  setNumberOfGuests(ng);
                   setNumberOfAdults(Math.max(1, ng));
                   setNumberOfChildren(0);
                 }
@@ -823,9 +754,10 @@ export const GuestVerification = () => {
 
   const [checkInDate, setCheckInDate] = useState<Date | undefined>();
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
-  const [numberOfGuests, setNumberOfGuests] = useState(1);
   const [numberOfAdults, setNumberOfAdults] = useState(1);
   const [numberOfChildren, setNumberOfChildren] = useState(0);
+  // Source de vérité : adults + children. Plus de state séparé pour éviter les désynchronisations.
+  const numberOfGuests = numberOfAdults + numberOfChildren;
 
   // Aligner guests sur numberOfGuests. Dépend aussi de guests.length pour corriger les setGuests async
   // (ex. ICS qui remplace par [un seul voyageur] alors que numberOfGuests vaut 3).
@@ -847,9 +779,15 @@ export const GuestVerification = () => {
   const calendarPanelRef = useRef<HTMLDivElement>(null);
   const guestsPanelRef = useRef<HTMLDivElement>(null);
   
-  // Fermer les panneaux au clic extérieur
+  // Fermer les panneaux au clic extérieur.
+  // IMPORTANT : on écoute 'click' et non 'mousedown' car les <select> natifs émettent
+  // un mousedown sur document.body lors de la sélection d'une option (OS-level dropdown),
+  // ce qui fermait le panneau AVANT que le onChange du select ne soit traité.
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      // Ignorer si un <select> est actif (interraction avec dropdown natif)
+      if (document.activeElement?.tagName === 'SELECT') return;
+
       if (calendarPanelRef.current && !calendarPanelRef.current.contains(event.target as Node)) {
         setShowCalendarPanel(false);
       }
@@ -857,38 +795,49 @@ export const GuestVerification = () => {
         setShowGuestsPanel(false);
       }
     };
-    
+
     if (showCalendarPanel || showGuestsPanel) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      // 'click' au lieu de 'mousedown' : le select natif ne déclenche pas de click sur document
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [showCalendarPanel, showGuestsPanel]);
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
+  // Ref toujours à jour — utilisé uniquement dans le cleanup d'unmount pour révoquer les blob URLs.
+  const uploadedDocumentsRef = useRef<UploadedDocument[]>([]);
+  useEffect(() => { uploadedDocumentsRef.current = uploadedDocuments; }, [uploadedDocuments]);
 
   /** Pièce d'identité importée et OCR terminé pour ce voyageur (index aligné documents ↔ guests). */
   const identityUnlockedForGuest = useCallback(
     (guestIndex: number) => {
+      // 1. Document à l'index exact — déverrouiller dès que le traitement est terminé
+      //    (que l'OCR ait réussi ou échoué, l'invité doit pouvoir corriger manuellement).
       const doc = uploadedDocuments[guestIndex];
       if (doc && !doc.processing) return true;
 
+      // 2. Avec le traitement parallèle (P8), un document peut être à un index différent
+      //    (ordre d'arrivée vs ordre des guests). On cherche UN document traité qui
+      //    correspond à ce voyageur par nom ou n° de document.
       const guest = guests[guestIndex];
-      if (!guest?.fullName?.trim()) return false;
-
-      // L'OCR peut remplir un autre index que l'ordre d'upload : déverrouiller si un doc
-      // traité correspond à ce voyageur (nom ou n° de document).
-      return uploadedDocuments.some((d) => {
-        if (!d || d.processing || !d.extractedData) return false;
+      if (uploadedDocuments.some((d) => {
+        if (!d || d.processing) return false;
+        if (!d.extractedData) return true; // doc traité sans extractedData (OCR échoué) → déverrouiller
         const ext = d.extractedData as Partial<Guest>;
         const sameName =
-          ext.fullName &&
-          guest.fullName &&
+          ext.fullName && guest?.fullName &&
           ext.fullName.trim().toLowerCase() === guest.fullName.trim().toLowerCase();
         const sameDoc =
-          ext.documentNumber &&
-          guest.documentNumber &&
+          ext.documentNumber && guest?.documentNumber &&
           ext.documentNumber.trim() === guest.documentNumber.trim();
         return Boolean(sameName || sameDoc);
-      });
+      })) return true;
+
+      // 3. Fallback : si au moins UN document a fini de traiter et que ce voyageur
+      //    a été rempli (fullName non vide), déverrouiller (l'OCR a travaillé sur lui).
+      const hasAnyProcessedDoc = uploadedDocuments.some(d => d && !d.processing);
+      if (hasAnyProcessedDoc && guest?.fullName?.trim()) return true;
+
+      return false;
     },
     [uploadedDocuments, guests]
   );
@@ -907,11 +856,9 @@ export const GuestVerification = () => {
     });
   }, []);
 
-  const guestDateForPicker = (raw: Date | string | undefined): Date | undefined => {
-    if (raw == null || raw === '') return undefined;
-    const parsed = parseStayDateForCalendar(raw);
-    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-  };
+  // P35 — Utilise parseAndNormalizeStayDate qui retourne null (pas Date(NaN)) pour le picker
+  const guestDateForPicker = (raw: Date | string | undefined): Date | undefined =>
+    parseAndNormalizeStayDate(raw) ?? undefined;
 
   const [currentStep, setCurrentStep] = useState<'booking' | 'documents' | 'signature'>('booking');
   
@@ -1022,7 +969,8 @@ export const GuestVerification = () => {
           setCheckOutDate(new Date(parsedBooking.checkOutDate));
         }
         if (parsedBooking.numberOfGuests) {
-          setNumberOfGuests(parsedBooking.numberOfGuests);
+          setNumberOfAdults(Math.max(1, parsedBooking.numberOfGuests));
+          setNumberOfChildren(0);
         }
         console.log('✅ [Persistance] Booking restauré:', parsedBooking);
       }
@@ -1030,7 +978,9 @@ export const GuestVerification = () => {
       // Restaurer le nombre de guests
       const savedNumberOfGuests = sessionStorage.getItem(getSessionKey('form_numberOfGuests'));
       if (savedNumberOfGuests) {
-        setNumberOfGuests(parseInt(savedNumberOfGuests, 10));
+        const savedN = Math.max(1, parseInt(savedNumberOfGuests, 10));
+        setNumberOfAdults(savedN);
+        setNumberOfChildren(0);
       }
       
       // ✅ NOUVEAU : Restaurer les documents uploadés
@@ -1326,7 +1276,8 @@ export const GuestVerification = () => {
           }
           
           if (matchedReservation.number_of_guests) {
-            setNumberOfGuests(matchedReservation.number_of_guests);
+            setNumberOfAdults(Math.max(1, matchedReservation.number_of_guests));
+            setNumberOfChildren(0);
           }
           
           if (matchedReservation.guest_name) {
@@ -1385,7 +1336,6 @@ export const GuestVerification = () => {
       if (prev.length <= 1) return prev;
       return prev.filter((_, i) => i !== index);
     });
-    setNumberOfGuests(t => Math.max(1, t - 1));
     if (numberOfChildren > 0) {
       setNumberOfChildren(c => c - 1);
     } else {
@@ -1393,156 +1343,102 @@ export const GuestVerification = () => {
     }
   };
 
-  // ✅ SOLUTION FINALE : handleFileUpload simplifié sans manipulation manuelle des Portals
   const handleFileUpload = useCallback(async (files: FileList) => {
-    console.log('🚨 ALERTE - handleFileUpload appelé avec', files.length, 'fichier(s)');
-    
-    // ✅ PROTECTION : Empêcher les appels multiples simultanés
     if (isProcessingRef.current) {
       console.warn('⚠️ handleFileUpload déjà en cours, appel ignoré');
       return;
     }
-    
     if (!files || files.length === 0) return;
 
     isProcessingRef.current = true;
-    
-    // ✅ CORRIGÉ : Logger pour debug
-    console.log('🔍 DEBUG: handleFileUpload - Début traitement', {
-      filesCount: files.length,
-      fileNames: Array.from(files).map(f => f.name),
-      isProcessingBefore: isProcessingRef.current
-    });
 
-    try {
-      // ✅ CORRIGÉ : Traiter tous les fichiers de manière séquentielle pour éviter les conflits
-      for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      
-      // ✅ PROTECTION : Vérifier si ce fichier est déjà en cours de traitement
+    const filesArray = Array.from(files);
+
+    if (filesArray.length > 5) {
+      toast({
+        title: 'Traitement en cours',
+        description: `Le traitement de ${filesArray.length} photos peut prendre jusqu'à 30 s.`,
+      });
+    }
+
+    // Traite un seul fichier : URL → spinner → OCR → mise à jour state
+    const processFile = async (file: File) => {
       const fileKey = `${file.name}-${file.size}-${file.lastModified}`;
+
       if (processingFilesRef.current.has(fileKey)) {
         console.warn('⚠️ Fichier déjà en cours de traitement:', file.name);
-        continue;
+        return;
       }
-      
-      if (!file.type.startsWith('image/')) {
+
+      if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
         toast({
           title: t('upload.error.notImage.title'),
           description: t('upload.error.notImage.desc', { filename: file.name }),
-          variant: "destructive"
+          variant: 'destructive',
         });
-        continue;
+        return;
       }
 
-      // ✅ PROTECTION : Marquer le fichier comme en cours de traitement
       processingFilesRef.current.add(fileKey);
       const url = URL.createObjectURL(file);
-      
+
       try {
-        // ✅ SIMPLIFIÉ : Ajouter le document en processing (SANS manipulation de Portals)
-        const newDoc: UploadedDocument = {
-          file,
-          url,
-          processing: true,
-          extractedData: null
-        };
+        setUploadedDocuments(prev => [...prev, { file, url, processing: true, extractedData: null }]);
 
-        setUploadedDocuments(prev => [...prev, newDoc]);
-        
-        // ✅ CORRIGÉ : Extraire les données une seule fois
         const extractedData = await OpenAIDocumentService.extractDocumentData(file);
-        console.log('🚨 ALERTE - Données extraites:', {
-          hasDateOfBirth: !!extractedData.dateOfBirth,
-          dateOfBirth: extractedData.dateOfBirth,
-          fullName: extractedData.fullName
-        });
-
-        // ✅ SIMPLIFIÉ : Mettre à jour les documents (SANS manipulation de Portals)
         const ocrSucceeded = Boolean(extractedData && Object.keys(extractedData).length > 0);
-        setUploadedDocuments(prev => 
-          prev.map(doc => 
-            doc.url === url 
-              ? { ...doc, processing: false, extractedData, ocrFailed: !ocrSucceeded }
-              : doc
+
+        setUploadedDocuments(prev =>
+          prev.map(doc =>
+            doc.url === url ? { ...doc, processing: false, extractedData, ocrFailed: !ocrSucceeded } : doc
           )
         );
 
-        // ✅ AMÉLIORÉ : Accepter le document même si certains champs manquent
         if (ocrSucceeded) {
-          const hasRequiredIdFields = extractedData.fullName && 
-                                    extractedData.documentNumber && 
-                                    extractedData.nationality && 
-                                    extractedData.documentType;
-
+          const hasRequiredIdFields = extractedData.fullName && extractedData.documentNumber &&
+                                      extractedData.nationality && extractedData.documentType;
           if (!hasRequiredIdFields) {
-            // ✅ NOUVEAU : Au lieu de rejeter, accepter et demander complétion manuelle
-            const missingFields = [];
+            const missingFields: string[] = [];
             if (!extractedData.fullName) missingFields.push('nom complet');
             if (!extractedData.documentNumber) missingFields.push('numéro de document');
             if (!extractedData.nationality) missingFields.push('nationalité');
             if (!extractedData.documentType) missingFields.push('type de document');
-            
             toast({
-              title: "Document partiellement reconnu",
-              description: `Certaines informations n'ont pas pu être extraites automatiquement (${missingFields.join(', ')}). Veuillez les compléter manuellement ci-dessous.`,
-              variant: "default",
+              title: 'Document partiellement reconnu',
+              description: `Certaines informations n'ont pas pu être extraites (${missingFields.join(', ')}). Veuillez les compléter manuellement.`,
             });
-            
-            // ✅ ACCEPTER le document avec les données partielles
-            // L'utilisateur pourra compléter manuellement
           }
 
-          // ✅ RÉACTIVÉ : La mise à jour automatique fonctionne maintenant avec des select natifs (pas de Portals)
+          // Les mises à jour fonctionnelles sont toujours séquencées par React —
+          // sans risque de race condition même en traitement parallèle.
           setGuests(prevGuests => {
             const updatedGuests = [...prevGuests];
-            
-            // ✅ PROTECTION RENFORCÉE : Chercher d'abord un invité existant avec le même nom ou document
-            // Cela évite de créer des doublons
             let targetIndex = -1;
-            
+
             if (extractedData.fullName || extractedData.documentNumber) {
               targetIndex = updatedGuests.findIndex(guest => {
-                const sameFullName = extractedData.fullName && guest.fullName && 
-                                    extractedData.fullName.trim().toLowerCase() === guest.fullName.trim().toLowerCase();
-                const sameDocNumber = extractedData.documentNumber && guest.documentNumber && 
-                                     extractedData.documentNumber.trim() === guest.documentNumber.trim();
-                
-                return sameFullName || sameDocNumber;
+                const sameDocNumber = extractedData.documentNumber && guest.documentNumber &&
+                                      extractedData.documentNumber.trim() === guest.documentNumber.trim();
+                return sameDocNumber;
               });
-              
-              // ✅ Si trouvé, vérifier que les données ne sont pas déjà complètes (éviter les mises à jour inutiles)
+
               if (targetIndex !== -1) {
                 const existingGuest = updatedGuests[targetIndex];
-                const isAlreadyComplete = 
+                const isAlreadyComplete =
                   existingGuest.fullName?.trim().toLowerCase() === extractedData.fullName?.trim().toLowerCase() &&
                   existingGuest.documentNumber?.trim() === extractedData.documentNumber?.trim() &&
                   existingGuest.nationality === extractedData.nationality;
-                
-                if (isAlreadyComplete) {
-                  console.log('⚠️ Données déjà présentes et complètes, mise à jour ignorée pour éviter doublon');
-                  return prevGuests; // Ne pas mettre à jour si les données sont déjà complètes
-                }
-                
-                console.log(`✅ Guest existant trouvé à l'index ${targetIndex}, mise à jour en cours`);
+                if (isAlreadyComplete) return prevGuests;
               }
             }
-            
-            // 2. Si pas trouvé, chercher un invité vide
+
             if (targetIndex === -1) {
-              targetIndex = updatedGuests.findIndex(guest => 
-                !guest.fullName && !guest.documentNumber
-              );
+              targetIndex = updatedGuests.findIndex(guest => !guest.fullName && !guest.documentNumber);
             }
-            
-            // 3. Si toujours pas trouvé, utiliser le premier invité disponible
-            if (targetIndex === -1 && updatedGuests.length > 0) {
-              targetIndex = 0; // Utiliser le premier invité
-            }
-            
-            // 4. Si aucun invité, créer un nouveau
+            if (targetIndex === -1 && updatedGuests.length > 0) targetIndex = 0;
+
             if (targetIndex === -1) {
-              const newGuest: Guest = {
+              return [...updatedGuests, {
                 fullName: extractedData.fullName || '',
                 dateOfBirth: parseGuestDateFromExtraction(extractedData.dateOfBirth) ?? undefined,
                 nationality: extractedData.nationality || '',
@@ -1554,107 +1450,59 @@ export const GuestVerification = () => {
                 adressePersonnelle: '',
                 email: '',
                 placeOfBirth: extractedData.placeOfBirth || undefined,
-              };
-              return [...updatedGuests, newGuest];
+              }];
             }
-            
-            // ✅ CORRIGÉ : Mise à jour directe de l'invité trouvé
-            const targetGuest = updatedGuests[targetIndex];
-            
-            // ✅ PROTECTION : Ne mettre à jour que si les champs sont vides ou différents
-            if (extractedData.fullName && (!targetGuest.fullName || targetGuest.fullName !== extractedData.fullName)) {
-              targetGuest.fullName = extractedData.fullName;
-            }
-            if (extractedData.nationality && (!targetGuest.nationality || targetGuest.nationality !== extractedData.nationality)) {
-              targetGuest.nationality = extractedData.nationality;
-            }
-            if (extractedData.documentNumber && (!targetGuest.documentNumber || targetGuest.documentNumber !== extractedData.documentNumber)) {
-              targetGuest.documentNumber = extractedData.documentNumber;
-            }
-            if (extractedData.documentType && (!targetGuest.documentType || targetGuest.documentType !== extractedData.documentType)) {
-              targetGuest.documentType = extractedData.documentType as 'passport' | 'national_id';
-            }
-            if (
-              extractedData.placeOfBirth &&
-              (!targetGuest.placeOfBirth || targetGuest.placeOfBirth !== extractedData.placeOfBirth)
-            ) {
-              targetGuest.placeOfBirth = extractedData.placeOfBirth;
-            }
-            
+
+            const tg = updatedGuests[targetIndex];
+            if (extractedData.fullName && tg.fullName !== extractedData.fullName) tg.fullName = extractedData.fullName;
+            if (extractedData.nationality && tg.nationality !== extractedData.nationality) tg.nationality = extractedData.nationality;
+            if (extractedData.documentNumber && tg.documentNumber !== extractedData.documentNumber) tg.documentNumber = extractedData.documentNumber;
+            if (extractedData.documentType && tg.documentType !== extractedData.documentType) tg.documentType = extractedData.documentType as 'passport' | 'national_id';
+            if (extractedData.placeOfBirth && tg.placeOfBirth !== extractedData.placeOfBirth) tg.placeOfBirth = extractedData.placeOfBirth;
+
             if (extractedData.dateOfBirth) {
-              const parsedDate = parseGuestDateFromExtraction(extractedData.dateOfBirth);
-              const minDate = new Date(1900, 0, 1);
-              if (parsedDate && !isNaN(parsedDate.getTime()) && parsedDate >= minDate) {
-                targetGuest.dateOfBirth = parsedDate;
-                console.log('✅ Date de naissance extraite et mise à jour:', format(parsedDate, 'dd/MM/yyyy'));
-              } else {
-                console.warn('⚠️ Impossible de parser la date de naissance:', extractedData.dateOfBirth);
-              }
+              const parsed = parseGuestDateFromExtraction(extractedData.dateOfBirth);
+              if (parsed && !isNaN(parsed.getTime()) && parsed >= new Date(1900, 0, 1)) tg.dateOfBirth = parsed;
             }
-            
             if (extractedData.documentIssueDate) {
-              const parsedExpiryDate = parseGuestDateFromExtraction(extractedData.documentIssueDate);
-              const minDate = new Date(1990, 0, 1);
-              const maxDate = new Date(2050, 11, 31);
-              if (parsedExpiryDate && !isNaN(parsedExpiryDate.getTime()) && parsedExpiryDate >= minDate && parsedExpiryDate <= maxDate) {
-                targetGuest.documentIssueDate = parsedExpiryDate;
-                console.log('✅ Date d\'expiration extraite et mise à jour:', format(parsedExpiryDate, 'dd/MM/yyyy'));
-              } else {
-                console.warn('⚠️ Impossible de parser la date d\'expiration:', extractedData.documentIssueDate);
-              }
+              const parsed = parseGuestDateFromExtraction(extractedData.documentIssueDate);
+              if (parsed && !isNaN(parsed.getTime()) && parsed >= new Date(1990, 0, 1) && parsed <= new Date(2050, 11, 31)) tg.documentIssueDate = parsed;
             }
-            
             return updatedGuests;
           });
 
-          toast({
-            title: "Document traité",
-            description: "Document d'identité valide. Informations extraites automatiquement.",
-          });
+          toast({ title: 'Document traité', description: 'Informations extraites automatiquement.' });
         } else {
           setUploadedDocuments(prev =>
-            prev.map(doc =>
-              doc.url === url ? { ...doc, processing: false, ocrFailed: true } : doc
-            )
+            prev.map(doc => doc.url === url ? { ...doc, processing: false, ocrFailed: true } : doc)
           );
-          toast({
-            title: t('upload.docNotRecognized.title'),
-            description: t('upload.docNotRecognized.desc'),
-            variant: "destructive"
-          });
+          toast({ title: t('upload.docNotRecognized.title'), description: t('upload.docNotRecognized.desc'), variant: 'destructive' });
         }
       } catch (error) {
-        // ✅ CORRIGÉ : Ignorer les erreurs de document invalide (déjà gérées)
         if (error instanceof Error && error.message === 'INVALID_DOCUMENT') {
-          // Document invalide déjà géré, juste continuer
-          console.log('⚠️ Document invalide ignoré');
+          // Déjà géré
         } else {
           console.error('Document processing failed:', error);
-          // ✅ SIMPLIFIÉ : Marquer comme échec (SANS startTransition)
-          setUploadedDocuments(prev => 
-            prev.map(doc => 
-              doc.url === url 
-                ? { ...doc, processing: false, ocrFailed: true }
-                : doc
-            )
+          setUploadedDocuments(prev =>
+            prev.map(doc => doc.url === url ? { ...doc, processing: false, ocrFailed: true } : doc)
           );
-          
-          toast({
-            title: t('upload.warning.title'),
-            description: t('upload.warning.desc'),
-            variant: "destructive"
-          });
+          toast({ title: t('upload.warning.title'), description: t('upload.warning.desc'), variant: 'destructive' });
         }
       } finally {
-        // ✅ PROTECTION : Retirer le fichier de la liste des fichiers en cours
         processingFilesRef.current.delete(fileKey);
       }
-      } // Fin de la boucle for
+    };
+
+    try {
+      // Traitement parallèle par lots de 3 (P8) — gain : 3 photos → ~12 s au lieu de ~36 s
+      const BATCH = 3;
+      for (let i = 0; i < filesArray.length; i += BATCH) {
+        await Promise.all(filesArray.slice(i, i + BATCH).map(processFile));
+      }
     } finally {
-      // ✅ PROTECTION : Réinitialiser le flag de traitement
       isProcessingRef.current = false;
     }
-  }, [toast, t]); // ✅ Dépendances simplifiées (plus de manipulation de Portals)
+  }, [toast, t]);
 
   const removeDocument = useCallback((url: string) => {
     console.log('🗑️ Removing document:', url);
@@ -1824,10 +1672,8 @@ export const GuestVerification = () => {
     // ✅ VALIDATION STRICTE : Vérifier que TOUS les champs requis sont remplis, y compris le motif de séjour
     // ✅ NOUVEAU : Validation adaptée pour citoyens marocains (CIN acceptée avec date d'entrée optionnelle)
     const incompleteGuests = deduplicatedGuests.filter((guest) => {
-      const rowIndex = rowIndexForGuest(guest);
-      const motifSelect = document.querySelector(`select[name="motifSejour-${rowIndex}"]`) as HTMLSelectElement;
-      const motifSejour = motifSelect?.value || guest.motifSejour || '';
-      
+      const motifSejour = guest.motifSejour || '';
+
       // Vérifier les champs de base
       if (!guest.fullName || !guest.dateOfBirth || !guest.nationality || !motifSejour || motifSejour.trim() === '') {
         return true;
@@ -1894,17 +1740,11 @@ export const GuestVerification = () => {
       // ✅ CORRIGÉ : Utiliser deduplicatedGuests pour éviter les doublons dans la soumission
       // ✅ VALIDATION STRICTE : Inclure le motif de séjour pour TOUS les invités (même critères que réservation/documents/signatures)
       const guestData = {
-        guests: deduplicatedGuests.map((guest) => {
-          const rowIndex = rowIndexForGuest(guest);
-          const motifSelect = document.querySelector(`select[name="motifSejour-${rowIndex}"]`) as HTMLSelectElement;
-          const motifSejour = motifSelect?.value || guest.motifSejour || 'TOURISME';
-          
-          return {
-            ...guest,
-            dateOfBirth: guest.dateOfBirth ? format(guest.dateOfBirth, 'yyyy-MM-dd') : null,
-            motifSejour: motifSejour // ✅ VALIDATION STRICTE : Inclure le motif validé
-          };
-        })
+        guests: deduplicatedGuests.map((guest) => ({
+          ...guest,
+          dateOfBirth: guest.dateOfBirth ? format(guest.dateOfBirth, 'yyyy-MM-dd') : null,
+          motifSejour: guest.motifSejour || 'TOURISME',
+        }))
       };
 
       const bookingData = {
@@ -1943,9 +1783,7 @@ export const GuestVerification = () => {
       // ✅ VALIDATION STRICTE : Vérifier que TOUS les invités ont un motif de séjour valide
       // (même critères que pour la réservation, les documents et les signatures)
       const guestsWithoutMotif = deduplicatedGuests.filter((guest) => {
-        const rowIndex = rowIndexForGuest(guest);
-        const motifSelect = document.querySelector(`select[name="motifSejour-${rowIndex}"]`) as HTMLSelectElement;
-        const motifSejour = motifSelect?.value || guest.motifSejour || '';
+        const motifSejour = guest.motifSejour || '';
         return !motifSejour || motifSejour.trim() === '';
       });
 
@@ -1961,29 +1799,20 @@ export const GuestVerification = () => {
         return;
       }
 
-      // ✅ CRITIQUE : Lire les valeurs depuis les inputs pour chaque voyageur (email, profession, adresse, motif)
-      const guestsPayload = deduplicatedGuests.map((guest) => {
-        const rowIndex = rowIndexForGuest(guest);
-        const emailInput = document.querySelector(`input[name="email-${rowIndex}"]`) as HTMLInputElement;
-        const professionInput = document.querySelector(`input[name="profession-${rowIndex}"]`) as HTMLInputElement;
-        const adresseInput = document.querySelector(`input[name="adresse-${rowIndex}"]`) as HTMLInputElement;
-        const motifSelectEl = document.querySelector(`select[name="motifSejour-${rowIndex}"]`) as HTMLSelectElement;
-        const motifSejour = motifSelectEl?.value || guest.motifSejour || '';
-        return {
-          firstName: guest.fullName?.split(' ')[0] || '',
-          lastName: guest.fullName?.split(' ').slice(1).join(' ') || '',
-          email: emailInput?.value || guest.email || '',
-          nationality: guest.nationality || '',
-          idType: guest.documentType || 'passport',
-          idNumber: guest.documentNumber || '',
-          dateOfBirth: guest.dateOfBirth ? format(guest.dateOfBirth, 'yyyy-MM-dd') : undefined,
-          documentIssueDate: guest.documentIssueDate ? format(guest.documentIssueDate, 'yyyy-MM-dd') : undefined,
-          profession: professionInput?.value || guest.profession || '',
-          motifSejour,
-          adressePersonnelle: adresseInput?.value || guest.adressePersonnelle || '',
-          placeOfBirth: guest.placeOfBirth || '',
-        };
-      });
+      const guestsPayload = deduplicatedGuests.map((guest) => ({
+        firstName: guest.fullName?.split(' ')[0] || '',
+        lastName: guest.fullName?.split(' ').slice(1).join(' ') || '',
+        email: guest.email || '',
+        nationality: guest.nationality || '',
+        idType: guest.documentType || 'passport',
+        idNumber: guest.documentNumber || '',
+        dateOfBirth: guest.dateOfBirth ? format(guest.dateOfBirth, 'yyyy-MM-dd') : undefined,
+        documentIssueDate: guest.documentIssueDate ? format(guest.documentIssueDate, 'yyyy-MM-dd') : undefined,
+        profession: guest.profession || '',
+        motifSejour: guest.motifSejour || '',
+        adressePersonnelle: guest.adressePersonnelle || '',
+        placeOfBirth: guest.placeOfBirth || '',
+      }));
 
       const guestInfo = guestsPayload[0];
       console.log('🔍 DEBUG - guestsPayload final:', guestsPayload);
@@ -2004,94 +1833,43 @@ export const GuestVerification = () => {
         }
       }
 
-      // ✅ CORRECTION : Convertir les fichiers en base64 au lieu d'envoyer des blob URLs
-      // ✅ CRITIQUE : Wrapper dans try-catch pour éviter que les erreurs Portal bloquent le flux
-      console.log('📄 Converting documents to base64...');
-      let idDocuments;
-      try {
-        idDocuments = await Promise.all(
-          uploadedDocuments.map(async (doc, index) => {
-            // ✅ CRITIQUE : Wrapper chaque conversion dans un try-catch individuel
-            try {
-              // Convertir le fichier en base64
-              const fileData = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => {
-                  try {
-                    resolve(reader.result as string);
-                  } catch (error) {
-                    // Ignorer les erreurs Portal pendant la conversion
-                    if (error instanceof Error && error.message.includes('insertBefore')) {
-                      console.warn('⚠️ [GuestVerification] Erreur Portal ignorée pendant conversion base64');
-                      resolve(reader.result as string); // Continuer quand même
-                    } else {
-                      reject(error);
-                    }
-                  }
-                };
-                reader.onerror = (error) => {
-                  // Ignorer les erreurs Portal
-                  if (error && typeof error === 'object' && 'message' in error && 
-                      String(error.message).includes('insertBefore')) {
-                    console.warn('⚠️ [GuestVerification] Erreur Portal ignorée dans FileReader');
-                    resolve(''); // Retourner une chaîne vide si erreur Portal
-                  } else {
-                    reject(error);
-                  }
-                };
-                reader.readAsDataURL(doc.file);
-              });
-              
-              return {
-                name: doc.file.name || `document_${index + 1}`,
-                url: fileData, // data:image/...;base64,...
-                type: doc.file.type || 'application/octet-stream',
-                size: doc.file.size
-              };
-            } catch (error) {
-              // ✅ CRITIQUE : Si erreur Portal, continuer avec une chaîne vide
-              if (error instanceof Error && (
-                error.message.includes('insertBefore') || 
-                error.message.includes('NotFoundError') ||
-                error.name === 'NotFoundError'
-              )) {
-                console.warn('⚠️ [GuestVerification] Erreur Portal ignorée, utilisation de fallback pour document', index);
-                return {
+      // Convertir les fichiers en base64 pour l'envoi à l'Edge function
+      const idDocuments = await Promise.all(
+        uploadedDocuments.map((doc, index) =>
+          new Promise<{ name: string; url: string; type: string; size: number }>(
+            (resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () =>
+                resolve({
                   name: doc.file.name || `document_${index + 1}`,
-                  url: '', // Fallback vide si erreur Portal
+                  url: reader.result as string,
                   type: doc.file.type || 'application/octet-stream',
-                  size: doc.file.size
-                };
-              }
-              throw error; // Re-lancer les autres erreurs
+                  size: doc.file.size,
+                });
+              reader.onerror = reject;
+              reader.readAsDataURL(doc.file);
             }
-          })
-        );
-      } catch (error) {
-        // ✅ CRITIQUE : Si erreur globale Portal, utiliser les fichiers directement
-        if (error instanceof Error && (
-          error.message.includes('insertBefore') || 
-          error.message.includes('NotFoundError') ||
-          error.name === 'NotFoundError'
-        )) {
-          console.warn('⚠️ [GuestVerification] Erreur Portal globale ignorée, utilisation de fallback');
-          // Fallback : utiliser les URLs blob directement
-          idDocuments = uploadedDocuments.map((doc, index) => ({
-            name: doc.file.name || `document_${index + 1}`,
-            url: doc.url, // Utiliser l'URL blob comme fallback
-            type: doc.file.type || 'application/octet-stream',
-            size: doc.file.size
-          }));
-        } else {
-          throw error; // Re-lancer les autres erreurs
-        }
-      }
+          )
+        )
+      );
       
       console.log('✅ Documents converted to base64:', {
         count: idDocuments.length,
         sizes: idDocuments.map(d => d.size),
         hasErrors: idDocuments.some(d => !d.url || d.url === '')
       });
+
+      // Démarrer le feedback de progression textuelle (P21)
+      const steps = [
+        t('guestVerification.submissionStep1'),
+        t('guestVerification.submissionStep2'),
+        t('guestVerification.submissionStep3'),
+      ];
+      setSubmissionStep(steps[0]);
+      submissionStepTimerRef.current = [
+        setTimeout(() => setSubmissionStep(steps[1]), 4000),
+        setTimeout(() => setSubmissionStep(steps[2]), 12000),
+      ];
 
       // Utiliser le service unifié
       const { submitDocumentsUnified } = await import('@/services/documentServiceUnified');
@@ -2185,24 +1963,26 @@ export const GuestVerification = () => {
       // ✅ Le workflow unifié a déjà tout synchronisé automatiquement !
       console.log('✅ Documents déjà synchronisés par le workflow unifié');
 
-      // ✅ CORRECTION : Sauvegarder les données enrichies du workflow unifié
-      // ⚠️ IMPORTANT : Sauvegarder dans localStorage AVANT la navigation (fallback pour Vercel)
+      // Sauvegarder les données dans localStorage (fallback Vercel qui perd location.state).
+      // M5 — Clés namespacées par propertyId:token pour éviter qu'une 2e réservation ouverte
+      // dans le même navigateur écrase les données de la 1re.
       try {
-        localStorage.setItem('currentBookingId', bookingId);
-        localStorage.setItem('currentBookingData', JSON.stringify(bookingData));
-        localStorage.setItem('currentGuestData', JSON.stringify({ ...guestInfo, guests: guestsPayload }));
-        localStorage.setItem('contractUrl', result.contractUrl);
-        // ✅ NOUVEAU: Sauvegarder le nom de propriété pour la page de confirmation
-        if (propertyName) {
-          localStorage.setItem('currentPropertyName', propertyName);
-        }
-        if (result.policeUrl) {
-          localStorage.setItem('policeUrl', result.policeUrl);
-        }
-        console.log('✅ Données sauvegardées dans localStorage pour fallback Vercel');
+        const ns = `${propertyId}:${token}`;
+        const set = (k: string, v: string) => {
+          localStorage.setItem(`${k}:${ns}`, v); // clé namespacée
+          localStorage.setItem(k, v);             // clé legacy (compatibilité ContractSigning existant)
+        };
+        set('currentBookingId', bookingId);
+        set('currentBookingData', JSON.stringify(bookingData));
+        set('currentGuestData', JSON.stringify({ ...guestInfo, guests: guestsPayload }));
+        set('contractUrl', result.contractUrl);
+        if (propertyName) set('currentPropertyName', propertyName);
+        if (result.policeUrl) set('policeUrl', result.policeUrl);
+        // TTL pour le banner P29
+        localStorage.setItem(`submittedAt:${bookingId}`, String(Date.now()));
+        console.log('✅ Données sauvegardées dans localStorage (clés namespacées + legacy)');
       } catch (storageError) {
-        console.warn('⚠️ Erreur lors de la sauvegarde dans localStorage:', storageError);
-        // Ne pas bloquer la navigation si localStorage échoue
+        console.warn('⚠️ Erreur localStorage:', storageError);
       }
 
       toast({
@@ -2314,12 +2094,12 @@ export const GuestVerification = () => {
       // Réinitialiser le flag de navigation en cas d'erreur
       navigationInProgressRef.current = false;
     } finally {
-      // ✅ CORRIGÉ : Réinitialiser tous les flags de soumission
       isSubmittingRef.current = false;
       isProcessingRef.current = false;
-      
-      // ✅ CORRIGÉ : setIsLoading(false) seulement si la navigation n'a pas réussi
-      // (si navigation réussie, on ne sera plus dans ce composant)
+      // Nettoyer les timers de progression et réinitialiser le step (P21)
+      submissionStepTimerRef.current.forEach(clearTimeout);
+      submissionStepTimerRef.current = [];
+      setSubmissionStep(null);
       if (!navigationInProgressRef.current) {
         setIsLoading(false);
       }
@@ -2524,15 +2304,51 @@ export const GuestVerification = () => {
             className="border-amber-400 bg-white/90"
             onClick={() => {
               setGuests([{ ...DEV_PRESET_GUEST }]);
-              setNumberOfGuests(1);
+              setNumberOfAdults(1);
+              setNumberOfChildren(0);
               toast({ title: 'Invité démo', description: 'Champs préremplis — complétez ou remplacez avant envoi.' });
             }}
           >
-            Préremplir l’invité démo
+            Préremplir l'invité démo
           </Button>
         </div>
       ) : null}
       
+      {/* P29 — Banner soumission précédente (TTL 4h) */}
+      {showPreviousSubmissionBanner && previousBookingId && (
+        <div
+          role="alert"
+          className="mx-4 mt-4 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900 flex flex-col gap-2"
+        >
+          <p className="font-semibold">{t('guestVerification.previousSubmission.title')}</p>
+          <p className="text-teal-700">{t('guestVerification.previousSubmission.desc')}</p>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              className="px-4 py-2 rounded-lg bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 transition-colors"
+              onClick={() => {
+                const ns = propertyId && token ? `${propertyId}:${token}` : null;
+                const url =
+                  (ns ? localStorage.getItem(`contractUrl:${ns}`) : null) ??
+                  localStorage.getItem('contractUrl') ?? '';
+                const base = `/contract-signing/${propertyId}/${token}`;
+                const dest = airbnbBookingId ? `${base}/${airbnbBookingId}` : base;
+                navigate(dest, { state: { bookingId: previousBookingId, contractUrl: url } });
+              }}
+            >
+              {t('guestVerification.previousSubmission.goSign')}
+            </button>
+            <button
+              type="button"
+              className="px-4 py-2 rounded-lg border border-teal-400 text-teal-800 text-xs font-medium hover:bg-teal-100 transition-colors"
+              onClick={() => setShowPreviousSubmissionBanner(false)}
+            >
+              {t('guestVerification.previousSubmission.restart')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ========================================
           MOBILE HEADER - Visible uniquement sur mobile
           ======================================== */}
@@ -3246,8 +3062,6 @@ export const GuestVerification = () => {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setNumberOfAdults(Math.max(1, numberOfAdults - 1));
-                                        const total = Math.max(1, numberOfAdults - 1) + numberOfChildren;
-                                        setNumberOfGuests(total);
                                       }}
                                       disabled={numberOfAdults <= 1}
                                       style={{
@@ -3278,8 +3092,6 @@ export const GuestVerification = () => {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setNumberOfAdults(numberOfAdults + 1);
-                                        const total = (numberOfAdults + 1) + numberOfChildren;
-                                        setNumberOfGuests(total);
                                       }}
                                       style={{
                                         width: '36px',
@@ -3317,8 +3129,6 @@ export const GuestVerification = () => {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setNumberOfChildren(Math.max(0, numberOfChildren - 1));
-                                        const total = numberOfAdults + Math.max(0, numberOfChildren - 1);
-                                        setNumberOfGuests(total);
                                       }}
                                       disabled={numberOfChildren <= 0}
                                       style={{
@@ -3349,8 +3159,6 @@ export const GuestVerification = () => {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setNumberOfChildren(numberOfChildren + 1);
-                                        const total = numberOfAdults + (numberOfChildren + 1);
-                                        setNumberOfGuests(total);
                                       }}
                                       style={{
                                         width: '36px',
@@ -3420,8 +3228,6 @@ export const GuestVerification = () => {
                                     className="mobile-guests-btn"
                                     onClick={() => {
                                       setNumberOfAdults(Math.max(1, numberOfAdults - 1));
-                                      const total = Math.max(1, numberOfAdults - 1) + numberOfChildren;
-                                      setNumberOfGuests(total);
                                     }}
                                     disabled={numberOfAdults <= 1}
                                   >−</button>
@@ -3430,8 +3236,6 @@ export const GuestVerification = () => {
                                     className="mobile-guests-btn"
                                     onClick={() => {
                                       setNumberOfAdults(numberOfAdults + 1);
-                                      const total = (numberOfAdults + 1) + numberOfChildren;
-                                      setNumberOfGuests(total);
                                     }}
                                   >+</button>
                                 </div>
@@ -3445,8 +3249,6 @@ export const GuestVerification = () => {
                                     className="mobile-guests-btn"
                                     onClick={() => {
                                       setNumberOfChildren(Math.max(0, numberOfChildren - 1));
-                                      const total = numberOfAdults + Math.max(0, numberOfChildren - 1);
-                                      setNumberOfGuests(total);
                                     }}
                                     disabled={numberOfChildren <= 0}
                                   >−</button>
@@ -3455,8 +3257,6 @@ export const GuestVerification = () => {
                                     className="mobile-guests-btn"
                                     onClick={() => {
                                       setNumberOfChildren(numberOfChildren + 1);
-                                      const total = numberOfAdults + (numberOfChildren + 1);
-                                      setNumberOfGuests(total);
                                     }}
                                   >+</button>
                                 </div>
@@ -3487,16 +3287,17 @@ export const GuestVerification = () => {
                               aria-hidden="true"
                             />
                             )}
-                          <motion.div 
+                          <motion.div
                             ref={calendarPanelRef}
                             initial={{ opacity: 0, y: isMobile ? 80 : -10, scale: isMobile ? 0.98 : 0.95 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: isMobile ? 80 : -10, scale: isMobile ? 0.98 : 0.95 }}
-                            className={isMobile 
-                              ? 'fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top)] z-[61] bg-white rounded-t-2xl shadow-2xl overflow-y-auto safe-area-bottom' 
+                            className={isMobile
+                              ? 'fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top)] z-[61] bg-white rounded-t-2xl shadow-2xl overflow-y-auto safe-area-bottom'
                               : 'absolute top-full left-0 right-0 mt-3 flex justify-center z-50'
                             }
                             onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
                           >
                             <div className={isMobile ? 'p-4 pb-8' : 'bg-white rounded-xl shadow-2xl p-6'}>
                               {isMobile && (
@@ -3538,6 +3339,7 @@ export const GuestVerification = () => {
                                 mode="range"
                                 rangeStart={checkInDate}
                                 rangeEnd={checkOutDate}
+                                minDate={new Date()}
                                 onRangeSelect={(checkIn, checkOut) => {
                                   const normalizedCheckIn = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
                                   const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
@@ -3837,6 +3639,7 @@ export const GuestVerification = () => {
                                       placeholder=""
                                       required
                                       disabled={identityFieldsLocked}
+                                      autoComplete="name"
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
@@ -3845,12 +3648,11 @@ export const GuestVerification = () => {
                                     <Label htmlFor={`guest-dob-${rowIndex}`} className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.dateOfBirth')} <span className="text-red-500">*</span>
                                     </Label>
-                                    <GuestHybridDateField
+                                    <GuestDateSelectField
                                       id={`guest-dob-${rowIndex}`}
                                       variant="birth"
                                       value={guestDateForPicker(guest.dateOfBirth)}
                                       onChange={(date) => updateGuest(rowIndex, 'dateOfBirth', date)}
-                                      ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
                                       disabled={identityFieldsLocked}
                                     />
                                   </div>
@@ -3868,6 +3670,7 @@ export const GuestVerification = () => {
                                       required
                                       disabled={identityFieldsLocked}
                                       list={`nationalities-list-${rowIndex}`}
+                                      autoComplete="country-name"
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                     <datalist id={`nationalities-list-${rowIndex}`}>
@@ -3887,6 +3690,7 @@ export const GuestVerification = () => {
                                       value={guest.placeOfBirth || ''}
                                       onChange={(e) => updateGuest(rowIndex, 'placeOfBirth', e.target.value)}
                                       disabled={identityFieldsLocked}
+                                      autoComplete="off"
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
@@ -3924,6 +3728,8 @@ export const GuestVerification = () => {
                                       placeholder=""
                                       required
                                       disabled={identityFieldsLocked}
+                                      autoComplete="off"
+                                      inputMode="text"
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
@@ -3932,14 +3738,26 @@ export const GuestVerification = () => {
                                     <Label htmlFor={`guest-doc-expiry-${rowIndex}`} className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.documentExpiryDate')}
                                     </Label>
-                                    <GuestHybridDateField
+                                    <GuestDateSelectField
                                       id={`guest-doc-expiry-${rowIndex}`}
                                       variant="expiry"
                                       value={guestDateForPicker(guest.documentIssueDate)}
                                       onChange={(date) => updateGuest(rowIndex, 'documentIssueDate', date)}
-                                      ariaLabel={t('guest.clients.documentExpiryPlaceholder')}
                                       disabled={identityFieldsLocked}
                                     />
+                                    {(() => {
+                                      const dob = guest.dateOfBirth instanceof Date ? guest.dateOfBirth : undefined;
+                                      const expiry = guest.documentIssueDate instanceof Date ? guest.documentIssueDate : undefined;
+                                      if (dob && expiry && dob >= expiry) {
+                                        return (
+                                          <p className="text-xs text-amber-600 flex items-center gap-1" role="alert">
+                                            <span aria-hidden="true">⚠</span>
+                                            {t('guestVerification.dobAfterExpiryWarning')}
+                                          </p>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
                                   </div>
                                   
                                   <div className="space-y-2">
@@ -3949,17 +3767,14 @@ export const GuestVerification = () => {
                                     <input
                                       type="text"
                                       id={`profession-${rowIndex}`}
-                                      name={`profession-${rowIndex}`}
-                                      defaultValue={guest.profession || ''}
-                                      onInput={(e) => {
-                                        const target = e.target as HTMLInputElement;
-                                        updateGuest(rowIndex, 'profession', target.value);
-                                      }}
+                                      value={guest.profession || ''}
+                                      onChange={(e) => updateGuest(rowIndex, 'profession', e.target.value)}
                                       placeholder=""
+                                      autoComplete="organization-title"
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
                                   </div>
-                                  
+
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.motifSejour')} <span className="text-red-500">*</span>
@@ -3967,11 +3782,8 @@ export const GuestVerification = () => {
                                     <div className="relative">
                                       <select
                                         id={`motifSejour-${rowIndex}`}
-                                        name={`motifSejour-${rowIndex}`}
-                                        defaultValue={guest.motifSejour || ''} 
-                                        onChange={(e) => {
-                                          updateGuest(rowIndex, 'motifSejour', e.target.value);
-                                        }}
+                                        value={guest.motifSejour || ''}
+                                        onChange={(e) => updateGuest(rowIndex, 'motifSejour', e.target.value)}
                                         className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
                                         required
                                       >
@@ -3987,7 +3799,7 @@ export const GuestVerification = () => {
                                       </svg>
                                     </div>
                                   </div>
-                                  
+
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.personalAddress')}
@@ -3995,17 +3807,14 @@ export const GuestVerification = () => {
                                     <input
                                       type="text"
                                       id={`adresse-${rowIndex}`}
-                                      name={`adresse-${rowIndex}`}
-                                      defaultValue={guest.adressePersonnelle || ''}
-                                      onInput={(e) => {
-                                        const target = e.target as HTMLInputElement;
-                                        updateGuest(rowIndex, 'adressePersonnelle', target.value);
-                                      }}
+                                      value={guest.adressePersonnelle || ''}
+                                      onChange={(e) => updateGuest(rowIndex, 'adressePersonnelle', e.target.value)}
                                       placeholder=""
+                                      autoComplete="street-address"
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
                                   </div>
-                                  
+
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.email')}{' '}
@@ -4014,13 +3823,11 @@ export const GuestVerification = () => {
                                     <input
                                       type="email"
                                       id={`email-${rowIndex}`}
-                                      name={`email-${rowIndex}`}
-                                      defaultValue={guest.email || ''}
-                                      onInput={(e) => {
-                                        const target = e.target as HTMLInputElement;
-                                        updateGuest(rowIndex, 'email', target.value);
-                                      }}
+                                      value={guest.email || ''}
+                                      onChange={(e) => updateGuest(rowIndex, 'email', e.target.value)}
                                       placeholder=""
+                                      autoComplete="email"
+                                      inputMode="email"
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
                                     />
                                   </div>
@@ -4032,14 +3839,29 @@ export const GuestVerification = () => {
                         </div>
                     </div>
                     
-                    {/* Footer navigation - matching Figma */}
-                    <div style={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between', 
+                    {/* Footer navigation — sticky sur mobile, inline sur desktop (P30) */}
+                    <div style={isMobile ? {
+                      position: 'sticky',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      display: 'flex',
+                      justifyContent: 'space-between',
                       alignItems: 'center',
-                      paddingTop: '32px', 
+                      gap: '12px',
+                      background: '#FFFFFF',
+                      borderTop: '1px solid #E5E7EB',
+                      padding: '12px 16px',
+                      paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+                      zIndex: 40,
+                      marginTop: '24px',
+                    } : {
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingTop: '32px',
                       marginTop: '32px',
-                      gap: '16px'
+                      gap: '16px',
                     }}>
                       {/* Bouton Précédent */}
                       <button
@@ -4113,8 +3935,8 @@ export const GuestVerification = () => {
                           e.currentTarget.style.background = 'rgba(85, 186, 159, 0.8)';
                         }}
                       >
-                        {t('guestVerification.submitAndContinue')}
-                        <ArrowRight className="w-4 h-4" />
+                        {isLoading && submissionStep ? submissionStep : t('guestVerification.submitAndContinue')}
+                        {!isLoading && <ArrowRight className="w-4 h-4" />}
                       </button>
                     </div>
                   </motion.div>
