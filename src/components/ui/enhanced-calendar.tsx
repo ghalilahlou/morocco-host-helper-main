@@ -22,6 +22,8 @@ interface EnhancedCalendarProps {
   rangeStart?: Date;
   rangeEnd?: Date;
   onRangeSelect?: (start: Date, end: Date) => void;
+  /** Appelé à chaque clic en mode range (1er clic = fin null, 2e clic = plage complète). */
+  onRangeProgress?: (start: Date | null, end: Date | null) => void;
   minDate?: Date;
   maxDate?: Date;
   disabledDates?: Date[];
@@ -61,6 +63,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   rangeStart,
   rangeEnd,
   onRangeSelect,
+  onRangeProgress,
   minDate = undefined,
   maxDate,
   disabledDates = [],
@@ -151,12 +154,14 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
       if (!selectionInProgress) {
         setSelectionInProgress(day);
         setHoveredDate(null);
+        onRangeProgress?.(day, null);
         return;
       }
       if (isSameDay(selectionInProgress, day)) return;
 
       const start = selectionInProgress <= day ? selectionInProgress : day;
       const end = selectionInProgress <= day ? day : selectionInProgress;
+      onRangeProgress?.(start, end);
       onRangeSelect?.(start, end);
       setSelectionInProgress(null);
       setHoveredDate(null);
@@ -362,7 +367,11 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
             <motion.div
               key={date.getTime()}
               className="relative w-10 h-10 flex items-center justify-center text-base font-normal transition-all duration-200 cursor-pointer"
-              onClick={() => handleDateClick(date)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDateClick(date);
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
               onMouseEnter={() => mode === 'range' && selectionInProgress && setHoveredDate(startOfDay(date))}
               onMouseLeave={() => setHoveredDate(null)}
               whileHover={{ scale: isDateDisabled(date) ? 1 : 1.05 }}

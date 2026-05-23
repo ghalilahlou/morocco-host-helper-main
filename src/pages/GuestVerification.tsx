@@ -776,28 +776,20 @@ export const GuestVerification = () => {
 
   const [showCalendarPanel, setShowCalendarPanel] = useState(false);
   const [showGuestsPanel, setShowGuestsPanel] = useState(false);
-  const calendarPanelRef = useRef<HTMLDivElement>(null);
-  const guestsPanelRef = useRef<HTMLDivElement>(null);
+  /** Barre réservation + panneaux calendrier / voyageurs (clic extérieur). */
+  const bookingPanelsRef = useRef<HTMLDivElement>(null);
   
-  // Fermer les panneaux au clic extérieur.
-  // IMPORTANT : on écoute 'click' et non 'mousedown' car les <select> natifs émettent
-  // un mousedown sur document.body lors de la sélection d'une option (OS-level dropdown),
-  // ce qui fermait le panneau AVANT que le onChange du select ne soit traité.
+  // Fermer les panneaux au clic extérieur (barre + dropdowns inclus).
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      // Ignorer si un <select> est actif (interraction avec dropdown natif)
       if (document.activeElement?.tagName === 'SELECT') return;
-
-      if (calendarPanelRef.current && !calendarPanelRef.current.contains(event.target as Node)) {
+      if (bookingPanelsRef.current && !bookingPanelsRef.current.contains(event.target as Node)) {
         setShowCalendarPanel(false);
-      }
-      if (guestsPanelRef.current && !guestsPanelRef.current.contains(event.target as Node)) {
         setShowGuestsPanel(false);
       }
     };
 
     if (showCalendarPanel || showGuestsPanel) {
-      // 'click' au lieu de 'mousedown' : le select natif ne déclenche pas de click sur document
       document.addEventListener('click', handleClickOutside);
       return () => document.removeEventListener('click', handleClickOutside);
     }
@@ -2313,41 +2305,6 @@ export const GuestVerification = () => {
           </Button>
         </div>
       ) : null}
-      
-      {/* P29 — Banner soumission précédente (TTL 4h) */}
-      {showPreviousSubmissionBanner && previousBookingId && (
-        <div
-          role="alert"
-          className="mx-4 mt-4 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900 flex flex-col gap-2"
-        >
-          <p className="font-semibold">{t('guestVerification.previousSubmission.title')}</p>
-          <p className="text-teal-700">{t('guestVerification.previousSubmission.desc')}</p>
-          <div className="flex gap-2 flex-wrap">
-            <button
-              type="button"
-              className="px-4 py-2 rounded-lg bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 transition-colors"
-              onClick={() => {
-                const ns = propertyId && token ? `${propertyId}:${token}` : null;
-                const url =
-                  (ns ? localStorage.getItem(`contractUrl:${ns}`) : null) ??
-                  localStorage.getItem('contractUrl') ?? '';
-                const base = `/contract-signing/${propertyId}/${token}`;
-                const dest = airbnbBookingId ? `${base}/${airbnbBookingId}` : base;
-                navigate(dest, { state: { bookingId: previousBookingId, contractUrl: url } });
-              }}
-            >
-              {t('guestVerification.previousSubmission.goSign')}
-            </button>
-            <button
-              type="button"
-              className="px-4 py-2 rounded-lg border border-teal-400 text-teal-800 text-xs font-medium hover:bg-teal-100 transition-colors"
-              onClick={() => setShowPreviousSubmissionBanner(false)}
-            >
-              {t('guestVerification.previousSubmission.restart')}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ========================================
           MOBILE HEADER - Visible uniquement sur mobile
@@ -2701,13 +2658,52 @@ export const GuestVerification = () => {
       
       {/* Right Main Content - full width on mobile (no sidebar) */}
       <div 
-        className={`flex-1 flex flex-col w-full ${isMobile ? 'safe-area-all min-h-screen' : ''}`}
+        className={`flex-1 flex flex-col w-full ${
+          isMobile ? 'safe-area-all min-h-screen' : ''
+        } ${
+          currentStep === 'booking' && (showCalendarPanel || showGuestsPanel) ? 'overflow-visible' : ''
+        }`}
         style={{ 
           backgroundColor: '#FDFDF9',
           marginLeft: isMobile ? 0 : '436px',
           minHeight: '100vh'
         }}
       >
+        {/* P29 — Banner soumission précédente (dans la zone principale, pas à côté de la sidebar) */}
+        {showPreviousSubmissionBanner && previousBookingId && (
+          <div
+            role="alert"
+            className="mx-6 mt-4 rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900 flex flex-col gap-2"
+          >
+            <p className="font-semibold">{t('guestVerification.previousSubmission.title')}</p>
+            <p className="text-teal-700">{t('guestVerification.previousSubmission.desc')}</p>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg bg-teal-600 text-white text-xs font-medium hover:bg-teal-700 transition-colors"
+                onClick={() => {
+                  const ns = propertyId && token ? `${propertyId}:${token}` : null;
+                  const url =
+                    (ns ? localStorage.getItem(`contractUrl:${ns}`) : null) ??
+                    localStorage.getItem('contractUrl') ?? '';
+                  const base = `/contract-signing/${propertyId}/${token}`;
+                  const dest = airbnbBookingId ? `${base}/${airbnbBookingId}` : base;
+                  navigate(dest, { state: { bookingId: previousBookingId, contractUrl: url } });
+                }}
+              >
+                {t('guestVerification.previousSubmission.goSign')}
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg border border-teal-400 text-teal-800 text-xs font-medium hover:bg-teal-100 transition-colors"
+                onClick={() => setShowPreviousSubmissionBanner(false)}
+              >
+                {t('guestVerification.previousSubmission.restart')}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Header with Logo and Language Switcher (langue uniquement sur desktop ; sur mobile elle est dans le bandeau noir) */}
         <div className="p-6 flex justify-between items-center">
           <div className="flex items-center" style={{ visibility: 'hidden' }}>
@@ -2935,13 +2931,23 @@ export const GuestVerification = () => {
         </div>
         
         {/* Main Content - scrollable, touch-friendly on mobile */}
-        <div className={`flex-1 px-6 pb-6 overflow-y-auto ${isMobile ? 'guest-verification-main smooth-scroll' : ''}`}>
+        <div
+          className={`flex-1 px-6 pb-6 ${
+            currentStep === 'booking' && (showCalendarPanel || showGuestsPanel)
+              ? 'overflow-visible'
+              : 'overflow-y-auto'
+          } ${isMobile ? 'guest-verification-main smooth-scroll' : ''}`}
+        >
               {/* ✅ CORRIGÉ : Retirer ErrorBoundary car il causait des doubles rendus visuels */}
               {/* L'intercepteur global d'erreurs window.onerror gère déjà les erreurs Portal */}
                 {/* ✅ CORRIGÉ : Retirer AnimatePresence pour éviter les conflits avec les Portals Radix UI */}
                 {/* Utiliser simplement des div conditionnelles avec des clés stables */}
                 {currentStep === 'booking' && (
-                  <div className={`mx-auto space-y-6 relative ${isMobile ? 'max-w-full px-4' : 'max-w-4xl'}`}>
+                  <div
+                    className={`mx-auto space-y-6 relative ${
+                      isMobile ? 'max-w-full px-4' : 'max-w-4xl'
+                    } ${showCalendarPanel || showGuestsPanel ? 'z-30' : ''}`}
+                  >
                     {/* Titre - adapté mobile */}
                     <motion.h2 
                       initial={{ opacity: 0, y: -10 }}
@@ -2954,7 +2960,7 @@ export const GuestVerification = () => {
                     </motion.h2>
                     
                     {/* Central Search Bar - Responsive */}
-                    <div className="relative">
+                    <div className="relative" ref={bookingPanelsRef}>
                       <motion.div 
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -2989,11 +2995,13 @@ export const GuestVerification = () => {
                         >
                           <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWhen')}</Label>
                           <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>
-                            {checkInDate && checkOutDate 
-                              ? isMobile 
+                            {checkInDate && checkOutDate
+                              ? isMobile
                                 ? `${format(checkInDate, 'dd/MM')} → ${format(checkOutDate, 'dd/MM/yy')}`
                                 : `${format(checkInDate, 'dd/MM/yyyy')} - ${format(checkOutDate, 'dd/MM/yyyy')}`
-                              : t('guestVerification.selectDates')
+                              : checkInDate
+                                ? `${format(checkInDate, isMobile ? 'dd/MM' : 'dd/MM/yyyy')} → …`
+                                : t('guestVerification.selectDates')
                             }
                           </div>
                         </div>
@@ -3023,7 +3031,6 @@ export const GuestVerification = () => {
                           {/* Panneau flottant Voyageurs - Desktop only ici, Mobile = bottom sheet */}
                           {showGuestsPanel && !isMobile && (
                             <motion.div 
-                              ref={guestsPanelRef}
                               initial={{ opacity: 0, y: -10, scale: 0.95 }}
                               animate={{ opacity: 1, y: 0, scale: 1 }}
                               exit={{ opacity: 0, y: -10, scale: 0.95 }}
@@ -3288,13 +3295,12 @@ export const GuestVerification = () => {
                             />
                             )}
                           <motion.div
-                            ref={calendarPanelRef}
                             initial={{ opacity: 0, y: isMobile ? 80 : -10, scale: isMobile ? 0.98 : 0.95 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: isMobile ? 80 : -10, scale: isMobile ? 0.98 : 0.95 }}
                             className={isMobile
                               ? 'fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top)] z-[61] bg-white rounded-t-2xl shadow-2xl overflow-y-auto safe-area-bottom'
-                              : 'absolute top-full left-0 right-0 mt-3 flex justify-center z-50'
+                              : 'absolute top-full left-0 right-0 mt-3 flex justify-center z-[100]'
                             }
                             onClick={(e) => e.stopPropagation()}
                             onMouseDown={(e) => e.stopPropagation()}
@@ -3335,11 +3341,17 @@ export const GuestVerification = () => {
                               )}
                               
                               <EnhancedCalendar
-                                key={`cal-${token ?? 't'}-${checkInDate?.getTime() ?? 'ci'}-${checkOutDate?.getTime() ?? 'co'}`}
+                                key={`cal-${token ?? 't'}-${checkInDate?.getTime() ?? 'ci'}-${checkOutDate?.getTime() ?? 'co'}-${showCalendarPanel}`}
                                 mode="range"
                                 rangeStart={checkInDate}
                                 rangeEnd={checkOutDate}
-                                minDate={new Date()}
+                                onRangeProgress={(start, end) => {
+                                  if (start && !end) {
+                                    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+                                    setCheckInDate(d);
+                                    setCheckOutDate(undefined);
+                                  }
+                                }}
                                 onRangeSelect={(checkIn, checkOut) => {
                                   const normalizedCheckIn = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
                                   const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
