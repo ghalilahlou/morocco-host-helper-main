@@ -480,7 +480,18 @@ export default {
   // Calendrier – titres du panneau de sélection de dates
   'guest.calendar.selectTitle': 'Sélectionnez vos dates',
   'guest.calendar.selectSubtitle': "Choisissez vos dates d'arrivée et de départ",
-  'guest.calendar.rangeHowto': "Pour modifier : touchez d'abord la nouvelle date d'arrivée, puis la date de départ (deux choix).",
+  'guest.calendar.rangeHowto': "1er toucher : arrivée · 2e toucher : départ. Vous pouvez changer les deux dates à tout moment.",
+  'guest.calendar.stepCheckIn': 'Étape 1 — Choisissez votre date d\'arrivée',
+  'guest.calendar.stepCheckOut': 'Étape 2 — Choisissez votre date de départ',
+  'guest.calendar.stepDone': 'Dates sélectionnées',
+  'guest.calendar.checkInLabel': 'Arrivée',
+  'guest.calendar.checkOutLabel': 'Départ',
+  'guest.calendar.nightsCount': '{{count}} nuit(s)',
+  'guest.calendar.clear': 'Effacer',
+  'guest.calendar.confirm': 'Confirmer les dates',
+  'guest.calendar.desktopHint': 'Le 2e clic enregistre automatiquement les dates.',
+  'guest.calendar.prevMonth': 'Mois précédent',
+  'guest.calendar.nextMonth': 'Mois suivant',
 
   // Contract signing page
   'contractSigning.sidebarSummaryTitle': 'Récapitulatif',

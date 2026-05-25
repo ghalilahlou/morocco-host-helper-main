@@ -34,7 +34,7 @@ import { useT } from '@/i18n/GuestLocaleProvider';
 import { EnhancedInput } from '@/components/ui/enhanced-input';
 import { EnhancedFileUpload } from '@/components/ui/enhanced-file-upload';
 import { AnimatedStepper } from '@/components/ui/animated-stepper';
-import { EnhancedCalendar } from '@/components/ui/enhanced-calendar';
+import { GuestStayDatePicker } from '@/components/guest/GuestStayDatePicker';
 import { validateToken, isTestToken, logTestTokenUsage, TEST_TOKENS_CONFIG } from '@/utils/testTokens';
 import { validateTokenDirect } from '@/utils/tokenValidation';
 import { Guest } from '@/types/booking'; // ✅ Importer le type centralisé
@@ -916,8 +916,9 @@ export const GuestVerification = () => {
 
   const [showCalendarPanel, setShowCalendarPanel] = useState(false);
   const [showGuestsPanel, setShowGuestsPanel] = useState(false);
-  /** Arrivée choisie dans le calendrier, affichée avant validation du départ (n’écrit pas checkInDate). */
-  const [rangeDraftStart, setRangeDraftStart] = useState<Date | undefined>();
+  /** Brouillon calendrier (affiché dans « Quand ? » pendant que le panneau est ouvert). */
+  const [calendarDraftStart, setCalendarDraftStart] = useState<Date | undefined>();
+  const [calendarDraftEnd, setCalendarDraftEnd] = useState<Date | undefined>();
   /** Barre réservation + panneaux calendrier / voyageurs (clic extérieur). */
   const bookingPanelsRef = useRef<HTMLDivElement>(null);
   
@@ -928,7 +929,8 @@ export const GuestVerification = () => {
       if (bookingPanelsRef.current && !bookingPanelsRef.current.contains(event.target as Node)) {
         setShowCalendarPanel(false);
         setShowGuestsPanel(false);
-        setRangeDraftStart(undefined);
+        setCalendarDraftStart(undefined);
+        setCalendarDraftEnd(undefined);
       }
     };
 
@@ -3189,22 +3191,31 @@ export const GuestVerification = () => {
                             const opening = !showCalendarPanel;
                             setShowCalendarPanel(opening);
                             setShowGuestsPanel(false);
-                            if (opening) setRangeDraftStart(undefined);
+                            if (opening) {
+                              setCalendarDraftStart(checkInDate);
+                              setCalendarDraftEnd(checkOutDate);
+                            } else {
+                              setCalendarDraftStart(undefined);
+                              setCalendarDraftEnd(undefined);
+                            }
                           }}
                         >
                           <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWhen')}</Label>
                           <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>
                             {(() => {
-                              const pendingStart =
-                                rangeDraftStart ??
-                                (checkInDate && !checkOutDate ? checkInDate : undefined);
-                              if (checkInDate && checkOutDate) {
+                              const displayIn = showCalendarPanel
+                                ? calendarDraftStart
+                                : checkInDate;
+                              const displayOut = showCalendarPanel
+                                ? calendarDraftEnd
+                                : checkOutDate;
+                              if (displayIn && displayOut) {
                                 return isMobile
-                                  ? `${format(checkInDate, 'dd/MM')} → ${format(checkOutDate, 'dd/MM/yy')}`
-                                  : `${format(checkInDate, 'dd/MM/yyyy')} - ${format(checkOutDate, 'dd/MM/yyyy')}`;
+                                  ? `${format(displayIn, 'dd/MM')} → ${format(displayOut, 'dd/MM/yy')}`
+                                  : `${format(displayIn, 'dd/MM/yyyy')} - ${format(displayOut, 'dd/MM/yyyy')}`;
                               }
-                              if (pendingStart) {
-                                return `${format(pendingStart, isMobile ? 'dd/MM' : 'dd/MM/yyyy')} → …`;
+                              if (displayIn) {
+                                return `${format(displayIn, isMobile ? 'dd/MM' : 'dd/MM/yyyy')} → …`;
                               }
                               return t('guestVerification.selectDates');
                             })()}
@@ -3528,46 +3539,35 @@ export const GuestVerification = () => {
                               )}
                               {!isMobile && (
                                 <div className="mb-4 text-center">
-                                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                  <h3 className="text-xl font-bold text-gray-900 mb-1">
                                     {t('guest.calendar.selectTitle')}
                                   </h3>
                                   <p className="text-sm text-gray-600">
                                     {t('guest.calendar.selectSubtitle')}
                                   </p>
-                                  <p className="text-xs text-gray-500 mt-2 max-w-sm mx-auto">
-                                    {t('guest.calendar.rangeHowto')}
-                                  </p>
                                 </div>
                               )}
-                              {isMobile && (
-                                <p className="text-xs text-gray-500 mb-3">
-                                  {t('guest.calendar.rangeHowto')}
-                                </p>
-                              )}
-                              
-                              <EnhancedCalendar
-                                key={`cal-${token ?? 't'}-${showCalendarPanel ? 'open' : 'closed'}`}
-                                mode="range"
-                                rangeStart={rangeDraftStart ?? checkInDate}
-                                rangeEnd={checkOutDate}
-                                onRangeProgress={(start, end) => {
-                                  if (start && !end) {
-                                    setRangeDraftStart(
-                                      new Date(start.getFullYear(), start.getMonth(), start.getDate())
-                                    );
-                                  } else {
-                                    setRangeDraftStart(undefined);
-                                  }
+
+                              <GuestStayDatePicker
+                                key={`stay-cal-${token ?? 't'}-${showCalendarPanel ? 'open' : 'closed'}`}
+                                checkInDate={checkInDate}
+                                checkOutDate={checkOutDate}
+                                isMobile={isMobile}
+                                onDraftChange={(start, end) => {
+                                  setCalendarDraftStart(start);
+                                  setCalendarDraftEnd(end);
                                 }}
-                                onRangeSelect={(checkIn, checkOut) => {
-                                  const normalizedCheckIn = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
-                                  const normalizedCheckOut = new Date(checkOut.getFullYear(), checkOut.getMonth(), checkOut.getDate());
+                                onConfirm={(normalizedCheckIn, normalizedCheckOut) => {
                                   setCheckInDate(normalizedCheckIn);
                                   setCheckOutDate(normalizedCheckOut);
-                                  setRangeDraftStart(undefined);
-                                  setShowCalendarPanel(false);
+                                  setCalendarDraftStart(undefined);
+                                  setCalendarDraftEnd(undefined);
                                 }}
-                                className="mx-auto"
+                                onClose={() => {
+                                  setShowCalendarPanel(false);
+                                  setCalendarDraftStart(undefined);
+                                  setCalendarDraftEnd(undefined);
+                                }}
                               />
                             </div>
                           </motion.div>

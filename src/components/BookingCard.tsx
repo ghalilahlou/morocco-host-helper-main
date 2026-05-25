@@ -1,6 +1,5 @@
 import {
   Calendar,
-  Users,
   Download,
   Edit,
   Trash2,
@@ -222,14 +221,9 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
             {guestSubtitle && (
               <p className="text-[11px] text-gray-400 mt-0.5 font-medium tracking-wide truncate">{guestSubtitle}</p>
             )}
-            {!guestSubtitle && (
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                — {booking.numberOfGuests} {t('card.client')}{booking.numberOfGuests > 1 ? 's' : ''}
-              </p>
-            )}
           </div>
 
-          {/* 2. Dates + duration + clients */}
+          {/* 2. Dates + duration */}
           <div className="flex flex-wrap items-center gap-5 flex-1">
             {/* ARRIVÉE */}
             <div>
@@ -267,23 +261,6 @@ export const BookingCard = memo(({ booking, onEdit, onDelete, onGenerateDocument
                 </span>
               </div>
             </div>
-
-            {/* CLIENTS */}
-            {booking.guests.length > 0 && (
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: TEAL }}>
-                  {t('card.clients')}
-                </p>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Users className="w-3.5 h-3.5 flex-shrink-0" style={{ color: TEAL }} />
-                  <span className="text-sm text-gray-700">
-                    {booking.guests.length < booking.numberOfGuests
-                      ? `${booking.guests.length} / ${booking.numberOfGuests}`
-                      : `${booking.guests.length} ${t('card.client')}${booking.guests.length > 1 ? 's' : ''}`}
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* 3. Documents — single row, left-aligned */}

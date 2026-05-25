@@ -900,6 +900,74 @@ canvas {
 }
 
 /* ========================================
+   GUEST STAY CALENDAR (verification invité)
+   ======================================== */
+
+.guest-calendar-root--touch {
+  box-sizing: border-box;
+}
+
+.guest-calendar-select {
+  background: #ffffff;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  padding: 8px 6px;
+  font-size: 16px;
+  line-height: 1.2;
+  color: #1e1e1e;
+  font-family: Fira Sans Condensed, Inter, sans-serif;
+}
+
+.guest-calendar-nav {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.guest-calendar-weekday {
+  font-size: 11px;
+  line-height: 1.25;
+  font-family: Fira Sans Condensed, sans-serif;
+  font-weight: 500;
+  color: #757575;
+  padding: 4px 0;
+}
+
+.guest-calendar-day {
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 48px;
+  max-height: 48px;
+  margin: 0 auto;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+}
+
+.guest-calendar-day--touch {
+  min-height: 44px;
+  min-width: 44px;
+  max-width: none;
+  max-height: none;
+}
+
+.guest-stay-date-picker {
+  touch-action: manipulation;
+}
+
+@media screen and (max-width: 767px) {
+  .guest-calendar-root--touch .guest-calendar-day--touch {
+    min-height: 48px;
+    font-size: 18px;
+  }
+
+  .guest-stay-date-picker {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* ========================================
    GUEST VERIFICATION - Mobile (iOS / Android)
    ======================================== */
 

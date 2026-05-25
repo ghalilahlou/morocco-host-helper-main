@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -29,6 +29,10 @@ interface EnhancedCalendarProps {
   disabledDates?: Date[];
   className?: string;
   showWeekends?: boolean;
+  /** Cibles tactiles plus grandes (flux invité mobile). */
+  touchFriendly?: boolean;
+  /** Mois affiché au premier rendu / à l’ouverture du panneau. */
+  focusDate?: Date;
 }
 
 const MONTH_KEYS = [
@@ -68,26 +72,27 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   maxDate,
   disabledDates = [],
   className,
-  showWeekends = true
+  showWeekends = true,
+  touchFriendly = false,
+  focusDate,
 }) => {
   const t = useT();
   const monthNames = MONTH_KEYS.map((key) => t(key));
   const weekDays = WEEKDAY_KEYS_MON_FIRST.map((key) => t(key));
 
-  // Initialiser sur le mois de rangeStart/selected au premier rendu uniquement.
-  // On NE synchronise plus automatiquement après la navigation : l'utilisateur
-  // peut librement naviguer sans que le calendrier revienne en arrière.
   const [currentMonth, setCurrentMonth] = useState(() => {
-    const base = mode === 'range' ? rangeStart : selected;
+    const base = focusDate ?? (mode === 'range' ? rangeStart : selected);
     return base ? startOfMonth(base) : startOfMonth(new Date());
   });
 
   const [selectionInProgress, setSelectionInProgress] = useState<Date | null>(null);
   const [hoveredDate, setHoveredDate] = useState<Date | null>(null);
 
-  // Réinitialiser uniquement quand la plage est complète côté parent (les deux bornes).
-  // Ne pas réagir à rangeStart seul : sinon le 1er clic efface selectionInProgress
-  // et le 2e clic est traité comme une nouvelle arrivée.
+  useEffect(() => {
+    if (!focusDate) return;
+    setCurrentMonth(startOfMonth(focusDate));
+  }, [focusDate?.getTime()]);
+
   useEffect(() => {
     if (rangeStart && rangeEnd) {
       setSelectionInProgress(null);
@@ -113,13 +118,21 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
 
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
+  const yearOptions = useMemo(() => {
+    const y = new Date().getFullYear();
+    return Array.from({ length: 16 }, (_, i) => y - 5 + i);
+  }, []);
+
   const isDateDisabled = (date: Date) => {
     const d = startOfDay(date);
     if (minDate && d < startOfDay(minDate)) return true;
     if (maxDate && d > startOfDay(maxDate)) return true;
     if (!showWeekends && isWeekend(d)) return true;
-    return disabledDates.some(disabledDate => isSameDay(d, startOfDay(disabledDate)));
+    return disabledDates.some((disabledDate) => isSameDay(d, startOfDay(disabledDate)));
   };
+
+  const rangeAnchor =
+    selectionInProgress ?? (rangeStart && !rangeEnd ? startOfDay(rangeStart) : null);
 
   const isDateInRange = (date: Date) => {
     if (mode !== 'range') return false;
@@ -139,10 +152,6 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
     return false;
   };
 
-  const rangeAnchor =
-    selectionInProgress ??
-    (rangeStart && !rangeEnd ? startOfDay(rangeStart) : null);
-
   const isRangeStart = (date: Date) => {
     if (mode !== 'range') return false;
     if (rangeAnchor && isSameDay(date, rangeAnchor)) return true;
@@ -158,6 +167,11 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
     const start = rangeAnchor <= hoveredDate ? rangeAnchor : hoveredDate;
     const end = rangeAnchor <= hoveredDate ? hoveredDate : rangeAnchor;
     return date >= start && date <= end;
+  };
+
+  const previewEnd = (day: Date) => {
+    if (mode !== 'range' || !rangeAnchor) return;
+    setHoveredDate(startOfDay(day));
   };
 
   const handleDateClick = (date: Date) => {
@@ -211,7 +225,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
         border: 'none',
         borderRadius: '50%',
         transform: 'scale(1)',
-        boxShadow: 'none'
+        boxShadow: 'none',
       };
     }
 
@@ -235,7 +249,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
       backgroundColor = 'transparent';
       color = '#55BA9F';
       fontWeight = 600;
-      transform = 'scale(1.1)';
+      transform = 'scale(1.05)';
     }
 
     if (isRangeStart(date)) {
@@ -243,7 +257,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
       backgroundColor = '#55BA9F';
       color = '#FFFFFF';
       fontWeight = 600;
-      transform = 'scale(1.1)';
+      transform = 'scale(1.05)';
       boxShadow = '0 2px 8px rgba(85, 186, 159, 0.3)';
     }
 
@@ -252,7 +266,7 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
       backgroundColor = '#55BA9F';
       color = '#FFFFFF';
       fontWeight = 600;
-      transform = 'scale(1.1)';
+      transform = 'scale(1.05)';
       boxShadow = '0 2px 8px rgba(85, 186, 159, 0.3)';
     }
 
@@ -260,157 +274,140 @@ export const EnhancedCalendar: React.FC<EnhancedCalendarProps> = ({
   };
 
   const navigateMonth = (direction: 'prev' | 'next') => {
-    setCurrentMonth(prev => direction === 'prev' ? subMonths(prev, 1) : addMonths(prev, 1));
+    setCurrentMonth((prev) => (direction === 'prev' ? subMonths(prev, 1) : addMonths(prev, 1)));
   };
+
+  const cellClass = touchFriendly
+    ? 'guest-calendar-day guest-calendar-day--touch'
+    : 'guest-calendar-day';
 
   return (
     <div
-      className={cn("bg-white", className)}
+      className={cn('bg-white guest-calendar-root', touchFriendly && 'guest-calendar-root--touch', className)}
       style={{
-        width: 'min(360px, calc(100vw - 32px))',
+        width: touchFriendly ? '100%' : 'min(360px, calc(100vw - 32px))',
+        maxWidth: '100%',
         border: '1px solid #D9D9D9',
         borderRadius: '16px',
-        padding: '16px',
+        padding: touchFriendly ? '12px 10px 16px' : '16px',
         isolation: 'isolate',
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
       }}
     >
-      {/* Header avec navigation */}
-      <div className="flex items-center justify-between mb-4" style={{ gap: '16px', height: '36px' }}>
+      <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2" style={{ minHeight: '40px' }}>
         <motion.button
+          type="button"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => navigateMonth('prev')}
-          className="flex items-center justify-center transition-colors"
-          style={{ width: '36px', height: '36px', borderRadius: '32px', padding: '8px' }}
+          className="flex items-center justify-center transition-colors guest-calendar-nav touch-target"
+          aria-label={t('guest.calendar.prevMonth')}
         >
           <ChevronLeft className="w-5 h-5" style={{ color: '#1E1E1E' }} />
         </motion.button>
 
-        <div className="flex items-center" style={{ gap: '8px', flex: '1' }}>
-          {/* Sélecteur de mois — onMouseDown stopPropagation empêche la fermeture du panneau parent */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           <select
             value={currentMonth.getMonth()}
             onChange={(e) => {
-              const newMonth = new Date(currentMonth.getFullYear(), parseInt(e.target.value), 1);
+              const newMonth = new Date(currentMonth.getFullYear(), parseInt(e.target.value, 10), 1);
               setCurrentMonth(newMonth);
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="flex items-center cursor-pointer"
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid #D9D9D9',
-              borderRadius: '8px',
-              padding: '6px',
-              fontSize: '16px',
-              lineHeight: '100%',
-              color: '#1E1E1E',
-              fontWeight: 400,
-              fontFamily: 'Fira Sans Condensed, Inter, sans-serif',
-              flex: '1'
-            }}
+            onClick={(e) => e.stopPropagation()}
+            className="guest-calendar-select flex-1 min-w-0"
           >
             {monthNames.map((month, index) => (
-              <option key={index} value={index}>{month}</option>
+              <option key={index} value={index}>
+                {month}
+              </option>
             ))}
           </select>
 
           <select
             value={currentMonth.getFullYear()}
             onChange={(e) => {
-              const newMonth = new Date(parseInt(e.target.value), currentMonth.getMonth(), 1);
+              const newMonth = new Date(parseInt(e.target.value, 10), currentMonth.getMonth(), 1);
               setCurrentMonth(newMonth);
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="flex items-center cursor-pointer"
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid #D9D9D9',
-              borderRadius: '8px',
-              padding: '6px',
-              fontSize: '16px',
-              lineHeight: '100%',
-              color: '#1E1E1E',
-              fontWeight: 400,
-              fontFamily: 'Fira Sans Condensed, Inter, sans-serif',
-              flex: '1'
-            }}
+            onClick={(e) => e.stopPropagation()}
+            className="guest-calendar-select w-[5.5rem] shrink-0"
           >
-            {Array.from({ length: 12 }, (_, i) => new Date().getFullYear() - 2 + i).map(year => (
-              <option key={year} value={year}>{year}</option>
+            {yearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
             ))}
           </select>
         </div>
 
         <motion.button
+          type="button"
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => navigateMonth('next')}
-          className="flex items-center justify-center transition-colors"
-          style={{ width: '36px', height: '36px', borderRadius: '32px', padding: '8px' }}
+          className="flex items-center justify-center transition-colors guest-calendar-nav touch-target"
+          aria-label={t('guest.calendar.nextMonth')}
         >
           <ChevronRight className="w-5 h-5" style={{ color: '#1E1E1E' }} />
         </motion.button>
       </div>
 
-      {/* En-têtes des jours */}
-      <div className="grid grid-cols-7 mb-2" style={{ gap: '1px', paddingTop: '16px' }}>
-        {weekDays.map(day => (
-          <div
-            key={day}
-            className="text-center flex items-center justify-center"
-            style={{
-              fontSize: '12px',
-              lineHeight: '20px',
-              fontFamily: 'Fira Sans Condensed, sans-serif',
-              fontWeight: 400,
-              color: '#757575',
-              width: '40px',
-              height: '20px'
-            }}
-          >
+      <div className="grid grid-cols-7 mb-1 sm:mb-2 gap-0.5">
+        {weekDays.map((day) => (
+          <div key={day} className="guest-calendar-weekday text-center">
             {day}
           </div>
         ))}
       </div>
 
-      {/* Grille du calendrier — animation sur le conteneur uniquement, pas par cellule */}
       <motion.div
-        className="grid grid-cols-7"
-        style={{ gap: '1px' }}
+        className="grid grid-cols-7 gap-0.5"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.2 }}
+        transition={{ duration: 0.15 }}
       >
         {calendarDays.map((date) => {
           const dayStyle = getDayStyle(date);
+          const disabled = isDateDisabled(date);
 
           return (
-            <motion.div
+            <motion.button
+              type="button"
               key={date.getTime()}
-              className="relative w-10 h-10 flex items-center justify-center text-base font-normal transition-all duration-200 cursor-pointer"
+              className={cn(
+                cellClass,
+                'relative flex items-center justify-center transition-all duration-150',
+                disabled && 'pointer-events-none'
+              )}
               onClick={(e) => {
                 e.stopPropagation();
                 handleDateClick(date);
               }}
               onMouseDown={(e) => e.stopPropagation()}
-              onMouseEnter={() => mode === 'range' && rangeAnchor && setHoveredDate(startOfDay(date))}
+              onMouseEnter={() => previewEnd(date)}
+              onPointerEnter={() => previewEnd(date)}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                if (mode === 'range' && rangeAnchor) previewEnd(date);
+              }}
               onMouseLeave={() => setHoveredDate(null)}
-              whileHover={{ scale: isDateDisabled(date) ? 1 : 1.05 }}
-              whileTap={{ scale: isDateDisabled(date) ? 1 : 0.95 }}
+              onPointerLeave={() => setHoveredDate(null)}
+              whileHover={{ scale: disabled ? 1 : 1.04 }}
+              whileTap={{ scale: disabled ? 1 : 0.96 }}
               style={{
                 ...dayStyle,
                 fontFamily: 'Fira Sans Condensed, Inter, sans-serif',
-                fontSize: '16px',
+                fontSize: touchFriendly ? '17px' : '16px',
                 lineHeight: '140%',
-                fontWeight: 400
               }}
+              disabled={disabled}
+              aria-pressed={isRangeStart(date) || isRangeEnd(date)}
             >
-              <span className="relative z-10">
-                {date.getDate()}
-              </span>
-            </motion.div>
+              <span className="relative z-10">{date.getDate()}</span>
+            </motion.button>
           );
         })}
       </motion.div>

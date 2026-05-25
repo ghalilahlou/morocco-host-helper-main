@@ -446,7 +446,18 @@ export default {
   // Calendario – títulos del panel de selección de fechas
   'guest.calendar.selectTitle': 'Selecciona tus fechas',
   'guest.calendar.selectSubtitle': 'Elige tus fechas de llegada y salida',
-  'guest.calendar.rangeHowto': 'Para cambiar: toca primero la nueva fecha de entrada y luego la de salida (dos toques).',
+  'guest.calendar.rangeHowto': 'Primer toque: entrada · Segundo toque: salida. Puedes cambiar ambas en cualquier momento.',
+  'guest.calendar.stepCheckIn': 'Paso 1 — Elige tu fecha de entrada',
+  'guest.calendar.stepCheckOut': 'Paso 2 — Elige tu fecha de salida',
+  'guest.calendar.stepDone': 'Fechas seleccionadas',
+  'guest.calendar.checkInLabel': 'Entrada',
+  'guest.calendar.checkOutLabel': 'Salida',
+  'guest.calendar.nightsCount': '{{count}} noche(s)',
+  'guest.calendar.clear': 'Borrar',
+  'guest.calendar.confirm': 'Confirmar fechas',
+  'guest.calendar.desktopHint': 'El segundo toque guarda las fechas automáticamente.',
+  'guest.calendar.prevMonth': 'Mes anterior',
+  'guest.calendar.nextMonth': 'Mes siguiente',
 
   // Página de firma del contrato
   'contractSigning.sidebarSummaryTitle': 'Resumen',

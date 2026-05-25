@@ -479,7 +479,18 @@ export default {
   // Calendar – date picker panel titles
   'guest.calendar.selectTitle': 'Select your dates',
   'guest.calendar.selectSubtitle': 'Choose your check-in and check-out dates',
-  'guest.calendar.rangeHowto': 'To change dates: tap your new check-in day first, then your check-out day (two taps).',
+  'guest.calendar.rangeHowto': 'First tap: check-in · Second tap: check-out. You can change both anytime.',
+  'guest.calendar.stepCheckIn': 'Step 1 — Choose your check-in date',
+  'guest.calendar.stepCheckOut': 'Step 2 — Choose your check-out date',
+  'guest.calendar.stepDone': 'Dates selected',
+  'guest.calendar.checkInLabel': 'Check-in',
+  'guest.calendar.checkOutLabel': 'Check-out',
+  'guest.calendar.nightsCount': '{{count}} night(s)',
+  'guest.calendar.clear': 'Clear',
+  'guest.calendar.confirm': 'Confirm dates',
+  'guest.calendar.desktopHint': 'The second click saves your dates automatically.',
+  'guest.calendar.prevMonth': 'Previous month',
+  'guest.calendar.nextMonth': 'Next month',
 
   // Contract signing page
   'contractSigning.sidebarSummaryTitle': 'Summary',
