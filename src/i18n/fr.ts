@@ -187,7 +187,7 @@ export default {
   'guestVerification.travelersCount': '{{count}} voyageur',
   'guestVerification.travelersCountPlural': '{{count}} voyageurs',
   'guestVerification.numberOfTravelers': 'Nombre de voyageurs',
-  'guestVerification.selectTravelersHint': 'Choisissez au moins 1 adulte, puis confirmez.',
+  'guestVerification.selectTravelersHint': 'Choisissez au moins 1 adulte.',
   'guestVerification.confirmTravelers': 'Confirmer',
   'validation.selectTravelers.desc': 'Veuillez choisir et confirmer le nombre de voyageurs',
   'guestVerification.propertyFallback': 'Propriété',

@@ -896,11 +896,8 @@ export const GuestVerification = () => {
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
   const [numberOfAdults, setNumberOfAdults] = useState(0);
   const [numberOfChildren, setNumberOfChildren] = useState(0);
-  /** L’invité doit confirmer explicitement le nombre de voyageurs (pas de défaut à 1). */
+  /** Au moins 1 adulte choisi via +/- (pas de défaut implicite à 1). */
   const [travelersCountConfirmed, setTravelersCountConfirmed] = useState(false);
-  const [guestsDraftAdults, setGuestsDraftAdults] = useState(0);
-  const [guestsDraftChildren, setGuestsDraftChildren] = useState(0);
-  // Source de vérité : adults + children, uniquement après confirmation.
   const numberOfGuests = travelersCountConfirmed
     ? Math.max(1, numberOfAdults + numberOfChildren)
     : 0;
@@ -912,27 +909,18 @@ export const GuestVerification = () => {
     setTravelersCountConfirmed(true);
   }, []);
 
+  const updateTravelersCount = useCallback((adults: number, children: number) => {
+    const a = Math.max(0, Math.min(10, adults));
+    const c = Math.max(0, Math.min(10 - a, children));
+    setNumberOfAdults(a);
+    setNumberOfChildren(c);
+    setTravelersCountConfirmed(a >= 1);
+  }, []);
+
   const openGuestsPanel = useCallback(() => {
-    setGuestsDraftAdults(travelersCountConfirmed ? numberOfAdults : 0);
-    setGuestsDraftChildren(travelersCountConfirmed ? numberOfChildren : 0);
     setShowGuestsPanel(true);
     setShowCalendarPanel(false);
-  }, [travelersCountConfirmed, numberOfAdults, numberOfChildren]);
-
-  const confirmTravelersCount = useCallback(() => {
-    if (guestsDraftAdults < 1) {
-      toast({
-        title: t('validation.error.title'),
-        description: t('validation.selectTravelers.desc'),
-        variant: 'destructive',
-      });
-      return;
-    }
-    setNumberOfAdults(guestsDraftAdults);
-    setNumberOfChildren(guestsDraftChildren);
-    setTravelersCountConfirmed(true);
-    setShowGuestsPanel(false);
-  }, [guestsDraftAdults, guestsDraftChildren, toast, t]);
+  }, []);
 
   // Aligner guests sur numberOfGuests. Dépend aussi de guests.length pour corriger les setGuests async
   // (ex. ICS qui remplace par [un seul voyageur] alors que numberOfGuests vaut 3).
@@ -3337,17 +3325,17 @@ export const GuestVerification = () => {
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setGuestsDraftAdults(Math.max(0, guestsDraftAdults - 1));
+                                        updateTravelersCount(numberOfAdults - 1, numberOfChildren);
                                       }}
-                                      disabled={guestsDraftAdults <= 0}
+                                      disabled={numberOfAdults <= 0}
                                       style={{
                                         width: '36px',
                                         height: '36px',
                                         borderRadius: '50%',
                                         border: '1px solid #D3D3D3',
                                         background: '#FFFFFF',
-                                        cursor: guestsDraftAdults <= 0 ? 'not-allowed' : 'pointer',
-                                        opacity: guestsDraftAdults <= 0 ? 0.5 : 1,
+                                        cursor: numberOfAdults <= 0 ? 'not-allowed' : 'pointer',
+                                        opacity: numberOfAdults <= 0 ? 0.5 : 1,
                                         fontSize: '20px',
                                         fontWeight: 400,
                                         color: '#1E1E1E',
@@ -3363,22 +3351,22 @@ export const GuestVerification = () => {
                                       color: '#1E1E1E',
                                       minWidth: '28px',
                                       textAlign: 'center'
-                                    }}>{guestsDraftAdults}</span>
+                                    }}>{numberOfAdults}</span>
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setGuestsDraftAdults(Math.min(10, guestsDraftAdults + 1));
+                                        updateTravelersCount(numberOfAdults + 1, numberOfChildren);
                                       }}
-                                      disabled={guestsDraftAdults >= 10}
+                                      disabled={numberOfAdults >= 10}
                                       style={{
                                         width: '36px',
                                         height: '36px',
                                         borderRadius: '50%',
                                         border: '1px solid #D3D3D3',
                                         background: '#FFFFFF',
-                                        cursor: guestsDraftAdults >= 10 ? 'not-allowed' : 'pointer',
-                                        opacity: guestsDraftAdults >= 10 ? 0.5 : 1,
+                                        cursor: numberOfAdults >= 10 ? 'not-allowed' : 'pointer',
+                                        opacity: numberOfAdults >= 10 ? 0.5 : 1,
                                         fontSize: '20px',
                                         fontWeight: 400,
                                         color: '#1E1E1E',
@@ -3408,17 +3396,17 @@ export const GuestVerification = () => {
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setGuestsDraftChildren(Math.max(0, guestsDraftChildren - 1));
+                                        updateTravelersCount(numberOfAdults, numberOfChildren - 1);
                                       }}
-                                      disabled={guestsDraftChildren <= 0}
+                                      disabled={numberOfChildren <= 0}
                                       style={{
                                         width: '36px',
                                         height: '36px',
                                         borderRadius: '50%',
                                         border: '1px solid #D3D3D3',
                                         background: '#FFFFFF',
-                                        cursor: guestsDraftChildren <= 0 ? 'not-allowed' : 'pointer',
-                                        opacity: guestsDraftChildren <= 0 ? 0.5 : 1,
+                                        cursor: numberOfChildren <= 0 ? 'not-allowed' : 'pointer',
+                                        opacity: numberOfChildren <= 0 ? 0.5 : 1,
                                         fontSize: '20px',
                                         fontWeight: 400,
                                         color: '#1E1E1E',
@@ -3434,22 +3422,22 @@ export const GuestVerification = () => {
                                       color: '#1E1E1E',
                                       minWidth: '28px',
                                       textAlign: 'center'
-                                    }}>{guestsDraftChildren}</span>
+                                    }}>{numberOfChildren}</span>
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setGuestsDraftChildren(Math.min(10, guestsDraftChildren + 1));
+                                        updateTravelersCount(numberOfAdults, numberOfChildren + 1);
                                       }}
-                                      disabled={guestsDraftAdults + guestsDraftChildren >= 10}
+                                      disabled={numberOfAdults + numberOfChildren >= 10}
                                       style={{
                                         width: '36px',
                                         height: '36px',
                                         borderRadius: '50%',
                                         border: '1px solid #D3D3D3',
                                         background: '#FFFFFF',
-                                        cursor: guestsDraftAdults + guestsDraftChildren >= 10 ? 'not-allowed' : 'pointer',
-                                        opacity: guestsDraftAdults + guestsDraftChildren >= 10 ? 0.5 : 1,
+                                        cursor: numberOfAdults + numberOfChildren >= 10 ? 'not-allowed' : 'pointer',
+                                        opacity: numberOfAdults + numberOfChildren >= 10 ? 0.5 : 1,
                                         fontSize: '20px',
                                         fontWeight: 400,
                                         color: '#1E1E1E',
@@ -3460,18 +3448,6 @@ export const GuestVerification = () => {
                                     >+</button>
                                   </div>
                                 </div>
-                                <Button
-                                  type="button"
-                                  className="w-full text-white font-semibold text-sm h-10"
-                                  style={{ backgroundColor: '#55BA9F', borderRadius: '10px' }}
-                                  disabled={guestsDraftAdults < 1}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    confirmTravelersCount();
-                                  }}
-                                >
-                                  {t('guestVerification.confirmTravelers')}
-                                </Button>
                               </div>
                             </motion.div>
                           )}
@@ -3524,18 +3500,18 @@ export const GuestVerification = () => {
                                     type="button"
                                     className="mobile-guests-btn"
                                     onClick={() => {
-                                      setGuestsDraftAdults(Math.max(0, guestsDraftAdults - 1));
+                                      updateTravelersCount(numberOfAdults - 1, numberOfChildren);
                                     }}
-                                    disabled={guestsDraftAdults <= 0}
+                                    disabled={numberOfAdults <= 0}
                                   >−</button>
-                                  <span className="mobile-guests-count">{guestsDraftAdults}</span>
+                                  <span className="mobile-guests-count">{numberOfAdults}</span>
                                   <button
                                     type="button"
                                     className="mobile-guests-btn"
                                     onClick={() => {
-                                      setGuestsDraftAdults(Math.min(10, guestsDraftAdults + 1));
+                                      updateTravelersCount(numberOfAdults + 1, numberOfChildren);
                                     }}
-                                    disabled={guestsDraftAdults >= 10}
+                                    disabled={numberOfAdults >= 10}
                                   >+</button>
                                 </div>
                               </div>
@@ -3548,33 +3524,21 @@ export const GuestVerification = () => {
                                     type="button"
                                     className="mobile-guests-btn"
                                     onClick={() => {
-                                      setGuestsDraftChildren(Math.max(0, guestsDraftChildren - 1));
+                                      updateTravelersCount(numberOfAdults, numberOfChildren - 1);
                                     }}
-                                    disabled={guestsDraftChildren <= 0}
+                                    disabled={numberOfChildren <= 0}
                                   >−</button>
-                                  <span className="mobile-guests-count">{guestsDraftChildren}</span>
+                                  <span className="mobile-guests-count">{numberOfChildren}</span>
                                   <button
                                     type="button"
                                     className="mobile-guests-btn"
                                     onClick={() => {
-                                      setGuestsDraftChildren(Math.min(10, guestsDraftChildren + 1));
+                                      updateTravelersCount(numberOfAdults, numberOfChildren + 1);
                                     }}
-                                    disabled={guestsDraftAdults + guestsDraftChildren >= 10}
+                                    disabled={numberOfAdults + numberOfChildren >= 10}
                                   >+</button>
                                 </div>
                               </div>
-                              
-                              <Button
-                                type="button"
-                                className="w-full mt-6 text-white font-semibold transition-all touch-target"
-                                style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' }}
-                                disabled={guestsDraftAdults < 1}
-                                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
-                                onClick={confirmTravelersCount}
-                              >
-                                {t('guestVerification.confirmTravelers')}
-                              </Button>
                             </div>
                           </motion.div>
                         </>
