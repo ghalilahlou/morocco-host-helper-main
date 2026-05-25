@@ -524,8 +524,7 @@ export const GuestVerification = () => {
     if (!icsPrefill) return;
     setCheckInDate(icsPrefill.checkInDate);
     setCheckOutDate(icsPrefill.checkOutDate);
-    setNumberOfAdults(Math.max(1, icsPrefill.guestCount));
-    setNumberOfChildren(0);
+    applyPrefilledTravelersCount(icsPrefill.guestCount);
     if (icsPrefill.guestName) {
       setGuests(prev => {
         const next = Array.from({ length: icsPrefill.guestCount }, (_, i) => ({
@@ -544,8 +543,7 @@ export const GuestVerification = () => {
     if (!airbnbPrefill) return;
     setCheckInDate(airbnbPrefill.checkInDate);
     setCheckOutDate(airbnbPrefill.checkOutDate);
-    setNumberOfAdults(Math.max(1, airbnbPrefill.guestCount));
-    setNumberOfChildren(0);
+    applyPrefilledTravelersCount(airbnbPrefill.guestCount);
     if (airbnbPrefill.guestName) {
       setGuests(prev => {
         const updated = [...prev];
@@ -716,8 +714,7 @@ export const GuestVerification = () => {
 
           setCheckInDate(urlPrefill.checkInDate);
           setCheckOutDate(urlPrefill.checkOutDate);
-          setNumberOfAdults(Math.max(1, urlPrefill.guestCount));
-          setNumberOfChildren(0);
+          applyPrefilledTravelersCount(urlPrefill.guestCount);
 
           setGuests(prevGuests => {
             const target = urlPrefill.guestCount;
@@ -821,10 +818,10 @@ export const GuestVerification = () => {
               
               setCheckInDate(parseLocalDate(startDateStr));
               setCheckOutDate(parseLocalDate(endDateStr));
-              {
-                const ng = Math.max(1, Math.min(10, reservationData.numberOfGuests || 1));
-                setNumberOfAdults(Math.max(1, ng));
-                setNumberOfChildren(0);
+              if (reservationData.numberOfGuests && reservationData.numberOfGuests >= 1) {
+                applyPrefilledTravelersCount(
+                  Math.min(10, reservationData.numberOfGuests)
+                );
               }
             } catch (dateError) {
               console.error('❌ Erreur lors du parsing des dates depuis les métadonnées:', dateError);
@@ -832,10 +829,10 @@ export const GuestVerification = () => {
               try {
                 setCheckInDate(new Date(reservationData.startDate));
                 setCheckOutDate(new Date(reservationData.endDate));
-                {
-                  const ng = Math.max(1, Math.min(10, reservationData.numberOfGuests || 1));
-                  setNumberOfAdults(Math.max(1, ng));
-                  setNumberOfChildren(0);
+                if (reservationData.numberOfGuests && reservationData.numberOfGuests >= 1) {
+                  applyPrefilledTravelersCount(
+                    Math.min(10, reservationData.numberOfGuests)
+                  );
                 }
               } catch (fallbackError) {
                 console.error('❌ Erreur même avec fallback:', fallbackError);
@@ -844,7 +841,10 @@ export const GuestVerification = () => {
             
             // Pré-remplir le 1er voyageur ; garder autant de fiches que numberOfGuests (pas un seul élément)
             if (reservationData.guestName) {
-              const n = Math.max(1, Math.min(10, reservationData.numberOfGuests || 1));
+              const n =
+                reservationData.numberOfGuests && reservationData.numberOfGuests >= 1
+                  ? Math.min(10, reservationData.numberOfGuests)
+                  : 1;
               const next: Guest[] = [];
               for (let i = 0; i < n; i++) {
                 next.push(
@@ -894,15 +894,51 @@ export const GuestVerification = () => {
 
   const [checkInDate, setCheckInDate] = useState<Date | undefined>();
   const [checkOutDate, setCheckOutDate] = useState<Date | undefined>();
-  const [numberOfAdults, setNumberOfAdults] = useState(1);
+  const [numberOfAdults, setNumberOfAdults] = useState(0);
   const [numberOfChildren, setNumberOfChildren] = useState(0);
-  // Source de vérité : adults + children. Plus de state séparé pour éviter les désynchronisations.
-  const numberOfGuests = numberOfAdults + numberOfChildren;
+  /** L’invité doit confirmer explicitement le nombre de voyageurs (pas de défaut à 1). */
+  const [travelersCountConfirmed, setTravelersCountConfirmed] = useState(false);
+  const [guestsDraftAdults, setGuestsDraftAdults] = useState(0);
+  const [guestsDraftChildren, setGuestsDraftChildren] = useState(0);
+  // Source de vérité : adults + children, uniquement après confirmation.
+  const numberOfGuests = travelersCountConfirmed
+    ? Math.max(1, numberOfAdults + numberOfChildren)
+    : 0;
+
+  const applyPrefilledTravelersCount = useCallback((count: number) => {
+    const n = Math.max(1, Math.min(10, count));
+    setNumberOfAdults(n);
+    setNumberOfChildren(0);
+    setTravelersCountConfirmed(true);
+  }, []);
+
+  const openGuestsPanel = useCallback(() => {
+    setGuestsDraftAdults(travelersCountConfirmed ? numberOfAdults : 0);
+    setGuestsDraftChildren(travelersCountConfirmed ? numberOfChildren : 0);
+    setShowGuestsPanel(true);
+    setShowCalendarPanel(false);
+  }, [travelersCountConfirmed, numberOfAdults, numberOfChildren]);
+
+  const confirmTravelersCount = useCallback(() => {
+    if (guestsDraftAdults < 1) {
+      toast({
+        title: t('validation.error.title'),
+        description: t('validation.selectTravelers.desc'),
+        variant: 'destructive',
+      });
+      return;
+    }
+    setNumberOfAdults(guestsDraftAdults);
+    setNumberOfChildren(guestsDraftChildren);
+    setTravelersCountConfirmed(true);
+    setShowGuestsPanel(false);
+  }, [guestsDraftAdults, guestsDraftChildren, toast, t]);
 
   // Aligner guests sur numberOfGuests. Dépend aussi de guests.length pour corriger les setGuests async
   // (ex. ICS qui remplace par [un seul voyageur] alors que numberOfGuests vaut 3).
   useEffect(() => {
-    const target = Math.max(1, Math.min(10, numberOfGuests));
+    if (!travelersCountConfirmed) return;
+    const target = Math.max(1, Math.min(10, numberOfAdults + numberOfChildren));
     setGuests(prev => {
       if (prev.length === target) return prev;
       if (prev.length < target) {
@@ -912,7 +948,7 @@ export const GuestVerification = () => {
       }
       return prev.slice(0, target);
     });
-  }, [numberOfGuests, guests.length]);
+  }, [travelersCountConfirmed, numberOfAdults, numberOfChildren, guests.length]);
 
   const [showCalendarPanel, setShowCalendarPanel] = useState(false);
   const [showGuestsPanel, setShowGuestsPanel] = useState(false);
@@ -1093,8 +1129,7 @@ export const GuestVerification = () => {
           setCheckOutDate(new Date(parsedBooking.checkOutDate));
         }
         if (parsedBooking.numberOfGuests) {
-          setNumberOfAdults(Math.max(1, parsedBooking.numberOfGuests));
-          setNumberOfChildren(0);
+          applyPrefilledTravelersCount(parsedBooking.numberOfGuests);
         }
         console.log('✅ [Persistance] Booking restauré:', parsedBooking);
       }
@@ -1102,9 +1137,10 @@ export const GuestVerification = () => {
       // Restaurer le nombre de guests
       const savedNumberOfGuests = sessionStorage.getItem(getSessionKey('form_numberOfGuests'));
       if (savedNumberOfGuests) {
-        const savedN = Math.max(1, parseInt(savedNumberOfGuests, 10));
-        setNumberOfAdults(savedN);
-        setNumberOfChildren(0);
+        const savedN = parseInt(savedNumberOfGuests, 10);
+        if (!Number.isNaN(savedN) && savedN >= 1) {
+          applyPrefilledTravelersCount(savedN);
+        }
       }
       
       // ✅ NOUVEAU : Restaurer les documents uploadés
@@ -1415,8 +1451,7 @@ export const GuestVerification = () => {
           }
           
           if (matchedReservation.number_of_guests) {
-            setNumberOfAdults(Math.max(1, matchedReservation.number_of_guests));
-            setNumberOfChildren(0);
+            applyPrefilledTravelersCount(matchedReservation.number_of_guests);
           }
           
           if (matchedReservation.guest_name) {
@@ -1477,6 +1512,7 @@ export const GuestVerification = () => {
       if (prev.length <= 1) return prev;
       return prev.filter((_, i) => i !== index);
     });
+    if (!travelersCountConfirmed) return;
     if (numberOfChildren > 0) {
       setNumberOfChildren(c => c - 1);
     } else {
@@ -2349,6 +2385,16 @@ export const GuestVerification = () => {
       return;
     }
 
+    if (!travelersCountConfirmed || numberOfAdults + numberOfChildren < 1) {
+      toast({
+        title: t('validation.error.title'),
+        description: t('validation.selectTravelers.desc'),
+        variant: 'destructive',
+      });
+      openGuestsPanel();
+      return;
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const checkInStart = new Date(checkInDate);
@@ -2458,8 +2504,7 @@ export const GuestVerification = () => {
             className="border-amber-400 bg-white/90"
             onClick={() => {
               setGuests([{ ...DEV_PRESET_GUEST }]);
-              setNumberOfAdults(1);
-              setNumberOfChildren(0);
+              applyPrefilledTravelersCount(1);
               toast({ title: 'Invité démo', description: 'Champs préremplis — complétez ou remplacez avant envoi.' });
             }}
           >
@@ -3230,13 +3275,17 @@ export const GuestVerification = () => {
                               : 'min-w-0 hover:bg-gray-50 rounded-lg p-2 -m-2 ml-12'
                           }`}
                           onClick={() => {
-                            setShowGuestsPanel(!showGuestsPanel);
+                            if (showGuestsPanel) {
+                              setShowGuestsPanel(false);
+                            } else {
+                              openGuestsPanel();
+                            }
                             setShowCalendarPanel(false);
                           }}
                         >
                           <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWho')}</Label>
-                          <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>
-                            {numberOfAdults + numberOfChildren > 0 
+                          <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: travelersCountConfirmed ? '#717171' : '#B0B0B0' }}>
+                            {travelersCountConfirmed && numberOfAdults + numberOfChildren > 0
                               ? (numberOfAdults + numberOfChildren > 1 
                                   ? t('guestVerification.travelersCountPlural', { count: numberOfAdults + numberOfChildren }) 
                                   : t('guestVerification.travelersCount', { count: numberOfAdults + numberOfChildren }))
@@ -3253,20 +3302,23 @@ export const GuestVerification = () => {
                               className="absolute top-full left-0 mt-3 z-50"
                             >
                               <div 
+                                className="guest-travelers-panel-desktop"
                                 style={{
-                                  width: '250px',
-                                  height: '118px',
+                                  width: '280px',
                                   background: '#FFFFFF',
                                   border: '1px solid #D3D3D3',
                                   boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
                                   borderRadius: '25px',
-                                  padding: '20px 24px',
+                                  padding: '16px 20px 14px',
                                   fontFamily: 'Fira Sans Condensed, sans-serif',
                                   display: 'flex',
                                   flexDirection: 'column',
-                                  justifyContent: 'space-between'
+                                  gap: '12px'
                                 }}
                               >
+                                <p className="text-xs text-gray-500 leading-snug">
+                                  {t('guestVerification.selectTravelersHint')}
+                                </p>
                                 {/* Adultes - Desktop */}
                                 <div style={{
                                   display: 'flex',
@@ -3282,19 +3334,20 @@ export const GuestVerification = () => {
                                   }}>Adultes</div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                     <button
+                                      type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setNumberOfAdults(Math.max(1, numberOfAdults - 1));
+                                        setGuestsDraftAdults(Math.max(0, guestsDraftAdults - 1));
                                       }}
-                                      disabled={numberOfAdults <= 1}
+                                      disabled={guestsDraftAdults <= 0}
                                       style={{
                                         width: '36px',
                                         height: '36px',
                                         borderRadius: '50%',
                                         border: '1px solid #D3D3D3',
                                         background: '#FFFFFF',
-                                        cursor: numberOfAdults <= 1 ? 'not-allowed' : 'pointer',
-                                        opacity: numberOfAdults <= 1 ? 0.5 : 1,
+                                        cursor: guestsDraftAdults <= 0 ? 'not-allowed' : 'pointer',
+                                        opacity: guestsDraftAdults <= 0 ? 0.5 : 1,
                                         fontSize: '20px',
                                         fontWeight: 400,
                                         color: '#1E1E1E',
@@ -3310,19 +3363,22 @@ export const GuestVerification = () => {
                                       color: '#1E1E1E',
                                       minWidth: '28px',
                                       textAlign: 'center'
-                                    }}>{numberOfAdults}</span>
+                                    }}>{guestsDraftAdults}</span>
                                     <button
+                                      type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setNumberOfAdults(numberOfAdults + 1);
+                                        setGuestsDraftAdults(Math.min(10, guestsDraftAdults + 1));
                                       }}
+                                      disabled={guestsDraftAdults >= 10}
                                       style={{
                                         width: '36px',
                                         height: '36px',
                                         borderRadius: '50%',
                                         border: '1px solid #D3D3D3',
                                         background: '#FFFFFF',
-                                        cursor: 'pointer',
+                                        cursor: guestsDraftAdults >= 10 ? 'not-allowed' : 'pointer',
+                                        opacity: guestsDraftAdults >= 10 ? 0.5 : 1,
                                         fontSize: '20px',
                                         fontWeight: 400,
                                         color: '#1E1E1E',
@@ -3349,19 +3405,20 @@ export const GuestVerification = () => {
                                   }}>Enfants</div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                     <button
+                                      type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setNumberOfChildren(Math.max(0, numberOfChildren - 1));
+                                        setGuestsDraftChildren(Math.max(0, guestsDraftChildren - 1));
                                       }}
-                                      disabled={numberOfChildren <= 0}
+                                      disabled={guestsDraftChildren <= 0}
                                       style={{
                                         width: '36px',
                                         height: '36px',
                                         borderRadius: '50%',
                                         border: '1px solid #D3D3D3',
                                         background: '#FFFFFF',
-                                        cursor: numberOfChildren <= 0 ? 'not-allowed' : 'pointer',
-                                        opacity: numberOfChildren <= 0 ? 0.5 : 1,
+                                        cursor: guestsDraftChildren <= 0 ? 'not-allowed' : 'pointer',
+                                        opacity: guestsDraftChildren <= 0 ? 0.5 : 1,
                                         fontSize: '20px',
                                         fontWeight: 400,
                                         color: '#1E1E1E',
@@ -3377,19 +3434,22 @@ export const GuestVerification = () => {
                                       color: '#1E1E1E',
                                       minWidth: '28px',
                                       textAlign: 'center'
-                                    }}>{numberOfChildren}</span>
+                                    }}>{guestsDraftChildren}</span>
                                     <button
+                                      type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setNumberOfChildren(numberOfChildren + 1);
+                                        setGuestsDraftChildren(Math.min(10, guestsDraftChildren + 1));
                                       }}
+                                      disabled={guestsDraftAdults + guestsDraftChildren >= 10}
                                       style={{
                                         width: '36px',
                                         height: '36px',
                                         borderRadius: '50%',
                                         border: '1px solid #D3D3D3',
                                         background: '#FFFFFF',
-                                        cursor: 'pointer',
+                                        cursor: guestsDraftAdults + guestsDraftChildren >= 10 ? 'not-allowed' : 'pointer',
+                                        opacity: guestsDraftAdults + guestsDraftChildren >= 10 ? 0.5 : 1,
                                         fontSize: '20px',
                                         fontWeight: 400,
                                         color: '#1E1E1E',
@@ -3400,6 +3460,18 @@ export const GuestVerification = () => {
                                     >+</button>
                                   </div>
                                 </div>
+                                <Button
+                                  type="button"
+                                  className="w-full text-white font-semibold text-sm h-10"
+                                  style={{ backgroundColor: '#55BA9F', borderRadius: '10px' }}
+                                  disabled={guestsDraftAdults < 1}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    confirmTravelersCount();
+                                  }}
+                                >
+                                  {t('guestVerification.confirmTravelers')}
+                                </Button>
                               </div>
                             </motion.div>
                           )}
@@ -3441,25 +3513,29 @@ export const GuestVerification = () => {
                             <div className="mobile-bottom-sheet-handle" />
                             
                             <div className="mobile-bottom-sheet-content">
-                              <h3 className="text-lg font-semibold text-gray-900 mb-4">Voyageurs</h3>
+                              <h3 className="text-lg font-semibold text-gray-900 mb-1">Voyageurs</h3>
+                              <p className="text-xs text-gray-500 mb-4">{t('guestVerification.selectTravelersHint')}</p>
                               
                               {/* Adultes */}
                               <div className="mobile-guests-row">
                                 <span className="mobile-guests-label">Adultes</span>
                                 <div className="mobile-guests-controls">
                                   <button
+                                    type="button"
                                     className="mobile-guests-btn"
                                     onClick={() => {
-                                      setNumberOfAdults(Math.max(1, numberOfAdults - 1));
+                                      setGuestsDraftAdults(Math.max(0, guestsDraftAdults - 1));
                                     }}
-                                    disabled={numberOfAdults <= 1}
+                                    disabled={guestsDraftAdults <= 0}
                                   >−</button>
-                                  <span className="mobile-guests-count">{numberOfAdults}</span>
+                                  <span className="mobile-guests-count">{guestsDraftAdults}</span>
                                   <button
+                                    type="button"
                                     className="mobile-guests-btn"
                                     onClick={() => {
-                                      setNumberOfAdults(numberOfAdults + 1);
+                                      setGuestsDraftAdults(Math.min(10, guestsDraftAdults + 1));
                                     }}
+                                    disabled={guestsDraftAdults >= 10}
                                   >+</button>
                                 </div>
                               </div>
@@ -3469,31 +3545,35 @@ export const GuestVerification = () => {
                                 <span className="mobile-guests-label">Enfants</span>
                                 <div className="mobile-guests-controls">
                                   <button
+                                    type="button"
                                     className="mobile-guests-btn"
                                     onClick={() => {
-                                      setNumberOfChildren(Math.max(0, numberOfChildren - 1));
+                                      setGuestsDraftChildren(Math.max(0, guestsDraftChildren - 1));
                                     }}
-                                    disabled={numberOfChildren <= 0}
+                                    disabled={guestsDraftChildren <= 0}
                                   >−</button>
-                                  <span className="mobile-guests-count">{numberOfChildren}</span>
+                                  <span className="mobile-guests-count">{guestsDraftChildren}</span>
                                   <button
+                                    type="button"
                                     className="mobile-guests-btn"
                                     onClick={() => {
-                                      setNumberOfChildren(numberOfChildren + 1);
+                                      setGuestsDraftChildren(Math.min(10, guestsDraftChildren + 1));
                                     }}
+                                    disabled={guestsDraftAdults + guestsDraftChildren >= 10}
                                   >+</button>
                                 </div>
                               </div>
                               
-                              {/* Bouton Confirmer */}
                               <Button
-                                className="w-full mt-6 text-white font-semibold transition-all"
+                                type="button"
+                                className="w-full mt-6 text-white font-semibold transition-all touch-target"
                                 style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' }}
+                                disabled={guestsDraftAdults < 1}
                                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
-                                onClick={() => setShowGuestsPanel(false)}
+                                onClick={confirmTravelersCount}
                               >
-                                Confirmer
+                                {t('guestVerification.confirmTravelers')}
                               </Button>
                             </div>
                           </motion.div>
