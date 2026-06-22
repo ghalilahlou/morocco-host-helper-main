@@ -267,7 +267,17 @@ export default function Auth() {
 
       if (data.user && !data.session) {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-        if (signInError && (signInError.message.includes('email_not_confirmed') || signInError.message.includes('Email not confirmed'))) {
+        // Quand "Confirm email" est activé sur Supabase, la connexion immédiate échoue.
+        // Selon la config, l'erreur renvoyée peut être "Email not confirmed",
+        // "email_not_confirmed" OU le générique "Invalid login credentials" (400).
+        // Comme le compte vient d'être créé (data.user existe), on traite tous ces cas
+        // comme « compte créé, confirmez votre email » plutôt qu'une erreur bloquante.
+        const needsConfirmation =
+          signInError &&
+          (signInError.message.includes('email_not_confirmed') ||
+            signInError.message.includes('Email not confirmed') ||
+            signInError.message.includes('Invalid login credentials'));
+        if (needsConfirmation) {
           toast({
             title: t('auth.toast.accountCreated'),
             description: t('auth.toast.confirmEmail'),
