@@ -3727,74 +3727,80 @@ export const GuestVerification = () => {
                             }
                           }}
                         >
-                          <CloudUpload className="w-8 h-8 text-gray-400 mb-2" />
-                          <p className="text-sm font-medium text-gray-700 mb-1">
+                          <CloudUpload className="w-8 h-8 mb-2" style={{ color: '#55BA9F' }} />
+                          <p className="text-sm font-bold mb-1" style={{ color: '#3E9B86' }}>
                             {t('guestVerification.uploadTapTitle')}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-gray-500 text-center">
                             {t('guestVerification.uploadTapHint')}
                           </p>
                         </div>
                         {uploadedDocuments.length > 0 && (
                           <div className="mt-4">
-                            <p className="text-sm font-medium text-gray-700 mb-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">
                               {t('guestVerification.docsUploadedCount', { count: uploadedDocuments.length })}
                             </p>
-                            <div className="space-y-2">
+                            <div className="space-y-2.5">
                               {uploadedDocuments.map((doc, index) => (
                                 <div
                                   key={doc.url}
-                                  className={`flex flex-col gap-2 p-3 rounded-xl border bg-white shadow-sm relative group ${doc.ocrFailed ? 'border-red-400' : 'border-gray-200'}`}
+                                  className={`flex items-start gap-3 p-3 rounded-2xl border bg-white ${doc.ocrFailed ? 'border-red-300' : 'border-[#E4EAE7]'}`}
                                 >
-                                  <div className="flex items-center gap-3">
+                                  {/* Vignette */}
+                                  <div
+                                    className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center overflow-hidden rounded-[11px]"
+                                    style={{ background: 'linear-gradient(135deg, #E8F8F3, #D2F0E5)' }}
+                                  >
+                                    {doc.processing ? (
+                                      <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                                    ) : doc.file.type.startsWith('image/') ? (
+                                      <img src={doc.url} alt={doc.file.name} className="h-full w-full object-cover" />
+                                    ) : (
+                                      <FileText className="w-6 h-6" style={{ color: '#3E9B86' }} />
+                                    )}
+                                  </div>
+                                  {/* Infos */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      {doc.ocrFailed && !doc.processing && (
+                                        <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" aria-hidden />
+                                      )}
+                                      <p className="text-sm font-semibold text-gray-900 truncate">{doc.file.name}</p>
+                                    </div>
+                                    <p className="text-xs text-gray-500 break-words mt-0.5 leading-relaxed">
+                                      {formatDocExtractSummary(doc, guests[index])}
+                                    </p>
+                                    {doc.ocrFailed && !doc.processing && (
+                                      <div className="flex flex-wrap gap-3 mt-1.5">
+                                        <button
+                                          type="button"
+                                          className="text-xs text-teal-700 underline"
+                                          onClick={() => void retryDocumentOcr(doc.url)}
+                                        >
+                                          {t('guestVerification.retryOcr')}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="text-xs text-amber-800 underline"
+                                          onClick={() => unlockGuestManual(index)}
+                                        >
+                                          {t('guestVerification.manualEntryCta')}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {/* Retirer */}
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       removeDocument(doc.url);
                                     }}
-                                    className="absolute top-2 right-2 p-1.5 rounded-full bg-red-50 text-red-500 hover:bg-red-100 touch-target"
+                                    className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center rounded-[9px] bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
                                     aria-label={t('guestVerification.docRemovedTitle')}
                                   >
                                     <X className="w-4 h-4" />
                                   </button>
-                                  {doc.ocrFailed && !doc.processing && (
-                                    <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" aria-hidden />
-                                  )}
-                                  {doc.processing ? (
-                                    <div className="w-10 h-10 flex items-center justify-center">
-                                      <div className="w-6 h-6 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
-                                    </div>
-                                  ) : doc.file.type.startsWith('image/') ? (
-                                    <img src={doc.url} alt={doc.file.name} className="w-10 h-10 object-cover rounded-lg" />
-                                  ) : (
-                                    <FileText className="w-8 h-8 text-gray-400 flex-shrink-0" />
-                                  )}
-                                  <div className="flex-1 min-w-0 pr-8">
-                                    <p className="text-sm font-medium text-gray-900 truncate">{doc.file.name}</p>
-                                    <p className="text-xs text-gray-500 break-words">
-                                      {formatDocExtractSummary(doc, guests[index])}
-                                    </p>
-                                  </div>
-                                  </div>
-                                  {doc.ocrFailed && !doc.processing && (
-                                    <div className="flex flex-wrap gap-3 pl-1">
-                                      <button
-                                        type="button"
-                                        className="text-xs text-teal-700 underline"
-                                        onClick={() => void retryDocumentOcr(doc.url)}
-                                      >
-                                        {t('guestVerification.retryOcr')}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="text-xs text-amber-800 underline"
-                                        onClick={() => unlockGuestManual(index)}
-                                      >
-                                        {t('guestVerification.manualEntryCta')}
-                                      </button>
-                                    </div>
-                                  )}
                                 </div>
                               ))}
                             </div>
@@ -3837,28 +3843,29 @@ export const GuestVerification = () => {
                             <div
                               key={`guest-form-${rowIndex}-${displayIndex}`}
                             >
-                              {/* Guest Card - responsive, ombre douce */}
-                              <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.08),0_8px_24px_-12px_rgba(0,0,0,0.12)] p-4 md:p-6">
-                                {/* Header */}
-                                <div className="flex items-center justify-between mb-6">
-                                  <span style={{
-                                    fontFamily: 'Fira Sans Condensed, sans-serif',
-                                    fontWeight: 400,
-                                    fontSize: '16px',
-                                    lineHeight: '36px',
-                                    color: '#040404'
-                                  }}>{t('guestVerification.travelerLabel', { n: displayIndex + 1 })}</span>
-                                  {deduplicatedGuests.length > 1 && (
-                                    <button 
-                                      onClick={() => removeGuest(rowIndex)} 
-                                      style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        cursor: 'pointer',
-                                        padding: '4px'
-                                      }}
+                              {/* Guest Card - responsive, bordure douce (inspiré maquette CHECKY Mobile) */}
+                              <div className="bg-white rounded-[18px] border border-[#E4EAE7] shadow-[0_1px_3px_rgba(0,0,0,0.05),0_8px_24px_-14px_rgba(0,0,0,0.12)] p-4 md:p-6">
+                                {/* Header avec badge numéroté */}
+                                <div className="flex items-center justify-between mb-5">
+                                  <div className="flex items-center gap-2.5">
+                                    <div
+                                      className="flex h-7 w-7 items-center justify-center rounded-lg text-sm font-bold"
+                                      style={{ background: 'rgba(85, 186, 159, 0.14)', color: '#3E9B86' }}
                                     >
-                                      <X className="w-5 h-5" style={{ color: '#EF4444' }} />
+                                      {displayIndex + 1}
+                                    </div>
+                                    <span className="text-base font-semibold text-gray-900">
+                                      {t('guestVerification.travelerLabel', { n: displayIndex + 1 })}
+                                    </span>
+                                  </div>
+                                  {deduplicatedGuests.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeGuest(rowIndex)}
+                                      className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                                      aria-label={t('guestVerification.travelerLabel', { n: displayIndex + 1 })}
+                                    >
+                                      <X className="w-4 h-4" />
                                     </button>
                                   )}
                                 </div>
@@ -3915,7 +3922,7 @@ export const GuestVerification = () => {
                                       required
                                       disabled={identityFieldsLocked}
                                       autoComplete="name"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -3947,7 +3954,7 @@ export const GuestVerification = () => {
                                       disabled={identityFieldsLocked}
                                       list={`nationalities-list-${rowIndex}`}
                                       autoComplete="country-name"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                     <datalist id={`nationalities-list-${rowIndex}`}>
                                       {NATIONALITIES.filter(n => n !== '---').map((nationality) => (
@@ -3967,7 +3974,7 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'placeOfBirth', e.target.value)}
                                       disabled={identityFieldsLocked}
                                       autoComplete="off"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -3981,7 +3988,7 @@ export const GuestVerification = () => {
                                         value={guest.documentType} 
                                         onChange={(e) => updateGuest(rowIndex, 'documentType', e.target.value)}
                                         disabled={identityFieldsLocked}
-                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                        className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                                       >
                                         <option value="passport">{t('guest.clients.passport')}</option>
                                         <option value="national_id">{t('guest.clients.nationalId')}</option>
@@ -4006,7 +4013,7 @@ export const GuestVerification = () => {
                                       disabled={identityFieldsLocked}
                                       autoComplete="off"
                                       inputMode="text"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -4048,7 +4055,7 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'profession', e.target.value)}
                                       placeholder=""
                                       autoComplete="organization-title"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
                                     />
                                   </div>
 
@@ -4061,7 +4068,7 @@ export const GuestVerification = () => {
                                         id={`motifSejour-${rowIndex}`}
                                         value={guest.motifSejour || ''}
                                         onChange={(e) => updateGuest(rowIndex, 'motifSejour', e.target.value)}
-                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white appearance-none"
+                                        className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white appearance-none"
                                         required
                                       >
                                         <option value="">{t('guest.clients.motifSelect')}</option>
@@ -4088,7 +4095,7 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'adressePersonnelle', e.target.value)}
                                       placeholder=""
                                       autoComplete="street-address"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
                                     />
                                   </div>
 
@@ -4105,7 +4112,7 @@ export const GuestVerification = () => {
                                       required
                                       autoComplete="email"
                                       inputMode="email"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border-[1.5px] border-[#E4EAE7] rounded-xl focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
                                     />
                                   </div>
                                 </div>

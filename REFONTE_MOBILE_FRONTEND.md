@@ -211,5 +211,19 @@ La fiche de saisie (11 champs : nom, naissance, nationalité, lieu de naissance,
 
 Tous les inputs/selects en `text-base` (16px) → pas de zoom iOS. Champ date natif `[color-scheme:light]` + même hauteur (`py-3`) que les autres → alignement parfait des lignes. `tsc` + `vite build` ✅.
 
+### 6.2ter Refonte visuelle inspirée de la maquette « CHECKY Mobile » ✅
+
+Disposition reprise de la maquette de référence (design vert menthe Plus Jakarta Sans), **en gardant le code couleur teal de l'app et la logique existante**. Périmètre : carte voyageur + zone upload / liste documents.
+
+| Élément | Refonte |
+|---------|---------|
+| **Zone d'upload** | Dashed teal clair sur fond teal très pâle (`#A7DDD0` / `#F2FAF8`), radius 18px, icône + titre teal (`mobile.css` + JSX) |
+| **« Documents téléchargés »** | Libellé `uppercase` + tracking (style maquette) |
+| **Carte document** | Vignette `46×46` à dégradé teal + nom (ellipsis) + résumé + bouton retirer doux `30×30 rounded-[9px] bg-red-50` (au lieu d'un X absolu) ; bordure douce `#E4EAE7` |
+| **Carte voyageur** | **Badge numéroté** teal (carré arrondi avec le n°) + titre ; bordure `#E4EAE7` radius 18px ; bouton retirer arrondi gris→rouge |
+| **Champs** | Bordure `1.5px #E4EAE7` + `rounded-xl` (12px) + focus anneau teal (inputs, selects, champ date) |
+
+`tsc` + `vite build` ✅. Couleurs : teal app (`#55BA9F`/`brand-teal`) — pas le menthe `#15C39A` de la maquette.
+
 ### 6.3 Prochaine étape recommandée
 Validation visuelle réelle (iOS Safari + Chrome Android) des 3 étapes et des 3 états, puis arbitrage des points 6.2.1 (i18n) et 6.2.2 (étape signature) qui sont les plus visibles côté client.
