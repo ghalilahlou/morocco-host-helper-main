@@ -1731,8 +1731,8 @@ export const GuestVerification = () => {
         timestamp: new Date().toISOString()
       });
       toast({
-        title: "Soumission en cours",
-        description: "Veuillez patienter, la soumission est déjà en cours...",
+        title: t('guestVerification.submissionInProgressTitle'),
+        description: t('guestVerification.submissionInProgressDesc'),
         variant: "default"
       });
       return;
@@ -2275,8 +2275,8 @@ export const GuestVerification = () => {
       goToStep('documents');
       
       toast({
-        title: "Erreur",
-        description: `Erreur lors de l'envoi des informations. Veuillez réessayer ou contacter votre hôte.`,
+        title: t('validation.error.title'),
+        description: t('guestVerification.submitErrorDesc'),
         variant: "destructive"
       });
       
@@ -2297,8 +2297,8 @@ export const GuestVerification = () => {
 
   if (checkingToken) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-white to-teal-50 flex items-center justify-center">
-        <motion.div 
+      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-white to-teal-50 flex items-center justify-center p-4">
+        <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
@@ -2315,7 +2315,7 @@ export const GuestVerification = () => {
             transition={{ delay: 0.2 }}
             className="text-lg text-muted-foreground font-medium"
           >
-            Vérification du lien...
+            {t('guestVerification.verifyingLink')}
           </motion.p>
           <motion.p 
             initial={{ opacity: 0 }}
@@ -2323,7 +2323,7 @@ export const GuestVerification = () => {
             transition={{ delay: 2 }}
             className="text-sm text-muted-foreground mt-2"
           >
-            Chargement en cours...
+            {t('guestVerification.loadingInProgress')}
           </motion.p>
         </motion.div>
       </div>
@@ -2332,11 +2332,11 @@ export const GuestVerification = () => {
 
   if (!isValidToken) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 flex items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md mx-auto"
+          className="w-full max-w-md mx-auto"
         >
           <Card className="border-red-200 shadow-xl">
             <CardHeader className="text-center">
@@ -2355,7 +2355,7 @@ export const GuestVerification = () => {
             </CardHeader>
             <CardContent className="text-center">
               <p className="text-red-600">
-                Veuillez contacter votre hôte pour obtenir un nouveau lien.
+                {t('guestVerification.invalidLinkContactHost')}
               </p>
             </CardContent>
           </Card>
@@ -2367,8 +2367,8 @@ export const GuestVerification = () => {
   const handleNextStep = () => {
     if (!checkInDate || !checkOutDate) {
       toast({
-        title: "Erreur",
-        description: "Veuillez sélectionner les dates d'arrivée et de départ",
+        title: t('validation.error.title'),
+        description: t('guestVerification.selectDatesError'),
         variant: "destructive"
       });
       return;
@@ -2420,13 +2420,14 @@ export const GuestVerification = () => {
 
   if (submissionComplete) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ type: "spring", stiffness: 300 }}
+          className="w-full max-w-md"
         >
-          <Card className="p-8 max-w-md border-green-200 shadow-2xl">
+          <Card className="p-8 w-full border-green-200 shadow-2xl">
             <CardContent className="text-center space-y-6">
               <motion.div
                 initial={{ scale: 0 }}
@@ -2440,9 +2441,9 @@ export const GuestVerification = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
               >
-                <h2 className="text-3xl font-bold text-green-800">Merci!</h2>
+                <h2 className="text-3xl font-bold text-green-800">{t('guestVerification.thankYou')}</h2>
                 <p className="text-green-600 mt-2">
-                  Vos informations ont été soumises avec succès. Vous pouvez maintenant procéder à la signature du contrat.
+                  {t('guestVerification.submissionSuccessDesc')}
                 </p>
               </motion.div>
               <motion.div
@@ -3187,7 +3188,7 @@ export const GuestVerification = () => {
                 {currentStep === 'booking' && (
                   <div
                     className={`mx-auto space-y-6 relative ${
-                      isMobile ? 'max-w-full px-4' : 'max-w-4xl'
+                      isMobile ? 'max-w-full' : 'max-w-4xl'
                     } ${showCalendarPanel || showGuestsPanel ? 'z-30' : ''}`}
                   >
                     {/* Titre - adapté mobile */}
@@ -3329,7 +3330,7 @@ export const GuestVerification = () => {
                                     fontSize: '16px',
                                     lineHeight: '20px',
                                     color: '#1E1E1E'
-                                  }}>Adultes</div>
+                                  }}>{t('guestVerification.adults')}</div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                     <button
                                       type="button"
@@ -3400,7 +3401,7 @@ export const GuestVerification = () => {
                                     fontSize: '16px',
                                     lineHeight: '20px',
                                     color: '#1E1E1E'
-                                  }}>Enfants</div>
+                                  }}>{t('guestVerification.children')}</div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                                     <button
                                       type="button"
@@ -3499,12 +3500,12 @@ export const GuestVerification = () => {
                             <div className="mobile-bottom-sheet-handle" />
                             
                             <div className="mobile-bottom-sheet-content">
-                              <h3 className="text-lg font-semibold text-gray-900 mb-1">Voyageurs</h3>
+                              <h3 className="text-lg font-semibold text-gray-900 mb-1">{t('guestVerification.travelersTitle')}</h3>
                               <p className="text-xs text-gray-500 mb-4">{t('guestVerification.selectTravelersHint')}</p>
                               
                               {/* Adultes */}
                               <div className="mobile-guests-row">
-                                <span className="mobile-guests-label">Adultes</span>
+                                <span className="mobile-guests-label">{t('guestVerification.adults')}</span>
                                 <div className="mobile-guests-controls">
                                   <button
                                     type="button"
@@ -3528,7 +3529,7 @@ export const GuestVerification = () => {
                               
                               {/* Enfants */}
                               <div className="mobile-guests-row">
-                                <span className="mobile-guests-label">Enfants</span>
+                                <span className="mobile-guests-label">{t('guestVerification.children')}</span>
                                 <div className="mobile-guests-controls">
                                   <button
                                     type="button"
@@ -3640,7 +3641,7 @@ export const GuestVerification = () => {
                       {/* Bouton Précédent - Masqué sur la première étape */}
                       {currentStep !== 'booking' && (
                         <Button
-                          className="px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all"
+                          className="px-5 md:px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all"
                           style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px', border: 'none', color: '#040404' }}
                           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
                           onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
@@ -3656,7 +3657,7 @@ export const GuestVerification = () => {
                       
                       {/* Bouton Suivant */}
                       <Button
-                        className="text-white px-8 py-3 font-semibold shadow-md hover:shadow-lg transition-all ml-auto"
+                        className="text-white px-5 md:px-8 py-3 font-semibold shadow-md hover:shadow-lg transition-all ml-auto"
                         style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px' }}
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
@@ -3804,12 +3805,10 @@ export const GuestVerification = () => {
 
                     {/* Header Section */}
                     <div className="flex items-center gap-3 mb-4">
-                      <Users className="w-7 h-7" style={{ color: '#000000' }} />
-                      <h2 style={{
+                      <Users className="w-6 h-6 md:w-7 md:h-7 flex-shrink-0" style={{ color: '#000000' }} />
+                      <h2 className="text-2xl md:text-3xl leading-tight" style={{
                         fontFamily: 'Fira Sans Condensed, sans-serif',
                         fontWeight: 400,
-                        fontSize: '30px',
-                        lineHeight: '36px',
                         color: '#040404'
                       }}>{t('guestVerification.travelerInfo')}</h2>
                     </div>
@@ -3838,13 +3837,8 @@ export const GuestVerification = () => {
                             <div
                               key={`guest-form-${rowIndex}-${displayIndex}`}
                             >
-                              {/* Guest Card - Figma style */}
-                              <div style={{
-                                background: '#FFFFFF',
-                                boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
-                                borderRadius: '12px',
-                                padding: '24px'
-                              }}>
+                              {/* Guest Card - responsive, ombre douce */}
+                              <div className="bg-white rounded-2xl border border-gray-100 shadow-[0_1px_3px_rgba(0,0,0,0.08),0_8px_24px_-12px_rgba(0,0,0,0.12)] p-4 md:p-6">
                                 {/* Header */}
                                 <div className="flex items-center justify-between mb-6">
                                   <span style={{
@@ -3906,8 +3900,8 @@ export const GuestVerification = () => {
                                   </button>
                                 )}
                                 
-                                {/* Form Grid - 2 columns desktop, 1 column mobile */}
-                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '16px' }}>
+                                {/* Form Grid - 1 colonne mobile, 2 colonnes >= md (768px) ; champs longs en pleine largeur */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.fullName')} <span className="text-red-500">*</span>
@@ -3921,7 +3915,7 @@ export const GuestVerification = () => {
                                       required
                                       disabled={identityFieldsLocked}
                                       autoComplete="name"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -3953,7 +3947,7 @@ export const GuestVerification = () => {
                                       disabled={identityFieldsLocked}
                                       list={`nationalities-list-${rowIndex}`}
                                       autoComplete="country-name"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                     <datalist id={`nationalities-list-${rowIndex}`}>
                                       {NATIONALITIES.filter(n => n !== '---').map((nationality) => (
@@ -3973,7 +3967,7 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'placeOfBirth', e.target.value)}
                                       disabled={identityFieldsLocked}
                                       autoComplete="off"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -3987,7 +3981,7 @@ export const GuestVerification = () => {
                                         value={guest.documentType} 
                                         onChange={(e) => updateGuest(rowIndex, 'documentType', e.target.value)}
                                         disabled={identityFieldsLocked}
-                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white appearance-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                                       >
                                         <option value="passport">{t('guest.clients.passport')}</option>
                                         <option value="national_id">{t('guest.clients.nationalId')}</option>
@@ -4012,7 +4006,7 @@ export const GuestVerification = () => {
                                       disabled={identityFieldsLocked}
                                       autoComplete="off"
                                       inputMode="text"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
                                     />
                                   </div>
                                   
@@ -4054,11 +4048,11 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'profession', e.target.value)}
                                       placeholder=""
                                       autoComplete="organization-title"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
                                     />
                                   </div>
 
-                                  <div className="space-y-2">
+                                  <div className="space-y-2 md:col-span-2">
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.motifSejour')} <span className="text-red-500">*</span>
                                     </Label>
@@ -4067,7 +4061,7 @@ export const GuestVerification = () => {
                                         id={`motifSejour-${rowIndex}`}
                                         value={guest.motifSejour || ''}
                                         onChange={(e) => updateGuest(rowIndex, 'motifSejour', e.target.value)}
-                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white appearance-none"
+                                        className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white appearance-none"
                                         required
                                       >
                                         <option value="">{t('guest.clients.motifSelect')}</option>
@@ -4083,7 +4077,7 @@ export const GuestVerification = () => {
                                     </div>
                                   </div>
 
-                                  <div className="space-y-2">
+                                  <div className="space-y-2 md:col-span-2">
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.personalAddress')}
                                     </Label>
@@ -4094,11 +4088,11 @@ export const GuestVerification = () => {
                                       onChange={(e) => updateGuest(rowIndex, 'adressePersonnelle', e.target.value)}
                                       placeholder=""
                                       autoComplete="street-address"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
                                     />
                                   </div>
 
-                                  <div className="space-y-2">
+                                  <div className="space-y-2 md:col-span-2">
                                     <Label className="text-sm font-semibold text-gray-900">
                                       {t('guest.clients.email')} <span className="text-red-500">*</span>
                                     </Label>
@@ -4111,7 +4105,7 @@ export const GuestVerification = () => {
                                       required
                                       autoComplete="email"
                                       inputMode="email"
-                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
+                                      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white"
                                     />
                                   </div>
                                 </div>
@@ -4126,7 +4120,7 @@ export const GuestVerification = () => {
                     <div className={`flex justify-between items-center gap-4 ${isMobile ? 'pt-6 pb-4' : 'pt-12'}`}>
                       {/* Bouton Précédent */}
                       <Button
-                        className="px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all"
+                        className="px-5 md:px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all"
                         style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px', border: 'none', color: '#040404' }}
                         onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
@@ -4138,7 +4132,7 @@ export const GuestVerification = () => {
 
                       {/* Bouton Suivant */}
                       <Button
-                        className="px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all ml-auto"
+                        className="px-5 md:px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all ml-auto"
                         style={{
                           backgroundColor: 'rgba(85, 186, 159, 0.8)',
                           borderRadius: '8px',
@@ -4180,8 +4174,8 @@ export const GuestVerification = () => {
                     exit={{ opacity: 0, x: -20 }}
                     className="max-w-4xl mx-auto"
                   >
-                    <h2 className="text-3xl font-bold mb-6">{t('guestVerification.signatureTitle')}</h2>
-                    <p className="text-gray-600 mb-6">{t('guestVerification.signatureIntro')}</p>
+                    <h2 className="text-2xl md:text-3xl font-bold mb-6">{t('guestVerification.signatureTitle')}</h2>
+                    <p className="text-sm md:text-base text-gray-600 mb-6">{t('guestVerification.signatureIntro')}</p>
                     
                     {/* Contract content placeholder - keep existing signature logic */}
                     <div className="bg-gray-50 rounded-lg p-6 mb-6 border border-gray-200">

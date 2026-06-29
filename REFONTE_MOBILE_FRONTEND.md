@@ -169,3 +169,47 @@ Conséquences :
 ---
 
 *Document vivant : cocher les cases au fur et à mesure du chantier et documenter chaque correctif (commit + fichier touché).*
+
+---
+
+## 6. Audit détaillé — Guest Verification mobile (vitrine client)
+
+> Page : [src/pages/GuestVerification.tsx](src/pages/GuestVerification.tsx) (monolithe 4290 lignes). Parcours : **booking → documents → signature**, plus états *chargement / lien invalide / succès*. Audit réalisé écran par écran sur la cible mobile (`isMobile` = `< 768px`).
+
+### 6.1 Corrigé ✅ (cette passe)
+
+| # | Étape / écran | Défaut mobile | Correctif |
+|---|---------------|---------------|-----------|
+| A | États *chargement*, *lien invalide*, *succès* | Cartes centrées **sans padding horizontal** → la carte `max-w-md` colle aux bords sur téléphone étroit (<448px) | `p-4` sur le wrapper + `w-full` sur la carte (lignes ~2300/2335/2423) |
+| B | Étape **booking** | Marge latérale incohérente : `px-4` ajouté **en plus** du `px-6` parent (40px) vs 24px sur documents/signature → la largeur « saute » au changement d'étape | Retrait du `px-4` superflu (alignement sur les autres étapes) |
+| C | Étape **signature** | Titre `text-3xl` non responsive (trop gros sur petit écran) | `text-2xl md:text-3xl` + sous-titre `text-sm md:text-base` |
+| D | Bottom-sheet voyageurs | `max-height: 90vh` (barre d'URL non prise en compte) | `90vh` → `90dvh` (fallback) dans [mobile.css](src/styles/mobile.css) |
+
+### 6.2 Constats ouverts
+
+1. **✅ CORRIGÉ — Textes codés en dur en français** (écrans 100% visibles client, app FR/EN/ES). 13 clés ajoutées dans `fr.ts`/`en.ts`/`es.ts` (`verifyingLink`, `loadingInProgress`, `invalidLinkContactHost`, `thankYou`, `submissionSuccessDesc`, `travelersTitle`, `adults`, `children`, `submissionInProgress*`, `submitErrorDesc`, `selectDatesError`) et tous les textes/toasts remplacés par `t(...)` dans [GuestVerification.tsx](src/pages/GuestVerification.tsx). Un voyageur EN/ES voit désormais sa langue partout.
+2. **🟠 Étape signature = impasse — DIAGNOSTIC FAIT** :
+   - **Marche avant** : booking → documents → `handleSubmit()` → écran **succès** → bouton « Signer le contrat » → `/contract-signing/...` (composant séparé). L'écran signature in-page **n'est jamais affiché en avançant**.
+   - **Seul accès** : retour depuis la page de signature (`navState.fromSignaturePage`, [ligne ~1188](src/pages/GuestVerification.tsx#L1188)) qui marque les 3 étapes visitées → l'écran in-page (contrat *placeholder* + case + bouton Précédent seul) s'affiche, **sans rien signer**.
+   - **Recommandation** : garder l'étape dans le stepper (roadmap claire), mais remplacer le contenu *placeholder* par un vrai CTA « Signer le contrat » qui renvoie vers `/contract-signing/...` (identique au bouton de l'écran succès). → **en attente de validation** avant application.
+3. **🟠 Sur-utilisation de styles inline + ternaires `isMobile`** (50+) dans la page : chaque taille/espacement est dupliqué à la main → source structurelle d'incohérences futures. Refactor incrémental recommandé (extraction de sous-composants par étape, passage aux classes `md:`).
+4. **🟡 Boutons sans feedback tactile** : les CTA reposent sur `onMouseEnter/Leave` (sans effet au toucher) et n'ont pas d'état `:active`. Ajouter un retour visuel `active:` pour le mobile.
+5. **🟡 Largeur des zones tactiles** : vérifier que tous les CTA atteignent 44px de haut (la plupart OK via `py-3`, à confirmer visuellement).
+
+### 6.2bis Fiche « informations voyageur » (étape documents) — REFONTE ✅
+
+La fiche de saisie (11 champs : nom, naissance, nationalité, lieu de naissance, type/numéro/expiration de pièce, profession, motif, adresse, email) était « moche et mal répartie ». Corrigé :
+
+| Avant | Après |
+|-------|-------|
+| Carte en styles inline, **ombre dure** `0 4px 4px rgba(0,0,0,.25)` | Tailwind `bg-white rounded-2xl border border-gray-100` + **ombre douce** ; padding `p-4 md:p-6` (plus de largeur input sur mobile) |
+| Grille inline `isMobile ? 1fr : 1fr 1fr` (seuil 768 JS) avec **champ orphelin** → trou à côté sur desktop | `grid grid-cols-1 md:grid-cols-2 gap-4` (CSS pur, breakpoint 768 cohérent) |
+| Champs longs (motif, adresse, email) coincés en demi-largeur | `md:col-span-2` → **pleine largeur**, répartition propre (4 lignes de paires + 3 pleines) |
+| Focus incohérent (champ date = anneau teal, autres = bordure grise) | **Focus unifié** sur tous les champs : `focus:border-brand-teal focus:ring-2 focus:ring-brand-teal/20` (+ champ date aligné) |
+| Titre section `30px` fixe (trop gros mobile) | `text-2xl md:text-3xl` |
+| Boutons nav `px-8` → risque de **débordement** mobile (texte « Vérifier et continuer ») | `px-5 md:px-8` |
+
+Tous les inputs/selects en `text-base` (16px) → pas de zoom iOS. Champ date natif `[color-scheme:light]` + même hauteur (`py-3`) que les autres → alignement parfait des lignes. `tsc` + `vite build` ✅.
+
+### 6.3 Prochaine étape recommandée
+Validation visuelle réelle (iOS Safari + Chrome Android) des 3 étapes et des 3 états, puis arbitrage des points 6.2.1 (i18n) et 6.2.2 (étape signature) qui sont les plus visibles côté client.

@@ -97,7 +97,7 @@ export function GuestHybridDateField({ value, onChange, variant, id, ariaLabel, 
           onChange(parsed);
         }
       }}
-      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white text-gray-900 [color-scheme:light] disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+      className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-brand-teal focus:outline-none focus:ring-2 focus:ring-brand-teal/20 transition-colors bg-white text-gray-900 [color-scheme:light] disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
     />
   );
 }

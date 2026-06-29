@@ -219,7 +219,7 @@ export const AirbnbSyncManager = ({
                    <div className="flex-1 min-w-0">
                      <p className="text-sm font-medium mb-1">URL configurée :</p>
                      <p className="text-xs text-muted-foreground break-all overflow-hidden line-clamp-2 sm:line-clamp-none">
-                       {window.innerWidth < 768 ? `${currentIcsUrl.substring(0, 50)}...` : currentIcsUrl}
+                       {currentIcsUrl}
                      </p>
                    </div>
                 </div>
