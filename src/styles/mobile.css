@@ -985,3 +985,40 @@ canvas {
   }
 }
 
+/* ============================================================
+   SAFARI / iOS — durcissement (champ date natif, tap highlight)
+   Cf. REFONTE_MOBILE_FRONTEND.md §7
+   ============================================================ */
+
+/* Champs date natifs (input type=date) : sur iOS Safari la valeur est centrée
+   et la hauteur peut s'effondrer → on normalise pour un rendu identique aux
+   autres champs (alignée à gauche, même hauteur). */
+.guest-date-input {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 48px;
+}
+.guest-date-input::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+.guest-date-input::-webkit-datetime-edit {
+  padding: 0;
+  line-height: 1.2;
+}
+.guest-date-input::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+/* Évite le flash gris au tap sur iOS Safari */
+button,
+a,
+[role="button"],
+input,
+select,
+textarea,
+.guest-verification-upload-zone-mobile {
+  -webkit-tap-highlight-color: transparent;
+}
+

@@ -172,6 +172,24 @@ Conséquences :
 
 ---
 
+## 7. Durcissement Safari / iOS ✅
+
+Passe ciblée sur les quirks WebKit (Safari macOS + iOS) du parcours invité.
+
+| Sujet | Problème Safari/iOS | Correctif |
+|-------|---------------------|-----------|
+| **Champs date natifs** (`input[type=date]`) | iOS centre la valeur et peut effondrer la hauteur → look incohérent vs autres champs | Classe `.guest-date-input` : `-webkit-appearance:none`, `min-height:48px`, `::-webkit-date-and-time-value{text-align:left}`, `::-webkit-datetime-edit{padding:0}` ([GuestHybridDateField](src/components/guest/GuestHybridDateField.tsx) + [mobile.css](src/styles/mobile.css)) |
+| **Selects** | Risque de double-flèche / style natif si `-webkit-appearance` absent | Vérifié : **autoprefixer** (defaults) émet bien `-webkit-appearance:none` dans le CSS compilé → OK, + chevron custom déjà présent |
+| **`position: sticky` cassé** | `overflow-x:hidden` sur html/body/#root transforme la page en conteneur de défilement et casse le header sticky sur iOS | `@supports (overflow: clip)` → `overflow-x: clip` (coupe sans créer de scroll-container) ; fallback `hidden` pour Safari < 16 ([index.css](src/index.css)) |
+| **Hauteur / barre d'URL** | `100vh` trop grand sur iOS Safari | déjà traité Phase 3 : `min-h-screen`/`h-screen` → `100dvh` (fallback vh) |
+| **Zoom au focus** | iOS zoome si police input < 16px | inputs/selects/date en `text-base` (16px) + règle `font-size:16px` dans `.guest-verification-main` |
+| **Flash gris au tap** | iOS affiche un highlight gris sur tap | `-webkit-tap-highlight-color: transparent` sur boutons/liens/champs |
+| **Safe-area** | encoche / home indicator | `viewport-fit=cover` + `env(safe-area-inset-*)` sur header/footer |
+
+Vérifié dans le CSS compilé (`webkit-date-and-time-value`, `overflow-x:clip`, `webkit-tap-highlight-color:transparent` présents). `tsc` + `vite build` ✅.
+
+---
+
 ## 6. Audit détaillé — Guest Verification mobile (vitrine client)
 
 > Page : [src/pages/GuestVerification.tsx](src/pages/GuestVerification.tsx) (monolithe 4290 lignes). Parcours : **booking → documents → signature**, plus états *chargement / lien invalide / succès*. Audit réalisé écran par écran sur la cible mobile (`isMobile` = `< 768px`).

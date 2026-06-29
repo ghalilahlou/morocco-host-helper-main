@@ -167,3 +167,18 @@
     height: 100dvh;
   }
 }
+
+/* ==========================================================================
+   SAFARI iOS — `overflow-x: clip` au lieu de `hidden` (anti-scroll horizontal)
+   `hidden` transforme html/body/#root en conteneur de défilement, ce qui peut
+   CASSER `position: sticky` sur iOS Safari. `clip` coupe le débordement sans
+   créer de conteneur de défilement → sticky préservé. Fallback `hidden` plus
+   haut (base layer) pour Safari < 16 / vieux navigateurs.
+   ========================================================================== */
+@supports (overflow: clip) {
+  html,
+  body,
+  #root {
+    overflow-x: clip;
+  }
+}
