@@ -135,9 +135,9 @@ export const Dashboard = memo(({
 
       {/* Vue cartes : bascule + Ajouter (aligné sur CalendarHeader mobile) */}
       {viewMode === 'cards' && (
-        <div className="flex flex-col gap-3 w-full max-w-md mx-auto sm:max-w-none sm:mx-0">
+        <div className="flex flex-col gap-3 w-full max-w-md mx-auto sm:max-w-none sm:mx-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div
-            className="flex w-full gap-2"
+            className="flex w-full gap-2 sm:w-auto"
             role="toolbar"
             aria-label={`${t('dashboard.viewCalendar')} / ${t('dashboard.viewGrid')}`}
           >
@@ -147,7 +147,7 @@ export const Dashboard = memo(({
               onClick={() => setViewMode('calendar')}
               data-tutorial="calendar"
               className={cn(
-                'flex-1 min-h-11 h-11 rounded-xl border-2 text-sm font-semibold gap-2 shadow-none',
+                'flex-1 min-h-11 h-11 sm:flex-none sm:min-h-9 sm:h-9 sm:px-3 rounded-xl border-2 text-sm font-semibold gap-2 shadow-none',
                 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
               )}
             >
@@ -159,7 +159,7 @@ export const Dashboard = memo(({
               variant="outline"
               onClick={() => setViewMode('cards')}
               className={cn(
-                'flex-1 min-h-11 h-11 rounded-xl border-2 text-sm font-semibold gap-2 shadow-none',
+                'flex-1 min-h-11 h-11 sm:flex-none sm:min-h-9 sm:h-9 sm:px-3 rounded-xl border-2 text-sm font-semibold gap-2 shadow-none',
                 'border-[#55BA9F] bg-[#55BA9F]/10 text-[#55BA9F] hover:bg-[#55BA9F]/15'
               )}
             >
@@ -171,9 +171,9 @@ export const Dashboard = memo(({
             type="button"
             onClick={onNewBooking}
             data-tutorial="add-booking"
-            className="w-full h-12 bg-[#55BA9F] hover:bg-[#55BA9F]/90 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
+            className="w-full h-12 sm:w-auto sm:h-9 sm:px-4 bg-[#55BA9F] hover:bg-[#55BA9F]/90 text-white font-semibold rounded-xl flex items-center justify-center gap-2"
           >
-            <Plus className="h-5 w-5" />
+            <Plus className="h-5 w-5 sm:h-4 sm:w-4" />
             <span>{t('dashboard.add')}</span>
           </Button>
         </div>

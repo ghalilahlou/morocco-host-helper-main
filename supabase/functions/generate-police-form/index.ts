@@ -736,12 +736,14 @@ serve(async (req: Request) => {
       }
       yPosition -= 35;
       
-      // ✅ AMÉLIORATION: Récupérer l'email du créateur de la property
+      // ✅ Prioriser les infos « Loueur » configurées dans contract_template (landlord_*)
+      //    avant le profil host générique — cohérent avec le contrat.
       const userData = property.user || {};
+      const policeContractTemplate = (property.contract_template as any) || {};
       const establishmentAddress = property.address || '';
-      const hostName = userData.full_name || userData.name || property.name || '';
-      const hostEmail = userData.email || property.host_email || property.email || '';
-      const hostPhone = userData.phone || property.host_phone || property.phone || '';
+      const hostName = policeContractTemplate.landlord_name || userData.full_name || userData.name || property.name || '';
+      const hostEmail = policeContractTemplate.landlord_email || userData.email || property.host_email || property.email || '';
+      const hostPhone = policeContractTemplate.landlord_phone || userData.phone || property.host_phone || property.phone || '';
       
       yPosition = drawBilingualField(page, 'Adresse du bien loué / Rental address', 'عنوان العقار المؤجر', establishmentAddress, margin, yPosition);
       yPosition = drawBilingualField(page, 'Nom du loueur / Host name', 'اسم المؤجر', hostName, margin, yPosition);

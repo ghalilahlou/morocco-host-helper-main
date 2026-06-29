@@ -3220,7 +3220,7 @@ export const GuestVerification = () => {
                             ? 'p-3 bg-gray-50 rounded-xl border border-gray-100' 
                             : 'min-w-0'
                         }`}>
-                          <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelAccommodation')}</Label>
+                          <Label className={`block font-semibold capitalize ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelAccommodation')}</Label>
                           <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>{propertyName || t('guestVerification.propertyFallback')}</div>
                         </div>
                         
@@ -3244,7 +3244,7 @@ export const GuestVerification = () => {
                             }
                           }}
                         >
-                          <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWhen')}</Label>
+                          <Label className={`block font-semibold capitalize ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWhen')}</Label>
                           <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#717171' }}>
                             {(() => {
                               const displayIn = showCalendarPanel
@@ -3282,7 +3282,7 @@ export const GuestVerification = () => {
                             setShowCalendarPanel(false);
                           }}
                         >
-                          <Label className={`block font-semibold lowercase ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWho')}</Label>
+                          <Label className={`block font-semibold capitalize ${isMobile ? 'text-[11px] mb-1' : 'text-xs mb-1.5'}`} style={{ fontFamily: 'Inter, sans-serif', color: '#222222' }}>{t('guestVerification.labelWho')}</Label>
                           <div className={`font-normal ${isMobile ? 'text-base' : 'text-lg'}`} style={{ fontFamily: 'Inter, sans-serif', color: travelersCountConfirmed ? '#717171' : '#B0B0B0' }}>
                             {travelersCountConfirmed && numberOfAdults + numberOfChildren > 0
                               ? (numberOfAdults + numberOfChildren > 1 

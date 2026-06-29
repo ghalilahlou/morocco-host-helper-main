@@ -2352,21 +2352,35 @@ async function generatePoliceFormsInternal(bookingId: string, signature?: Signat
         log('warn', '[Police] Could not retrieve auth email:', { error: String(authError) });
       }
       
-      // 3. Prioriser l'email d'authentification, puis host_profiles, puis contact_info
+      // 3. Prioriser les infos « Loueur » configurées (contract_template.landlord_*),
+      //    puis email d'authentification / host_profiles / contact_info en fallback.
       const property = booking.property || {};
       const contactInfo = (property.contact_info as any) || {};
       const contractTemplate = (property.contract_template as any) || {};
       
+      //  Nom du loueur : prioriser le landlord_name configuré (contract_template) — c'est le nom
+      //  qui doit apparaître dans les contrats ET la fiche de police — avant le profil host générique.
+      const resolvedLandlordName =
+        contractTemplate.landlord_name ||
+        (host?.full_name as string) ||
+        ((host?.first_name && host?.last_name) ? `${host.first_name} ${host.last_name}` : '') ||
+        (host?.first_name as string) ||
+        (host?.last_name as string) ||
+        contactInfo.name ||
+        '';
+
       host = {
         ...(host || {}),
-        email: authEmail || 
-               contractTemplate.landlord_email || 
-               (host?.email as string) || 
-               contactInfo.email || 
+        full_name: resolvedLandlordName,
+        name: resolvedLandlordName,
+        email: contractTemplate.landlord_email ||
+               authEmail ||
+               (host?.email as string) ||
+               contactInfo.email ||
                '',
-        phone: contractTemplate.landlord_phone || 
-               (host?.phone as string) || 
-               contactInfo.phone || 
+        phone: contractTemplate.landlord_phone ||
+               (host?.phone as string) ||
+               contactInfo.phone ||
                ''
       };
       
@@ -4916,12 +4930,12 @@ async function buildContractContext(client: any, bookingId: string): Promise<any
     propertyName: prop.name
   });
   
-  const hostName = contractTemplate.landlord_name || 
-    host?.full_name || 
+  const hostName = contractTemplate.landlord_name ||
+    host?.full_name ||
     (host?.first_name && host?.last_name ? `${host.first_name} ${host.last_name}` : '') ||
     host?.first_name || host?.last_name ||
-    contact_info?.name || 
-    prop.name || 
+    contact_info?.name ||
+    prop.name ||
     'Propriétaire';
 
   const hostEmail = contractTemplate.landlord_email || host?.email || contact_info?.email || null;
@@ -5798,13 +5812,13 @@ async function generateContractPDF(client: any, ctx: any, signOpts: any = {}): P
     propertyName: property.name
   });
   
-  const hostName = contractTemplate.landlord_name || 
+  const hostName = contractTemplate.landlord_name ||
     ctx.host?.name ||
-    ctx.host?.full_name || 
+    ctx.host?.full_name ||
     (ctx.host?.first_name && ctx.host?.last_name ? `${ctx.host.first_name} ${ctx.host.last_name}` : '') ||
     ctx.host?.first_name || ctx.host?.last_name ||
-    ctx.property.contact_info?.name || 
-    ctx.property.name || 
+    ctx.property.contact_info?.name ||
+    ctx.property.name ||
     'Propriétaire';
 
   // Configuration PDF (mise en page alignée sur l'aperçu HTML : marges, barres d'article, aération)
