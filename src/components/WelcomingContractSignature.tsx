@@ -1078,11 +1078,10 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
 
       {/* Left Sidebar - masqué quand largeur < 1024px pour garder le même « chez moi » que guest-verification */}
       <div 
-        className="hidden lg:flex text-white flex-col fixed left-0 top-0 z-10" 
-        style={{ 
+        className="hidden lg:flex text-white flex-col fixed left-0 top-0 z-10 h-screen"
+        style={{
           backgroundColor: '#1E1E1E',
           width: '436px',
-          height: '100vh',
           borderRadius: '0px 22px 22px 0px',
           boxShadow: '0px 4px 4px rgba(0, 0, 0, 0.25)',
           padding: '64px 49px'
@@ -1226,12 +1225,11 @@ ${t('contract.body.date')}: ${todayStr}                            ${t('contract
       
       {/* Right Main Content - full width en layout compact (< 1024px), même structure que guest-verification */}
       <div 
-        className={cn("flex-1 flex flex-col w-full", showMobileLayout && "safe-area-all min-h-screen")}
-        style={{ 
+        className={cn("flex-1 flex flex-col w-full min-h-screen-dvh", showMobileLayout && "safe-area-all")}
+        style={{
           backgroundColor: '#FDFDF9',
           marginLeft: showMobileLayout ? 0 : '436px',
-          borderRadius: showMobileLayout ? 0 : '12px',
-          minHeight: '100vh'
+          borderRadius: showMobileLayout ? 0 : '12px'
         }}
       >
 

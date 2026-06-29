@@ -2864,15 +2864,14 @@ export const GuestVerification = () => {
       
       {/* Right Main Content - full width on mobile (no sidebar) */}
       <div 
-        className={`flex-1 flex flex-col w-full ${
-          isMobile ? 'safe-area-all min-h-screen' : ''
+        className={`flex-1 flex flex-col w-full min-h-screen-dvh ${
+          isMobile ? 'safe-area-all' : ''
         } ${
           currentStep === 'booking' && (showCalendarPanel || showGuestsPanel) ? 'overflow-visible' : ''
         }`}
-        style={{ 
+        style={{
           backgroundColor: '#FDFDF9',
-          marginLeft: isMobile ? 0 : '436px',
-          minHeight: '100vh'
+          marginLeft: isMobile ? 0 : '436px'
         }}
       >
         {/* P29 — Banner soumission précédente (dans la zone principale, pas à côté de la sidebar) */}

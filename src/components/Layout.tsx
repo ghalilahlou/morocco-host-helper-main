@@ -11,6 +11,8 @@ import { SubscriptionBlockScreen } from '@/components/SubscriptionBlockScreen';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useT } from '@/i18n/GuestLocaleProvider';
 import LanguageSwitcher from '@/components/guest/LanguageSwitcher';
+import { Screen } from '@/components/layout/Screen';
+import { Container } from '@/components/layout/Container';
 
 interface LayoutProps {
   children?: React.ReactNode;
@@ -52,10 +54,10 @@ export const Layout: React.FC<LayoutProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-[#F9F7F2]">
+    <Screen safe={false} className="bg-[#F9F7F2] flex flex-col">
       {/* Header selon modèle Figma */}
       <header className="bg-[#FFFFFF] border-b border-gray-200/50 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Container size="xl">
           <div className="flex items-center justify-between h-16 md:h-20">
             {/* Logo CHECKY */}
             <div className="flex items-center space-x-2">
@@ -124,16 +126,16 @@ export const Layout: React.FC<LayoutProps> = ({
               )}
             </div>
           </div>
-        </div>
+        </Container>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 bg-[#F9F7F2] min-h-screen">
+      <Container as="main" size="xl" className="py-6 md:py-8 bg-[#F9F7F2] min-h-screen">
         {children || <Outlet />}
-      </main>
+      </Container>
 
       {/* Footer selon modèle Figma */}
       <footer className="bg-[#F9F7F2] border-t border-gray-200/50 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Container size="xl" className="py-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
             <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
               <span>{t('app.footer.copyright')}</span>
@@ -146,7 +148,7 @@ export const Layout: React.FC<LayoutProps> = ({
             </div>
             <LanguageSwitcher />
           </div>
-        </div>
+        </Container>
       </footer>
 
       <SubscriptionModal 
@@ -154,10 +156,10 @@ export const Layout: React.FC<LayoutProps> = ({
         onOpenChange={setSubscriptionModalOpen} 
       />
       
-      <ContactModal 
-        open={contactModalOpen} 
-        onOpenChange={setContactModalOpen} 
+      <ContactModal
+        open={contactModalOpen}
+        onOpenChange={setContactModalOpen}
       />
-    </div>
+    </Screen>
   );
 };

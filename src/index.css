@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Fira+Sans+Condensed:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+/* Les polices sont préchargées via <link> dans index.html (préconnect + display=swap).
+   On NE duplique PAS l'import ici pour éviter une double requête et un FOUT
+   incohérent d'un navigateur à l'autre. Cf. REFONTE_MOBILE_FRONTEND.md §1.8. */
 /* Import des animations personnalisées */
 @import './styles/animations.css';
 /* Import des styles mobiles */
@@ -96,8 +98,72 @@
   * {
     @apply border-border;
   }
+
+  /* ========================================================================
+     NORMALISATION CROSS-NAVIGATEUR (fondations refonte mobile)
+     Cf. REFONTE_MOBILE_FRONTEND.md §1.4 / §1.8
+     ======================================================================== */
+  html {
+    /* Empêche iOS Safari de gonfler le texte en paysage */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  html,
+  body,
+  #root {
+    /* Évite tout scroll horizontal parasite (débordements 100vw, marges en dur…) */
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: "Fira Sans Condensed", "Inter", sans-serif;
+    /* Hauteur d'écran fiable : fallback vh puis dvh (barre d'URL dynamique) */
+    min-height: 100vh;
+    min-height: 100dvh;
+    /* Évite le rebond pull-to-refresh qui décale la mise en page */
+    overscroll-behavior-y: none;
+  }
+}
+
+@layer utilities {
+  /* ========================================================================
+     HAUTEURS D'ÉCRAN FIABLES — toujours avec fallback vh AVANT dvh/svh/lvh.
+     À utiliser à la place de min-h-screen / h-screen sur les écrans pleine page.
+     Le navigateur qui ignore l'unité dvh garde la valeur vh précédente.
+     ======================================================================== */
+  .min-h-screen-dvh {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  .h-screen-dvh {
+    height: 100vh;
+    height: 100dvh;
+  }
+  /* Variante « petite » : hauteur barre d'URL visible (utile pour le contenu
+     qui ne doit jamais déborder, même barre affichée). */
+  .min-h-screen-svh {
+    min-height: 100vh;
+    min-height: 100svh;
+  }
+}
+
+/* ==========================================================================
+   UPGRADE GLOBAL min-h-screen / h-screen → dvh (Phase 3)
+   Tailwind génère ces classes en `100vh`. On les surcharge ici en `100dvh`
+   UNIQUEMENT là où l'unité est supportée (@supports), si bien que :
+     - navigateurs modernes  → 100dvh (suit la barre d'URL dynamique, pas de
+       contenu coupé sur iOS Safari / Chrome Android / Samsung Internet) ;
+     - navigateurs anciens / vieilles WebView → conservent le 100vh de Tailwind.
+   Bloc volontairement HORS @layer pour gagner sur l'ordre de cascade.
+   Cf. REFONTE_MOBILE_FRONTEND.md §1.4.
+   ========================================================================== */
+@supports (height: 100dvh) {
+  .min-h-screen {
+    min-height: 100dvh;
+  }
+  .h-screen {
+    height: 100dvh;
   }
 }

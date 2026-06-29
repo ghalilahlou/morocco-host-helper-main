@@ -102,7 +102,7 @@ export const MobilePdfViewer: React.FC<MobilePdfViewerProps> = ({
       ref={containerRef}
       className={cn(
         "relative w-full bg-gray-100 rounded-lg overflow-hidden",
-        isMobile && !compactOnMobile && "h-[calc(100vh-200px)]",
+        isMobile && !compactOnMobile && "h-[calc(100dvh-200px)]",
         isMobile && compactOnMobile && "max-h-[45vh] min-h-[280px]",
         !isMobile && "h-[600px]",
         className

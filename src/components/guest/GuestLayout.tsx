@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react';
 import LanguageSwitcher from './LanguageSwitcher';
 import { clearStaleSupabaseSessionIfNeeded } from '@/lib/guestSupabaseAuthCleanup';
+import { Screen } from '@/components/layout/Screen';
+import { Container } from '@/components/layout/Container';
 
 export const GuestLayout: React.FC<React.PropsWithChildren> = ({ children }) => {
   useEffect(() => {
@@ -8,14 +10,14 @@ export const GuestLayout: React.FC<React.PropsWithChildren> = ({ children }) => 
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <Screen className="bg-gradient-to-br from-slate-50 to-slate-100">
       <header className="w-full">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-end">
+        <Container className="py-3 flex items-center justify-end">
           <LanguageSwitcher />
-        </div>
+        </Container>
       </header>
       <main>{children}</main>
-    </div>
+    </Screen>
   );
 };
 

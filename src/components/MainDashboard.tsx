@@ -24,6 +24,7 @@ import checkyLogo from '@/assets/logo.png';
 import { PropertyList } from '@/components/PropertyList';
 import { CreatePropertyDialog } from '@/components/CreatePropertyDialog';
 import { useT } from '@/i18n/GuestLocaleProvider';
+import { Screen } from '@/components/layout/Screen';
 
 export const MainDashboard = () => {
   const navigate = useNavigate();
@@ -64,7 +65,7 @@ export const MainDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <Screen safe={false} className="bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -226,6 +227,6 @@ export const MainDashboard = () => {
           onSuccess={refreshProperties}
         />
       </main>
-    </div>
+    </Screen>
   );
 };

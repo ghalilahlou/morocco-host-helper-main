@@ -504,7 +504,7 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
       {/* Scrollable months */}
       <div
         ref={scrollContainerRef}
-        className="h-[calc(100vh-220px)] overflow-y-auto overflow-x-hidden px-3 scroll-auto overscroll-y-contain touch-pan-y [overflow-anchor:none]"
+        className="h-[calc(100dvh-220px)] overflow-y-auto overflow-x-hidden px-3 scroll-auto overscroll-y-contain touch-pan-y [overflow-anchor:none]"
         onScroll={handleScroll}
       >
         {monthsToShow.map((month) => {

@@ -1,22 +1,14 @@
-import { useState, useEffect } from 'react';
+/**
+ * @deprecated Utiliser `useIsMobile` depuis '@/hooks/use-mobile'.
+ *
+ * Ce fichier historique exposait une détection mobile dupliquée et divergente
+ * (init à `false` + window.innerWidth). Il est désormais un simple alias du hook
+ * canonique basé sur matchMedia, pour ne pas casser les imports existants.
+ * Voir REFONTE_MOBILE_FRONTEND.md §1.1.
+ *
+ * Note : l'ancien hook acceptait un paramètre `breakpoint`. Il est ignoré ;
+ * le seuil unique est MOBILE_BREAKPOINT (768px).
+ */
+import { useIsMobile as useIsMobileCanonical } from '@/hooks/use-mobile';
 
-export const useIsMobile = (breakpoint: number = 768): boolean => {
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const checkIsMobile = () => {
-      setIsMobile(window.innerWidth < breakpoint);
-    };
-
-    // Check on mount
-    checkIsMobile();
-
-    // Add event listener
-    window.addEventListener('resize', checkIsMobile);
-
-    // Cleanup
-    return () => window.removeEventListener('resize', checkIsMobile);
-  }, [breakpoint]);
-
-  return isMobile;
-};
+export const useIsMobile = (_breakpoint?: number): boolean => useIsMobileCanonical();
