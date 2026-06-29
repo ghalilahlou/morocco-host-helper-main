@@ -1346,19 +1346,7 @@ export const UnifiedBookingModal = ({
             <CardContent className={cn(
               isMobile ? "p-3 pt-0 space-y-2" : "space-y-4"
             )}>
-              <div>
-                <p className={cn(
-                  "font-medium",
-                  isMobile ? "text-xs" : "text-sm"
-                )}>{isAirbnb ? t('booking.reservationCodeAirbnb') : t('booking.reservationCode')}</p>
-                <p className={cn(
-                  "font-mono break-all",
-                  isMobile ? "text-base" : "text-lg"
-                )}>
-                  {getReservationCode()}
-                </p>
-              </div>
-
+              {/* Code réservation retiré de l'affichage (toujours INDEPENDENT_BOOKING) */}
               <div className={cn(
                 "grid gap-3 sm:gap-4",
                 isMobile ? "grid-cols-1" : "grid-cols-2"

@@ -1990,11 +1990,22 @@ export const GuestVerification = () => {
       const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
       for (let i = 0; i < guestsPayload.length; i++) {
         const raw = guestsPayload[i].email?.trim() ?? '';
-        if (raw && !emailRegex.test(raw)) {
+        if (!raw) {
+          console.error('❌ Email manquant pour le voyageur', i + 1);
+          toast({
+            title: "Email requis",
+            description: `Veuillez renseigner un courriel pour le voyageur ${i + 1}.`,
+            variant: "destructive",
+          });
+          isSubmittingRef.current = false;
+          isProcessingRef.current = false;
+          return;
+        }
+        if (!emailRegex.test(raw)) {
           console.error('❌ Format email invalide:', guestsPayload[i].email);
           toast({
             title: "Email invalide",
-            description: `Si vous renseignez un courriel pour le voyageur ${i + 1}, utilisez un format valide.`,
+            description: `Le courriel du voyageur ${i + 1} doit être au format valide.`,
             variant: "destructive",
           });
           isSubmittingRef.current = false;
@@ -4090,8 +4101,7 @@ export const GuestVerification = () => {
 
                                   <div className="space-y-2">
                                     <Label className="text-sm font-semibold text-gray-900">
-                                      {t('guest.clients.email')}{' '}
-                                      <span className="text-gray-500 font-normal">{t('guest.clients.emailOptional')}</span>
+                                      {t('guest.clients.email')} <span className="text-red-500">*</span>
                                     </Label>
                                     <input
                                       type="email"
@@ -4099,6 +4109,7 @@ export const GuestVerification = () => {
                                       value={guest.email || ''}
                                       onChange={(e) => updateGuest(rowIndex, 'email', e.target.value)}
                                       placeholder=""
+                                      required
                                       autoComplete="email"
                                       inputMode="email"
                                       className="w-full px-4 py-3 text-base border border-gray-300 rounded-lg focus:border-gray-900 focus:outline-none transition-colors bg-white"
@@ -4112,61 +4123,37 @@ export const GuestVerification = () => {
                         </div>
                     </div>
                     
-                    {/* Footer navigation — sticky sur mobile, inline sur desktop (P30) */}
-                    <div style={isMobile ? {
-                      position: 'sticky',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: '12px',
-                      background: '#FFFFFF',
-                      borderTop: '1px solid #E5E7EB',
-                      padding: '12px 16px',
-                      paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                      zIndex: 40,
-                      marginTop: '24px',
-                    } : {
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      paddingTop: '32px',
-                      marginTop: '32px',
-                      gap: '16px',
-                    }}>
+                    {/* Footer navigation — uniformisé avec l'étape Réservation */}
+                    <div className={`flex justify-between items-center gap-4 ${isMobile ? 'pt-6 pb-4' : 'pt-12'}`}>
                       {/* Bouton Précédent */}
-                      <button
+                      <Button
+                        className="px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all"
+                        style={{ backgroundColor: 'rgba(85, 186, 159, 0.8)', borderRadius: '8px', border: 'none', color: '#040404' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#55BA9F'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
                         onClick={handlePrevStep}
+                      >
+                        <ArrowLeft className="w-4 h-4 mr-2" />
+                        {t('guest.navigation.previous')}
+                      </Button>
+
+                      {/* Bouton Suivant */}
+                      <Button
+                        className="px-8 py-3 font-semibold text-black shadow-md hover:shadow-lg transition-all ml-auto"
                         style={{
-                          minWidth: '120px',
-                          height: '44px',
-                          background: 'rgba(85, 186, 159, 0.8)',
-                          boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                          backgroundColor: 'rgba(85, 186, 159, 0.8)',
                           borderRadius: '8px',
                           border: 'none',
-                          cursor: 'pointer',
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 500,
-                          fontSize: '16px',
-                          lineHeight: '28px',
                           color: '#040404',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
-                          transition: 'all 0.2s'
+                          opacity: isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current ? 0.6 : 1,
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#55BA9F'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(85, 186, 159, 0.8)'; }}
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                        {t('guest.navigation.previous')}
-                      </button>
-                      
-                      {/* Bouton Suivant */}
-                      <button
+                        onMouseEnter={(e) => {
+                          if (!isLoading && !isSubmittingRef.current && !isProcessingRef.current && !navigationInProgressRef.current) {
+                            e.currentTarget.style.backgroundColor = '#55BA9F';
+                          }
+                        }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(85, 186, 159, 0.8)'; }}
+                        disabled={isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current}
                         onClick={(e) => {
                           if (isSubmittingRef.current || isProcessingRef.current || isLoading || navigationInProgressRef.current) {
                             e.preventDefault();
@@ -4178,39 +4165,10 @@ export const GuestVerification = () => {
                           }
                           handleSubmit();
                         }}
-                        disabled={isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current}
-                        style={{
-                          minWidth: '120px',
-                          height: '44px',
-                          background: 'rgba(85, 186, 159, 0.8)',
-                          boxShadow: '0px 4px 6px -4px rgba(0, 0, 0, 0.1), 0px 10px 15px -3px rgba(0, 0, 0, 0.1)',
-                          borderRadius: '8px',
-                          border: 'none',
-                          cursor: isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current ? 'not-allowed' : 'pointer',
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 500,
-                          fontSize: '16px',
-                          lineHeight: '28px',
-                          color: '#040404',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
-                          opacity: isLoading || isSubmittingRef.current || isProcessingRef.current || navigationInProgressRef.current ? 0.6 : 1,
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!isLoading && !isSubmittingRef.current && !isProcessingRef.current && !navigationInProgressRef.current) {
-                            e.currentTarget.style.background = '#55BA9F';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(85, 186, 159, 0.8)';
-                        }}
                       >
                         {isLoading && submissionStep ? submissionStep : t('guestVerification.submitAndContinue')}
-                        {!isLoading && <ArrowRight className="w-4 h-4" />}
-                      </button>
+                        {!isLoading && <ArrowRight className="w-4 h-4 ml-2" />}
+                      </Button>
                     </div>
                   </motion.div>
                 )}
