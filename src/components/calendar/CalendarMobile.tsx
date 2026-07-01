@@ -23,7 +23,12 @@ import {
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { parseStayDateForCalendar } from '@/utils/dateUtils';
-import { isBookingStayPast, type BookingLayout } from './CalendarUtils';
+import {
+  isBookingStayPast,
+  assignBookingLayers,
+  applyAdjacencyGaps,
+  type BookingLayout,
+} from './CalendarUtils';
 import type { ConflictGroupForCalendar } from './CalendarGrid';
 import { ConflictCadran } from './ConflictCadran';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
@@ -219,6 +224,13 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
     return Array.from(map.values());
   }, [allReservations, bookingLayout, conflicts]);
 
+  /** Accès O(1) aux données de rendu d'une barre à partir de son id (résultat de la cascade de layers). */
+  const bookingDataById = useMemo(() => {
+    const m = new Map<string, BookingBarData>();
+    allBookings.forEach((b) => m.set(b.booking.id, b));
+    return m;
+  }, [allBookings]);
+
   /* ---------- Scroll handling ---------- */
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -249,10 +261,18 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
 
   /* ---------- Week helpers ---------- */
 
-  const getBookingsForWeek = (week: Date[]) => {
+  /**
+   * Disposition « cascade » d'une semaine, identique au desktop : chaque barre reçoit une couche
+   * (layer) via {@link assignBookingLayers} (0 = première ligne, +1 par chevauchement réel) et un
+   * léger décalage d'adjacence via {@link applyAdjacencyGaps} quand deux séjours dos-à-dos partagent
+   * le jour pivot. Les séjours qui ne se chevauchent pas restent sur la même ligne.
+   * Contrairement au desktop, le span n'est PAS coupé à la frontière du mois : la barre reste continue
+   * sur toute la semaine (rendu Airbnb), les jours hors-mois étant simplement grisés.
+   */
+  const getWeekLayout = (week: Date[]): BookingLayout[] => {
     const ws = toLocalDay(week[0]);
     const we = toLocalDay(week[6]);
-    const result: { booking: BookingBarData; startCol: number; span: number }[] = [];
+    const raw: BookingLayout[] = [];
 
     allBookings.forEach((bd) => {
       const bs = toLocalDay(bd.startDate);
@@ -261,19 +281,40 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
       if (bs.getTime() <= we.getTime() && be.getTime() >= ws.getTime()) {
         let sc = -1;
         let sp = 0;
+        let isStart = false;
+        let isEnd = false;
         for (let i = 0; i < 7; i++) {
           const d = toLocalDay(week[i]);
           if (d.getTime() >= bs.getTime() && d.getTime() <= be.getTime()) {
             if (sc === -1) sc = i;
             sp++;
+            if (d.getTime() === bs.getTime()) isStart = true;
+            if (d.getTime() === be.getTime()) isEnd = true;
           }
         }
         if (sc >= 0 && sp > 0) {
-          result.push({ booking: bd, startCol: sc, span: sp });
+          raw.push({
+            booking: bd.booking,
+            startDayIndex: sc,
+            span: sp,
+            isStart,
+            isEnd,
+            weekIndex: 0,
+            color: bd.color,
+            isAirbnb: 'source' in bd.booking && (bd.booking as AirbnbReservation).source === 'airbnb',
+            layer: 0,
+          });
         }
       }
     });
-    return result.sort((a, b) => (a.startCol !== b.startCol ? a.startCol - b.startCol : b.span - a.span));
+
+    const layered = assignBookingLayers(raw).sort((a, b) => {
+      const la = a.layer ?? 0;
+      const lb = b.layer ?? 0;
+      return la !== lb ? la - lb : a.startDayIndex - b.startDayIndex;
+    });
+    applyAdjacencyGaps(layered);
+    return layered;
   };
 
   /* ---------- Bar height constants ---------- */
@@ -307,8 +348,13 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
 
         <div className="border-t border-gray-200/70 rounded-lg overflow-hidden">
           {weeks.map((week, weekIndex) => {
-            const booksInWeek = getBookingsForWeek(week);
-            const totalH = DAY_NUM_H + (booksInWeek.length > 0 ? booksInWeek.length * (BAR_H + BAR_GAP) - BAR_GAP + 6 : 0);
+            const weekLayout = getWeekLayout(week);
+            // Hauteur = nombre de COUCHES (cascade), pas nombre de barres : les séjours dos-à-dos
+            // partagent une même ligne, seuls les chevauchements réels ajoutent une couche.
+            const layerCount = weekLayout.length > 0
+              ? Math.max(...weekLayout.map((b) => b.layer ?? 0)) + 1
+              : 0;
+            const totalH = DAY_NUM_H + (layerCount > 0 ? layerCount * (BAR_H + BAR_GAP) - BAR_GAP + 6 : 0);
 
             return (
               <div
@@ -351,19 +397,27 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                 </div>
 
                 {/* Booking bars */}
-                {booksInWeek.length > 0 && (
+                {weekLayout.length > 0 && (
                   <div className="absolute left-0 right-0 pointer-events-none" style={{ top: `${DAY_NUM_H}px` }}>
-                    {booksInWeek.map((item, idx) => {
-                      const { booking: bd, startCol, span } = item;
-                      const checkInDay = toLocalDay(bd.startDate);
-                      const checkOutDay = toLocalDay(bd.endDate);
-                      const isStart = week.some((d) => toLocalDay(d).getTime() === checkInDay.getTime());
-                      const isEnd = week.some((d) => toLocalDay(d).getTime() === checkOutDay.getTime());
+                    {weekLayout.map((entry, idx) => {
+                      const bd = bookingDataById.get(entry.booking.id);
+                      if (!bd) return null;
+                      const startCol = entry.startDayIndex;
+                      const span = entry.span;
+                      const layer = entry.layer ?? 0;
+                      const isStart = entry.isStart;
+                      const isEnd = entry.isEnd === true;
 
                       let radius = '0';
                       if (isStart && isEnd) radius = '16px';
                       else if (isStart) radius = '16px 0 0 16px';
                       else if (isEnd) radius = '0 16px 16px 0';
+
+                      // Décalage d'adjacence : le pourcentage est relatif à la LARGEUR TOTALE de la barre
+                      // (span cellules). On le ramène à une fraction d'UNE cellule pour un espace constant
+                      // au jour pivot, quel que soit la durée du séjour.
+                      const startGap = entry.startOffsetPercent ? `${entry.startOffsetPercent / span}%` : '1px';
+                      const endGap = entry.endOffsetPercent ? `${entry.endOffsetPercent / span}%` : '1px';
 
                       const isCheckinDone = bd.circleBg === '#000000' && !bd.isConflict;
 
@@ -372,12 +426,12 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                           key={`${bd.booking.id}-${weekIndex}-${idx}-row`}
                           className="absolute left-0 right-0 grid grid-cols-7 min-w-0"
                           style={{
-                            top: `${idx * (BAR_H + BAR_GAP)}px`,
+                            top: `${layer * (BAR_H + BAR_GAP)}px`,
                             height: `${BAR_H}px`,
                           }}
                         >
                         <motion.div
-                          className="min-w-0 pointer-events-auto cursor-pointer px-[1px]"
+                          className="min-w-0 pointer-events-auto cursor-pointer"
                           custom={idx}
                           variants={barVariants}
                           initial="hidden"
@@ -385,6 +439,8 @@ export const CalendarMobile: React.FC<CalendarMobileProps> = ({
                           whileTap="tap"
                           style={{
                             gridColumn: `${startCol + 1} / span ${span}`,
+                            paddingLeft: startGap,
+                            paddingRight: endGap,
                           }}
                           onClick={() => {
                             if (conflicts.includes(bd.booking.id) && conflictGroupsWithPosition.length > 0) {
